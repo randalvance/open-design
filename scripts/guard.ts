@@ -36,8 +36,6 @@ const allowedE2eScripts = new Set([
   // Explicit opt-in local daemon acceptance; not part of hermetic CI test discovery.
   "e2e/scripts/syntax-acceptance.ts",
   "e2e/scripts/visual-report.ts",
-  // Cross-version real Vela / synthetic OpenCode protocol acceptance.
-  "e2e/scripts/vela-contract.ts",
 ]);
 
 function toRepositoryPath(filePath: string): string {
@@ -113,23 +111,15 @@ const residualAllowedExactPaths = new Set([
   "scripts/scaffold-html-ppt-skills.mjs",
   "scripts/sync-hyperframes-skill.mjs",
   "scripts/verify-media-models.mjs",
-  // AMR (vela) verifier: ad-hoc dev runner that imports the daemon's compiled
-  // `dist/acp.js` and drives a real `vela agent run` against a live model.
-  // Kept as .mjs so it can be invoked directly via Node without any transform.
-  "apps/daemon/scripts/verify-amr-real-vela.mjs",
-  // Fake `vela agent run` ACP stdio stub used by the AMR
-  // integration tests. The Vitest test spawns it via `child_process.spawn`,
-  // which needs a directly-executable file (shebang + .mjs).
-  "apps/daemon/tests/fixtures/fake-vela.mjs",
   // Fake ACP agent CLI that answers `initialize` and then rejects
-  // `session/new`, used by the ACP handshake-rejection wiring tests. Same
-  // precedent as `fake-vela.mjs`: Vitest puts it on PATH and the daemon
-  // spawns it, so it must be directly executable (shebang + .mjs).
+  // `session/new`, used by the ACP handshake-rejection wiring tests. Vitest
+  // puts it on PATH and the daemon spawns it, so it must be directly
+  // executable (shebang + .mjs).
   "apps/daemon/tests/fixtures/fake-acp-handshake-cli.mjs",
   // Fake `kimi acp` ACP stdio stub used by the stdio-MCP wiring test. It
   // records the `session/new` params the daemon actually sends, and the test
   // spawns it through a PATH shim, so it must be directly executable by Node
-  // without a transform — same precedent as `fake-vela.mjs` above.
+  // without a transform — same precedent as `fake-acp-handshake-cli.mjs` above.
   "apps/daemon/tests/fixtures/fake-kimi-acp-cli.mjs",
   "tools/dev/bin/tools-dev.mjs",
   "tools/dev/esbuild.config.mjs",
@@ -185,7 +175,7 @@ const residualAllowedPathPrefixes = [
   // harnesses and PATH-overlay shells work without any transform step.
   // `mocks/scripts/` holds the maintainer-facing helpers (manifest math,
   // fetch from R2) which are also pure-node single-file modules — same
-  // precedent as `apps/daemon/tests/fixtures/fake-vela.mjs` (an ACP
+  // precedent as `apps/daemon/tests/fixtures/fake-acp-handshake-cli.mjs` (an ACP
   // stdio stub, allowlisted individually above). See `mocks/README.md`.
   "mocks/lib/",
   "mocks/mock-agent.mjs",
