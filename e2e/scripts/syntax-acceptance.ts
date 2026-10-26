@@ -1,7 +1,7 @@
-/** Explicit local acceptance, NOT a hermetic CI test or remote batch creator. */
+/** Explicit local fake-CLI replay acceptance, NOT a hermetic CI test. */
 import { execFile, spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { chmod, mkdir, mkdtemp, open, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, open, readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,7 +22,7 @@ const sourceScopes = ['apps/daemon', 'packages/contracts', 'pnpm-lock.yaml'];
 /** Explicit manual canary only: never accepts user datasets or inherited account identity. */
 export function resolveSyntaxTelemetryCanary(input: {
   enabled: boolean; mode: string; externalInputs: boolean; profile: string;
-  isolatedRoot: string; repeat?: string | undefined; token?: string | undefined; relayUrl?: string | undefined;
+  repeat?: string | undefined; token?: string | undefined; relayUrl?: string | undefined;
 }) {
   if (!input.enabled) return null;
   if (input.mode !== 'replay' || input.externalInputs || input.profile !== 'test'
@@ -43,11 +43,8 @@ export function resolveSyntaxTelemetryCanary(input: {
     fixtures,
     prefs: { metrics: true, content: true, artifactManifest: false },
     env: {
-      // Do not disable Vela priority. With an empty AMR home and no keys the
-      // real resolver naturally selects the anonymous test relay.
-      AMR_HOME: path.join(input.isolatedRoot, 'amr'),
+      // With no keys the real resolver naturally selects the anonymous test relay.
       OD_INSTALLATION_DIR: '', OD_LEGACY_DATA_DIR: '',
-      VELA_CONTROL_KEY: '', VELA_RUNTIME_KEY: '',
       LANGFUSE_PUBLIC_KEY: '', LANGFUSE_SECRET_KEY: '',
       POSTHOG_KEY: '', NEXT_PUBLIC_POSTHOG_KEY: '',
       OPEN_DESIGN_TELEMETRY_RELAY_URL: input.relayUrl,
@@ -171,98 +168,26 @@ export function replayCaseVerdict(fixture: ReplayFixture, run: Json, content: st
   };
 }
 
-/** Recover completed records even if node-job exits before writing result.json. Never invent failed cases. */
-export async function collectRealEvidence(output: string, expectedIds: string[]) {
-  const evidenceErrors: string[] = [];
-  const entries = new Map<string, Json>();
-  const started = new Set<string>();
-  const finishedEvents = new Set<string>();
-  const duplicateFinishedCaseIds: string[] = [];
-  let hasResult = false;
-  let hasEvents = false;
-  try {
-    const result = JSON.parse(await readFile(path.join(output, 'result.json'), 'utf8')) as Json;
-    if (!Array.isArray(result.cases)) throw new Error('missing cases array');
-    hasResult = true;
-    for (const entry of result.cases) {
-      if (typeof entry.evalId !== 'string') { evidenceErrors.push('result case missing evalId'); continue; }
-      if (entries.has(entry.evalId)) evidenceErrors.push(`duplicate result case ${entry.evalId}`);
-      entries.set(entry.evalId, entry);
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') evidenceErrors.push(`result.json: ${String(error)}`);
-  }
-  try {
-    const lines = (await readFile(path.join(output, 'events.jsonl'), 'utf8')).split('\n');
-    hasEvents = true;
-    for (const [index, line] of lines.entries()) {
-      if (!line.trim()) continue;
-      let event: Json;
-      try { event = JSON.parse(line) as Json; } catch { evidenceErrors.push(`events.jsonl: invalid JSON at line ${index + 1}`); continue; }
-      if (event.type === 'case_started' && typeof event.evalId === 'string') started.add(event.evalId);
-      if (event.type !== 'case_finished') continue;
-      if (typeof event.evalId !== 'string') { evidenceErrors.push(`case_finished missing evalId at line ${index + 1}`); continue; }
-      if (finishedEvents.has(event.evalId)) duplicateFinishedCaseIds.push(event.evalId);
-      finishedEvents.add(event.evalId);
-      if (!entries.has(event.evalId)) entries.set(event.evalId, event);
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') evidenceErrors.push(`events.jsonl: ${String(error)}`);
-  }
-  const cases = [...entries.values()].map(entry => {
-    const syntax = entry.metrics?.deliverableSyntax ?? {};
-    const outcome = hostTerminalOutcome(syntax.terminalRunStatus, syntax);
-    const deliveredWithWarning = entry.status === 'succeeded' && outcome.deliveredWithWarning
-      && syntax.deliveredWithSyntaxWarningCount === 1 && syntax.recoveredDeliveryCount === 0
-      && syntax.blockedBrokenDeliveryCount === 0;
-    const repairVerified = entry.status === 'succeeded' && outcome.repairVerified && syntax.recoveredDeliveryCount === 1;
-    const deliveredWithoutRepair = outcome.summaryComplete && syntax.terminalRunStatus === 'succeeded'
-      && syntax.status === 'pass' && syntax.finalization.action === 'allow'
-      && syntax.finalization.initialStatus === 'pass' && syntax.finalization.stagedPatchCount === 0
-      && syntax.finalization.committedPatchCount === 0 && syntax.recoveredDeliveryCount === 0;
-    return { ...entry, deliveredWithWarning, repairVerified,
-    passed: entry.status === 'succeeded' && entry.metrics?.strategyRoute === 'od-next'
-      && entry.metrics?.agent === 'open-design:amr' && entry.metrics?.model === 'deepseek-v4-flash'
-      && (deliveredWithWarning || repairVerified || deliveredWithoutRepair),
-    };
-  });
-  const missingCaseIds = expectedIds.filter(id => !entries.has(id));
-  const unexpectedCaseIds = [...entries.keys()].filter(id => !expectedIds.includes(id));
-  return { cases, collection: {
-    source: hasResult ? hasEvents ? 'result+events' : 'result' : hasEvents ? 'events' : 'missing',
-    expectedCaseCount: expectedIds.length, finishedCaseCount: entries.size,
-    startedCaseIds: [...started], missingCaseIds, unexpectedCaseIds, duplicateFinishedCaseIds, evidenceErrors,
-    unfinishedCaseIds: missingCaseIds.filter(id => started.has(id)),
-    notStartedCaseIds: missingCaseIds.filter(id => !started.has(id)),
-    complete: expectedIds.length > 0 && missingCaseIds.length === 0 && unexpectedCaseIds.length === 0
-      && duplicateFinishedCaseIds.length === 0 && evidenceErrors.length === 0,
-  } };
-}
-
 export async function runSyntaxAcceptance(args = process.argv.slice(2)) {
 const exec = promisify(execFile);
 const workspace = e2eWorkspaceRoot();
 const { values } = parseArgs({ args, options: {
-  mode: { type: 'string' }, dataset: { type: 'string' }, sha256: { type: 'string' },
-  runner: { type: 'string' }, vela: { type: 'string' }, profile: { type: 'string', default: 'test' },
-  'runner-version': { type: 'string', default: '0.9.24' },
-  'expected-rows': { type: 'string', default: '24' }, repeat: { type: 'string' },
-  'fixture-manifest': { type: 'string' }, 'timeout-ms': { type: 'string', default: String(3 * 60 * 60 * 1000) },
+  mode: { type: 'string' }, profile: { type: 'string', default: 'test' }, repeat: { type: 'string' },
+  'fixture-manifest': { type: 'string' },
   'upload-telemetry': { type: 'boolean', default: false },
 } });
-if (values.mode !== 'real' && values.mode !== 'replay') {
-  throw new Error('Choose --mode replay or --mode real (real also requires --dataset --sha256 --runner --vela).');
+if (values.mode !== 'replay') {
+  throw new Error('Only --mode replay is supported (fake CLI replay against the real deployed daemon).');
 }
 const mode = values.mode;
 const root = await mkdtemp(path.join(os.tmpdir(), 'od-syntax-acceptance-'));
 await chmod(root, 0o700);
 const canary = resolveSyntaxTelemetryCanary({
   enabled: values['upload-telemetry'] === true, mode, profile: values.profile!,
-  externalInputs: Boolean(values.dataset || values['fixture-manifest'] || values.runner || values.vela || values.sha256),
-  repeat: values.repeat, isolatedRoot: root, token: randomUUID().slice(0, 8),
+  externalInputs: Boolean(values['fixture-manifest']),
+  repeat: values.repeat, token: randomUUID().slice(0, 8),
   relayUrl: process.env.OPEN_DESIGN_TELEMETRY_RELAY_URL,
 });
-if (canary) await mkdir(canary.env.AMR_HOME, { mode: 0o700 });
 const telemetryPrefs = canary?.prefs ?? { metrics: false, content: false, artifactManifest: false };
 const runtime = createToolsDevSuite({
   root, namespace: `syntax-${randomUUID().slice(0, 8)}`, ownerPid: process.pid,
@@ -276,15 +201,13 @@ const runtime = createToolsDevSuite({
 });
 const env: Record<string, string | undefined> = {
   OD_INSTALLATION_DIR: '', OD_LEGACY_DATA_DIR: '',
-  OD_NEXT_STRATEGY_ROLLOUT: mode === 'real' ? 'active' : 'off',
+  OD_NEXT_STRATEGY_ROLLOUT: 'off',
   OD_DELIVERABLE_SYNTAX_FINALIZER: '1',
-  OPEN_DESIGN_AMR_PROFILE: values.profile, VELA_PROFILE: values.profile,
-  ...(values.vela ? { VELA_BIN: path.resolve(values.vela) } : {}),
   ...canary?.env,
 };
 const report: Json = {
   mode, status: 'RUNNING', startedAt: new Date().toISOString(), root,
-  boundary: mode === 'real' ? 'real AMR / OD Next generation' : 'fake CLI / real deployed daemon terminal chain; NOT AMR acceptance',
+  boundary: 'fake CLI / real deployed daemon terminal chain; replay only, not real-agent acceptance',
   cases: [],
   ...(canary ? { telemetry: {
     uploadEnabled: true, destination: 'official-test-relay', environment: canary.env.OD_TELEMETRY_ENV,
@@ -344,8 +267,6 @@ const fixtures = [
 ] as const;
 let activeFixtures: ReplayFixture[] = fixtures.map(fixture => ({ ...fixture, source: `<!doctype html><script>${fixture.script}</script>` }));
 if (canary) activeFixtures = canary.fixtures;
-let expectedIds: string[] = [];
-const output = path.join(root, 'evaluation');
 
 async function replay() {
   const repeat = Number(values.repeat ?? (canary ? '1' : '3'));
@@ -354,7 +275,7 @@ async function replay() {
     for (const fixture of activeFixtures) {
       const id = `${fixture.id}-${round}`;
       const source = fixture.source;
-      // The fake CLI supplies fixed output; it does not pretend to be an AMR model.
+      // The fake CLI supplies fixed output; it does not pretend to be a real agent model.
       const bin = path.join(root, `fixture-${id}.cjs`);
       await writeFile(bin, `#!/usr/bin/env node
 const fs = require('node:fs');
@@ -448,38 +369,11 @@ try {
   report.sourceBefore = await sourceIdentity();
   await save('report.json', report);
   console.log(`Local evidence: ${root}`);
-  let dataset: Buffer | undefined;
-  const timeoutMs = Number(values['timeout-ms']);
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('--timeout-ms must be a positive integer (node-job total budget, not per-case)');
-  report.evaluationTimeoutMs = timeoutMs;
   if (values['fixture-manifest']) {
-    if (mode !== 'replay') throw new Error('--fixture-manifest only applies to replay');
     const manifestPath = path.resolve(values['fixture-manifest']);
     activeFixtures = await loadReplayFixtures(manifestPath);
     report.fixtures = { manifestPath, manifestSha256: hash(await readFile(manifestPath)),
       entries: activeFixtures.map(fixture => ({ id: fixture.id, beforeSha256: hash(fixture.source), expectedSha256: hash(fixture.expected!), action: fixture.action })) };
-  }
-  if (mode === 'real') {
-    if (values.profile !== 'test') throw new Error('Real local syntax acceptance requires --profile test; no production wallet fallback');
-    if (!values.dataset || !values.sha256 || !values.runner || !values.vela) throw new Error('Missing real-lane arguments');
-    dataset = await readFile(path.resolve(values.dataset));
-    const rows = dataset.toString('utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
-    if (hash(dataset) !== values.sha256.replace(/^sha256:/, '')) throw new Error('Dataset hash mismatch');
-    if (rows.length !== Number(values['expected-rows'])) throw new Error('Dataset row count mismatch');
-    expectedIds = rows.map(row => row.eval_id);
-    if (expectedIds.some(id => typeof id !== 'string' || !id) || new Set(expectedIds).size !== rows.length) throw new Error('Dataset eval_id must be unique and nonempty');
-    report.dataset = { sha256: hash(dataset), rows: rows.length };
-    report.runner = { path: path.resolve(values.runner), sha256: hash(await readFile(path.resolve(values.runner))) };
-    report.runner.version = (await exec(process.execPath, [path.resolve(values.runner), '--version'], { timeout: 30_000 })).stdout.trim();
-    if (report.runner.version.replace(/^(?:od-evals\s+)?v?/, '') !== values['runner-version']) {
-      throw new Error(`RUNNER_VERSION_MISMATCH: expected ${values['runner-version']}, got ${report.runner.version}`);
-    }
-    report.profile = values.profile;
-    report.vela = { path: path.resolve(values.vela), version: (await exec(path.resolve(values.vela), ['--version'])).stdout.trim() };
-    try {
-      // Never log whoami's personal data or credentials and never silently change profile/model.
-      await exec(path.resolve(values.vela), ['whoami'], { env: { ...process.env, ...env }, timeout: 30_000 });
-    } catch { throw new Error(`AMR_AUTH_BLOCKED: Vela profile ${values.profile} is not authenticated/reachable`); }
   }
   console.log('Building current worktree and dependencies (no --skip-build).');
   await command('pnpm', ['--filter', '@open-design/daemon...', '--workspace-concurrency=4', 'build'], 'build.log', 600_000);
@@ -492,48 +386,16 @@ try {
   report.runtime = await runtime.startWeb(env);
   report.runtimeCheck = await runtime.check(env);
   await request(runtime.url.api('/api/app-config'), 'PUT', {
-    agentId: mode === 'real' ? 'amr' : 'claude',
-    telemetry: telemetryPrefs, privacyDecisionAt: Date.now(),
-    ...(mode === 'real' ? { agentCliEnv: { amr: {
-      VELA_BIN: path.resolve(values.vela!), VELA_PROFILE: values.profile, OPEN_DESIGN_AMR_PROFILE: values.profile,
-    } } } : {}),
+    agentId: 'claude', telemetry: telemetryPrefs, privacyDecisionAt: Date.now(),
   });
-  if (mode === 'replay') {
-    await replay();
-  } else {
-    const login = await request(runtime.url.api('/api/integrations/vela/status'));
-    report.daemonAuth = { loggedIn: login.loggedIn, profile: login.profile, sessionState: login.sessionState };
-    if (login.loggedIn !== true || login.profile !== values.profile) throw new Error('DAEMON_AMR_AUTH_MISMATCH');
-    await writeFile(path.join(root, 'dataset.jsonl'), dataset!, { mode: 0o600 });
-    await save('arm.json', {
-      id: 'local-syntax-acceptance', cli: 'amr', model: 'deepseek-v4-flash',
-      strategyRoute: 'od-next', keepDiscovery: true, autoAnswerForms: false,
-      env: { kind: 'daemon', url: runtime.daemonUrl },
-    });
-    await mkdir(output);
-    await command(process.execPath, [path.resolve(values.runner!), 'node-job',
-      '--dataset', path.join(root, 'dataset.jsonl'), '--arm-file', path.join(root, 'arm.json'),
-      '--out-dir', output, '--concurrency', '2'], 'evaluation.log', timeoutMs);
-    const evidence = await collectRealEvidence(output, expectedIds);
-    report.cases = evidence.cases;
-    report.collection = evidence.collection;
-    if (!evidence.collection.complete) throw new Error('Incomplete evaluation evidence; see collection for unfinished/missing cases');
-  }
+  await replay();
   report.status = report.cases.length > 0 && report.cases.every((entry: Json) => entry.passed) ? 'PASS' : 'FAIL';
-  report.note = mode === 'real' ? 'Generation/terminal acceptance only; visual quality is not scored.' : 'Replay PASS is not real AMR / OD Next acceptance.';
+  report.note = 'Replay PASS proves the fake-CLI terminal chain only; it is not real-agent generation acceptance.';
   if (canary) report.note += ' Canary PASS proves local execution and exporter acceptance only; exact remote Trace readback is still required. elapsedMs includes telemetry wait; checker metrics do not.';
 } catch (error) {
   report.status = 'BLOCKED';
   report.error = error instanceof Error ? error.message : String(error);
 } finally {
-  if (mode === 'real' && expectedIds.length > 0) {
-    try {
-      const evidence = await collectRealEvidence(output, expectedIds);
-      report.cases = evidence.cases;
-      report.collection = evidence.collection;
-      if (!evidence.collection.complete) report.status = 'BLOCKED';
-    } catch (error) { report.collectionError = String(error); report.status = 'BLOCKED'; }
-  }
   try {
     report.sourceAfter = await sourceIdentity();
     report.sourceStable = JSON.stringify(report.sourceBefore) === JSON.stringify(report.sourceAfter);

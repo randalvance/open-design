@@ -1,21 +1,14 @@
 import { expect, test } from '@/playwright/suite';
 import { ensureRailOpen, openNewProjectModal as openNewProjectModalFromProjects } from '@/playwright/rail';
-import { settingsSurface } from '@/playwright/amr';
+import { settingsSurface } from '@/playwright/entry';
 import type { Locator, Page } from '@playwright/test';
-import { applyStandardMocks, routeSignedOutVelaStatus } from '@/playwright/mock-factory';
+import { applyStandardMocks } from '@/playwright/mock-factory';
 import { T } from '@/timeouts';
 
 test.describe.configure({ timeout: T.xlong });
 
 test.beforeEach(async ({ page }) => {
   await applyStandardMocks(page);
-  // This file is the compact Personal/local capability lane. Pin Cloud to a
-  // definitive signed-out response so Home and project creation cannot pass
-  // merely because identity stayed unresolved behind the standard 503 mock.
-  await routeSignedOutVelaStatus(page);
-  await page.route('**/api/workspace/directory', async (route) => {
-    await route.fulfill({ json: { items: [] } });
-  });
 });
 
 test('[P0] @critical home loads with the primary entry controls', async ({ page }) => {
@@ -37,11 +30,10 @@ test('[P0] @critical home loads with the primary entry controls', async ({ page 
 test('[P0] @critical settings dialog is reachable from home', async ({ page }) => {
   await gotoEntryHome(page);
 
-  // #5971 cut the rail-footer settings chip; signed out, Settings is the rail's
-  // own nav item — `entry-settings-button` is the testid that item carries (see
-  // EntryNavRail: it is the ONLY signed-out settings entry, and the e2e
-  // contract). Collapsed, the rail is `inert` and it cannot be clicked, so
-  // expand first.
+  // #5971 cut the rail-footer settings chip; Settings is the rail's own nav
+  // item — `entry-settings-button` is the testid that item carries (see
+  // EntryNavRail: it is the ONLY settings entry, and the e2e contract).
+  // Collapsed, the rail is `inert` and it cannot be clicked, so expand first.
   await ensureRailOpen(page);
   await clickVisible(page.getByTestId('entry-settings-button'));
   // From the entry, settings is now a routed page (`role="region"`), not a

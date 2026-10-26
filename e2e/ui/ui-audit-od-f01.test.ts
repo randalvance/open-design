@@ -2,7 +2,6 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { expect, test } from '@/playwright/suite';
 import { T } from '@/timeouts';
-import { mockAmrPersonalWorkspace, AMR_PERSONAL_WORKSPACE_CONTEXT } from '../lib/playwright/amr.js';
 
 const output = resolve(import.meta.dirname, '../../.tmp/ui-audit/final-design-review/phase-B-f01');
 test.use({ viewport: { width: 1440, height: 904 }, deviceScaleFactor: 2, colorScheme: 'light', locale: 'zh-CN' });
@@ -12,13 +11,6 @@ test('F01 long comments fold independently in real OD file viewer', async ({ pag
   await page.addInitScript(() => {
     localStorage.setItem('open-design:locale', 'zh-CN');
     localStorage.setItem('open-design:locale-source', 'manual');
-  });
-  await mockAmrPersonalWorkspace(page);
-  await page.route('**/api/projects/*/workspace-scope', async route => {
-    const projectId = new URL(route.request().url()).pathname.match(/\/api\/projects\/([^/]+)/)?.[1];
-    await route.fulfill({ json: { scope: { kind: 'personal', projectId,
-      workspaceId: AMR_PERSONAL_WORKSPACE_CONTEXT.workspaceId,
-      visibility: 'personal', context: AMR_PERSONAL_WORKSPACE_CONTEXT } } });
   });
   const projectId = `ui-audit-f01-${Date.now()}`;
   const created = await page.request.post('/api/projects', { data: {

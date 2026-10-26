@@ -229,7 +229,6 @@
       { "name": "entry-settings", "shard": "entry-settings" },
       { "name": "project-workspace", "shard": "project-workspace" },
       { "name": "project-workspace-editor", "shard": "project-workspace-editor" },
-      { "name": "project-collab", "shard": "project-collab" },
       { "name": "project-runtime", "shard": "project-runtime" },
       { "name": "workspace-restoration", "shard": "workspace-restoration" }
     ],
@@ -240,6 +239,6 @@
   },
   "uiP0Shadow": {
     "match": "daemon-runtime-definition",
-    "matrixNames": ["entry-settings", "project-workspace", "project-collab", "project-runtime"]
+    "matrixNames": ["entry-settings", "project-workspace", "project-runtime"]
   }
 }

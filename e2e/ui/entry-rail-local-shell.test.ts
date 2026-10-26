@@ -5,15 +5,12 @@ import { applyStandardMocks } from '@/playwright/mock-factory';
 import { ensureRailOpen } from '@/playwright/rail';
 import { T } from '@/timeouts';
 
-// OPEND-3140 — the local (signed-out CLI / BYOK) shell on the entry rail
-// layout: the rail's 最近项目 section lists the local project catalogue with
-// live run status, 项目 is a rail destination, the message centre rides the
-// foot dock, and Home carries no recent-projects grid.
+// OPEND-3140 — the local (CLI / BYOK) shell on the entry rail layout: the
+// rail's 最近项目 section lists the local project catalogue with live run
+// status, 项目 is a rail destination, and Home carries no recent-projects grid.
 //
-// The daemon is real and signed out (the standard mocks answer the vela status
-// probe with an outage, so no Workspace identity is ever claimed). The local
-// project list and the per-project runs feed are route mocks so each status is
-// a known fixture — nothing here goes through `/api/workspaces/*`.
+// The daemon is real. The local project list and the per-project runs feed are
+// route mocks so each status is a known fixture.
 
 type RunStatus = 'running' | 'succeeded' | 'failed';
 
@@ -64,8 +61,6 @@ async function wireLocalProjects(page: Page): Promise<{ runsRequests: string[] }
       await route.fallback();
       return;
     }
-    // A local project is asked about without any Workspace header.
-    expect(request.headers()['x-od-workspace-id']).toBeUndefined();
     runsRequests.push(projectId);
     await route.fulfill({
       json: {
@@ -110,11 +105,7 @@ test('[P1] the local shell lists its projects in the rail with live run status a
   const { runsRequests } = await wireLocalProjects(page);
   await gotoHome(page);
 
-  // No cloud identity: the sign-in card is still the rail's sign-in entry …
-  await expect(page.getByTestId('entry-cloud-signin-tip')).toBeVisible();
-  await expect(page.getByTestId('entry-nav-account')).toHaveCount(0);
-
-  // … and the local catalogue is the rail's 最近项目 section, newest first.
+  // The local catalogue is the rail's 最近项目 section, newest first.
   await expect(page.getByTestId('entry-nav-recent-toggle')).toBeVisible();
   await expect(page.getByTestId('entry-nav-recent-item')).toHaveText(PROJECTS.map((project) => project.name));
   await expect(recentRow(page, 'Local campaign').getByRole('img', { name: /Running|运行中/ })).toBeVisible();
@@ -155,22 +146,4 @@ test('[P1] 项目 is a rail destination in the local shell and lists the same ca
   }
   // Rail and page are two views of one list.
   await expect(page.getByTestId('entry-nav-recent-item')).toHaveCount(PROJECTS.length);
-});
-
-test('[P1] the message centre rides the rail foot dock in the local shell', async ({ page }) => {
-  await wireLocalProjects(page);
-  await gotoHome(page);
-
-  const dock = page.locator('.entry-nav-rail__account-dock');
-  await expect(dock).toBeVisible();
-  const bell = dock.getByTestId('entry-nav-message-center');
-  await expect(bell).toBeVisible();
-  await expect(bell).toHaveAttribute('aria-haspopup', 'dialog');
-  // Not a destination in the nav list any more.
-  await expect(page.locator('.entry-nav-rail__group').getByTestId('entry-nav-message-center')).toHaveCount(0);
-  await expect(dock.getByTestId('entry-nav-rail-social')).toBeVisible();
-  await bell.click();
-  await expect(page.getByTestId('message-center-dialog')).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.getByTestId('message-center-dialog')).toHaveCount(0);
 });

@@ -9,13 +9,11 @@ import {
 } from '@/playwright/home-hero';
 import {
   routeAgents,
-  routeSignedOutVelaStatus,
   routeSuccessfulRuns,
   successfulRunEventBody,
   suppressWhatsNew,
   trackRunRequests,
 } from '@/playwright/mock-factory';
-import { CAMPAIGN_DISMISSAL_STORAGE } from '@/playwright/campaign-dismissals';
 import { ensureRailOpen } from '@/playwright/rail';
 import { T } from '@/timeouts';
 
@@ -477,19 +475,11 @@ async function gotoEntryHome(page: Page) {
 
 test.beforeEach(async ({ page }) => {
   await suppressWhatsNew(page);
-  await page.addInitScript(({ key, value, campaigns }) => {
+  await page.addInitScript(({ key, value }) => {
     window.localStorage.clear();
     window.sessionStorage.clear();
     window.localStorage.setItem(key, JSON.stringify(value));
-    // Keep time-boxed marketing surfaces out of functional Home scenarios,
-    // including tests that later mock an authenticated workspace. This clears
-    // storage first, so the suite fixture's seeding is wiped and has to be
-    // reapplied here — from the same source, so a new campaign cannot be
-    // dismissed in one place and left to interrupt specs in the other.
-    for (const [campaignKey, campaignValue] of Object.entries(campaigns)) {
-      window.localStorage.setItem(campaignKey, campaignValue);
-    }
-  }, { key: STORAGE_KEY, value: HOME_CONFIG, campaigns: CAMPAIGN_DISMISSAL_STORAGE });
+  }, { key: STORAGE_KEY, value: HOME_CONFIG });
 
   await page.route('**/api/github/open-design', async (route) => {
     await route.fulfill({
@@ -529,13 +519,6 @@ test.beforeEach(async ({ page }) => {
         config: HOME_CONFIG,
       },
     });
-  });
-
-  // These Home composer scenarios exercise the signed-out/local path. Settle
-  // workspace bootstrap explicitly so strict workspace write guards do not
-  // confuse an unresolved test fixture with an authenticated cloud identity.
-  await page.route('**/api/workspace/directory', async (route) => {
-    await route.fulfill({ json: { items: [] } });
   });
 
   await page.route('**/api/projects', async (route) => {
@@ -797,7 +780,7 @@ test('[P1] home left rail expands and collapses from the shell controls', async 
   await expect(rail).not.toHaveAttribute('aria-hidden', 'true');
   await expect(page.getByTestId('entry-nav-home')).toBeVisible();
   // #5517's rail dropped the single "Projects" destination; Design systems is
-  // the stable second destination in both the signed-out and team rails.
+  // the stable second destination in the rail.
   await expect(page.getByTestId('entry-nav-design-systems')).toBeVisible();
 
   // The rail has no in-rail collapse control (the header is chrome-free);
@@ -1493,9 +1476,8 @@ test('[P0] home design-system picker carries explicit and cleared selections int
   expect(clearedBody.designSystemId ?? null).toBeNull();
 });
 
-test('[P0] signed-out Local setup can create a design system and start brand extraction', async ({ page }) => {
+test('[P0] Local setup can create a design system and start brand extraction', async ({ page }) => {
   const brandRequests: Array<{ url?: string; locale?: string }> = [];
-  await routeSignedOutVelaStatus(page);
   await routeHomeDesignSystems(page);
   await routeProjectCreates(page);
   await routeRunsAccepted(page);
@@ -1636,8 +1618,8 @@ test('[P1] home dropdown switches between types', async ({ page }) => {
 // link went with the scenario rail, and `HomeHero`'s `onStartBlankProject` prop
 // is now threaded through but never rendered. The only surviving direct-create
 // entry is the Drafts / All projects empty state (`EntryBlankState`), which
-// requires a team workspace context this suite does not sign into — so the two
-// blank-project specs that drove `home-hero-blank-project` are gone. Creating a
+// this suite does not reach — so the two blank-project specs that drove
+// `home-hero-blank-project` are gone. Creating a
 // project from Home without a template is still covered by the empty-composer
 // submit spec above and by the new-project modal specs in
 // `project-management-flows.test.ts`.
@@ -1750,132 +1732,6 @@ test('[P1] home hero example presets update the composer input for prototype and
   await usePreset(page, 'image-template-notion-team-dashboard-live-artifact');
   await useExamplePreset(page, 'image-template-notion-team-dashboard-live-artifact');
   await expect(input).toHaveText('Create a live Notion dashboard artifact.');
-});
-
-test('[P1] live dashboard preset sends the active workspace name to plugin apply', async ({ page }) => {
-  const personalWorkspace = {
-    workspaceId: 'ws-personal',
-    workspaceName: 'Personal Workspace',
-    workspaceType: 'personal',
-    workspaceMemberId: 'wm-personal',
-    role: 'owner',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-  } as const;
-  const teamWorkspace = {
-    workspaceId: 'ws-qa',
-    workspaceName: 'QA Team',
-    workspaceType: 'team',
-    workspaceMemberId: 'wm-qa',
-    role: 'member',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-  } as const;
-  const workspaceContext = (
-    selected: typeof personalWorkspace | typeof teamWorkspace,
-    includeWorkspaceName = false,
-  ) => ({
-    workspaceId: selected.workspaceId,
-    workspaceType: selected.workspaceType,
-    workspaceMemberId: selected.workspaceMemberId,
-    role: selected.role,
-    memberStatus: 'active' as const,
-    lifecycleState: 'active' as const,
-    billingState: 'active' as const,
-    planId: selected.workspaceType === 'team' ? 'team' : null,
-    providerMode: 'platform_credits' as const,
-    seatSummary: {
-      seatLimit: 10,
-      usedSeats: 1,
-      availableSeats: 9,
-      isSeatFull: false,
-    },
-    permissions: {
-      canInviteMembers: false,
-      canManageMembers: false,
-      canManageBilling: false,
-      canManageAutoRecharge: false,
-      canShareProjects: true,
-      canWriteSyncedFiles: true,
-      canViewWorkspaceSettings: true,
-      canManageSharedResources: false,
-    },
-    ...(includeWorkspaceName ? { workspaceName: selected.workspaceName } : {}),
-  });
-  await page.route('**/api/workspace/directory', async (route) => {
-    await route.fulfill({
-      json: {
-        items: [personalWorkspace, teamWorkspace],
-        activeWorkspaceId: null,
-      },
-    });
-  });
-  await page.route('**/api/workspace/context', async (route) => {
-    const workspaceId = route.request().headers()['x-od-workspace-id'];
-    const selected = workspaceId === teamWorkspace.workspaceId
-      ? teamWorkspace
-      : personalWorkspace;
-    await route.fulfill({
-      json: {
-        context: workspaceContext(selected),
-      },
-    });
-  });
-  await page.route('**/api/workspace/active', async (route) => {
-    if (route.request().method() !== 'PUT') {
-      await route.fallback();
-      return;
-    }
-    const body = route.request().postDataJSON() as {
-      workspaceId?: unknown;
-      workspaceMemberId?: unknown;
-    };
-    const selected = [personalWorkspace, teamWorkspace].find(
-      (item) =>
-        item.workspaceId === body.workspaceId
-        && item.workspaceMemberId === body.workspaceMemberId,
-    );
-    if (!selected) {
-      await route.fulfill({ status: 400, json: { error: 'exact_workspace_scope_required' } });
-      return;
-    }
-    await route.fulfill({
-      json: {
-        activeWorkspaceId: selected.workspaceId,
-        context: workspaceContext(selected, true),
-      },
-    });
-  });
-
-  await gotoEntryHome(page);
-  await page.getByTestId('entry-rail-collapse').click();
-  await expect(page.getByTestId('workspace-switcher')).toContainText('Personal Workspace');
-
-  await pickHomeTemplate(page, 'live-artifact');
-  await usePreset(page, 'example-live-dashboard');
-  await expect(page.getByTestId('home-hero-submit')).toBeEnabled();
-
-  // The preset is already bound to Personal. Switching the request-local tab
-  // context must replace that context-owned input and invalidate the old apply
-  // snapshot before Send — no account-level active Workspace participates.
-  await page.getByTestId('workspace-switcher').click();
-  await page.getByRole('menuitem', { name: 'QA Team' }).click();
-  await expect(page.getByTestId('workspace-switcher')).toContainText('QA Team');
-
-  const applyRequestPromise = page.waitForRequest((request) =>
-    request.method() === 'POST'
-      && request.url().includes('/api/plugins/example-live-dashboard/apply'),
-  );
-  await page.getByTestId('home-hero-submit').click();
-
-  const applyRequest = await applyRequestPromise;
-  const body = applyRequest.postDataJSON() as {
-    inputs?: Record<string, unknown>;
-  };
-  expect(body.inputs).toMatchObject({
-    workspace_name: 'QA Team',
-    page_title: 'Team Dashboard',
-  });
 });
 
 test('[P1] home hero example preset card has no hover overlay and applies the template directly', async ({ page }) => {

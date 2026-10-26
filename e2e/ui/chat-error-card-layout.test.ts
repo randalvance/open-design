@@ -2,63 +2,40 @@ import { expect, test } from '@/playwright/suite';
 import type { Locator, Page } from '@playwright/test';
 
 import {
-  AMR_PERSONAL_WORKSPACE_HEADERS,
   createProjectViaApi,
   gotoProject,
   putAppConfig,
   seedBrowserConfig,
-} from '@/playwright/amr';
+} from '@/playwright/entry';
 import { runErrorCard } from '@/playwright/chat';
-import { routeAgents } from '@/playwright/mock-factory';
+import { routeMockAgents } from '@/playwright/mock-factory';
 import { T } from '@/timeouts';
 
-const AMR_AGENT = {
-  id: 'amr',
-  name: 'OpenDesign AMR',
-  bin: 'vela',
-  available: true,
-  version: 'test',
-  models: [{ id: 'default', label: 'Default' }],
-};
-
-async function seedCloudRunFailure(page: Page, locale: 'en' | 'zh-CN') {
-  // Use an ordinary run error: insufficient balance belongs to the separate
-  // quota-card workflow covered by amr-run-failure-recovery.test.ts.
+async function seedRunFailure(page: Page, locale: 'en' | 'zh-CN') {
   await page.addInitScript((nextLocale) => {
     window.localStorage.setItem('open-design:locale', nextLocale);
     window.localStorage.setItem('open-design:locale-source', 'manual');
   }, locale);
-  await routeAgents(page, [AMR_AGENT]);
+  await routeMockAgents(page);
   await page.route('**/api/skills', (route) => route.fulfill({ json: { skills: [] } }));
   await page.route('**/api/design-templates', (route) =>
     route.fulfill({ json: { designTemplates: [] } }));
   await page.route('**/api/design-systems', (route) =>
     route.fulfill({ json: { designSystems: [] } }));
-  await page.route('**/api/integrations/vela/status', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        loggedIn: true,
-        profile: 'local',
-        configPath: '/tmp/.amr/config.json',
-        user: { id: 'layout-user', email: 'layout@example.com', plan: 'free' },
-      }),
-    }));
 
   const config = {
     mode: 'daemon',
     apiKey: '',
     baseUrl: '',
     model: '',
-    agentId: 'amr',
+    agentId: 'mock',
     skillId: null,
     designSystemId: null,
     onboardingCompleted: true,
     privacyDecisionAt: 1,
     mediaProviders: {},
     agentModels: {
-      amr: { model: 'default', reasoning: 'default' },
+      mock: { model: 'default', reasoning: 'default' },
     },
   };
   await seedBrowserConfig(page, config);
@@ -74,7 +51,6 @@ async function seedCloudRunFailure(page: Page, locale: 'en' | 'zh-CN') {
   const userResponse = await page.request.put(
     `/api/projects/${projectId}/conversations/${conversationId}/messages/${userMessageId}`,
     {
-      headers: { ...AMR_PERSONAL_WORKSPACE_HEADERS },
       data: {
         role: 'user',
         content: 'Generate a landing page',
@@ -87,11 +63,10 @@ async function seedCloudRunFailure(page: Page, locale: 'en' | 'zh-CN') {
   const assistantResponse = await page.request.put(
     `/api/projects/${projectId}/conversations/${conversationId}/messages/a-${projectId}`,
     {
-      headers: { ...AMR_PERSONAL_WORKSPACE_HEADERS },
       data: {
         role: 'assistant',
         content: '',
-        agentId: 'amr',
+        agentId: 'mock',
         runId: `run-${projectId}`,
         runStatus: 'failed',
         createdAt: Date.now() - 1_000,
@@ -193,8 +168,7 @@ async function expectActionsContained(
   expect(layout.actionScrollWidth).toBeLessThanOrEqual(layout.actionClientWidth);
   expect(layout.actionLeft).toBeGreaterThanOrEqual(layout.cardLeft);
   expect(layout.actionRight).toBeLessThanOrEqual(layout.cardRight);
-  // OPEND-2807/G16: Contact + Export + Retry for a failed Cloud run.
-  // Balance-specific actions and Switch to Cloud do not belong on this card.
+  // OPEND-2807/G16: Contact + Export + Retry for a failed run.
   expect(layout.buttons).toHaveLength(3);
   for (const button of layout.buttons) {
     expect(button.width).toBeGreaterThan(0);
@@ -215,15 +189,15 @@ async function expectActionsContained(
   }
 }
 
-test('[P1] zh-CN Cloud run recovery actions stay inside a narrow ChatPane', async ({ page }) => {
-  await seedCloudRunFailure(page, 'zh-CN');
+test('[P1] zh-CN run recovery actions stay inside a narrow ChatPane', async ({ page }) => {
+  await seedRunFailure(page, 'zh-CN');
 
   const card = runErrorCard(page);
   await expectActionsContained(card, ['联系我们', '导出日志', '重试']);
 });
 
-test('[P1] English Cloud run recovery actions stay inside a narrow ChatPane', async ({ page }) => {
-  await seedCloudRunFailure(page, 'en');
+test('[P1] English run recovery actions stay inside a narrow ChatPane', async ({ page }) => {
+  await seedRunFailure(page, 'en');
 
   const card = runErrorCard(page);
   await expectActionsContained(card, ['Contact us', 'Export logs', 'Retry']);

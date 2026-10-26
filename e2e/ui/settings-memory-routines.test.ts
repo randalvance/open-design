@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@/playwright/suite';
 import { routeAgents, suppressWhatsNew } from '@/playwright/mock-factory';
-import { openSettingsDialog, settingsSurface } from '../lib/playwright/amr.js';
+import { openSettingsDialog, settingsSurface } from '../lib/playwright/entry.js';
 import type { Locator, Page } from '@playwright/test';
 
 const STORAGE_KEY = 'open-design:config';

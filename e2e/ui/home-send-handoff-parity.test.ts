@@ -2,7 +2,7 @@ import { expect, test } from '@/playwright/suite';
 import type { Page } from '@playwright/test';
 import { PNG } from 'pngjs';
 
-import { gotoEntryHome } from '@/playwright/amr';
+import { gotoEntryHome } from '@/playwright/entry';
 import { comparePngBuffers } from '@/playwright/artifact-render-parity';
 import { applyStandardMocks, routeSuccessfulRuns, suppressWhatsNew } from '@/playwright/mock-factory';
 import { T } from '@/timeouts';

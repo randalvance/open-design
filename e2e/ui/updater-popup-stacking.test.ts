@@ -1,10 +1,5 @@
 import { expect, test } from '@/playwright/suite';
-import {
-  applyStandardMocks,
-  routeSignedOutVelaStatus,
-} from '@/playwright/mock-factory';
-import { mockAmrPersonalWorkspace } from '@/playwright/amr';
-import { ensureRailOpen } from '@/playwright/rail';
+import { applyStandardMocks } from '@/playwright/mock-factory';
 import { T } from '@/timeouts';
 
 const RECENT_PROJECTS = Array.from({ length: 6 }, (_, i) => ({
@@ -17,11 +12,9 @@ const RECENT_PROJECTS = Array.from({ length: 6 }, (_, i) => ({
 }));
 
 // Regression boundary: the desktop update-ready prompt and the home composer's
-// model picker can be open at the same time. Signed in with the rail on
-// screen, the updater rides the account row at the foot of the entry rail and
-// its prompt flies out beside the rail, bottom-aligned, so it never runs past
-// the window edge; in a compact window (rail auto-collapsed) and signed out it
-// keeps the top-right cluster and stays clear of the raised composer card and
+// model picker can be open at the same time. The updater lives in the top-right
+// cluster; in a compact window (rail auto-collapsed) its prompt opens below the
+// rocket inside the viewport and stays clear of the raised composer card and
 // its popover.
 
 test.beforeEach(async ({ page }) => {
@@ -85,13 +78,11 @@ test.beforeEach(async ({ page }) => {
 });
 
 for (const direction of ['ltr', 'rtl'] as const) {
-  test(`[P1] signed-in ${direction.toUpperCase()} compact window keeps the rocket top-right and opens the prompt below it within the viewport`, async ({
+  test(`[P1] ${direction.toUpperCase()} compact window keeps the rocket top-right and opens the prompt below it within the viewport`, async ({
     page,
   }) => {
-    // Below 1080px the entry layout auto-collapses the rail, and the account
-    // row that normally carries the rocket goes off screen with it — so the
-    // rocket falls back to its top-right home here.
-    await mockAmrPersonalWorkspace(page);
+    // Below 1080px the entry layout auto-collapses the rail; the rocket keeps
+    // its top-right home.
     await page.setViewportSize({ width: 700, height: 600 });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await page.getByText('Loading OpenDesign…').waitFor({ state: 'hidden', timeout: T.long });
@@ -133,91 +124,16 @@ for (const direction of ['ltr', 'rtl'] as const) {
       geometry!.viewportWidth,
     );
   });
-
-  test(`[P1] signed-in ${direction.toUpperCase()} wide window parks the rocket on the rail account row and flies the prompt out beside it`, async ({
-    page,
-  }) => {
-    await mockAmrPersonalWorkspace(page);
-    // Wide enough to keep the rail on screen, short enough that a prompt
-    // growing downward from the foot of the rail would leave the viewport.
-    await page.setViewportSize({ width: 1200, height: 600 });
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await page.getByText('Loading OpenDesign…').waitFor({ state: 'hidden', timeout: T.long });
-    await ensureRailOpen(page);
-    await expect(page.getByTestId('entry-nav-account')).toBeVisible();
-    await page.locator('html').evaluate((element, dir) => element.setAttribute('dir', dir), direction);
-
-    // The rocket rides the account row at the foot of the rail, after the
-    // avatar and the message-centre bell.
-    const updaterButton = page.locator('.entry-nav-rail__account-dock .entry-nav-rail__account').getByTestId('entry-nav-updater');
-    await expect(updaterButton).toBeVisible();
-    await updaterButton.click();
-    const popup = page.getByTestId('updater-popup');
-    await expect(popup).toBeVisible();
-
-    const geometry = await page.evaluate(() => {
-      const rocket = document.querySelector('[data-testid="entry-nav-updater"]');
-      const host = rocket?.closest('.entry-updater-menu');
-      const prompt = document.querySelector('[data-testid="updater-popup"]');
-      if (rocket == null || host == null || prompt == null) return null;
-      const rocketRect = rocket.getBoundingClientRect();
-      const hostRect = host.getBoundingClientRect();
-      const promptRect = prompt.getBoundingClientRect();
-      return {
-        rocketLeft: rocketRect.left,
-        rocketRight: rocketRect.right,
-        rocketTop: rocketRect.top,
-        hostBottom: hostRect.bottom,
-        promptTop: promptRect.top,
-        promptBottom: promptRect.bottom,
-        promptLeft: promptRect.left,
-        promptRight: promptRect.right,
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight,
-      };
-    });
-
-    expect(geometry, 'updater rocket and prompt must both be measurable').not.toBeNull();
-    // Bottom-anchored to its host, growing upward: a top-anchored panel at the
-    // foot of the rail grew down past the window edge. The entry animation
-    // may still be settling, so the check is a band rather than a pixel.
-    expect(
-      geometry!.promptBottom,
-      'prompt must not hang below the rocket host',
-    ).toBeLessThanOrEqual(geometry!.hostBottom + 12);
-    expect(geometry!.promptTop, 'prompt must grow upward from the rocket').toBeLessThan(
-      geometry!.rocketTop,
-    );
-    if (direction === 'ltr') {
-      expect(geometry!.promptLeft, 'prompt must open to the right of the rocket').toBeGreaterThan(
-        geometry!.rocketRight,
-      );
-    } else {
-      expect(geometry!.promptRight, 'prompt must open to the left of the rocket').toBeLessThan(
-        geometry!.rocketLeft,
-      );
-    }
-    expect(geometry!.promptTop, 'prompt must stay inside the viewport top edge').toBeGreaterThanOrEqual(0);
-    expect(geometry!.promptBottom, 'prompt must stay inside the viewport bottom edge').toBeLessThanOrEqual(
-      geometry!.viewportHeight,
-    );
-    expect(geometry!.promptLeft, 'prompt must stay inside the viewport left edge').toBeGreaterThanOrEqual(0);
-    expect(geometry!.promptRight, 'prompt must stay inside the viewport right edge').toBeLessThanOrEqual(
-      geometry!.viewportWidth,
-    );
-  });
 }
 
-test('[P1] signed-out update prompt stays clear of the composer and its agent picker', async ({ page }) => {
-  await routeSignedOutVelaStatus(page);
+test('[P1] update prompt stays clear of the composer and its agent picker', async ({ page }) => {
   await page.setViewportSize({ width: 700, height: 600 });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByText('Loading OpenDesign…').waitFor({ state: 'hidden', timeout: T.long });
   await expect(page.getByTestId('home-hero')).toBeVisible();
 
-  // Signed-out has no account capsule, but the updater keeps the same
-  // top-right cluster home and remains directly actionable.
-  await expect(page.getByTestId('entry-nav-account')).toHaveCount(0);
+  // The updater keeps its top-right cluster home and remains directly
+  // actionable.
   const updaterButton = page
     .locator('.entry-top-right-cluster')
     .getByTestId('entry-nav-updater');
@@ -239,7 +155,7 @@ test('[P1] signed-out update prompt stays clear of the composer and its agent pi
   await expect(page.getByTestId('inline-model-switcher-popover')).toBeVisible();
   await expect(popup).toBeVisible();
 
-  // Moving the signed-out updater from the rail footer to the top-right cluster
+  // Moving the updater from the rail footer to the top-right cluster
   // removes the old collision altogether. Keep the geometry assertion after
   // both surfaces open so a future repositioning cannot silently put the
   // prompt back across the composer or its popover.
@@ -265,5 +181,5 @@ test('[P1] signed-out update prompt stays clear of the composer and its agent pi
     overlapAreas,
     'popup, composer card, and agent picker must all be measurable',
   ).not.toBeNull();
-  expect(overlapAreas, 'signed-out updater prompt must stay clear of composer surfaces').toEqual([0, 0]);
+  expect(overlapAreas, 'updater prompt must stay clear of composer surfaces').toEqual([0, 0]);
 });

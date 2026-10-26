@@ -20,7 +20,6 @@ UI_P0_WORKLOADS = {
     "ui_p0_entry_settings",
     "ui_p0_project_workspace",
     "ui_p0_project_workspace_editor",
-    "ui_p0_project_collab",
     "ui_p0_project_runtime",
     "ui_p0_workspace_restoration",
 }

@@ -33,16 +33,6 @@ const FOLLOW_UP_FILE = 'follow-up-daemon-smoke.html';
 const OD_NEXT_CANARY_FILE = 'od-next-active-canary.html';
 const DECK_DIRECT_NAVIGATION_BUDGET_MS = 2_500;
 const MEDIA_ONLY_FILE = 'media-only.png';
-const SERVER_DERIVED_WORKSPACE_HEADERS = {
-  'x-od-workspace-id': 'e2e-server-derived-workspace',
-  'x-od-workspace-type': 'personal',
-  'x-od-workspace-member-id': 'e2e-server-derived-member',
-  'x-od-workspace-role': 'owner',
-  'x-od-workspace-member-status': 'active',
-  'x-od-workspace-lifecycle-state': 'active',
-  'x-od-workspace-can-share-projects': 'true',
-  'x-od-workspace-can-write-synced-files': 'true',
-} as const;
 let fakeRuntimes: Awaited<ReturnType<typeof createFakeAgentRuntimes>>;
 let fakeAcpHandshakeRuntime: FakeAcpHandshakeRuntime;
 
@@ -493,8 +483,6 @@ test('[P0] bound project reads derive Workspace authority without browser query 
     page,
     projectId,
     'Server-derived raw authority',
-    undefined,
-    SERVER_DERIVED_WORKSPACE_HEADERS,
   );
 
   expect(conversationId).toBeTruthy();
@@ -511,7 +499,6 @@ test('[P0] bound project reads derive Workspace authority without browser query 
   expect(messagesResponse.ok(), await messagesResponse.text()).toBeTruthy();
 
   const writeResponse = await page.request.post(`/api/projects/${projectId}/files`, {
-    headers: SERVER_DERIVED_WORKSPACE_HEADERS,
     data: {
       name: GENERATED_FILE,
       content: `<!doctype html><html><body><h1>${GENERATED_HEADING}</h1></body></html>`,
@@ -601,9 +588,9 @@ test('[P0] ACP handshake refusal is actionable, persists, and does not auto-retr
     'Open Design does not currently support this agent version. Please switch to a supported version and try again.',
   );
   await expect(card).not.toContainText(rawError);
-  // OPEND-2807 / G16: a failed local CLI run has exactly these three actions.
+  // OPEND-2807 / G16: a failed local CLI run has exactly these two actions.
   await expect(card.getByRole('button')).toHaveText([
-    'Contact us', 'Export logs', 'Switch to OpenDesign Cloud',
+    'Contact us', 'Export logs',
   ]);
   await expect(card.getByRole('button', { name: /^Retry$/ })).toHaveCount(0);
   await expect.poll(() => countAcpRunSessionStarts(fakeAcpHandshakeRuntime.invocationLog)).toBe(1);
@@ -631,13 +618,11 @@ test('[P1] real daemon classifies a Claude prompt-too-long result and preserves 
   await expect(card.getByTestId('chat-run-error-description')).toHaveText(
     'The current context exceeds the length the model can handle. Please start a new conversation and try again.',
   );
-  // OPEND-2807 / G16: a failed local CLI run has exactly these three actions.
+  // OPEND-2807 / G16: a failed local CLI run has exactly these two actions.
   await expect(card.getByRole('button')).toHaveText([
-    'Contact us', 'Export logs', 'Switch to OpenDesign Cloud',
+    'Contact us', 'Export logs',
   ]);
   await expect(card.getByRole('button', { name: /^Retry$/ })).toHaveCount(0);
-  // The Cloud action remains in this one error card, with no separate suggestion card.
-  await expect(page.getByRole('button', { name: 'Switch to OpenDesign Cloud', exact: true })).toHaveCount(1);
 
   await page.reload({ waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
@@ -1493,10 +1478,8 @@ async function createProjectViaApi(
   projectId: string,
   name: string,
   conversationMode?: 'design' | 'chat' | 'plan',
-  headers?: Readonly<Record<string, string>>,
 ) {
   const response = await page.request.post('/api/projects', {
-    ...(headers ? { headers: { ...headers } } : {}),
     data: {
       id: projectId,
       name,
