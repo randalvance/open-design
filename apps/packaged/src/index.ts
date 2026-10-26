@@ -330,8 +330,8 @@ async function main(): Promise<void> {
   });
   applyPackagedElectronPathOverrides(paths);
   applyPackagedUpdaterEnv(activeConfig.updateMetadataUrl);
-  if (!claimPackagedSingleInstanceLock(app, (argv) => {
-    secondInstanceHandoff.handle(findPackagedDeeplinkArg(argv));
+  if (!claimPackagedSingleInstanceLock(app, () => {
+    secondInstanceHandoff.handle();
   })) {
     return;
   }
@@ -364,7 +364,6 @@ async function main(): Promise<void> {
   const sidecars = await startPackagedSidecars(sidecarRuntime, paths, {
     launchContext: packagedStartupTiming?.context(),
     appVersion: activeConfig.appVersion,
-    amrProfile: activeConfig.amrProfile,
     daemonCliEntry: activeConfig.daemonCliEntry,
     daemonSidecarEntry: activeConfig.daemonSidecarEntry,
     electronNodeCommand: launcherRuntime.electronNodeCommand,
@@ -374,8 +373,6 @@ async function main(): Promise<void> {
     telemetryRelayUrl: activeConfig.telemetryRelayUrl,
     posthogKey: activeConfig.posthogKey,
     posthogHost: activeConfig.posthogHost,
-    velaWebUrl: activeConfig.velaWebUrl,
-    velaWebUrls: activeConfig.velaWebUrls,
     // PR #974 round-5 (lefarcen P2): the Electron entry runs desktop
     // main alongside the daemon, so the import-folder gate must be
     // pinned ON from request 0. See `apps/packaged/src/headless-runtime.ts`
@@ -470,8 +467,6 @@ async function main(): Promise<void> {
       }
     },
     windowTitle: resolvePackagedWindowTitle(activeConfig),
-    inviteProtocolClientPath:
-      process.platform === "win32" ? launcherRuntime.installedLaunchPath : null,
     async onExternalShow() {
       await retireObsoleteInstalledOuter();
     },
@@ -485,10 +480,7 @@ async function main(): Promise<void> {
       }).catch((error: unknown) => {
         packagedLogger?.warn("failed to sync Windows uninstall registry version", { error });
       });
-      secondInstanceHandoff.attach({
-        dispatchDeeplink: controls.dispatchInviteDeeplink,
-        show: controls.show,
-      });
+      secondInstanceHandoff.attach({ show: controls.show });
     },
     preloadPath: join(app.getAppPath(), "preload.cjs"),
     update: {

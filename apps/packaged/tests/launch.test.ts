@@ -17,7 +17,6 @@ import {
   verifyPackagedDataRootWritable,
 } from "../src/launch.js";
 import type { PackagedNamespacePaths } from "../src/paths.js";
-import { findPackagedDeeplinkArg } from "../src/payload-desktop-launch.js";
 
 function fakePaths(root: string): PackagedNamespacePaths {
   return {
@@ -118,10 +117,9 @@ describe("claimPackagedSingleInstanceLock", () => {
     ]);
   });
 
-  it("queues a deeplink from the lock fallback while desktop IPC is unavailable", async () => {
-    const root = mkdtempSync(join(tmpdir(), "od-packaged-lock-deeplink-"));
+  it("queues focus from the lock fallback while desktop IPC is unavailable", async () => {
+    const root = mkdtempSync(join(tmpdir(), "od-packaged-lock-focus-"));
     const listeners = new Map<string, (event: unknown, argv: string[]) => void>();
-    const deeplinkUrl = "opendesign://workspace/invite/continue?nonce=cold-race";
     const handoff = createPackagedSecondInstanceHandoff();
     const app = {
       on: vi.fn((event: string, listener: (event: unknown, argv: string[]) => void) => {
@@ -131,32 +129,28 @@ describe("claimPackagedSingleInstanceLock", () => {
       quit: vi.fn(),
       requestSingleInstanceLock: vi.fn(() => true),
     };
-    const dispatchDeeplink = vi.fn();
     const show = vi.fn();
 
     try {
       await expect(inspectExistingDesktopForLauncher({
         app: "desktop", channel: "beta", mode: "runtime", namespace: "release-beta-win", source: "packaged",
       }, {
-        deeplinkUrl,
         paths: fakePaths(root),
         getStatus: vi.fn(async () => {
           throw new Error("desktop IPC is not ready");
         }),
       })).resolves.toEqual({ action: "continue", reason: "inspect-failed" });
 
-      expect(claimPackagedSingleInstanceLock(app, (argv) => {
-        handoff.handle(findPackagedDeeplinkArg(argv));
+      expect(claimPackagedSingleInstanceLock(app, () => {
+        handoff.handle();
       })).toBe(true);
-      listeners.get("second-instance")?.({}, ["Open Design.exe", deeplinkUrl]);
+      listeners.get("second-instance")?.({}, ["Open Design.exe", "--from-protocol"]);
 
       expect(show).not.toHaveBeenCalled();
-      expect(dispatchDeeplink).not.toHaveBeenCalled();
 
-      handoff.attach({ dispatchDeeplink, show });
+      handoff.attach({ show });
 
       expect(show).toHaveBeenCalledTimes(1);
-      expect(dispatchDeeplink).toHaveBeenCalledExactlyOnceWith(deeplinkUrl);
     } finally {
       rmSync(root, { force: true, recursive: true });
     }
