@@ -11,7 +11,7 @@ describe('Home image composer metadata', () => {
 
     expect(metadataForHomeMediaComposer('image', composer.inputs, [])).toEqual({
       kind: 'image',
-      imageModel: 'vela/gpt-image-2',
+      imageModel: 'gpt-image-2',
     });
   });
 

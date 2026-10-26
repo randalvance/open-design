@@ -19,7 +19,6 @@ import {
 } from 'react';
 import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@open-design/components';
 
-const MOVE_CONFIRM_SKIP_KEY = 'od.projects.moveConfirmSkip';
 import { useT } from '../i18n';
 import {
   fetchProjectFiles,
@@ -29,33 +28,10 @@ import type { DesignSystemSummary, Project } from '../types';
 import { Icon } from './Icon';
 import type { IconName } from './Icon';
 import { RemixIcon } from './RemixIcon';
-import { InviteDialog } from './InviteDialog';
 import { ProjectDeleteConfirmDialog } from './project-actions/ProjectDeleteConfirmDialog';
 import { useProjectDeleteFlow } from './project-actions/useProjectDeleteFlow';
-import { useBatchProjectShareCount } from './project-actions/useBatchProjectShareCount';
 import { useProjectDuplicateFlow } from './project-actions/useProjectDuplicateFlow';
-import { useWorkspaceProjectMove } from './project-actions/useWorkspaceProjectMove';
 import { isDesignSystemProject } from './design-system-project';
-import type { SharedProjectPredicate } from '../collab/all-projects-list';
-import { useTeamMembers } from '../collab/useTeamMembers';
-import {
-  notifyTeamProjectsChanged,
-  useWorkspaceBilling,
-  useWorkspaceContext,
-} from '../collab/useWorkspaceContext';
-import {
-  canAccessWorkspaceInviteFlow,
-  resolveWorkspaceInviteTarget,
-  workspaceInviteAvailableSeats,
-  workspaceUpgradeUrl,
-} from './EntryNavRail';
-import { moveWorkspaceProject } from '../state/projects';
-import {
-  workspaceContextHasTeamIdentity,
-  type WorkspaceCollabContext,
-  type WorkspaceProjectSummary,
-} from '@open-design/contracts';
-import { useWorkspaceInvalidation } from '../collab/workspace-events';
 import {
   THUMBNAIL_OVERSCAN_MARGIN,
   resumeThumbnailLoads,
@@ -64,7 +40,6 @@ import {
 } from '../lib/thumbnail-load-gate';
 import {
   getProjectCoverSnapshot,
-  invalidateProjectCoverSnapshots,
   projectCoverSnapshotKey,
   setProjectCoverSnapshot,
 } from '../lib/project-cover-cache';
@@ -79,25 +54,18 @@ import {
 // decision; re-exported so its existing importers keep resolving.
 export { deckPreviewSrcDoc } from '../lib/project-cover-pipeline';
 import { useInView } from './plugins-home/useInView';
-import { currentWorkspaceAccountGeneration, workspaceIdentityCacheKey } from '../collab/workspace-identity';
 import { mutedMotionCoverUrl } from '../lib/muted-motion-cover-url';
 import { useAnalytics } from '../analytics/provider';
 import {
   trackProjectCollectionClick,
   trackWorkspaceProjectActionResult,
-  trackWorkspaceSharedProjectOpenResult,
 } from '../analytics/events';
-import {
-  countBucket,
-  workspaceAnalyticsDimensions,
-} from '../analytics/workspace';
+import { countBucket } from '../analytics/workspace';
 import type { ProjectCollectionClickProps } from '@open-design/contracts/analytics';
 
-/** Which project space this strip renders. Drives the per-card 共享 badge
- *  (hidden in the all-shared team space) and the "{creator}创建" line: 'recent'
- *  = home's mixed private/shared, 'drafts' = the member's own private list,
- *  'team' = the全部项目 grid where every card is a team-shared project. */
-export type SpaceKind = 'recent' | 'drafts' | 'team';
+/** Which project space this strip renders: 'recent' = the home strip,
+ *  'drafts' = the full 全部项目 grid. */
+export type SpaceKind = 'recent' | 'drafts';
 import { projectCoverUrl, type ProjectCoverOverride } from './project-cover';
 
 interface Props {
@@ -119,51 +87,15 @@ interface Props {
   onDuplicate?: (id: string) => Promise<void> | void;
   onRename?: (id: string, name: string) => void;
   limit?: number;
-  /** The one shared-state answer for a card: true → 共享 badge + "已在团队空间",
-   *  and the card cannot be re-shared. Owned by the caller, because the SAME
-   *  answer decides which of the 全部项目 / 草稿 grids the project belongs to —
-   *  see {@link createSharedProjectPredicate}. This strip must not re-derive it;
-   *  a strip-local optimistic set is exactly how the badge and the grids drifted
-   *  apart. Defaults to "nothing is shared" when a caller has no sharing surface. */
-  isSharedProject?: SharedProjectPredicate;
-  /** Reported after a successful share/unshare so the caller can fold the change
-   *  into its optimistic layer before the team-projects poll catches up. */
-  onProjectShared?: (project: WorkspaceProjectSummary) => void;
-  /** Clears any optimistic owner proof when a share did not commit. */
-  onProjectShareFailed?: (projectId: string) => void;
-  onProjectUnshared?: (projectId: string) => void;
   /** Which space this strip renders (see {@link SpaceKind}). Defaults to
-   *  'recent' (home). 'team' hides the per-card 共享 badge since every card
-   *  there is already a team-shared project. */
+   *  'recent' (home). */
   space?: SpaceKind;
-  /** The collection tab the 全部项目 page opens on (drafts space only):
-   *  最近浏览过 (every project the rail lists) / 个人项目 (the caller's un-shared
-   *  projects) / 团队项目 (what {@link isSharedProject} says is shared). Pass it
-   *  to control the tab from the host — the legacy `/all-projects` route opens
-   *  the 团队项目 tab this way; leave it out and the strip owns the state. */
-  collection?: ProjectCollectionScope;
-  onCollectionChange?: (collection: ProjectCollectionScope) => void;
-  /** projectId → the sharing member's workspaceMemberId, for team-shared
-   *  projects (from the team hub). Used to resolve the creator name against the
-   *  member directory; a project absent from this map is a local project owned
-   *  by the current member ("我创建"). */
-  projectOwnerMemberIds?: ReadonlyMap<string, string>;
-  /** Project currently being materialized before it can open (a member's
-   *  first click on a team-shared card triggers a full content pull). The
-   *  card shows a spinner overlay and further clicks are ignored — without
-   *  this the pull looked like a dead click for its whole duration. */
-  openingProjectId?: string | null;
-  collaborationEnabled?: boolean;
-  canAssignInviteRoles?: boolean;
-  canManageProjectCollection?: boolean;
   /** Whether this mounted strip is visible. EntryShell keeps Home mounted while
    * other views are active, so hidden strips must not occupy browser connection
    * slots with background cover probes. */
   isActive?: boolean;
 }
 
-/** Fallback for a caller with no sharing surface (no workspace, no grids). */
-const NOTHING_SHARED: SharedProjectPredicate = () => false;
 /** The chip a design-system project wears on its card. Product name, not a
  *  translated string. The type filter names the same type through the
  *  localized `dsManager.tabDesignSystem` noun (设计体系), per OPEND-3107. */
@@ -171,7 +103,6 @@ const DESIGN_SYSTEM_TAG_LABEL = 'Design System';
 
 type DictKey = Parameters<ReturnType<typeof useT>>[0];
 
-type OwnerFilter = 'all' | 'mine' | 'others';
 /** The type filter lists every creation type on its own (OPEND-3107, 2026-09-16
  *  定稿), resolved per project by {@link projectKindFilterCategory} from the
  *  creation metadata the Home chips stamp — so a project files under the type
@@ -179,14 +110,6 @@ type OwnerFilter = 'all' | 'mine' | 'others';
  *  (a HyperFrames project is stored as a video, a WebGL one as a prototype). */
 type ProjectKindFilter = 'all' | ProjectKindFilterCategory;
 type ProjectSort = 'updatedDesc' | 'updatedAsc' | 'nameAsc';
-/** The three collection tabs of the 全部项目 page (OPEND-3108). */
-export type ProjectCollectionScope = 'recent' | 'personalProjects' | 'teamProjects';
-
-const OWNER_FILTER_OPTIONS: Array<{ id: OwnerFilter; labelKey: DictKey }> = [
-  { id: 'all', labelKey: 'recentProjects.ownerAll' },
-  { id: 'mine', labelKey: 'recentProjects.ownerMine' },
-  { id: 'others', labelKey: 'recentProjects.ownerOthers' },
-];
 
 type KindFilterOption =
   | { id: ProjectKindFilter; labelKey: DictKey; label?: undefined }
@@ -212,12 +135,6 @@ const KIND_FILTER_OPTIONS: KindFilterOption[] = [
   { id: 'live-artifact', labelKey: 'homeHero.chip.liveArtifact' },
   { id: 'webgl', labelKey: 'homeHero.chip.webgl' },
   { id: 'design-system', labelKey: 'dsManager.tabDesignSystem' },
-];
-
-const COLLECTION_OPTIONS: Array<{ id: ProjectCollectionScope; labelKey: DictKey }> = [
-  { id: 'recent', labelKey: 'recentProjects.collectionRecent' },
-  { id: 'personalProjects', labelKey: 'recentProjects.collectionPersonalProjects' },
-  { id: 'teamProjects', labelKey: 'recentProjects.collectionTeamProjects' },
 ];
 
 function kindFilterLabel(option: KindFilterOption, t: ReturnType<typeof useT>): string {
@@ -367,42 +284,13 @@ export function RecentProjectsStrip({
   onDuplicate,
   onRename,
   limit,
-  isSharedProject,
-  onProjectShared,
-  onProjectShareFailed,
-  onProjectUnshared,
   space = 'recent',
-  collection: controlledCollection,
-  onCollectionChange,
-  projectOwnerMemberIds,
-  openingProjectId = null,
-  collaborationEnabled,
-  canAssignInviteRoles,
-  canManageProjectCollection,
   isActive = true,
 }: Props) {
   const t = useT();
   const analytics = useAnalytics();
-  const analyticsPage = space === 'drafts' ? 'drafts' : space === 'team' ? 'all_projects' : 'home';
+  const analyticsPage = space === 'drafts' ? 'drafts' : 'home';
   const rowRef = useRef<HTMLDivElement | null>(null);
-  // Real creator resolution (replaces the demo's mock 李娜/张伟 roster): the
-  // member directory turns an ownerMemberId into a display name, while the
-  // workspace context supplies the signed-in user's own name and profile image.
-  const { resolve: resolveMember } = useTeamMembers();
-  const {
-    context: workspaceContext,
-    loading: workspaceContextLoading,
-  } = useWorkspaceContext();
-  // A cover request captures the complete identity at dispatch. A mutable ref
-  // keeps the queue callbacks stable without letting an in-flight read drift
-  // to whichever Workspace a different render happens to select later.
-  const workspaceContextRef = useRef(workspaceContext);
-  workspaceContextRef.current = workspaceContext;
-  const workspaceContextLoadingRef = useRef(workspaceContextLoading);
-  workspaceContextLoadingRef.current = workspaceContextLoading;
-  const workspaceIdentity = workspaceIdentityCacheKey(workspaceContext);
-  const workspaceBilling = useWorkspaceBilling();
-  const workspaceDimensions = workspaceAnalyticsDimensions(workspaceContext);
   function trackCollection(
     element: ProjectCollectionClickProps['element'],
     properties: Partial<Omit<ProjectCollectionClickProps, 'page_name' | 'area' | 'element'>> = {},
@@ -412,71 +300,14 @@ export function RecentProjectsStrip({
       page_name: analyticsPage,
       area: 'project_collection',
       element,
-      ...workspaceDimensions,
       ...properties,
     }, requestId ? { requestId } : undefined);
   }
-  const selfMemberId = workspaceContext?.workspaceMemberId ?? null;
-  // `canShareProjects` alone is a ROLE permission ("could this member share IF
-  // a team existed"), not a "does a team exist" signal — a purely personal
-  // workspace's owner still gets `canShareProjects: true`. Without also
-  // requiring `workspaceContextHasTeamIdentity`, this stayed true for a
-  // personal-only workspace and the move-to-team menu item rendered a button
-  // the daemon can only ever 403 (recvqfZsR901YQ "无法共享方案了" /
-  // recvqgif6Xa7Wb "隐藏非 Team workspace 分享到团队的入口") — the exact class
-  // of bug `workspaceContextHasTeamIdentity`'s own doc comment warns about:
-  // "Deriving it twice is how a UI grows a button that can only ever fail."
-  const collaborationAvailable =
-    collaborationEnabled ??
-    (workspaceContextHasTeamIdentity(workspaceContext) &&
-      workspaceContext?.permissions.canShareProjects === true);
-  const canAccessInviteFlow = canAccessWorkspaceInviteFlow(workspaceContext);
-  // The invite dialog's seat-gate upgrade CTA shares the public Pricing
-  // destination owned by `workspaceUpgradeUrl` in EntryNavRail.tsx.
-  const inviteUpgradeUrl = workspaceUpgradeUrl(workspaceContext, workspaceBilling);
-  const inviteTarget = resolveWorkspaceInviteTarget(workspaceContext);
-  const canManageCollection =
-    canManageProjectCollection ??
-    (workspaceContext?.permissions.canManageSharedResources === true ||
-      workspaceContext?.permissions.canShareProjects === true);
   const [responsiveLimit, setResponsiveLimit] = useState(DEFAULT_RECENT_PROJECT_LIMIT);
   const resolvedLimit = limit ?? responsiveLimit;
   const hasRecentProjects = projects.length > 0;
   const fullPageGrid = heading !== undefined || description !== undefined || space !== 'recent';
-  const showOwnerFilter = space !== 'drafts';
-  // The 全部项目 page (drafts space) splits its one catalog into three tabs; the
-  // team space and the home rail have no such split.
-  const showCollectionTabs = space === 'drafts';
-  // 团队项目 is a team-workspace tab only (OPEND-3285): a personal workspace
-  // has no shared catalog to show, so the tab would only ever open an empty
-  // state. Keyed on the workspace kind, not on `canShareProjects` (a role bit
-  // a personal owner also carries).
-  const teamCollectionAvailable = workspaceContext?.workspaceType === 'team';
-  const collectionOptions = teamCollectionAvailable
-    ? COLLECTION_OPTIONS
-    : COLLECTION_OPTIONS.filter((option) => option.id !== 'teamProjects');
-  const [uncontrolledCollection, setUncontrolledCollection] =
-    useState<ProjectCollectionScope>('recent');
-  const collection = controlledCollection ?? uncontrolledCollection;
-  const selectCollection = (next: ProjectCollectionScope) => {
-    if (controlledCollection === undefined) setUncontrolledCollection(next);
-    onCollectionChange?.(next);
-  };
-  // A deep link (`/all-projects`), a cached tab or a workspace switch can land
-  // a personal workspace on the hidden team tab; fall back to 最近浏览过 once
-  // the workspace kind is known (never while it is still loading, or the
-  // team-space deep link would be reset before the context arrives).
-  const collectionUnavailable =
-    showCollectionTabs &&
-    !workspaceContextLoading &&
-    !teamCollectionAvailable &&
-    collection === 'teamProjects';
-  useEffect(() => {
-    if (collectionUnavailable) selectCollection('recent');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [collectionUnavailable]);
   const [view, setView] = useState<'grid' | 'list'>('grid');
-  const [ownerFilter, setOwnerFilter] = useState<OwnerFilter>('all');
   const [kindFilter, setKindFilter] = useState<ProjectKindFilter>('all');
   const [sort, setSort] = useState<ProjectSort>('updatedDesc');
   // recvqbipG9QDTt: this component mounts once per host view (Home, Drafts,
@@ -488,16 +319,13 @@ export function RecentProjectsStrip({
   // Any type); resetting goes back through that menu. OPEND-3107 keeps the
   // row at the Demo's three controls, so there is no separate clear chip.
   const [openHeaderMenu, setOpenHeaderMenu] = useState<
-    'owner' | 'kind' | 'display' | null
+    'kind' | 'display' | null
   >(null);
   const displayTriggerRef = useRef<HTMLButtonElement>(null);
-  const [inviteOpen, setInviteOpen] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(() => new Set());
-  // Confirmation gates for the bulk bar. Batch move reuses the single-card
-  // 不再提示 opt-out; batch delete always confirms (it is irreversible and
-  // spans N projects), mirroring the projects grid's own batch delete.
-  const [bulkMoveAction, setBulkMoveAction] = useState<'to-team' | 'to-personal' | null>(null);
+  // Batch delete always confirms (it is irreversible and spans N projects),
+  // mirroring the projects grid's own batch delete.
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   useEffect(() => {
@@ -548,87 +376,20 @@ export function RecentProjectsStrip({
   // Delete confirm → request → settle, shared with the rail's 最近项目 rows
   // (OPEND-2797) so both entry points open the very same dialog. A failed
   // request keeps that dialog open with a visible reason (recvqbh189zBY6).
-  const deleteFlow = useProjectDeleteFlow({ onDelete, analyticsPage, workspaceContext });
-  const duplicateFlow = useProjectDuplicateFlow({ onDuplicate, analyticsPage, workspaceContext });
-  // Project → team-space sharing (the project card entry), through the flow
-  // the rail rows share. The card menu is this surface's progress readout: it
-  // stays open to say 分享中… and to hold the failure text, so a move keeps
-  // (re)opening it until the request succeeds.
-  const moveFlow = useWorkspaceProjectMove({
-    workspaceContext,
-    analyticsPage,
-    onProjectShared,
-    onProjectShareFailed,
-    onProjectUnshared,
-    onMoveStart: (project) => setMenuOpenId(project.id),
-    onMoveSettled: (project, _action, ok) => setMenuOpenId(ok ? null : project.id),
-  });
-  const { sharingId, unsharingId } = moveFlow;
-  const shareErrorProjectId = moveFlow.error?.projectId ?? null;
-  const shareErrorKind = moveFlow.error?.kind ?? 'share';
-  // Whether a card is team-shared is decided upstream, not here — the grids'
-  // 全部项目 / 草稿 partition reads the very same predicate, so the badge and the
-  // card's grid can no longer disagree.
-  const isShared = isSharedProject ?? NOTHING_SHARED;
-  // The card's "{creator}创建" line. Self-owned projects use the account identity
-  // instead of the literal "我 / Me" (whose first letter previously produced the
-  // misleading M avatar). Other owners still resolve through the team directory.
-  const resolveCreator = (projectId: string): {
-    name: string;
-    initial: string;
-    avatarUrl: string | null;
-    ownedBySelf: boolean;
-  } => {
-    const ownerMemberId = projectOwnerMemberIds?.get(projectId) ?? null;
-    if (ownerMemberId === selfMemberId || (!ownerMemberId && !isShared(projectId))) {
-      const name = workspaceContext?.displayName?.trim() || t('recentProjects.selfCreator');
-      const initial = Array.from(name.trim())[0]?.toUpperCase() ?? 'M';
-      return {
-        name,
-        initial,
-        avatarUrl: workspaceContext?.avatarUrl?.trim() || null,
-        ownedBySelf: true,
-      };
-    }
-    const name = resolveMember(ownerMemberId)?.displayName ?? t('recentProjects.teamMemberCreator');
-    const initial = (Array.from(name.trim())[0] ?? 'T').toUpperCase();
-    return { name, initial, avatarUrl: null, ownedBySelf: false };
-  };
+  const deleteFlow = useProjectDeleteFlow({ onDelete, analyticsPage });
+  const duplicateFlow = useProjectDuplicateFlow({ onDuplicate, analyticsPage });
+  // The card's "{creator}创建" line. Every local project belongs to the one
+  // local user, so the line always names them.
+  const creator = useMemo(() => {
+    const name = t('recentProjects.selfCreator');
+    return { name, initial: Array.from(name.trim())[0]?.toUpperCase() ?? 'M' };
+  }, [t]);
   const visibleProjects = useMemo(
     () => sortedProjects
-      .map((project) => ({ project, creator: resolveCreator(project.id) }))
-      .filter(({ project, creator }) => {
-        // 最近浏览过 is the whole catalog; the other two tabs split it by the one
-        // shared-state answer the grids and the card badge already agree on.
-        const collectionMatches =
-          !showCollectionTabs ||
-          collection === 'recent' ||
-          (collection === 'personalProjects' ? !isShared(project.id) : isShared(project.id));
-        const ownerMatches =
-          !showOwnerFilter ||
-          ownerFilter === 'all' ||
-          (ownerFilter === 'mine' && creator.ownedBySelf) ||
-          (ownerFilter === 'others' && !creator.ownedBySelf);
-        const kindMatches = kindFilter === 'all' || projectKindFilterCategory(project) === kindFilter;
-        return collectionMatches && ownerMatches && kindMatches;
-      })
+      .filter((project) => kindFilter === 'all' || projectKindFilterCategory(project) === kindFilter)
+      .map((project) => ({ project }))
       .slice(0, resolvedLimit),
-    [
-      collection,
-      isShared,
-      kindFilter,
-      ownerFilter,
-      showCollectionTabs,
-      projectOwnerMemberIds,
-      resolveMember,
-      resolvedLimit,
-      selfMemberId,
-      showOwnerFilter,
-      sortedProjects,
-      t,
-      workspaceContext?.avatarUrl,
-      workspaceContext?.displayName,
-    ],
+    [kindFilter, resolvedLimit, sortedProjects],
   );
 
   useEffect(() => {
@@ -637,73 +398,17 @@ export function RecentProjectsStrip({
   const menuContainerRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const renameTitleId = useId();
-  const moveTitleId = useId();
-  const bulkMoveTitleId = useId();
   const bulkDeleteTitleId = useId();
-  // #5517 move confirmation: moving a project in/out of the team space asks
-  // once, with a persisted 不再提示 opt-out (the demo keeps it per-session;
-  // the product remembers the choice).
-  const [moveTarget, setMoveTarget] = useState<{ project: Project; action: 'to-team' | 'to-personal' } | null>(null);
-  const [moveDontRemind, setMoveDontRemind] = useState<boolean>(() => {
-    try {
-      return window.localStorage.getItem(MOVE_CONFIRM_SKIP_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
-  function requestMove(project: Project, action: 'to-team' | 'to-personal') {
-    trackCollection(action === 'to-team' ? 'move_to_team' : 'move_to_personal', {
-      project_key: project.id,
-      project_relation: resolveCreator(project.id).ownedBySelf ? 'self' : 'other',
-    });
-    if (moveDontRemind) {
-      void (action === 'to-team' ? handleShareToTeam(project) : handleUnshareFromTeam(project));
-      return;
-    }
-    setMenuOpenId(null);
-    setMoveTarget({ project, action });
-  }
-  function commitMove() {
-    if (!moveTarget) return;
-    if (moveDontRemind) {
-      try {
-        window.localStorage.setItem(MOVE_CONFIRM_SKIP_KEY, '1');
-      } catch {
-        // best-effort persistence
-      }
-    }
-    const { project, action } = moveTarget;
-    setMoveTarget(null);
-    void (action === 'to-team' ? handleShareToTeam(project) : handleUnshareFromTeam(project));
-  }
-  const actionsAvailable = Boolean(onDelete || onDuplicate || onRename || collaborationAvailable);
+  const actionsAvailable = Boolean(onDelete || onDuplicate || onRename);
 
-  // Bulk-action state for the 多选 bar. Every action below is the batch form of
-  // an action the per-card ⋯ menu already offers (move in/out of the team
-  // space, delete); nothing new is exposed here that a single card cannot do.
+  // Bulk-action state for the 多选 bar. Delete is the batch form of an action
+  // the per-card ⋯ menu already offers; nothing new is exposed here that a
+  // single card cannot do.
   const selectedProjects = visibleProjects.filter(({ project }) => selectedProjectIds.has(project.id));
   const selectedCount = selectedProjectIds.size;
-  const batchShares = useBatchProjectShareCount(
-    bulkDeleteOpen ? selectedProjects.map(({ project }) => project.id) : [],
-    workspaceContext,
-  );
-  // Same gate as the per-card menu: only your own projects can be moved or
-  // deleted, so a selection containing someone else's shared project disables
-  // the mutations instead of half-applying them.
-  const selectionHasForeignProject = selectedProjects.some(({ creator }) => !creator.ownedBySelf);
-  const bulkMutationDisabled = selectedCount === 0 || selectionHasForeignProject;
-  const bulkMutationTitle = selectionHasForeignProject
-    ? t('recentProjects.ownOnlyMutation')
-    : selectedProjects.map(({ project }) => project.name).join('、') || undefined;
-  // A tab that can only hold one side of the share offers only the move that
-  // leaves it: 团队项目 cannot move anything TO the team, 个人项目 nothing OUT.
-  const canBulkMoveToTeam =
-    collaborationAvailable &&
-    space !== 'team' &&
-    !(showCollectionTabs && collection === 'teamProjects');
-  const canBulkMoveToPersonal =
-    collaborationAvailable &&
-    (space !== 'drafts' || (showCollectionTabs && collection !== 'personalProjects'));
+  const bulkMutationDisabled = selectedCount === 0;
+  const bulkMutationTitle =
+    selectedProjects.map(({ project }) => project.name).join('、') || undefined;
 
   useEffect(() => {
     setSelectedProjectIds((current) => {
@@ -772,13 +477,7 @@ export function RecentProjectsStrip({
   // (upstream props/derived lists are recreated, and a 2s poll re-renders the
   // shell), and depending on it re-ran this effect — and re-fetched every
   // project's files — on every render (observed ~23× per project in a trace).
-  // A catalog placeholder can materialize without changing id or updatedAt,
-  // though, so include that one transition to start its first real scan.
-  const coverFetchKey = visibleProjects
-    .map(({ project }) =>
-      `${project.id}:${project.metadata?.sharedProjectPlaceholderAt == null ? 'ready' : 'placeholder'}`,
-    )
-    .join('|');
+  const coverFetchKey = visibleProjects.map(({ project }) => project.id).join('|');
   const visibleProjectsRef = useRef(new Map<string, Project>());
   visibleProjectsRef.current = new Map(
     visibleProjects.map(({ project }) => [project.id, project]),
@@ -804,28 +503,20 @@ export function RecentProjectsStrip({
   const loadProjectCover = useCallback(async (
     project: Project,
     signal: AbortSignal,
-    requestWorkspaceContext: WorkspaceCollabContext | null,
     freshFiles = false,
   ): Promise<ProjectCoverOverride | null | undefined> =>
-    resolveProjectCover(project, signal, requestWorkspaceContext, freshFiles), []);
+    resolveProjectCover(project, signal, freshFiles), []);
 
   const requestProjectCover = useCallback((
     project: Project,
     options: { force?: boolean } = {},
   ): Promise<void> => {
     if (!activeRef.current) return Promise.resolve();
-    if (workspaceContextLoadingRef.current) return Promise.resolve();
-    const requestWorkspaceContext = workspaceContextRef.current;
-    const snapshotKey = projectCoverSnapshotKey(
-      workspaceIdentityCacheKey(requestWorkspaceContext),
-      project.id,
-      project.updatedAt,
-    );
+    const snapshotKey = projectCoverSnapshotKey(null, project.id, project.updatedAt);
     if (!options.force) {
-      // Serve the last successful decision for this exact workspace/project/
-      // version instead of re-running the files scan + probe on every
-      // remount. Stale versions miss the key; content-ready events
-      // invalidate explicitly (Batch A §4.2).
+      // Serve the last successful decision for this exact project/version
+      // instead of re-running the files scan + probe on every remount. Stale
+      // versions miss the key (Batch A §4.2).
       const snapshot = getProjectCoverSnapshot(snapshotKey);
       if (snapshot !== undefined) {
         if (visibleProjectsRef.current.has(project.id)) {
@@ -845,12 +536,7 @@ export function RecentProjectsStrip({
     const controller = new AbortController();
     const promise = coverQueue.schedule(
       controller,
-      () => loadProjectCover(
-        project,
-        controller.signal,
-        requestWorkspaceContext,
-        options.force === true,
-      ),
+      () => loadProjectCover(project, controller.signal, options.force === true),
       options.force,
     )
       .then((cover) => {
@@ -895,21 +581,14 @@ export function RecentProjectsStrip({
   useEffect(() => {
     abortBackgroundCoverRequests();
     setCoverByProject({});
-    if (workspaceContextLoading) return;
     for (const project of visibleProjectsRef.current.values()) {
       if (!coverSentinelSeenRef.current.has(project.id)) continue;
       void requestProjectCover(project);
     }
-  }, [
-    abortBackgroundCoverRequests,
-    requestProjectCover,
-    workspaceContextLoading,
-    workspaceIdentity,
-  ]);
+  }, [abortBackgroundCoverRequests, requestProjectCover]);
   const handleCoverCardVisible = useCallback((projectId: string) => {
     if (coverSentinelSeenRef.current.has(projectId)) return;
     coverSentinelSeenRef.current.add(projectId);
-    if (workspaceContextLoadingRef.current) return;
     const project = visibleProjectsRef.current.get(projectId);
     if (!project) return;
     void requestProjectCover(project);
@@ -933,51 +612,6 @@ export function RecentProjectsStrip({
       coverGenerationRef.current.clear();
     };
   }, [abortBackgroundCoverRequests]);
-
-  const refreshProjectCover = useCallback((projectId: string) => {
-    // A content-ready event is authoritative: the stored cover decision (any
-    // version) and any pre-materialization file-list read are void even if the
-    // card is currently offscreen or unlisted. Invalidate the exact Workspace
-    // authority before the forced scan so another force refresh in the same
-    // burst cannot make the file-list layer reuse its earlier [] response.
-    invalidateProjectCoverSnapshots(projectId);
-    invalidateProjectFilesCache(projectId, workspaceContextRef.current);
-    const project = visibleProjectsRef.current.get(projectId);
-    if (!project) return;
-    if (!coverSentinelSeenRef.current.has(projectId)) return;
-    // Supersedes an older initial scan that may still be resolving against
-    // the pre-pull filesystem.
-    void requestProjectCover(project, { force: true });
-  }, [requestProjectCover]);
-
-  useWorkspaceInvalidation(
-    {
-      'team-project-content-ready': ({ projectId, workspaceId }) => {
-        if (!activeRef.current) return;
-        if (workspaceContext?.workspaceId !== workspaceId) return;
-        void refreshProjectCover(projectId);
-      },
-    },
-    {
-      workspaceContext,
-      // Thin SSE events are not replayed. On reconnect/focus, retry only cards
-      // whose initial scan found no local cover, closing a missed-ready gap
-      // without re-fetching every already-resolved card in the grid.
-      onActive: () => {
-        if (!activeRef.current) return;
-        for (const { project } of visibleProjects) {
-          if (!coverSentinelSeenRef.current.has(project.id)) continue;
-          if (coverByProject[project.id] == null) {
-            if (coverInFlightRef.current.has(project.id)) continue;
-            // `null` is normally a cacheable no-cover decision. Reconnect is
-            // specifically the missed-invalidation recovery path, so bypass
-            // that snapshot and re-probe the exact current Workspace.
-            void requestProjectCover(project, { force: true });
-          }
-        }
-      },
-    },
-  );
 
   useEffect(() => {
     const visibleIds = new Set(visibleProjects.map(({ project }) => project.id));
@@ -1028,8 +662,6 @@ export function RecentProjectsStrip({
   }
 
   function startRename(project: Project) {
-    const creator = resolveCreator(project.id);
-    if (!creator.ownedBySelf) return;
     trackCollection('rename', {
       project_key: project.id,
       project_relation: 'self',
@@ -1054,8 +686,6 @@ export function RecentProjectsStrip({
   }
 
   function requestDelete(project: Project) {
-    const creator = resolveCreator(project.id);
-    if (!creator.ownedBySelf) return;
     trackCollection('delete', {
       project_key: project.id,
       project_relation: 'self',
@@ -1064,24 +694,8 @@ export function RecentProjectsStrip({
     deleteFlow.request(project);
   }
 
-  // Promote/demote a project through the same workspace move endpoint used by
-  // the full project grid so cards and in-file sharing cannot drift.
-  function handleShareToTeam(project: Project) {
-    return moveFlow.shareToTeam(project);
-  }
-
-  function handleUnshareFromTeam(project: Project) {
-    return moveFlow.unshareFromTeam(project);
-  }
-
   function requestDuplicate(project: Project) {
     if (!onDuplicate) return;
-    // Same ownership gate the menu item's `disabled` already enforces (see
-    // recvqaRqM0dv2x above) — kept here too so the handler itself can never
-    // fire the doomed-to-403 request, matching startRename/requestDelete's
-    // own defense-in-depth check.
-    const creator = resolveCreator(project.id);
-    if (!creator.ownedBySelf) return;
     trackCollection('duplicate', {
       project_key: project.id,
       project_relation: 'self',
@@ -1107,84 +721,7 @@ export function RecentProjectsStrip({
     setSelectedProjectIds(new Set());
   }
 
-  /** Shared by the single-card and the bulk move confirmations so both spell
-   *  out the same consequence of crossing the team-space boundary. */
-  function moveDescription(action: 'to-team' | 'to-personal') {
-    return action === 'to-team' ? (
-      <>
-        {t('recentProjects.moveToTeamDescPre')}
-        <strong>{t('recentProjects.moveToTeamDescStrong')}</strong>
-        {t('recentProjects.moveToTeamDescPost')}
-      </>
-    ) : (
-      <>
-        {t('recentProjects.moveToPersonalDescPre')}
-        <strong>{t('recentProjects.moveToPersonalDescStrong')}</strong>
-        {t('recentProjects.moveToPersonalDescPost')}
-      </>
-    );
-  }
-
-  function requestBulkMove(action: 'to-team' | 'to-personal') {
-    if (bulkMutationDisabled) return;
-    trackCollection(action === 'to-team' ? 'bulk_move_to_team' : 'bulk_move_to_personal', {
-      selection_count_bucket: countBucket(selectedCount),
-    });
-    if (moveDontRemind) {
-      void commitBulkMove(action);
-      return;
-    }
-    setBulkMoveAction(action);
-  }
-
-  /** Batch form of the per-card 转入/移出团队空间 action: the very same
-   *  `moveWorkspaceProject` call, once per selected project. Failures are
-   *  reported per project and never abort the rest of the batch. */
-  async function commitBulkMove(action: 'to-team' | 'to-personal') {
-    const ids = selectedProjects.map(({ project }) => project.id);
-    const startedAt = performance.now();
-    setBulkMoveAction(null);
-    exitSelectionMode();
-    if (ids.length === 0) return;
-    const visibility = action === 'to-team' ? 'team' : 'personal';
-    const moved = await Promise.all(
-      ids.map(async (id) => {
-        try {
-          const project = await moveWorkspaceProject({ projectId: id, visibility, workspaceContext });
-          return { id, project };
-        } catch (err) {
-          if (action === 'to-team') onProjectShareFailed?.(id);
-          console.warn('[RecentProjectsStrip] bulk move project failed:', err);
-          return null;
-        }
-      }),
-    );
-    const succeeded = moved.filter(
-      (result): result is { id: string; project: WorkspaceProjectSummary } => result !== null,
-    );
-    for (const result of succeeded) {
-      if (action === 'to-team') onProjectShared?.(result.project);
-      else onProjectUnshared?.(result.id);
-    }
-    if (succeeded.length > 0) notifyTeamProjectsChanged();
-    const failedCount = ids.length - succeeded.length;
-    trackWorkspaceProjectActionResult(analytics.track, {
-      page_name: analyticsPage,
-      area: 'project_collection',
-      action: action === 'to-team' ? 'bulk_move_to_team' : 'bulk_move_to_personal',
-      result: failedCount === 0 ? 'success' : succeeded.length > 0 ? 'partial_success' : 'failed',
-      requested_count: ids.length,
-      succeeded_count: succeeded.length,
-      failed_count: failedCount,
-      duration_ms: Math.round(performance.now() - startedAt),
-      ...(failedCount > 0 ? { error_code: 'one_or_more_failed' } : {}),
-      ...workspaceDimensions,
-    });
-  }
-
   async function commitBulkDelete() {
-    if (batchShares.pending || batchShares.failed || batchShares.count === null ||
-      batchShares.generation !== currentWorkspaceAccountGeneration()) return;
     const ids = selectedProjects.map(({ project }) => project.id);
     const startedAt = performance.now();
     setBulkDeleteOpen(false);
@@ -1213,117 +750,35 @@ export function RecentProjectsStrip({
       failed_count: failedCount,
       duration_ms: Math.round(performance.now() - startedAt),
       ...(failedCount > 0 ? { error_code: 'one_or_more_failed' } : {}),
-      ...workspaceDimensions,
     });
   }
 
   return (
     <section className="recent-projects" data-testid="recent-projects-strip">
       {fullPageGrid ? (
-        <header
-          className={`recent-projects__head${showCollectionTabs ? ' recent-projects__head--personal' : ''}`}
-        >
+        <header className="recent-projects__head">
           <div className="recent-projects__title-block">
             <h2 className="recent-projects__heading">{heading ?? t('recentProjects.title')}</h2>
             {description ? (
               <p className="recent-projects__description">{description}</p>
             ) : null}
           </div>
-          {showCollectionTabs ? (
-            <div
-              className="recent-projects__collection-switch"
-              role="radiogroup"
-              aria-label={heading ?? t('entry.navDrafts')}
-            >
-              {collectionOptions.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={collection === option.id}
-                  className="recent-projects__collection-option"
-                  data-testid={`recent-projects-collection-${option.id}`}
-                  onClick={() => selectCollection(option.id)}
-                >
-                  {t(option.labelKey)}
-                </button>
-              ))}
-            </div>
-          ) : null}
           <div className="recent-projects__controls">
-            {/* The invite CTA belongs to the team collection: the team space
-                grid, and the 团队项目 tab of 全部项目 that replaced the rail's
-                team entry (OPEND-3108). */}
-            {(space === 'team' || (showCollectionTabs && collection === 'teamProjects')) &&
-            canAccessInviteFlow &&
-            inviteTarget.kind !== 'unavailable' ? (
-              <button
-                type="button"
-                className="recent-projects__invite"
-                onClick={() => {
-                  trackCollection('invite_teammates');
-                  if (inviteTarget.kind === 'vela') {
-                    window.open(inviteTarget.url, '_blank', 'noopener,noreferrer');
-                  } else if (inviteTarget.kind === 'local') {
-                    setInviteOpen(true);
-                  }
-                }}
-              >
-                <Icon name="share" size={15} /> {t('recentProjects.inviteTeammates')}
-              </button>
-            ) : null}
-            {canManageCollection ? (
-              <button
-                type="button"
-                className={`recent-projects__select-toggle${selectionMode ? ' is-active' : ''}`}
-                aria-pressed={selectionMode}
-                onClick={() => {
-                  trackCollection('multi_select_toggle', {
-                    selection_count_bucket: countBucket(selectedCount),
-                  });
-                  setSelectionMode((current) => !current);
-                  setSelectedProjectIds(new Set());
-                  setMenuOpenId(null);
-                }}
-              >
-                {t('recentProjects.multiSelect')}
-              </button>
-            ) : null}
-            {showOwnerFilter ? (
-              <div className="recent-projects__filter-wrap">
-                <button
-                  type="button"
-                  className="recent-projects__filter"
-                  aria-haspopup="menu"
-                  aria-expanded={openHeaderMenu === 'owner'}
-                  onClick={() => setOpenHeaderMenu((current) => current === 'owner' ? null : 'owner')}
-                >
-                  {t(OWNER_FILTER_OPTIONS.find((option) => option.id === ownerFilter)?.labelKey ?? 'recentProjects.ownerAll')}
-                  <Icon name="chevron-down" size={13} />
-                </button>
-                {openHeaderMenu === 'owner' ? (
-                  <div className="recent-projects__filter-menu" role="menu">
-                    {OWNER_FILTER_OPTIONS.map((option) => (
-                      <button
-                        key={option.id}
-                        type="button"
-                        className={ownerFilter === option.id ? 'is-active' : undefined}
-                        onClick={() => {
-                          trackCollection('filter', {
-                            filter_type: 'owner',
-                            filter_value: option.id,
-                          });
-                          setOwnerFilter(option.id);
-                          setOpenHeaderMenu(null);
-                        }}
-                      >
-                        {t(option.labelKey)}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+            <button
+              type="button"
+              className={`recent-projects__select-toggle${selectionMode ? ' is-active' : ''}`}
+              aria-pressed={selectionMode}
+              onClick={() => {
+                trackCollection('multi_select_toggle', {
+                  selection_count_bucket: countBucket(selectedCount),
+                });
+                setSelectionMode((current) => !current);
+                setSelectedProjectIds(new Set());
+                setMenuOpenId(null);
+              }}
+            >
+              {t('recentProjects.multiSelect')}
+            </button>
             <div className="recent-projects__filter-wrap">
               <button
                 type="button"
@@ -1484,26 +939,6 @@ export function RecentProjectsStrip({
             {t('designs.selectedCount', { n: selectedCount })}
           </span>
           <div className="recent-projects__bulkbar-actions">
-            {canBulkMoveToTeam ? (
-              <button
-                type="button"
-                disabled={bulkMutationDisabled}
-                title={bulkMutationTitle}
-                onClick={() => requestBulkMove('to-team')}
-              >
-                <Icon name="import" size={14} /> {t('recentProjects.moveToTeam')}
-              </button>
-            ) : null}
-            {canBulkMoveToPersonal ? (
-              <button
-                type="button"
-                disabled={bulkMutationDisabled}
-                title={bulkMutationTitle}
-                onClick={() => requestBulkMove('to-personal')}
-              >
-                <Icon name="log-out" size={14} /> {t('recentProjects.moveOutOfTeam')}
-              </button>
-            ) : null}
             {onDelete ? (
               <button
                 type="button"
@@ -1526,39 +961,20 @@ export function RecentProjectsStrip({
           </div>
         </div>
       ) : null}
-      {showCollectionTabs && visibleProjects.length === 0 && collection !== 'recent' ? (
-        // A tab with nothing in it says why (the same copy the page-level
-        // blank state uses), and keeps the tabs + toolbar so the user can
-        // leave it — an empty grid alone read as a broken page.
-        <p className="recent-projects__collection-empty">
-          {t(
-            collection === 'teamProjects'
-              ? 'entry.blankAllProjectsDescription'
-              : 'entry.blankDraftsDescription',
-          )}
-        </p>
-      ) : null}
       <div
         ref={rowRef}
         className={`recent-projects__row${fullPageGrid ? ` recent-projects__row--${view}` : ''}${menuOpenId ? ' recent-projects__row--menu-open' : ''}${selectionMode ? ' is-selecting' : ''}`}
         role="list"
       >
-        {visibleProjects.map(({ project, creator }) => {
-          const cover = projectCover(
-            project,
-            coverByProject[project.id] ?? null,
-            workspaceContext,
-          );
+        {visibleProjects.map(({ project }) => {
+          const cover = projectCover(project, coverByProject[project.id] ?? null);
           const designSystemProject = isDesignSystemProject(project);
-          const shared = isShared(project.id);
           const selected = selectedProjectIds.has(project.id);
-          const readonlyShared = shared && !creator.ownedBySelf;
-          const opening = openingProjectId === project.id;
           return (
             <div
               key={project.id}
               role="listitem"
-              className={`recent-projects__card${designSystemProject ? ' is-design-system-project' : ''}${shared ? ' is-shared' : ''}${menuOpenId === project.id ? ' is-menu-open' : ''}${selected ? ' is-selected' : ''}${readonlyShared ? ' is-readonly-shared' : ''}${opening ? ' is-opening' : ''}`}
+              className={`recent-projects__card${designSystemProject ? ' is-design-system-project' : ''}${menuOpenId === project.id ? ' is-menu-open' : ''}${selected ? ' is-selected' : ''}`}
               data-project-id={project.id}
             >
               {selectionMode ? (
@@ -1595,29 +1011,10 @@ export function RecentProjectsStrip({
                     toggleSelection(project.id);
                     return;
                   }
-                  if (opening) return;
-                  const openStartedAt = performance.now();
-                  const openRequestId = analytics.newRequestId();
-                  const projectRelation = creator.ownedBySelf ? 'self' : 'other';
-                  const materialization =
-                    project.metadata?.sharedProjectPlaceholderAt != null ? 'required' : 'warm';
                   trackCollection('project_open', {
                     project_key: project.id,
-                    project_relation: projectRelation,
-                  }, openRequestId);
-                  const trackSharedOpenResult = (opened: boolean) => {
-                    if (!shared && space !== 'team') return;
-                    trackWorkspaceSharedProjectOpenResult(analytics.track, {
-                      page_name: analyticsPage,
-                      area: 'project_collection',
-                      result: opened ? 'success' : 'failed',
-                      project_relation: projectRelation,
-                      materialization,
-                      duration_ms: Math.round(performance.now() - openStartedAt),
-                      ...(!opened ? { error_code: 'open_failed' } : {}),
-                      ...workspaceDimensions,
-                    }, { requestId: openRequestId });
-                  };
+                    project_relation: 'self',
+                  }, analytics.newRequestId());
                   // Release every background cover slot before the project view
                   // starts its foreground files/content reads. Waiting for the
                   // entry shell to unmount is too late: navigation itself needs
@@ -1632,33 +1029,21 @@ export function RecentProjectsStrip({
                     if (result && typeof result === 'object' && 'then' in result) {
                       void Promise.resolve(result).then(
                         (opened) => {
-                          trackSharedOpenResult(opened !== false);
                           if (opened === false) resumeBackgroundCoverRequests();
                         },
                         () => {
-                          trackSharedOpenResult(false);
                           resumeBackgroundCoverRequests();
                         },
                       );
                     } else if (result === false) {
-                      trackSharedOpenResult(false);
                       resumeBackgroundCoverRequests();
-                    } else {
-                      trackSharedOpenResult(true);
                     }
                   } catch {
-                    trackSharedOpenResult(false);
                     resumeBackgroundCoverRequests();
                   }
                 }}
-                aria-busy={opening ? true : undefined}
                 title={project.name}
               >
-                {opening ? (
-                  <span className="recent-projects__card-opening" aria-hidden>
-                    <Icon name="spinner" size={20} />
-                  </span>
-                ) : null}
                 <div
                   className={`recent-projects__card-thumb recent-projects__card-thumb-${cover.kind}`}
                   style={cover.style}
@@ -1689,52 +1074,19 @@ export function RecentProjectsStrip({
                       initial={cover.initial}
                       diagnostic={`${project.id}:${cover.name ?? 'unknown'}`}
                       deckCoverOnly={project.metadata?.kind === 'deck'}
-                      workspaceContext={workspaceContext}
                     />
                   ) : (
                     <span className="recent-projects__card-glyph">{cover.initial}</span>
                   )}
-                  {sharingId === project.id ? (
-                    <span
-                      aria-hidden
-                      style={{
-                        position: 'absolute',
-                        inset: 0,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: 'rgba(255,255,255,0.55)',
-                        borderRadius: 'inherit',
-                      }}
-                    >
-                      <Icon name="spinner" size={18} />
-                    </span>
-                  ) : null}
                 </div>
                 <div className="recent-projects__card-meta">
                   <div className="recent-projects__card-name-row">
                     <span className="recent-projects__card-name">{project.name}</span>
-                    {shared && view === 'list' ? (
-                      <span className="recent-projects__card-badge recent-projects__card-badge--shared recent-projects__card-badge--inline">
-                        <Icon name="swap" size={13} />
-                        {t('recentProjects.sharedBadge')}
-                      </span>
-                    ) : null}
                   </div>
                   <div className="recent-projects__card-footer">
                     <div className="recent-projects__card-time">
                       <span className="recent-projects__card-owner" aria-hidden>
                         {creator.initial}
-                        {creator.avatarUrl ? (
-                          <img
-                            key={creator.avatarUrl}
-                            src={creator.avatarUrl}
-                            alt=""
-                            onError={(event) => {
-                              event.currentTarget.style.display = 'none';
-                            }}
-                          />
-                        ) : null}
                       </span>
                       {/* OPEND-3201: the creator is the part that gives way
                           when the row is short of room; the time keeps its
@@ -1758,20 +1110,6 @@ export function RecentProjectsStrip({
                   </div>
                 </div>
               </button>
-              {/* The team badge overlays the cover but hangs off the CARD, not
-                  the thumb — the same box the ⋯ button's anchor uses. Inside
-                  the thumb it inherited that element's 1.03 hover scale, so it
-                  grew and slid outward exactly when it appeared, landing flush
-                  with the card edge while ⋯ stayed 8px in (per product: 这个间距
-                  和最右侧的一样). Grid only: list rows are 128x52 and carry the
-                  inline variant beside the name instead. While a share is in
-                  flight the thumb shows its spinner instead. */}
-              {shared && view !== 'list' && sharingId !== project.id ? (
-                <span className="recent-projects__card-badge recent-projects__card-badge--shared">
-                  <Icon name="swap" size={13} />
-                  {t('recentProjects.sharedBadge')}
-                </span>
-              ) : null}
               {actionsAvailable && !selectionMode ? (
                 <div
                   className="recent-projects__card-menu-anchor"
@@ -1787,9 +1125,8 @@ export function RecentProjectsStrip({
                       event.stopPropagation();
                       trackCollection('more_menu', {
                         project_key: project.id,
-                        project_relation: creator.ownedBySelf ? 'self' : 'other',
+                        project_relation: 'self',
                       });
-                      moveFlow.clearError();
                       setMenuOpenId((current) => current === project.id ? null : project.id);
                     }}
                   >
@@ -1807,92 +1144,27 @@ export function RecentProjectsStrip({
                         <button
                           type="button"
                           role="menuitem"
-                          disabled={!creator.ownedBySelf}
-                          title={creator.ownedBySelf ? undefined : t('recentProjects.ownOnlyMutation')}
                           onClick={() => startRename(project)}
                         >
                           <Icon name="pencil" size={14} />
                           <span>{t('designs.menuRename')}</span>
                         </button>
                       ) : null}
-                      {/* recvqaRqM0dv2x: duplicating a team-shared project you
-                          did not create is meaningless (the daemon's
-                          canDuplicate mirrors canMutate — privileged-or-
-                          selfCreated only, see enforceWorkspaceProjectMutation)
-                          and always 403s. This item was missing the same
-                          ownedBySelf gate Rename/Delete already carry, so it
-                          stayed enabled on a foreign card and looked like a
-                          dead click when pressed. */}
                       {onDuplicate ? (
                         <button
                           type="button"
                           role="menuitem"
-                          disabled={!creator.ownedBySelf}
-                          title={creator.ownedBySelf ? undefined : t('recentProjects.ownOnlyMutation')}
                           onClick={() => requestDuplicate(project)}
                         >
                           <Icon name="copy" size={14} />
                           <span>{t('designs.menuDuplicate')}</span>
                         </button>
                       ) : null}
-                      {/* recvq5fpqrXzV1: this menu item moves a project's
-                          visibility WITHIN the current workspace, which is
-                          meaningless (and the daemon 403s it) when the current
-                          workspace has no team plane to share into at all — a
-                          personal-only workspace. `collaborationAvailable` is
-                          the same gate the bulk toolbar's move actions
-                          already use (canBulkMoveToTeam/canBulkMoveToPersonal
-                          above); this per-card item was missing it. */}
-                      {collaborationAvailable && (shared && creator.ownedBySelf ? (
-                        <button
-                          type="button"
-                          role="menuitem"
-                          disabled={unsharingId === project.id}
-                          onClick={() => requestMove(project, 'to-personal')}
-                        >
-                          <Icon name="close" size={14} />
-                          <span>
-                            {unsharingId === project.id
-                              ? t('recentProjects.unshareInProgress')
-                              : t('recentProjects.moveOutOfTeam')}
-                          </span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          role="menuitem"
-                          disabled={sharingId === project.id || shared || !creator.ownedBySelf}
-                          title={!creator.ownedBySelf ? t('recentProjects.ownOnlyMutation') : undefined}
-                          onClick={() => requestMove(project, 'to-team')}
-                        >
-                          <Icon name="share" size={14} />
-                          <span>
-                            {sharingId === project.id
-                              ? t('recentProjects.shareInProgress')
-                              : shared
-                                ? t('recentProjects.sharedInTeam')
-                                : t('recentProjects.moveToTeam')}
-                          </span>
-                        </button>
-                      ))}
-                      {shareErrorProjectId === project.id ? (
-                        <div className="recent-projects__card-menu-error" role="alert">
-                          {t(
-                            shareErrorKind === 'unshare'
-                              ? 'recentProjects.unshareFailed'
-                              : shareErrorKind === 'owner-conflict'
-                                ? 'recentProjects.shareOwnerConflict'
-                                : 'recentProjects.shareFailed',
-                          )}
-                        </div>
-                      ) : null}
                       {onDelete ? (
                         <button
                           type="button"
                           role="menuitem"
                           className="danger"
-                          disabled={!creator.ownedBySelf}
-                          title={creator.ownedBySelf ? undefined : t('recentProjects.ownOnlyMutation')}
                           onClick={() => requestDelete(project)}
                         >
                           <Icon name="close" size={14} />
@@ -1946,92 +1218,12 @@ export function RecentProjectsStrip({
       {deleteFlow.target ? (
         <ProjectDeleteConfirmDialog
           projectName={deleteFlow.target.name}
-          activeShareCount={deleteFlow.activeShareCount}
-          shareReadStatus={deleteFlow.shareReadStatus}
           pending={deleteFlow.pending}
           failed={deleteFlow.failed}
           errorMessage={deleteFlow.errorMessage}
           onCancel={deleteFlow.cancel}
           onConfirm={() => void deleteFlow.commit()}
         />
-      ) : null}
-      {moveTarget ? (
-        <Dialog
-          className="modal-confirm"
-          backdropClassName="modal-backdrop--no-blur"
-          role="alertdialog"
-          onClose={() => setMoveTarget(null)}
-          closeOnEscape
-          ariaLabelledBy={moveTitleId}
-        >
-          <DialogTitle id={moveTitleId}>
-            {moveTarget.action === 'to-team'
-              ? t('recentProjects.moveToTeam')
-              : t('recentProjects.moveOutOfTeam')}
-          </DialogTitle>
-          <DialogDescription>{moveDescription(moveTarget.action)}</DialogDescription>
-          <DialogFooter className="row">
-            <label className="recent-projects__move-remind">
-              <input
-                type="checkbox"
-                checked={moveDontRemind}
-                onChange={(event) => setMoveDontRemind(event.target.checked)}
-              />
-              {t('recentProjects.moveDontRemind')}
-            </label>
-            <button type="button" onClick={() => setMoveTarget(null)}>
-              {t('designs.renameCancel')}
-            </button>
-            <button
-              type="button"
-              className={`primary${moveTarget.action === 'to-team' ? ' recent-projects__move-confirm' : ''}`}
-              onClick={commitMove}
-            >
-              {moveTarget.action === 'to-team'
-                ? t('recentProjects.confirmMoveToTeam')
-                : t('recentProjects.confirmMoveToPersonal')}
-            </button>
-          </DialogFooter>
-        </Dialog>
-      ) : null}
-      {bulkMoveAction ? (
-        <Dialog
-          className="modal-confirm"
-          backdropClassName="modal-backdrop--no-blur"
-          role="alertdialog"
-          onClose={() => setBulkMoveAction(null)}
-          closeOnEscape
-          ariaLabelledBy={bulkMoveTitleId}
-        >
-          <DialogTitle id={bulkMoveTitleId}>
-            {bulkMoveAction === 'to-team'
-              ? t('recentProjects.moveToTeam')
-              : t('recentProjects.moveOutOfTeam')}
-          </DialogTitle>
-          <DialogDescription>{moveDescription(bulkMoveAction)}</DialogDescription>
-          <DialogFooter className="row">
-            <label className="recent-projects__move-remind">
-              <input
-                type="checkbox"
-                checked={moveDontRemind}
-                onChange={(event) => setMoveDontRemind(event.target.checked)}
-              />
-              {t('recentProjects.moveDontRemind')}
-            </label>
-            <button type="button" onClick={() => setBulkMoveAction(null)}>
-              {t('designs.renameCancel')}
-            </button>
-            <button
-              type="button"
-              className={`primary${bulkMoveAction === 'to-team' ? ' recent-projects__move-confirm' : ''}`}
-              onClick={() => void commitBulkMove(bulkMoveAction)}
-            >
-              {bulkMoveAction === 'to-team'
-                ? t('recentProjects.confirmMoveToTeam')
-                : t('recentProjects.confirmMoveToPersonal')}
-            </button>
-          </DialogFooter>
-        </Dialog>
       ) : null}
       {bulkDeleteOpen ? (
         <Dialog
@@ -2045,11 +1237,6 @@ export function RecentProjectsStrip({
           <DialogDescription>
             {t('designs.deleteSelectedConfirm', { n: selectedCount })}
           </DialogDescription>
-          {batchShares.count !== null && batchShares.count > 0 ? (
-            <DialogDescription>{t('designs.deleteActiveShares', { count: batchShares.count })}</DialogDescription>
-          ) : null}
-          {batchShares.pending ? <p role="status">{t('common.loading')}</p> : null}
-          {batchShares.failed ? <p role="alert">{t('ds.actionFailed')}</p> : null}
           <DialogFooter className="row">
             <button type="button" onClick={() => setBulkDeleteOpen(false)}>
               {t('designs.renameCancel')}
@@ -2057,7 +1244,6 @@ export function RecentProjectsStrip({
             <button
               type="button"
               className="primary danger"
-              disabled={batchShares.pending || batchShares.failed || batchShares.count === null || batchShares.generation !== currentWorkspaceAccountGeneration()}
               onClick={() => void commitBulkDelete()}
             >
               {t('designs.deleteSelected')}
@@ -2065,23 +1251,6 @@ export function RecentProjectsStrip({
           </DialogFooter>
         </Dialog>
       ) : null}
-      <InviteDialog
-        open={inviteOpen}
-        onClose={() => setInviteOpen(false)}
-        workspaceContext={workspaceContext}
-        canAssignRoles={
-          canAssignInviteRoles ?? workspaceContext?.permissions.canInviteMembers === true
-        }
-        availableSeats={workspaceInviteAvailableSeats(workspaceContext)}
-        entryFrom="all_projects"
-        onUpgrade={
-          inviteUpgradeUrl
-            ? () => {
-                window.open(inviteUpgradeUrl, '_blank', 'noopener,noreferrer');
-              }
-            : undefined
-        }
-      />
     </section>
   );
 }
@@ -2096,13 +1265,11 @@ function RecentProjectHtmlThumb({
   initial,
   diagnostic,
   deckCoverOnly,
-  workspaceContext,
 }: {
   src: string;
   initial: string;
   diagnostic: string;
   deckCoverOnly: boolean;
-  workspaceContext?: WorkspaceCollabContext | null;
 }) {
   // Plain HTML goes through the shared cover frame (#5762): it HEAD-probes the
   // cover URL in the parent cover queue first and falls back to the initial
@@ -2119,7 +1286,7 @@ function RecentProjectHtmlThumb({
     );
   }
 
-  return <DeckCoverThumb src={src} workspaceContext={workspaceContext} />;
+  return <DeckCoverThumb src={src} />;
 }
 
 function VerifiedHtmlCoverFrame({
@@ -2197,13 +1364,7 @@ function CoverVisibilitySentinel({
   );
 }
 
-function DeckCoverThumb({
-  src,
-  workspaceContext,
-}: {
-  src: string;
-  workspaceContext?: WorkspaceCollabContext | null;
-}) {
+function DeckCoverThumb({ src }: { src: string }) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const { ref: inViewRef, inView } = useInView<HTMLDivElement>({
     rootMargin: THUMBNAIL_OVERSCAN_MARGIN,
@@ -2229,7 +1390,7 @@ function DeckCoverThumb({
     // Deck covers fetch the full document text; defer that until the card is
     // actually near the viewport (Batch A §4.2).
     if (!inView) return;
-    loadDeckCover(src, undefined, workspaceContext)
+    loadDeckCover(src)
       .then((next) => {
         if (!cancelled) setSrcDoc(next);
       })
@@ -2240,7 +1401,7 @@ function DeckCoverThumb({
     return () => {
       cancelled = true;
     };
-  }, [src, inView, workspaceContext]);
+  }, [src, inView]);
 
   useEffect(() => {
     const node = frameRef.current;
@@ -2298,7 +1459,6 @@ function relativeTime(ts: number, t: ReturnType<typeof useT>): string {
 export function projectCover(
   project: Project,
   override: ProjectCoverOverride | null,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): {
   kind: 'image' | 'video' | 'html' | 'logo' | 'fallback';
   src?: string;
@@ -2320,12 +1480,7 @@ export function projectCover(
   if (override) {
     return {
       kind: override.kind,
-      src: projectCoverUrl(
-        project.id,
-        override.name,
-        override.mtime,
-        workspaceContext,
-      ),
+      src: projectCoverUrl(project.id, override.name, override.mtime),
       style,
       initial,
       name: override.name,
@@ -2334,12 +1489,7 @@ export function projectCover(
   const meta = project.metadata;
   const entry = meta?.entryFile;
   if (entry) {
-    const src = projectCoverUrl(
-      project.id,
-      entry,
-      project.updatedAt,
-      workspaceContext,
-    );
+    const src = projectCoverUrl(project.id, entry, project.updatedAt);
     if (meta?.kind === 'image') return { kind: 'image', src, style, initial };
     if (meta?.kind === 'video') return { kind: 'video', src, style, initial };
     if (/\.html?$/i.test(entry)) return { kind: 'html', src, style, initial, name: entry };

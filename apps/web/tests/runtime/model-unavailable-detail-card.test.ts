@@ -3,7 +3,7 @@ import { zhCN } from '../../src/i18n/locales/zh-CN';
 import {
   daemonFailureVerdictFrom,
   resolveRunFailureUi,
-} from '../../src/runtime/amr-guidance';
+} from '../../src/runtime/run-failure-ui';
 
 /*
  * 用户实测(打包版 0.21.1-beta.7,2026-09-06 20:41,run 4c91590e):
@@ -23,7 +23,7 @@ import {
  * 分类器 `run-failure-classification.ts` 的 `modelUnavailableDetail()` 就是靠
  * 「requires a newer version of codex」这条正则命中的。
  *
- * 界面上这两样一样都没到。原因是 `amr-guidance.ts` 的三张查找表里,
+ * 界面上这两样一样都没到。原因是 `run-failure-ui.ts` 的三张查找表里,
  * `model_unavailable` 这一族的 failure_detail 一行都没有 ——
  * `cli_version_incompatible` / `model_not_found` / `model_not_supported` /
  * `model_disabled` / `local_model_not_loaded` 全都查不到。
@@ -49,11 +49,6 @@ import {
  * 说明动作组正常渲染了,只是查表查空掉进了兜底。两处不同层、不同机制。
  */
 
-/** 用户那条 run 的原始上游句子(只取错误文本,不含用户项目内容)。 */
-const CODEX_CLI_TOO_OLD_MESSAGE =
-  "The 'gpt-6-astra' model requires a newer version of Codex. "
-  + 'Please upgrade to the latest app or CLI and try again.';
-
 /**
  * daemon 实际写进 `end` 帧的裁决。
  *
@@ -75,7 +70,6 @@ describe('模型不可用:daemon 已经命名的病因,不该在界面上退回�
       'AGENT_EXECUTION_FAILED',
       'cli_version_incompatible',
       'codex',
-      CODEX_CLI_TOO_OLD_MESSAGE,
       CODEX_CLI_TOO_OLD_VERDICT,
     );
 
@@ -102,7 +96,7 @@ describe('模型不可用:daemon 已经命名的病因,不该在界面上退回�
    * 声明它该落到哪一对键上,而不是断言五个 detail 命中同一个 titleKey。
    *
    * 「模型不存在」那半仍留在 `title.modelUnavailable` 上:文档给它的终稿标题是
-   * 「未找到 {模型名}」,而报错卡拿不到模型名(见 amr-guidance 里那条注释),
+   * 「未找到 {模型名}」,而报错卡拿不到模型名(见 run-failure-ui 里那条注释),
    * 所以那一格等数据通路,先不换文案。
    */
   const CARD_BY_DETAIL: ReadonlyArray<readonly [string, string, string]> = [
@@ -141,7 +135,6 @@ describe('模型不可用:daemon 已经命名的病因,不该在界面上退回�
           'AGENT_EXECUTION_FAILED',
           detail,
           agent,
-          null,
           CODEX_CLI_TOO_OLD_VERDICT,
         );
         expect(ui.titleKey, `agent=${agent} detail=${detail}`).not.toBe(
@@ -195,7 +188,7 @@ describe('模型不可用:daemon 已经命名的病因,不该在界面上退回�
     titleKey,
   ) => {
     for (const agent of ['codex', 'claude', 'byok-opencode', 'antigravity', null]) {
-      // 注意:第五个参数(verdict)故意不传,模拟今天真实的线上形状。
+      // 注意:第四个参数(verdict)故意不传,模拟今天真实的线上形状。
       const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', detail, agent);
 
       expect(ui.titleKey, `agent=${agent} detail=${detail}`).toBe(titleKey);
@@ -204,33 +197,6 @@ describe('模型不可用:daemon 已经命名的病因,不该在界面上退回�
       expect(ui.primaryAction, `agent=${agent} detail=${detail}`).not.toBe('retry');
       // 也不许从副位偷偷塞回来。
       expect(ui.secondaryRetry, `agent=${agent} detail=${detail}`).toBe(false);
-    }
-  });
-
-  /*
-   * 约束二:AMR 那条**已有的**路径必须原样不动。
-   *
-   * 它走的是错误码 `AMR_MODEL_UNAVAILABLE`,在 `AGENT_AGNOSTIC_FAILURE_UI` 里,
-   * 解析顺序上排在 `AGENT_AGNOSTIC_DETAIL_FAILURE_UI` **之前**;上面新加的那几行
-   * 是 detail 键,够不着它。
-   *
-   * 特意带一条 `detail: null`:daemon 给 `AMR_MODEL_UNAVAILABLE` 配的 detail 是
-   * `model_not_found`(分类器 1059 行),而 `model_not_found` 现在也在 detail 表里了 ——
-   * 于是「AMR 还好使」这件事可能只是因为两张表碰巧给同一张卡,而不是因为 code 那行还在。
-   * detail 为空这一条把这层侥幸拆掉:它只可能由 code 那行答出来。撤掉
-   * `AGENT_AGNOSTIC_FAILURE_UI` 的 `AMR_MODEL_UNAVAILABLE` 行,这一条当场红。
-   */
-  it('AMR 的 AMR_MODEL_UNAVAILABLE 仍由错误码那行答出,不依赖 detail', () => {
-    for (const detail of [null, 'model_not_found']) {
-      const ui = resolveRunFailureUi('AMR_MODEL_UNAVAILABLE', detail, 'amr');
-      expect(ui.titleKey, `detail=${detail}`).toBe('chat.runError.title.modelUnavailable');
-      expect(ui.messageKey, `detail=${detail}`).toBe(
-        'chat.runError.modelUnavailableMessage',
-      );
-      expect(ui.primaryAction, `detail=${detail}`).toBe('switch-model');
-      expect(ui.secondaryRetry, `detail=${detail}`).toBe(false);
-      // 跑在 AMR 上的 run 不该被推销 AMR(`withoutCloudSelfPromotion` 的不变式)。
-      expect(ui.cloudSwitchCta, `detail=${detail}`).toBe(false);
     }
   });
 });

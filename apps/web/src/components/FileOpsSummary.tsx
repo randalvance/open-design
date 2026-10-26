@@ -19,7 +19,6 @@ import { VisuallyHidden } from '@open-design/components';
 import { useT } from '../i18n';
 import type { Dict } from '../i18n/types';
 import { projectFileUrl } from '../providers/registry';
-import { useProjectCollabContext } from '../collab/collab-context';
 import { artifactKind, type ArtifactKind } from '../runtime/chat/format';
 import {
   countArtifactFileOps,
@@ -32,7 +31,6 @@ import type { ProjectFile } from '../types';
 import { Icon, type IconName } from './Icon';
 import { PixelLiquid } from './PixelLiquid';
 import { RemixIcon } from './RemixIcon';
-import shareEntryStyles from './share/ShareEntry.module.css';
 import { HtmlProjectCoverFrame } from './project-cover';
 import { AudioArtifact } from './chat/AudioArtifact';
 import { ARTIFACT_ANCHOR_ATTR, artifactAnchorId } from './chat/AnchoredMenuShell';
@@ -135,8 +133,6 @@ export function FileOpsSummary({
 }: Props) {
   const t = useT();
   const [expanded, setExpanded] = useState(false);
-  // 音频胶囊要自己拼文件 URL(它不走 `ArtifactCard`,拿不到那里的上下文)
-  const { workspaceContext } = useProjectCollabContext();
 
   if (entries.length === 0) return null;
 
@@ -219,7 +215,7 @@ export function FileOpsSummary({
       {audioEntries.map((entry) => (
         <AudioArtifact
           key={entry.path}
-          src={projectFileUrl(projectId, entry.path, workspaceContext)}
+          src={projectFileUrl(projectId, entry.path)}
           name={entry.path}
           /*
            * 音频是**单格式**产物 —— 没有第二种导法,所以那枚下载键直接把原件
@@ -229,7 +225,7 @@ export function FileOpsSummary({
            * 都不发生。
            */
           onDownload={() => downloadProjectFile(
-            projectFileUrl(projectId, entry.path, workspaceContext),
+            projectFileUrl(projectId, entry.path),
             entry.path,
           )}
         />
@@ -571,14 +567,13 @@ function ArtifactCard({
   anchorScope: string;
 }) {
   const t = useT();
-  const { workspaceContext, viewerOnly } = useProjectCollabContext();
   // A static snapshot is an optimization, not the only representation of the
   // artifact. If it disappears or cannot be decoded, let the normal kind
   // specific rendering below take over (HTML uses the existing live-cover
   // iframe fallback) instead of leaving the browser's broken-image shell in
   // the card.
   const [failedCoverUrl, setFailedCoverUrl] = useState<string | null>(null);
-  const src = projectFileUrl(projectId, item.name, workspaceContext);
+  const src = projectFileUrl(projectId, item.name);
   const liveUrl = artifactCardLiveUrl(src, item.revision);
   const [motionSize, setMotionSize] = useState<{ src: string; width: number; height: number }>();
   // Live HTML can have changed since this turn's snapshot. Its announced
@@ -595,11 +590,9 @@ function ArtifactCard({
   // an `.html` card carries two. The row is flex/end aligned precisely so that
   // unevenness stays right-aligned instead of shifting the export button.
   const showPublish = item.kind === 'html' && !!onPublish;
-  const shareDisabledTitle = viewerOnly
-    ? t('fileViewer.readonlySharedNoExport')
-    : pending || item.sharePending
-      ? t('fileViewer.shareAfterGenerationComplete')
-      : undefined;
+  const shareDisabledTitle = pending || item.sharePending
+    ? t('fileViewer.shareAfterGenerationComplete')
+    : undefined;
   const needsFormatChoice = artifactExportNeedsFormatChoice(item.name);
 
   return (
@@ -721,7 +714,7 @@ function ArtifactCard({
           {showPublish && onPublish ? (
             <button
               type="button"
-              className={`artifact-card-act ${shareEntryStyles.card}`}
+              className="artifact-card-act"
               aria-haspopup="menu"
               disabled={shareDisabledTitle !== undefined}
               title={shareDisabledTitle}

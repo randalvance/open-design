@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { resolveRunFailureUi } from '../../src/runtime/amr-guidance';
+import { resolveRunFailureUi } from '../../src/runtime/run-failure-ui';
 import { LOCALES, type Dict, type Locale } from '../../src/i18n/types';
 
 /**
@@ -36,7 +36,7 @@ async function loadDict(locale: Locale): Promise<Dict> {
 
 describe('回复缺了机器结构那一轮的报错卡', () => {
   it.each(RUNTIME_STATE_CODES)('%s 有自己的卡面文案,不再掉进通用兜底', (code) => {
-    const ui = resolveRunFailureUi(code, null, 'mock-agent', null);
+    const ui = resolveRunFailureUi(code, null, 'mock-agent');
 
     // 兜底那条的特征就是 `messageKey === null` —— 卡面于是退到
     // `RUN_FAILURE_FALLBACK_MESSAGE_KEY`。这一行是整条规格的红点。
@@ -45,13 +45,10 @@ describe('回复缺了机器结构那一轮的报错卡', () => {
   });
 
   it.each(RUNTIME_STATE_CODES)('%s 仍然只给〔重试〕,按钮一颗都没换', (code) => {
-    const ui = resolveRunFailureUi(code, null, 'mock-agent', null);
+    const ui = resolveRunFailureUi(code, null, 'mock-agent');
 
     // 偶发漏写、重跑常常就对 —— 阶梯第 2 级,重试是对的。
     expect(ui.primaryAction).toBe('retry');
-    // 主按钮位归 Cloud CTA(OPEND-2772,非 Cloud 的卡一律有);〔重试〕退到次级但仍在。
-    // ⚠️ 「别多长出第二颗**卡**」这条更严了:那张独立的切换卡已经整块删掉。
-    expect(ui.cloudSwitchCta).toBe(true);
     expect(ui.secondaryRetry).toBe(false);
     // 这张卡必须画出来,不能像断线那条一样让别的界面接管。
     expect(ui.suppressCard).not.toBe(true);
@@ -64,7 +61,6 @@ describe('回复缺了机器结构那一轮的报错卡', () => {
       'od_next_protocol_runtime_state_missing',
       null,
       'mock-agent',
-      null,
     );
     expect(ui.titleKey).toBe(TITLE_KEY);
   });

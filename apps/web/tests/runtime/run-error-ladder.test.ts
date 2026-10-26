@@ -40,44 +40,31 @@ import {
   resolveRunFailureUi,
   RECONNECT_OWNED_FAILURE_CODE,
   RUN_FAILURE_FALLBACK_MESSAGE_KEY,
-} from '../../src/runtime/amr-guidance';
+} from '../../src/runtime/run-failure-ui';
 import {
   GENERIC_DAEMON_DISCONNECT_CODE,
   GENERIC_DAEMON_DISCONNECT_MESSAGE,
 } from '../../src/providers/daemon';
 
 describe('主按钮阶梯(§6.Z)', () => {
-  // 档 1:我们有能直接解决它的动作 —— 去设置改 key / 换个模型 / 新建对话 /
-  // 授权并重试 / 去充值·升级。有它就永远优先,不许越过它去劝人切 Cloud
-  // (用户原话:「那是把营销放在解决问题前面」)。
+  // 档 1:我们有能直接解决它的动作 —— 去设置改 key / 换个模型 / 去终端登录。
+  // 有它就永远优先。
   it('第 1 档:有一键解决的动作时,它就是主按钮', () => {
     expect(primaryActionForFailure({ directFix: 'switch-model' })).toBe('switch-model');
-    expect(primaryActionForFailure({ directFix: 'authorize' })).toBe('authorize');
-    // 就算这次失败同时是「暂时性」且「本地走不通」,档 1 依然赢。
+    expect(primaryActionForFailure({ directFix: 'launch-terminal-auth' })).toBe('launch-terminal-auth');
+    // 就算这次失败同时是「暂时性」,档 1 依然赢。
     expect(
-      primaryActionForFailure({
-        directFix: 'recharge',
-        transient: true,
-        localDeadEnd: true,
-      }),
-    ).toBe('recharge');
+      primaryActionForFailure({ directFix: 'open-settings', transient: true }),
+    ).toBe('open-settings');
   });
 
   // 档 2:暂时性 —— 从失败处重试。
-  it('第 2 档:暂时性失败给重试,并且赢过档 3', () => {
+  it('第 2 档:暂时性失败给重试', () => {
     expect(primaryActionForFailure({ transient: true })).toBe('retry');
-    expect(primaryActionForFailure({ transient: true, localDeadEnd: true })).toBe('retry');
   });
 
-  // 档 3:本地这条路根本走不通 —— 主按钮是「切换到 Cloud」。
-  // 这一档的按钮就是那颗 Cloud CTA;OPEND-2772 之后它长在报错卡自己的主位上
-  // (`cloudSwitchCta`),不再是卡下面另起的第二张卡。
-  it('第 3 档:本地走不通时主按钮是切换到 Cloud', () => {
-    expect(primaryActionForFailure({ localDeadEnd: true })).toBe('switch-to-cloud');
-  });
-
-  // 档 4:上面都没有 —— 〔联系支持〕从常驻次级**提为主**(E6)。
-  it('第 4 档:都没有出路时联系支持提为主按钮', () => {
+  // 档 3:上面都没有 —— 〔联系支持〕从常驻次级**提为主**(E6)。
+  it('第 3 档:都没有出路时联系支持提为主按钮', () => {
     expect(primaryActionForFailure({})).toBe('contact-support');
   });
 });
@@ -98,17 +85,16 @@ describe('原则四:重试只在有用时出现', () => {
     expect(ui.secondaryRetry).toBe(false);
   });
 
-  it('封号落第 4 档:主按钮是联系支持,且不劝人切 Cloud', () => {
-    const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', 'account_suspended', 'amr');
+  it('封号落第 3 档:主按钮是联系支持', () => {
+    const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', 'account_suspended', 'claude');
     expect(ui.primaryAction).toBe('contact-support');
-    expect(ui.cloudSwitchCta).toBe(false);
     expect(ui.titleKey).toBe('chat.runError.title.accountSuspended');
     expect(ui.messageKey).toBe('chat.runError.accountSuspendedMessage');
   });
 
   // R-031 主表:「后续流程 F10 反馈」「可重试:不可」。文案本来就写着
   // 「请更新到最新版本或联系支持」,今天给的却是一颗重试 —— 按钮和句子对不上。
-  it('运行时定义非法落第 4 档,不再给一颗白点的重试', () => {
+  it('运行时定义非法落第 3 档,不再给一颗白点的重试', () => {
     const ui = resolveRunFailureUi('AGENT_RUNTIME_DEF_INVALID', null, 'claude');
     expect(ui.primaryAction).toBe('contact-support');
     expect(ui.secondaryRetry).toBe(false);
@@ -139,16 +125,11 @@ describe('S19 进程崩了 / 异常退出(每月 20,868 次、占失败 16.3%、
     expect(ui.titleKey).toBe('chat.runError.title.agentCrashed');
     expect(ui.messageKey).toBe('chat.runError.agentCrashedMessage');
     expect(ui.primaryAction).toBe('retry');
-    // 阶梯本身仍然把 S19 判成「暂时性」——〔重试〕还是这一档自己的答案。
-    // 变的是主按钮位:OPEND-2772 之后所有 BYOK / 本地 CLI 的卡都带 Cloud CTA,
-    // S19(每月 20,868 次,第二大桶)以前一颗都没有,正是「铺到所有报错」要补的那批。
-    expect(ui.cloudSwitchCta).toBe(true);
   });
 
-  // S19 对每个 agent 都一样(AMR 也会崩)。今天 AMR 分支的 catch-all 会把它
-  // 吃成「任务执行失败」+ 原始英文串。
-  it('AMR 自己崩了也走 S19,不落 AMR 的 catch-all', () => {
-    const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', 'process_crashed', 'amr');
+  // S19 对每个 agent 都一样 —— 没有哪个 agent 分支能把它吃成「任务执行失败」。
+  it.each(['codex', 'antigravity', 'byok-opencode', null])('agent=%s 也走 S19', (agent) => {
+    const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', 'process_crashed', agent);
     expect(ui.titleKey).toBe('chat.runError.title.agentCrashed');
     expect(ui.messageKey).toBe('chat.runError.agentCrashedMessage');
   });
@@ -221,9 +202,9 @@ describe('R9 断线不许和重连行抢同一件事', () => {
     expect(isReconnectOwnedFailure(null, GENERIC_DAEMON_DISCONNECT_MESSAGE)).toBe(true);
   });
 
-  // 两个常量必须跟传输层逐字一致。amr-guidance 不能 import providers/daemon
-  // (那边已经 import 了这边的 setRuntimeAmrConsoleOrigin,会成环),所以字面量
-  // 是抄的 —— 抄的东西要有人钉住,否则改了一边就静默失配。
+  // 两个常量必须跟传输层逐字一致。run-failure-ui 刻意不 import providers/daemon
+  // (保持零运行时依赖),所以字面量是抄的 —— 抄的东西要有人钉住,否则改了一边
+  // 就静默失配。
   it('常量跟 providers/daemon 的原件逐字一致', () => {
     expect(RECONNECT_OWNED_FAILURE_CODE).toBe(GENERIC_DAEMON_DISCONNECT_CODE);
   });

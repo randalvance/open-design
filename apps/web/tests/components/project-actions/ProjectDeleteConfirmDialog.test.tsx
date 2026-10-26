@@ -1,29 +1,27 @@
 // @vitest-environment jsdom
-import { readFileSync } from 'node:fs';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ProjectDeleteConfirmDialog } from '../../../src/components/project-actions/ProjectDeleteConfirmDialog';
 
 afterEach(cleanup);
 
-it('keeps S14 button overrides more specific than the legacy global danger rule', () => {
-  const css = readFileSync('src/components/project-actions/ProjectDeleteConfirmDialog.module.css', 'utf8');
-  expect(css).toMatch(/activeShareDialog:global\(\.modal-confirm\)[\s\S]*activeShareFooter:global\(\.row\)[\s\S]*:global\(button\.primary\.danger\)\.activeShareDelete/);
-  expect(css).toContain('background: #EDEDF0;');
-  expect(css).toContain('background: rgb(210, 59, 60);');
-  expect(css).toMatch(/activeShareDelete:disabled[\s\S]*?rgb\(210, 59, 60\)/);
-});
-
-it('uses the S14 active-share confirmation button treatment and cancel never deletes', () => {
+it('names the project, confirms on delete, and cancel never deletes', () => {
   const onCancel = vi.fn();
   const onConfirm = vi.fn();
-  render(<ProjectDeleteConfirmDialog projectName="Example" activeShareCount={1} shareReadStatus="ready" pending={false} failed={false} onCancel={onCancel} onConfirm={onConfirm} />);
-  const cancel = screen.getByTestId('project-delete-confirm-cancel');
-  const remove = screen.getByTestId('project-delete-confirm-accept');
-  expect(cancel.className).toMatch(/activeShareCancel/);
-  expect(remove.className).toMatch(/activeShareDelete/);
-  expect(screen.getByTestId('project-delete-confirm-dialog').className).toMatch(/activeShareDialog/);
-  fireEvent.click(cancel);
+  render(<ProjectDeleteConfirmDialog projectName="Example" pending={false} failed={false} onCancel={onCancel} onConfirm={onConfirm} />);
+  expect(screen.getByTestId('project-delete-confirm-dialog')).toHaveTextContent('Example');
+  fireEvent.click(screen.getByTestId('project-delete-confirm-cancel'));
   expect(onCancel).toHaveBeenCalledOnce();
   expect(onConfirm).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByTestId('project-delete-confirm-accept'));
+  expect(onConfirm).toHaveBeenCalledOnce();
+});
+
+it('locks both buttons while the request is in flight and surfaces a failure', () => {
+  const view = render(<ProjectDeleteConfirmDialog projectName="Example" pending failed={false} onCancel={vi.fn()} onConfirm={vi.fn()} />);
+  expect(screen.getByTestId('project-delete-confirm-cancel')).toBeDisabled();
+  expect(screen.getByTestId('project-delete-confirm-accept')).toBeDisabled();
+  view.rerender(<ProjectDeleteConfirmDialog projectName="Example" pending={false} failed errorMessage="boom" onCancel={vi.fn()} onConfirm={vi.fn()} />);
+  expect(screen.getByRole('alert')).toHaveTextContent('boom');
+  expect(screen.getByTestId('project-delete-confirm-accept')).toBeEnabled();
 });

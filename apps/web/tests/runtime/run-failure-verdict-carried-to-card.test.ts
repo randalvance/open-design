@@ -2,7 +2,7 @@
  * 「后端的裁决要送到报错卡上」—— 最后一米。
  *
  * 上游那一版(commit "give proxy and certificate failures the card the design
- * specifies")在 `amr-guidance.ts` 的兜底里开了一条分支:
+ * specifies")在 `run-failure-ui.ts` 的兜底里开了一条分支:
  *
  *   后端命名了原因(`failureDetail !== 'unknown'`)且后端说重试没用
  *   (`retryable === false` 或 `failureAction === 'none'`)→ 才降档。
@@ -26,7 +26,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { appendErrorStatusEvent, runFailureFieldsFromError } from '../../src/runtime/chat-events';
-import { daemonFailureVerdictFrom, resolveRunFailureUi } from '../../src/runtime/amr-guidance';
+import { daemonFailureVerdictFrom, resolveRunFailureUi } from '../../src/runtime/run-failure-ui';
 import type { ChatMessage } from '../../src/types';
 
 const base: ChatMessage = { id: 'm1', role: 'assistant', content: '' };
@@ -64,7 +64,6 @@ function cardFor(message: ChatMessage) {
     event.code as string | undefined,
     event.failureDetail as string | undefined,
     'claude',
-    event.detail as string | undefined,
     daemonFailureVerdictFrom(event),
   );
 }

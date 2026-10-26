@@ -3,7 +3,6 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { CollabProvider, useProjectCollabContext } from '../../src/collab/collab-context';
 import { FileOpsSummary } from '../../src/components/FileOpsSummary';
 import type { FileOpEntry } from '../../src/runtime/file-ops';
 
@@ -308,23 +307,6 @@ describe('FileOpsSummary artifact cards', () => {
     expect(share).toHaveTextContent(/^Share$/);
     expect(share).toHaveAccessibleName('Share');
     expect(share).toBeEnabled();
-  });
-
-  it('uses production collab authority to disable Share without removing its anchor', () => {
-    const onPublish = vi.fn();
-    function ReadonlyCard() {
-      const collab = useProjectCollabContext();
-      return <CollabProvider value={{ ...collab, viewerOnly: true }}>
-        <FileOpsSummary entries={[entry({ path: 'result.html' })]} projectId="proj-1" onPublish={onPublish} turnIsLive />
-      </CollabProvider>;
-    }
-    render(<ReadonlyCard />);
-    const share = screen.getByTestId('artifact-card-publish-result.html');
-    expect(share).toBeDisabled();
-    expect(share).toHaveAttribute('title', 'Shared project is read-only: you can comment, but cannot edit or export.');
-    expect(share.getAttribute('data-artifact-anchor')).toMatch(/^publish:[^:]+:result.html$/);
-    fireEvent.click(share);
-    expect(onPublish).not.toHaveBeenCalled();
   });
 
   it('keeps one stable Share anchor disabled until the generating turn ends', () => {

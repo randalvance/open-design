@@ -44,9 +44,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AssistantMessage } from '../../../src/components/AssistantMessage';
-import { CollabProvider } from '../../../src/collab/collab-context';
 import type { ChatMessage, ProjectFile } from '../../../src/types';
-import { workspaceContextFixture } from '../../helpers/workspace-context';
 
 const PROJECT_ID = '78ff635a-9bbf-4555-8dc7-ec0290028b53';
 const RESOLVED_DIR = `/Users/elian/.od-chatpanel-preview/projects/${PROJECT_ID}`;
@@ -117,33 +115,6 @@ function stubHeadProbe(): { probed: () => string[] } {
   return { probed: () => seen };
 }
 
-function projectCollabValue() {
-  return {
-    workspaceContext: workspaceContextFixture({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-    }),
-    workspaceContextLoading: false,
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed' as const,
-    isOwner: false,
-    isEffectiveOwner: true,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: vi.fn(),
-    requestPublish: vi.fn(),
-    refreshPresence: vi.fn(),
-    checkStatusNow: vi.fn(),
-  };
-}
-
 /** 真实记录:七行 `Write`,`file_path` 是 agent 给的绝对路径 */
 function writeTurn(): ChatMessage {
   const events: unknown[] = [{ kind: 'status', label: 'starting', detail: 'codex' }];
@@ -172,7 +143,7 @@ function writeTurn(): ChatMessage {
 
 function renderTurn(props: Record<string, unknown> = {}) {
   return render(
-    <CollabProvider value={projectCollabValue()}>
+    <>
       <AssistantMessage
         message={writeTurn()}
         streaming={false}
@@ -182,7 +153,7 @@ function renderTurn(props: Record<string, unknown> = {}) {
         isLast
         {...props}
       />
-    </CollabProvider>,
+    </>,
   );
 }
 

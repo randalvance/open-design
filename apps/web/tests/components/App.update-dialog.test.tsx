@@ -11,7 +11,6 @@ import type {
 import { installMockOpenDesignHost } from '@open-design/host/testing';
 
 import { App } from '../../src/App';
-import { fetchAmrModels, fetchVelaLoginStatus } from '../../src/providers/daemon';
 import {
   daemonIsLive,
   fetchAgentsStream,
@@ -35,8 +34,8 @@ vi.mock('../../src/router', () => ({
   useRoute: () => routeState.current,
 }));
 
-vi.mock('../../src/components/EntryNavRail', () => ({
-  WorkspaceTopRightAccountCluster: ({ updaterSlot }: { updaterSlot?: ReactNode }) => (
+vi.mock('../../src/components/__unused_placeholder__', () => ({
+  Placeholder: ({ updaterSlot }: { updaterSlot?: ReactNode }) => (
     <div data-testid="project-top-right-account-cluster">{updaterSlot}</div>
   ),
 }));
@@ -61,10 +60,6 @@ vi.mock('../../src/components/SettingsDialog', () => ({
   SettingsDialog: () => null,
 }));
 
-vi.mock('../../src/components/AmrArtifactUpgradeGate', () => ({
-  AmrArtifactUpgradeGate: () => null,
-}));
-
 vi.mock('../../src/providers/registry', async () => {
   const actual = await vi.importActual<typeof import('../../src/providers/registry')>(
     '../../src/providers/registry',
@@ -86,8 +81,6 @@ vi.mock('../../src/providers/daemon', async () => {
   );
   return {
     ...actual,
-    fetchAmrModels: vi.fn(),
-    fetchVelaLoginStatus: vi.fn(),
   };
 });
 
@@ -126,8 +119,6 @@ const mockedFetchAppVersionInfo = vi.mocked(fetchAppVersionInfo);
 const mockedFetchDesignSystems = vi.mocked(fetchDesignSystems);
 const mockedFetchPromptTemplates = vi.mocked(fetchPromptTemplates);
 const mockedFetchSkills = vi.mocked(fetchSkills);
-const mockedFetchAmrModels = vi.mocked(fetchAmrModels);
-const mockedFetchVelaLoginStatus = vi.mocked(fetchVelaLoginStatus);
 const mockedListProjects = vi.mocked(listProjects);
 const mockedListTemplates = vi.mocked(listTemplates);
 const mockedLoadConfig = vi.mocked(loadConfig);
@@ -194,14 +185,6 @@ describe('App updater dialog integration', () => {
     mockedFetchDesignSystems.mockResolvedValue([]);
     mockedFetchPromptTemplates.mockResolvedValue([]);
     mockedFetchAppVersionInfo.mockResolvedValue(null);
-    mockedFetchAmrModels.mockResolvedValue({ source: 'preset', refreshing: false, models: [] });
-    mockedFetchVelaLoginStatus.mockResolvedValue({
-      loggedIn: false,
-      loginInFlight: false,
-      profile: 'prod',
-      user: null,
-      configPath: '/tmp/amr-config.json',
-    });
     mockedListProjects.mockResolvedValue([]);
     mockedListTemplates.mockResolvedValue([]);
     mockedLoadConfig.mockReturnValue({ ...baseConfig });
@@ -271,7 +254,7 @@ describe('App updater dialog integration', () => {
     expect(unsubscribeOpenDialog).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the update-ready rocket in the project-detail account cluster', async () => {
+  it('shows the update-ready rocket on the project route', async () => {
     routeState.current = { kind: 'project', projectId: 'project-1' };
     restoreHost = installMockOpenDesignHost({
       host: {
@@ -287,7 +270,6 @@ describe('App updater dialog integration', () => {
 
     render(<App />);
 
-    expect(await screen.findByTestId('project-top-right-account-cluster')).toBeTruthy();
     expect(await screen.findByTestId('entry-nav-updater')).toBeTruthy();
     expect(screen.getByTestId('updater-rocket-glyph')).toBeTruthy();
   });

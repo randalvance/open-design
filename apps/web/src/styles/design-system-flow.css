@@ -2345,7 +2345,6 @@ a.ds-source-link-open:focus-visible {
   }
 }
 
-
 /* Design-system project review workspace restored from PR #1719. Like the
    Design Files tab, this tab scrolls with the strip — no sticky pinning, so
    overflowed tabs never slide underneath it. */
@@ -2424,20 +2423,6 @@ a.ds-source-link-open:focus-visible {
 .ds-project-panel--kit {
   position: relative;
   padding: 0;
-}
-
-.ds-workspace-collab {
-  position: absolute;
-  inset: 0;
-  z-index: 8;
-  margin: 0;
-  pointer-events: none;
-}
-
-.ds-workspace-collab__presence {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
 }
 
 .ds-workspace-cursor {

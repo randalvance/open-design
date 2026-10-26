@@ -29,9 +29,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AssistantMessage } from '../../src/components/AssistantMessage';
-import { CollabProvider } from '../../src/collab/collab-context';
 import type { ChatMessage, ProjectFile } from '../../src/types';
-import { workspaceContextFixture } from '../helpers/workspace-context';
 
 beforeAll(() => {
   const store = new Map<string, string>();
@@ -51,33 +49,6 @@ afterEach(() => {
   window.localStorage.clear();
   vi.restoreAllMocks();
 });
-
-function projectCollabValue() {
-  return {
-    workspaceContext: workspaceContextFixture({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-    }),
-    workspaceContextLoading: false,
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed' as const,
-    isOwner: false,
-    isEffectiveOwner: true,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: vi.fn(),
-    requestPublish: vi.fn(),
-    refreshPresence: vi.fn(),
-    checkStatusNow: vi.fn(),
-  };
-}
 
 const PROJECT_ID = 'c7e3b234-2fb3-4f6e-8aae-a3a00697c476';
 const PROJECT_DIR = `/Users/elian/.od/projects/${PROJECT_ID}`;
@@ -144,7 +115,7 @@ function turn(overrides: Partial<ChatMessage> = {}): ChatMessage {
 
 function turnElement(message: ChatMessage) {
   return (
-    <CollabProvider value={projectCollabValue()}>
+    <>
       <AssistantMessage
         message={message}
         streaming={false}
@@ -152,7 +123,7 @@ function turnElement(message: ChatMessage) {
         projectFiles={ALL_PRODUCED}
         isLast
       />
-    </CollabProvider>
+    </>
   );
 }
 

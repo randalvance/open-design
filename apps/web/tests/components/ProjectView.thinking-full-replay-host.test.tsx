@@ -49,7 +49,6 @@ vi.mock('../../src/providers/daemon', async (importOriginal) => ({
   fetchChatRunStatus: (...args: unknown[]) => fetchChatRunStatus(...args),
   listActiveChatRuns: (...args: unknown[]) => listActiveChatRuns(...args),
   listProjectRuns: (...args: unknown[]) => listProjectRuns(...args),
-  publishDaemonRunFinishedEvent: (...args: unknown[]) => publishDaemonRunFinishedEvent(...args),
   reattachDaemonRun: (...args: unknown[]) => reattachDaemonRun(...args),
   streamViaDaemon: (...args: unknown[]) => streamViaDaemon(...args),
 }));
@@ -107,8 +106,7 @@ vi.mock('../../src/components/FileWorkspace', () => ({
   FileWorkspace: () => null,
 }));
 
-vi.mock('../../src/components/Loading', () => ({ CenteredLoader: () => null }));
-
+vi.mock('../../src/components/Loading', () => ({ CenteredLoader: () => null, Spinner: () => null }));
 
 const RUN_ID = '2746-full-replay-run';
 const MESSAGE_ID = '2746-full-replay-assistant';
@@ -155,7 +153,6 @@ function renderProjectView(options?: { daemonLive?: boolean }) {
     />,
   );
 }
-
 
 function paneMessage() { return paneHarness.messages.find(message => message.id === MESSAGE_ID); }
 function thinking(message: ChatMessage | undefined) {

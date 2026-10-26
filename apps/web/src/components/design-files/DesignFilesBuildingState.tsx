@@ -9,9 +9,7 @@ import {
 
 import { bindMotionPreviewActivity, unbindMotionPreviewActivity } from '../../runtime/motion-preview-activity';
 import { useT } from '../../i18n';
-import { appendResourceQuery } from '../../collab/workspace-identity';
 import { projectRawUrl } from '../../providers/registry';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import type { ProjectFile } from '../../types';
 import type { RunProgressStep } from '../../runtime/run-progress';
 import { RunStepFeed } from './RunStepFeed';
@@ -26,7 +24,6 @@ interface Props {
   filesRefreshKey: number;
   /** The running turn's tool calls, newest first. */
   steps: RunProgressStep[];
-  workspaceContext: WorkspaceCollabContext | null;
 }
 
 interface FocusRect {
@@ -38,6 +35,11 @@ interface FocusRect {
 
 /** Keeps the cursor from being drawn half outside the pane. */
 const EDGE_MARGIN = 28;
+
+/** Append a query fragment to a path that may already carry one. */
+function appendQuery(path: string, query: string): string {
+  return `${path}${path.includes('?') ? '&' : '?'}${query}`;
+}
 
 /** How long the cursor rests on each part that just landed before moving to
  *  the next one. Long enough to read the label, short enough that a page of
@@ -81,7 +83,6 @@ export function DesignFilesBuildingState({
   file,
   filesRefreshKey,
   steps,
-  workspaceContext,
 }: Props) {
   const t = useT();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
@@ -101,14 +102,14 @@ export function DesignFilesBuildingState({
 
   const src = useMemo(
     () =>
-      appendResourceQuery(
-        projectRawUrl(projectId, file.name, workspaceContext),
+      appendQuery(
+        projectRawUrl(projectId, file.name),
         // `v` is the established mtime bust; `fr` is the necessary second half —
         // an agent can rewrite the same file twice inside one filesystem mtime
         // tick, and the refresh key moves on every coalesced change batch.
         `v=${Math.round(file.mtime)}&fr=${filesRefreshKey}&odPreviewBridge=buildfocus`,
       ),
-    [projectId, file.name, file.mtime, filesRefreshKey, workspaceContext],
+    [projectId, file.name, file.mtime, filesRefreshKey],
   );
 
   const request = useCallback((text: string | null, section: string | null) => {

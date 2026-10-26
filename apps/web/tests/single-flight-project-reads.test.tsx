@@ -4,25 +4,18 @@
 //
 // Evidence baseline (electron-project-waterfall-20260727): opening one shared
 // project issued duplicated GETs before the first stable frame — /files ×2,
-// /conversations ×2, /tabs ×2, /workspace-scope ×3 (one aborted),
-// /collab/status ×2 immediately, /analytics/config ×2 and /recent-dirs ×2.
+// /conversations ×2, /tabs ×2, /analytics/config ×2 and /recent-dirs ×2.
 //
 // The contract under test: every one of these display reads has a single
-// request owner per (resource, project/workspace) — concurrent consumers of
+// request owner per (resource, project) — concurrent consumers of
 // the same resource share one network request instead of each issuing their
 // own.
 
-import { cleanup, renderHook, waitFor } from '@testing-library/react';
+import { cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-vi.mock('../src/collab/workspace-events', () => ({
-  useWorkspaceInvalidation: vi.fn(() => ({ connected: false })),
-}));
 
 import { fetchProjectFiles, fetchRecentLinkedDirs } from '../src/providers/registry';
 import { listConversations, loadTabs } from '../src/state/projects';
-import { CollabClient, fetchProjectCollabStatus } from '../src/collab/collab-client';
-import { useProjectWorkspaceScope } from '../src/collab/useProjectWorkspaceScope';
 import {
   bootstrapExceptionTracking,
   getAnalyticsClient,
@@ -41,17 +34,10 @@ function jsonResponse(body: unknown): Response {
 }
 
 function bodyForUrl(url: string): unknown {
-  if (url.includes('/collab/status')) return { syncState: 'local_only' };
   if (url.includes('/conversations')) return { conversations: [] };
   if (url.includes('/tabs')) return { tabs: [], active: null };
   if (url.includes('/recent-dirs')) return { dirs: [] };
   if (url.includes('/analytics/config')) return { enabled: false, key: null, host: null };
-  if (url.includes('/workspace-scope')) {
-    const projectId = decodeURIComponent(url.split('/projects/')[1]!.split('/')[0]!);
-    return {
-      scope: { kind: 'unbound', projectId, workspaceId: null, context: null },
-    };
-  }
   if (url.endsWith('/files')) return { files: [] };
   return {};
 }
@@ -157,34 +143,6 @@ describe('project-open single-flight reads (Batch A §4.3)', () => {
     expect(callsMatching('/recent-dirs')).toHaveLength(1);
   });
 
-  it('shares one /collab/status request between concurrent one-shot status reads', async () => {
-    // The 2× immediate status duplication came from FileWorkspace and
-    // FileViewer each running a private shared-status check; both now go
-    // through `fetchProjectCollabStatus`. CollabClient's poll loop stays
-    // un-coalesced on purpose — its transfer fences order responses by
-    // request start time, and joining an in-flight GET would let a poll
-    // issued after a restart tombstone apply pre-restart state.
-    await Promise.all([
-      fetchProjectCollabStatus('sf-status'),
-      fetchProjectCollabStatus('sf-status'),
-    ]);
-    expect(callsMatching('/projects/sf-status/collab/status')).toHaveLength(1);
-  });
-
-  it('keeps CollabClient status polls independent of the shared one-shot read', async () => {
-    const client = new CollabClient({
-      projectId: 'sf-status-poll',
-      member: null,
-      fetch: fetchStub as unknown as typeof fetch,
-    });
-    await fetchProjectCollabStatus('sf-status-poll');
-    await client.pollStatus();
-    // The poll must issue its own request even inside the one-shot read's
-    // share window — its response-ordering fences require a request that
-    // started after the poll was asked for.
-    expect(callsMatching('/projects/sf-status-poll/collab/status')).toHaveLength(2);
-  });
-
   it('shares one /analytics/config request between error tracking and analytics init', async () => {
     const context = {
       anonymousId: 'anon-1',
@@ -200,17 +158,4 @@ describe('project-open single-flight reads (Batch A §4.3)', () => {
     expect(callsMatching('/analytics/config')).toHaveLength(1);
   });
 
-  it('shares one /workspace-scope request between two mounted scope consumers', async () => {
-    const first = renderHook(() => useProjectWorkspaceScope('sf-scope'));
-    const second = renderHook(() => useProjectWorkspaceScope('sf-scope'));
-    await waitFor(() => {
-      expect(first.result.current.loading).toBe(false);
-      expect(second.result.current.loading).toBe(false);
-    });
-    expect(first.result.current.scope?.kind).toBe('unbound');
-    expect(second.result.current.scope?.kind).toBe('unbound');
-    expect(callsMatching('/projects/sf-scope/workspace-scope')).toHaveLength(1);
-    first.unmount();
-    second.unmount();
-  });
 });

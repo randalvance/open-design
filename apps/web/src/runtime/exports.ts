@@ -27,11 +27,6 @@ import {
   printHostPdf,
   subscribeHostDownloads,
 } from '@open-design/host';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
-import {
-  workspaceProjectHeaders,
-  workspaceResourceUrl,
-} from '../collab/workspace-identity';
 import { sourceHasLegacyDeckScreenSlides } from './deck-slide-structure';
 
 // Re-exported so app components can gate desktop-only export paths without
@@ -121,14 +116,12 @@ export async function exportProjectAsHtml(opts: {
   filePath: string;
   fallbackTitle: string;
   versionId?: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }): Promise<DownloadExportResult> {
   const url = `/api/projects/${encodeURIComponent(opts.projectId)}/export/html`;
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      ...(opts.workspaceContext ? workspaceProjectHeaders(opts.workspaceContext) : {}),
     },
     body: JSON.stringify({
       fileName: opts.filePath,
@@ -811,7 +804,6 @@ export async function exportProjectAsPdf(opts: {
   projectId: string;
   title: string;
   versionId?: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }): Promise<ProjectPdfExportResult> {
   try {
     const resp = await fetch(`/api/projects/${encodeURIComponent(opts.projectId)}/export/pdf`, {
@@ -823,9 +815,6 @@ export async function exportProjectAsPdf(opts: {
       }),
       headers: {
         'content-type': 'application/json',
-        ...(opts.workspaceContext
-          ? workspaceProjectHeaders(opts.workspaceContext)
-          : {}),
       },
       method: 'POST',
     });
@@ -903,7 +892,6 @@ export async function exportProjectAsZip(opts: {
   fallbackHtml: string;
   fallbackTitle: string;
   versionId?: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }): Promise<DownloadExportResult> {
   if (opts.versionId) {
     const segments = opts.filePath
@@ -914,11 +902,7 @@ export async function exportProjectAsZip(opts: {
     const query = new URLSearchParams({ inline: '1', versionId: opts.versionId });
     try {
       const url = `/api/projects/${encodeURIComponent(opts.projectId)}/export/${segments}?${query.toString()}`;
-      const resp = opts.workspaceContext
-        ? await fetch(url, {
-            headers: workspaceProjectHeaders(opts.workspaceContext),
-          })
-        : await fetch(url);
+      const resp = await fetch(url);
       if (!resp.ok) throw new Error(`version html export request failed (${resp.status})`);
       return exportAsZip(await resp.text(), opts.fallbackTitle);
     } catch (err) {
@@ -931,11 +915,7 @@ export async function exportProjectAsZip(opts: {
     root ? `?root=${encodeURIComponent(root)}` : ''
   }`;
   try {
-    const resp = opts.workspaceContext
-      ? await fetch(url, {
-          headers: workspaceProjectHeaders(opts.workspaceContext),
-        })
-      : await fetch(url);
+    const resp = await fetch(url);
     if (!resp.ok) throw new Error(`archive request failed (${resp.status})`);
     const blob = await resp.blob();
     return saveExportDownload(blob, archiveFilenameFrom(resp, opts.fallbackTitle, root));
@@ -990,7 +970,6 @@ export async function exportProjectAsPptx(opts: {
   // pptx only: produce an editable deck (native shapes/text) instead of a
   // screenshot one (one image per slide).
   editable?: boolean;
-  workspaceContext?: WorkspaceCollabContext | null;
 }): Promise<ProjectScreenshotExportResult> {
   const format = opts.format ?? 'pptx';
   const path = format === 'pdf' ? 'export/pdf-image' : 'export/pptx';
@@ -1001,9 +980,6 @@ export async function exportProjectAsPptx(opts: {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        ...(opts.workspaceContext
-          ? workspaceProjectHeaders(opts.workspaceContext)
-          : {}),
       },
       body: JSON.stringify({
         fileName: opts.fileName,
@@ -1166,7 +1142,6 @@ export async function exportProjectImageDataUrl(opts: {
   width?: number;
   height?: number;
   versionId?: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }): Promise<ProjectImageExportResult> {
   const url = `/api/projects/${encodeURIComponent(opts.projectId)}/export/image`;
   let resp: Response;
@@ -1175,9 +1150,6 @@ export async function exportProjectImageDataUrl(opts: {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        ...(opts.workspaceContext
-          ? workspaceProjectHeaders(opts.workspaceContext)
-          : {}),
       },
       body: JSON.stringify({
         fileName: opts.fileName,
@@ -1237,7 +1209,6 @@ export function exportProjectScreenshotPdf(opts: {
   title?: string;
   deck?: boolean;
   versionId?: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }): Promise<ProjectScreenshotExportResult> {
   return exportProjectAsPptx({ ...opts, format: 'pdf' });
 }
@@ -1258,16 +1229,10 @@ function blobToDataUrl(blob: Blob): Promise<string> {
 export async function downloadDesignSystemArchive(opts: {
   designSystemId: string;
   fallbackTitle: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }): Promise<boolean> {
-  const url = workspaceResourceUrl(
-    `/api/design-systems/${encodeURIComponent(opts.designSystemId)}/archive`,
-    opts.workspaceContext,
-  );
+  const url = `/api/design-systems/${encodeURIComponent(opts.designSystemId)}/archive`;
   try {
-    const resp = opts.workspaceContext
-      ? await fetch(url, { headers: workspaceProjectHeaders(opts.workspaceContext) })
-      : await fetch(url);
+    const resp = await fetch(url);
     if (!resp.ok) throw new Error(`archive request failed (${resp.status})`);
     const blob = await resp.blob();
     triggerDownload(blob, archiveFilenameFrom(resp, opts.fallbackTitle, ''));
@@ -1282,18 +1247,13 @@ export async function downloadProjectArchive(opts: {
   projectId: string;
   fallbackTitle: string;
   root?: string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }): Promise<boolean> {
   const root = opts.root?.replace(/^\/+|\/+$/g, '') ?? '';
   const url = `/api/projects/${encodeURIComponent(opts.projectId)}/archive${
     root ? `?root=${encodeURIComponent(root)}` : ''
   }`;
   try {
-    const resp = opts.workspaceContext
-      ? await fetch(url, {
-          headers: workspaceProjectHeaders(opts.workspaceContext),
-        })
-      : await fetch(url);
+    const resp = await fetch(url);
     if (!resp.ok) throw new Error(`archive request failed (${resp.status})`);
     const blob = await resp.blob();
     triggerDownload(blob, archiveFilenameFrom(resp, opts.fallbackTitle, root));

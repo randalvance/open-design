@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectView } from '../../src/components/ProjectView';
 import { streamViaDaemon } from '../../src/providers/daemon';
-import { buildWorkspacePermissions, buildWorkspaceSeatSummary, type WorkspaceCollabContext } from '@open-design/contracts';
 import { I18nProvider } from '../../src/i18n';
 import { createProject, listMessages } from '../../src/state/projects';
 import type { AppConfig, ChatMessage, Project, ProjectFile } from '../../src/types';
@@ -16,10 +15,8 @@ vi.mock('../../src/providers/daemon', async () => {
   const actual = await vi.importActual<typeof import('../../src/providers/daemon')>('../../src/providers/daemon');
   return {
     ...actual,
-    fetchAmrWalletSnapshot: vi.fn().mockResolvedValue(null),
     listActiveChatRuns: vi.fn().mockResolvedValue([]),
     listProjectRuns: vi.fn().mockResolvedValue([]),
-    publishDaemonRunFinishedEvent: vi.fn(),
     // Real POST /runs, SSE decoder, strategy verdict and callback ordering.
     streamViaDaemon: vi.fn(actual.streamViaDaemon),
   };
@@ -60,7 +57,7 @@ vi.mock('../../src/state/projects', async () => {
 });
 vi.mock('../../src/components/AppChromeHeader', () => ({ AppChromeHeader: () => null, APP_CHROME_FILE_ACTIONS_ID: 'test-file-actions' }));
 vi.mock('../../src/components/AvatarMenu', () => ({ AvatarMenu: () => null }));
-vi.mock('../../src/components/Loading', () => ({ CenteredLoader: () => null }));
+vi.mock('../../src/components/Loading', () => ({ CenteredLoader: () => null, Spinner: () => null }));
 vi.mock('../../src/components/ChatPane', () => ({
   ChatPane: ({ messages, onSend, viewerOnly, sendDisabled, error, activeConversationId, streaming, loading, initialDraft, queuedItems }: {
     messages: ChatMessage[];
@@ -160,17 +157,12 @@ let runStartedAt: number;
 let accumulatedText: string;
 let eventId: number;
 let terminal: boolean;
-let ambient: WorkspaceCollabContext;
-let member: WorkspaceCollabContext;
+let ambient: ReturnType<typeof context>;
+let member: ReturnType<typeof context>;
 let runRequest: { assistantMessageId: string; userMessageId: string } | undefined;
 
-function context(role: 'owner' | 'member'): WorkspaceCollabContext {
-  return {
-    workspaceId: 'owner-qa-workspace', workspaceType: 'personal', workspaceMemberId: 'owner-qa-member',
-    role, memberStatus: 'active', lifecycleState: 'active', billingState: 'active', planId: null,
-    providerMode: 'platform_credits', seatSummary: buildWorkspaceSeatSummary({ seatLimit: 0, usedSeats: 0 }),
-    permissions: buildWorkspacePermissions({ role, lifecycleState: 'active' }),
-  };
+function context(role: 'owner' | 'member') {
+  return { workspaceId: 'owner-qa-workspace', workspaceMemberId: 'owner-qa-member', role };
 }
 function strategyTask() {
   return {
@@ -194,7 +186,7 @@ function mountProject() {
   return render(<I18nProvider initial="en"><ProjectView
     project={project} initialProjectDetail={{ project, resolvedDir: '/workspace/owner-test' }}
     routeConversationId={`conv-${project.id}`} routeFileName={null}
-    config={config} workspaceContextOverride={ambient}
+    config={config}
     agents={[{ id: 'opencode', name: 'OpenCode', bin: 'opencode', available: true, models: [] }]}
     skills={[]} designTemplates={[]} designSystems={[]} daemonLive
     onModeChange={vi.fn()} onAgentChange={vi.fn()} onAgentModelChange={vi.fn()}
@@ -341,7 +333,7 @@ afterEach(async () => {
 
 async function runHomeArtifactScenario() {
   const created = await createProject({ id: project.id, name: project.name, skillId: null,
-    designSystemId: null, pendingPrompt: project.pendingPrompt, workspaceContext: ambient });
+    designSystemId: null, pendingPrompt: project.pendingPrompt });
   expect(created.project.id).toBe(project.id);
   window.sessionStorage.setItem(`od:auto-send-first:${project.id}`, '1');
   window.sessionStorage.setItem(`od:auto-send-prompt:${project.id}`, project.pendingPrompt!);
@@ -356,7 +348,7 @@ async function runHomeArtifactScenario() {
     })).toHaveBeenCalledTimes(1);
     expect(streamController).toBeDefined();
     expect(runRequest?.assistantMessageId).toMatch(/^home-auto-send-.*-assistant$/);
-    expect(requests.some((r) => r.path.endsWith('/files') && r.method === 'GET' && r.role === 'member')).toBe(true);
+    expect(requests.some((r) => r.path.endsWith('/files') && r.method === 'GET')).toBe(true);
   });
   await act(async () => { frame('start', { bin: 'opencode' }); textFrame('Owner QA is active.\n'); });
   // A fresh Home project has the actual Design Files empty-state action.
@@ -471,7 +463,7 @@ describe('Late manual autosave while terminal artifact recovery is pending', () 
       .toEqual(['agent-notes.md', 'agent-output.html']);
     expect(message.traceObjectFiles?.map((file) => file.name)).toEqual(['agent-notes.md']);
     expect(files.map((file) => file.name).sort()).toEqual(['agent-notes.md', 'agent-output.html', 'document.md']);
-    const readback = await listMessages(project.id, `conv-${project.id}`, member);
+    const readback = await listMessages(project.id, `conv-${project.id}`);
     const saved = readback.find((item) => item.id === message.id);
     expect(saved?.runId).toBe(`run-${project.id}`);
     expect(saved?.producedFiles?.map((file) => file.name).sort()).toEqual(['agent-notes.md', 'agent-output.html']);

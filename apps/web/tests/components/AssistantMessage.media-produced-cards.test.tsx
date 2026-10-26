@@ -27,9 +27,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AssistantMessage } from '../../src/components/AssistantMessage';
-import { CollabProvider } from '../../src/collab/collab-context';
 import type { ChatMessage, ProjectFile } from '../../src/types';
-import { workspaceContextFixture } from '../helpers/workspace-context';
 
 beforeAll(() => {
   const store = new Map<string, string>();
@@ -53,33 +51,6 @@ afterEach(() => {
 const PROJECT_ID = 'cff92082-572f-4016-8ba0-ff4422891bd2';
 const RUN_STARTED_AT = 1787900000000;
 const RUN_ENDED_AT = RUN_STARTED_AT + 166_000;
-
-function projectCollabValue() {
-  return {
-    workspaceContext: workspaceContextFixture({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-    }),
-    workspaceContextLoading: false,
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed' as const,
-    isOwner: false,
-    isEffectiveOwner: true,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: vi.fn(),
-    requestPublish: vi.fn(),
-    refreshPresence: vi.fn(),
-    checkStatusNow: vi.fn(),
-  };
-}
 
 const AUDIO_FILE: ProjectFile = {
   name: 'greeting-autumn-cn.mp3',
@@ -144,7 +115,7 @@ const DONE_PROSE = '已生成。接下来你想做什么？';
 
 function renderTurn(message: ChatMessage, projectFiles: ProjectFile[]) {
   return render(
-    <CollabProvider value={projectCollabValue()}>
+    <>
       <AssistantMessage
         message={message}
         streaming={false}
@@ -152,7 +123,7 @@ function renderTurn(message: ChatMessage, projectFiles: ProjectFile[]) {
         projectFiles={projectFiles}
         isLast
       />
-    </CollabProvider>,
+    </>,
   );
 }
 
@@ -224,7 +195,7 @@ describe('registered live artifact delivery', () => {
     const message = mediaTurn({ producedFiles: [template] });
     message.events = [...(message.events ?? []), { kind: 'live_artifact', action: 'created', projectId: PROJECT_ID, artifactId: 'la-board', title: '任务看板' }];
     const open = vi.fn();
-    render(<CollabProvider value={projectCollabValue()}><AssistantMessage message={message} streaming={false} projectId={PROJECT_ID} projectFiles={[template]} onRequestOpenFile={open} isLast /></CollabProvider>);
+    render(<><AssistantMessage message={message} streaming={false} projectId={PROJECT_ID} projectFiles={[template]} onRequestOpenFile={open} isLast /></>);
     fireEvent.click(screen.getByRole('button', { name: '任务看板' }));
     expect(open).toHaveBeenCalledWith('live:la-board');
     expect(screen.queryByTestId('artifact-card-template.html')).toBeNull();

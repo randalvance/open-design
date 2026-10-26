@@ -17,37 +17,14 @@
 // the same Workspace identity.
 //
 // Nothing here is a new cache. `fetchProjectFiles` already owns this URL, its
-// key (project + Workspace identity), its invalidation fence, and its
+// key (project), its invalidation fence, and its
 // cancellation semantics; the hook just stops going around it.
 
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
 
 import { useDesignMdState } from '../../src/hooks/useDesignMdState';
 import { fetchProjectFiles } from '../../src/providers/registry';
-
-function context(overrides: Partial<WorkspaceCollabContext> = {}): WorkspaceCollabContext {
-  return {
-    workspaceId: 'ws-1',
-    workspaceType: 'team',
-    teamId: 'team-1',
-    workspaceMemberId: 'wm-1',
-    role: 'member',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: null,
-    providerMode: 'platform_credits',
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 5, usedSeats: 1 }),
-    permissions: buildWorkspacePermissions({ role: 'member', lifecycleState: 'active' }),
-    ...overrides,
-  };
-}
 
 const fetchCalls: string[] = [];
 
@@ -84,9 +61,8 @@ const fileListCalls = (projectId: string): string[] =>
 
 describe('useDesignMdState reads the project file list through the shared reader', () => {
   it('shares ProjectView\'s in-flight /files request instead of opening its own', async () => {
-    const ctx = context();
-    const projectView = fetchProjectFiles('p-share', { workspaceContext: ctx });
-    const { result } = renderHook(() => useDesignMdState('p-share', 0, ctx));
+    const projectView = fetchProjectFiles('p-share');
+    const { result } = renderHook(() => useDesignMdState('p-share', 0));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     await projectView;
@@ -96,29 +72,14 @@ describe('useDesignMdState reads the project file list through the shared reader
 
   it('does NOT share across projects', async () => {
     // Scope guard: collapsing on the URL alone would be a different bug.
-    const ctx = context();
-    const a = renderHook(() => useDesignMdState('p-one', 0, ctx));
-    const b = renderHook(() => useDesignMdState('p-two', 0, ctx));
+    const a = renderHook(() => useDesignMdState('p-one', 0));
+    const b = renderHook(() => useDesignMdState('p-two', 0));
 
     await waitFor(() => expect(a.result.current.loading).toBe(false));
     await waitFor(() => expect(b.result.current.loading).toBe(false));
 
     expect(fileListCalls('p-one')).toHaveLength(1);
     expect(fileListCalls('p-two')).toHaveLength(1);
-  });
-
-  it('does NOT share across Workspace identities', async () => {
-    // Scope guard: the request carries Workspace headers, and one identity's
-    // file list is not an answer to another identity's read.
-    const a = fetchProjectFiles('p-scope', { workspaceContext: context({ workspaceId: 'ws-a' }) });
-    const { result } = renderHook(() =>
-      useDesignMdState('p-scope', 0, context({ workspaceId: 'ws-b' })),
-    );
-
-    await waitFor(() => expect(result.current.loading).toBe(false));
-    await a;
-
-    expect(fileListCalls('p-scope')).toHaveLength(2);
   });
 
   it('surfaces a transport failure as an error, not an empty directory', async () => {
@@ -133,7 +94,7 @@ describe('useDesignMdState reads the project file list through the shared reader
       return new Response('not found', { status: 404 });
     });
 
-    const { result } = renderHook(() => useDesignMdState('p-fail', 0, context()));
+    const { result } = renderHook(() => useDesignMdState('p-fail', 0));
 
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.error).toBeInstanceOf(Error);

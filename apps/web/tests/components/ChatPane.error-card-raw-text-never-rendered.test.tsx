@@ -118,7 +118,7 @@ function failedAssistant(detail: string, overrides: Partial<ChatMessage> = {}): 
     createdAt: 1,
     runId: 'run-1',
     runStatus: 'failed',
-    agentId: 'amr',
+    agentId: 'opencode',
     events: [
       { kind: 'status', label: 'error', detail, code: UNMAPPED_CODE },
     ],
@@ -136,7 +136,7 @@ const HOST_APPENDED_CARD: ChatMessage = {
   role: 'assistant',
   content: 'chat.brandBrowserAssistMessage\n\n<od-card type="brand-browser-assist">{}</od-card>',
   createdAt: 2,
-  agentId: 'amr',
+  agentId: 'opencode',
   events: [{ kind: 'text', text: 'chat.brandBrowserAssistMessage' }],
 } as unknown as ChatMessage;
 
@@ -163,7 +163,7 @@ function renderChat(props: {
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
+      config={{ agentId: 'opencode', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }

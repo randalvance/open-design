@@ -4,27 +4,10 @@ import { pickHomeTemplate, homeTemplateTrigger } from '../helpers/home-template-
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const workspaceContextMock = vi.hoisted(() => ({
-  state: {
-    context: null,
-    resourceReadIdentity: null,
-    loading: false,
-    identityChangePending: false,
-    failure: 'unsupported' as 'unsupported' | 'unavailable' | undefined,
-  },
-}));
 
 vi.mock('../../src/components/home-hero/PlaceholderCarousel', () => ({
   PlaceholderCarousel: () => null,
 }));
-
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>();
-  return {
-    ...actual,
-    useWorkspaceContext: () => workspaceContextMock.state,
-  };
-});
 
 import { HomeView } from '../../src/components/HomeView';
 import { HOME_APPLY_TEMPLATE_EVENT } from '../../src/components/home-hero/chips';
@@ -77,13 +60,6 @@ afterEach(() => {
   cleanup();
   window.localStorage.clear();
   window.sessionStorage.clear();
-  workspaceContextMock.state = {
-    context: null,
-    resourceReadIdentity: null,
-    loading: false,
-    identityChangePending: false,
-    failure: 'unsupported',
-  };
 });
 
 describe('HomeView media composer options', () => {
@@ -459,146 +435,6 @@ describe('HomeView media composer options', () => {
         videoModel: 'hyperframes-html',
       }),
     })));
-  });
-
-  it('does not wait for rich Workspace context after a directory-scoped plugin was selected', async () => {
-    const fetchMock = stubFetch({ teamMediaPlugin: true });
-    const onSubmit = vi.fn();
-    const props = homeProps({ onSubmit });
-    const view = render(<HomeView {...props} />);
-
-    await clickHomeRailChip('video');
-    await setHomePrompt('Create a directory-scoped launch teaser.');
-    workspaceContextMock.state = {
-      context: null,
-      resourceReadIdentity: null,
-      loading: true,
-      identityChangePending: false,
-      failure: undefined,
-    };
-    view.rerender(<HomeView {...props} />);
-    await submitHome();
-
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
-    const localApply = fetchMock.mock.calls.filter(([url]) => (
-      typeof url === 'string'
-      && url.includes('/api/plugins/od-media-generation/apply')
-    )).at(-1);
-    expect(localApply).toBeTruthy();
-    expect(new Headers(localApply?.[1]?.headers).has('x-od-workspace-id')).toBe(false);
-  });
-
-  it('keeps bundled plugins usable when identity is pending and the directory is empty', async () => {
-    const fetchMock = stubFetch({ emptyWorkspaceDirectory: true });
-    const onSubmit = vi.fn();
-    const props = homeProps({ onSubmit });
-    const view = render(<HomeView {...props} />);
-
-    await clickHomeRailChip('video');
-    await setHomePrompt('Create a launch teaser after signing out.');
-    const applyCountBeforeSubmit = fetchMock.mock.calls.filter(([url]) => (
-      typeof url === 'string' && url.includes('/api/plugins/od-media-generation/apply')
-    )).length;
-    workspaceContextMock.state = {
-      context: null,
-      resourceReadIdentity: null,
-      loading: false,
-      identityChangePending: true,
-      failure: undefined,
-    };
-    view.rerender(<HomeView {...props} />);
-    await submitHome();
-
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
-    const applyCountAfterSubmit = fetchMock.mock.calls.filter(([url]) => (
-      typeof url === 'string' && url.includes('/api/plugins/od-media-generation/apply')
-    )).length;
-    expect(applyCountAfterSubmit).toBe(applyCountBeforeSubmit + 1);
-    const submittedApply = fetchMock.mock.calls.filter(([url]) => (
-      typeof url === 'string' && url.includes('/api/plugins/od-media-generation/apply')
-    )).at(-1);
-    expect(new Headers(submittedApply?.[1]?.headers).has('x-od-workspace-id')).toBe(false);
-  });
-
-  it('does not wait for directory discovery when applying a bundled plugin', async () => {
-    const fetchMock = stubFetch({ workspaceDirectoryStatus: 503 });
-    const onSubmit = vi.fn();
-    const props = homeProps({ onSubmit });
-    const view = render(<HomeView {...props} />);
-
-    await clickHomeRailChip('video');
-    await setHomePrompt('Create a local launch teaser while identity is unavailable.');
-    workspaceContextMock.state = {
-      context: null,
-      resourceReadIdentity: null,
-      loading: true,
-      identityChangePending: true,
-      failure: 'unavailable',
-    };
-    view.rerender(<HomeView {...props} />);
-    const directoryReadsBeforeSubmit = fetchMock.mock.calls.filter(([url]) => (
-      typeof url === 'string' && url === '/api/workspace/directory'
-    )).length;
-    await submitHome();
-
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
-    const directoryReadsAfterSubmit = fetchMock.mock.calls.filter(([url]) => (
-      typeof url === 'string' && url === '/api/workspace/directory'
-    )).length;
-    expect(directoryReadsAfterSubmit).toBe(directoryReadsBeforeSubmit);
-    const submittedApply = fetchMock.mock.calls.filter(([url]) => (
-      typeof url === 'string' && url.includes('/api/plugins/od-media-generation/apply')
-    )).at(-1);
-    expect(new Headers(submittedApply?.[1]?.headers).has('x-od-workspace-id')).toBe(false);
-  });
-
-  it('does not expose a team plugin for unscoped apply while workspace identity is pending', async () => {
-    const fetchMock = stubFetch({
-      emptyWorkspaceDirectory: true,
-      teamMediaPlugin: true,
-    });
-    workspaceContextMock.state = {
-      context: null,
-      resourceReadIdentity: null,
-      loading: false,
-      identityChangePending: true,
-      failure: undefined,
-    };
-    renderHome();
-
-    await screen.findByTestId('home-hero-input');
-    expect(
-      (homeTemplateTrigger() as HTMLButtonElement).disabled,
-    ).toBe(true);
-    expect(fetchMock.mock.calls.some(([url]) => (
-      typeof url === 'string' && url.includes('/api/plugins/od-media-generation/apply')
-    ))).toBe(false);
-  });
-
-  it('keeps a locally catalogued plugin usable until local reconciliation removes it', async () => {
-    const fetchMock = stubFetch({
-      emptyWorkspaceDirectory: true,
-      teamMediaPlugin: true,
-    });
-    const onSubmit = vi.fn();
-    workspaceContextMock.state = {
-      context: null,
-      resourceReadIdentity: null,
-      loading: false,
-      identityChangePending: false,
-      failure: undefined,
-    };
-    renderHome({ onSubmit });
-
-    await clickHomeRailChip('video');
-    await setHomePrompt('Create a launch teaser.');
-    await submitHome();
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
-    const apply = fetchMock.mock.calls.find(([url]) => (
-      typeof url === 'string' && url.includes('/api/plugins/od-media-generation/apply')
-    ));
-    expect(apply).toBeTruthy();
-    expect(new Headers(apply?.[1]?.headers).has('x-od-workspace-id')).toBe(false);
   });
 
   it('preserves od-media-generation required inputs when submitting media chips', async () => {

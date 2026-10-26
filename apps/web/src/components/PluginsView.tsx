@@ -16,12 +16,10 @@ import { Dialog } from '@open-design/components';
 import {
   PLUGIN_SHARE_ACTION_PLUGIN_IDS,
   resolveLocalizedText,
-  workspaceContextHasTeamIdentity,
   type ApplyResult,
   type InstalledPluginRecord,
   type PluginSourceKind,
   type SkillSummary,
-  type WorkspaceCollabContext,
 } from '@open-design/contracts';
 import {
   fetchSkills,
@@ -47,10 +45,7 @@ import {
   trackExtensionMarketplaceClick,
   trackWorkspaceResourceActionResult,
 } from '../analytics/events';
-import {
-  stableAnalyticsRequestErrorCode,
-  workspaceAnalyticsDimensions,
-} from '../analytics/workspace';
+import { stableAnalyticsRequestErrorCode } from '../analytics/workspace';
 import type { TrackingWorkspaceScope } from '@open-design/contracts/analytics';
 import {
   addPluginMarketplace,
@@ -61,10 +56,8 @@ import {
   listPlugins,
   refreshPluginMarketplace,
   removePluginMarketplace,
-  resolvedWorkspaceContextForWrite,
   setPluginMarketplaceTrust,
   uninstallPlugin,
-  workspaceProjectHeaders,
   type PluginInstallOutcome,
   type PluginShareAction,
   type PluginShareProjectOutcome,
@@ -90,20 +83,8 @@ import { copyToClipboard } from '../lib/copy-to-clipboard';
 import type { PluginUseAction } from './plugins-home/useActions';
 import { AnimatePresence } from 'motion/react';
 import { navigate } from '../router';
-import {
-  beginWorkspaceScopedRead,
-  currentWorkspaceAccountGeneration,
-  useWorkspaceContext,
-  workspaceIdentityCacheKey,
-} from '../collab/useWorkspaceContext';
-import {
-  useWorkspaceInvalidation,
-} from '../collab/workspace-events';
-import { useWorkspaceSnapshotActivation } from '../collab/workspace-snapshot-activation';
 
-type PluginsTab = 'installed' | 'available' | 'sources' | 'team';
-
-type PluginWorkspaceReadMode = 'scoped' | 'headerless' | 'pending' | 'blocked';
+type PluginsTab = 'installed' | 'available' | 'sources';
 
 const USER_SOURCE_KINDS = new Set<PluginSourceKind>([
   'user',
@@ -113,51 +94,6 @@ const USER_SOURCE_KINDS = new Set<PluginSourceKind>([
   'url',
   'local',
 ]);
-
-function setsEqual<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
-  if (a.size !== b.size) return false;
-  for (const item of a) {
-    if (!b.has(item)) return false;
-  }
-  return true;
-}
-
-function sharedResourceMetaEqual(
-  a: ReadonlyMap<string, SharedResourceCardMeta>,
-  b: ReadonlyMap<string, SharedResourceCardMeta>,
-): boolean {
-  if (a.size !== b.size) return false;
-  for (const [key, next] of b) {
-    const prev = a.get(key);
-    if (!prev) return false;
-    if (
-      prev.title !== next.title ||
-      prev.description !== next.description ||
-      prev.canUnshare !== next.canUnshare ||
-      prev.ownerMemberId !== next.ownerMemberId
-    ) {
-      return false;
-    }
-  }
-  return true;
-}
-
-/**
- * Whether a team-shared resource belongs in MY Personal tab — i.e. I personally
- * own it. Ownership is `ownerMemberId === myMemberId`, NOT `canUnshare`: a
- * workspace owner/admin can unshare anyone's shared resource, and a resource I
- * merely happen to have a local copy of (a shared fixture, a materialized team
- * resource) is not my personal one. Falls back to `canUnshare` only when the
- * owner id is unknown, so behavior degrades to the previous heuristic rather
- * than dropping a resource whose owner the hub did not report.
- */
-export function sharedResourceIsMine(
-  meta: SharedResourceCardMeta | undefined,
-  myMemberId: string | null,
-): boolean {
-  if (meta?.ownerMemberId) return myMemberId != null && meta.ownerMemberId === myMemberId;
-  return meta?.canUnshare === true;
-}
 
 function isPersonalPluginRecord(plugin: InstalledPluginRecord): boolean {
   if (!USER_SOURCE_KINDS.has(plugin.sourceKind)) return false;
@@ -182,7 +118,6 @@ const PLUGINS_TABS: ReadonlyArray<{
   { id: 'installed' },
   { id: 'available' },
   { id: 'sources' },
-  { id: 'team' },
 ];
 
 const PLUGIN_SHARE_DETAILS: Record<PluginShareAction, {
@@ -245,39 +180,6 @@ export function PluginsView({
 }: PluginsViewProps) {
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
-  // Attaches the same workspace identity headers project reads already carry
-  // (`workspaceProjectHeaders`), so the daemon's `GET /api/plugins` /
-  // `POST /api/plugins/install` can apply the workspace-scoped filter and
-  // stamp new installs with the acting workspace. `useWorkspaceContext` is a
-  // coalesced read shared across the nav shell, so calling it again here does
-  // not fan out an extra fetch.
-  const pluginsWorkspaceContextState = useWorkspaceContext();
-  const {
-    context: pluginsWorkspaceContext,
-    loading: pluginsWorkspaceContextLoading,
-    identityChangePending: pluginsIdentityChangePending,
-    failure: pluginsWorkspaceContextFailure,
-  } = pluginsWorkspaceContextState;
-  const pluginsContextRef = useRef(pluginsWorkspaceContext);
-  pluginsContextRef.current = pluginsWorkspaceContext;
-  const pluginsAccountGeneration = currentWorkspaceAccountGeneration();
-  const pluginsReadMode: PluginWorkspaceReadMode = pluginsIdentityChangePending
-    || (!pluginsWorkspaceContext && pluginsWorkspaceContextLoading)
-    ? 'pending'
-    : pluginsWorkspaceContext
-      ? 'scoped'
-      : pluginsWorkspaceContextFailure === 'unavailable'
-        ? 'blocked'
-        : 'headerless';
-  const pluginsIdentity = JSON.stringify([
-    pluginsAccountGeneration,
-    workspaceIdentityCacheKey(pluginsWorkspaceContext),
-    pluginsReadMode,
-  ]);
-  const pluginsIdentityRef = useRef(pluginsIdentity);
-  pluginsIdentityRef.current = pluginsIdentity;
-  const pluginsReadModeRef = useRef(pluginsReadMode);
-  pluginsReadModeRef.current = pluginsReadMode;
   const pluginsPageViewFiredRef = useRef(false);
   useEffect(() => {
     if (pluginsPageViewFiredRef.current) return;
@@ -288,7 +190,6 @@ export function PluginsView({
   const [allInstalledPlugins, setAllInstalledPlugins] = useState<InstalledPluginRecord[]>([]);
   const [marketplaces, setMarketplaces] = useState<PluginMarketplace[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadedIdentity, setLoadedIdentity] = useState<string | null>(null);
   const pluginCatalogRequestGenerationRef = useRef(0);
   const [activeTab, setActiveTab] = useState<PluginsTab>('installed');
   const [importOpen, setImportOpen] = useState(false);
@@ -315,44 +216,25 @@ export function PluginsView({
 
   async function refresh() {
     const requestGeneration = ++pluginCatalogRequestGenerationRef.current;
-    const issuedIdentity = pluginsIdentityRef.current;
-    const issuedAccountGeneration = currentWorkspaceAccountGeneration();
-    const issuedReadMode = pluginsReadModeRef.current;
     const isStillCurrent = () =>
-      pluginCatalogRequestGenerationRef.current === requestGeneration
-      && currentWorkspaceAccountGeneration() === issuedAccountGeneration
-      && pluginsIdentityRef.current === issuedIdentity;
-    if (issuedReadMode === 'pending' || issuedReadMode === 'blocked') {
+      pluginCatalogRequestGenerationRef.current === requestGeneration;
+    setLoading(true);
+    try {
+      const [rows, allRows, catalogs] = await Promise.all([
+        listPlugins(),
+        listPlugins({ includeHidden: true }),
+        listPluginMarketplaces(),
+      ]);
+      if (!isStillCurrent()) return;
+      setPlugins(rows);
+      setAllInstalledPlugins(allRows);
+      setMarketplaces(catalogs);
+      setLoading(false);
+    } catch {
       if (!isStillCurrent()) return;
       setPlugins([]);
       setAllInstalledPlugins([]);
       setMarketplaces([]);
-      setLoadedIdentity(issuedIdentity);
-      setLoading(issuedReadMode === 'pending');
-      return;
-    }
-    const read = beginWorkspaceScopedRead(pluginsContextRef.current);
-    setLoading(true);
-    try {
-      const [rows, allRows, catalogs] = await Promise.all([
-        listPlugins({ workspaceContext: read.context }),
-        listPlugins({ includeHidden: true, workspaceContext: read.context }),
-        listPluginMarketplaces(),
-      ]);
-      if (!isStillCurrent() || !read.isStillCurrent(pluginsContextRef.current)) return;
-      setPlugins(rows);
-      setAllInstalledPlugins(allRows);
-      setMarketplaces(catalogs);
-      setLoadedIdentity(issuedIdentity);
-      setLoading(false);
-    } catch {
-      if (!isStillCurrent() || !read.isStillCurrent(pluginsContextRef.current)) return;
-      // A failed read for a new identity has no authority to keep rendering the
-      // previous identity's installed catalog.
-      setPlugins([]);
-      setAllInstalledPlugins([]);
-      setMarketplaces([]);
-      setLoadedIdentity(issuedIdentity);
       setLoading(false);
     }
   }
@@ -361,23 +243,17 @@ export function PluginsView({
     void refresh();
     window.addEventListener('open-design:plugins-changed', refresh);
     return () => window.removeEventListener('open-design:plugins-changed', refresh);
-    // Re-run on workspace switch (not just mount) so "installed" reflects the
-    // newly active workspace's binding — see `pluginsWorkspaceContext` above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pluginsIdentity]);
+  }, []);
 
-  const catalogMatchesIdentity = loadedIdentity === pluginsIdentity;
-  const visiblePlugins = catalogMatchesIdentity ? plugins : [];
-  const visibleInstalledPlugins = catalogMatchesIdentity ? allInstalledPlugins : [];
-  const visibleMarketplaces = catalogMatchesIdentity ? marketplaces : [];
-  const visibleLoading = loading || !catalogMatchesIdentity;
+  const visibleLoading = loading;
   const userPlugins = useMemo(
-    () => visiblePlugins.filter(isPersonalPluginRecord),
-    [visiblePlugins],
+    () => plugins.filter(isPersonalPluginRecord),
+    [plugins],
   );
   const availablePlugins = useMemo(
-    () => buildAvailablePlugins(visibleMarketplaces, visibleInstalledPlugins),
-    [visibleMarketplaces, visibleInstalledPlugins],
+    () => buildAvailablePlugins(marketplaces, allInstalledPlugins),
+    [marketplaces, allInstalledPlugins],
   );
 
   async function finishImport(
@@ -406,10 +282,7 @@ export function PluginsView({
     }
     setPendingApplyId(record.id);
     setNotice(null);
-    const result = await applyPlugin(record.id, {
-      locale,
-      workspaceContext: pluginsContextRef.current,
-    });
+    const result = await applyPlugin(record.id, { locale });
     setPendingApplyId(null);
     if (!result) {
       setNotice({
@@ -432,7 +305,7 @@ export function PluginsView({
     try {
       const result = await duplicatePluginAsProject(record.id, {
         name: localizePluginTitle(locale, record),
-      }, resolvedWorkspaceContextForWrite(pluginsWorkspaceContextState));
+      });
       setDetailsRecord(null);
       navigate({
         kind: 'project',
@@ -488,7 +361,7 @@ export function PluginsView({
     setPendingInstallEntry(plugin.key);
     try {
       const outcome = await finishImport(
-        () => installPluginSource(plugin.installSource ?? plugin.entry.name, pluginsWorkspaceContext),
+        () => installPluginSource(plugin.installSource ?? plugin.entry.name),
         'installed',
       );
       if (outcome.ok) setAvailableDetails(null);
@@ -605,7 +478,6 @@ export function PluginsView({
         {!visibleLoading && activeTab === 'installed' ? (
           <PluginsHomeSection
             plugins={userPlugins}
-            workspaceContext={pluginsWorkspaceContext}
             loading={false}
             activePluginId={activePlugin?.record.id ?? null}
             pendingApplyId={pendingApplyId}
@@ -720,7 +592,7 @@ export function PluginsView({
 
         {!visibleLoading && activeTab === 'sources' ? (
           <SourcesPanel
-            marketplaces={visibleMarketplaces}
+            marketplaces={marketplaces}
             pendingAction={pendingSourceAction}
             onAdd={(url, trust) => {
               trackPluginsSourcesTabClick(analytics.track, {
@@ -766,22 +638,12 @@ export function PluginsView({
           />
         ) : null}
 
-        {activeTab === 'team' ? (
-          <TeamPanel
-            t={t}
-            plugins={userPlugins}
-            workspaceContext={pluginsWorkspaceContext}
-            workspaceIdentity={pluginsIdentity}
-            workspaceReadMode={pluginsReadMode}
-          />
-        ) : null}
       </div>
 
       <AnimatePresence>
         {detailsRecord ? (
         <PluginDetailsModal
           record={detailsRecord}
-          workspaceContext={pluginsWorkspaceContext}
             onClose={() => setDetailsRecord(null)}
             onUse={(record, action) => void handleUsePlugin(record, action)}
             onDuplicate={(record) => void handleDuplicatePlugin(record)}
@@ -825,7 +687,7 @@ export function PluginsView({
       {importOpen ? (
         <PluginImportModal
           onClose={() => setImportOpen(false)}
-          onInstallSource={(source) => finishImport(() => installPluginSource(source, pluginsWorkspaceContext))}
+          onInstallSource={(source) => finishImport(() => installPluginSource(source))}
           onUploadZip={(file) => finishImport(() => uploadPluginZip(file))}
           onUploadFolder={(files) => finishImport(() => uploadPluginFolder(files))}
         />
@@ -838,28 +700,21 @@ export function PluginsView({
 // ExtensionsMarketplace — the "扩展" surface.
 //
 // Faithfully mirrors the `PluginMarketplaceDemo` UX (专家套件/技能 top tabs, a
-// 官方/团队/个人 scope filter, the `plugin-marketplace` card grid, and a
-// share-to-team action) but every scope is wired to REAL daemon data instead
-// of the demo's hardcoded catalog:
+// 官方/个人 scope filter and the `plugin-marketplace` card grid) but every
+// scope is wired to REAL daemon data instead of the demo's hardcoded catalog:
 //
 //   专家套件 (plugins)      技能 (skills)
 //   ─────────────────────  ─────────────────────────────────
 //   官方  → marketplace     官方  → fetchSkills() source!=='user'
 //           registry list           (built-in skills)
-//   团队  → GET /api/workspace/plugins/team   /skills/team  ({ ids })
 //   个人  → listPlugins() user kinds   fetchSkills() source==='user'
-//
-// The share-to-team action uses POST /api/workspace/:kind/:id/share. Removing
-// from the team uses DELETE on the same route, backed by Vela's resource owner
-// permission gate.
 // ============================================================================
 
 type MarketMode = 'plugins' | 'skills';
-type MarketScope = 'official' | 'team' | 'personal';
+type MarketScope = 'official' | 'personal';
 
-const MARKET_SCOPES: ReadonlyArray<{ id: MarketScope; labelKey: 'pluginsView.scope.official' | 'pluginsView.scope.team' | 'pluginsView.scope.personal' }> = [
+const MARKET_SCOPES: ReadonlyArray<{ id: MarketScope; labelKey: 'pluginsView.scope.official' | 'pluginsView.scope.personal' }> = [
   { id: 'official', labelKey: 'pluginsView.scope.official' },
-  { id: 'team', labelKey: 'pluginsView.scope.team' },
   { id: 'personal', labelKey: 'pluginsView.scope.personal' },
 ];
 
@@ -975,20 +830,6 @@ interface MarketCardCategory {
   label: string;
 }
 
-interface SharedResourceCardMeta {
-  id: string;
-  title?: string;
-  description?: string;
-  canUnshare?: boolean;
-  /**
-   * The member who shared this resource to the team. This is the ownership
-   * signal for the Personal tab: a workspace owner/admin can unshare anyone's
-   * resource (so `canUnshare` is true for them), but that does not make it their
-   * personal resource — only a matching `ownerMemberId` does.
-   */
-  ownerMemberId?: string;
-}
-
 interface MarketCard {
   id: string;
   title: string;
@@ -997,17 +838,6 @@ interface MarketCard {
   action: MarketCardAction;
   // what the card body opens when clicked; null when nothing local backs it
   detail: MarketCardDetail | null;
-  // Present for a personal resource that is either not yet shared, or already
-  // shared AND managed by the current caller (`canUnshare` true — the
-  // original sharer or a workspace owner/admin). The button/menu label
-  // switches between "share" and "sync" (see `card.isShared`) but both cases
-  // call the same POST .../share route: it has no "already shared" guard, so
-  // a repeat call just pushes the current local directory over the hub's
-  // stale copy. Absent entirely for a teammate's pulled copy the caller may
-  // not manage, so a plain member can never overwrite someone else's share.
-  share: { kind: MarketMode; id: string } | null;
-  // present for a resource currently in the team index
-  unshare: { kind: MarketMode; id: string } | null;
   // present only for a resource the user actually owns on disk — a bundled
   // official plugin and a built-in skill ship with the app and are not the
   // user's to remove.
@@ -1015,7 +845,6 @@ interface MarketCard {
   // real content counts; null whenever no manifest backs the card
   stats: MarketCardStats | null;
   category: MarketCardCategory | null;
-  isShared: boolean;
 }
 
 interface ExtensionsMarketplaceProps {
@@ -1039,34 +868,9 @@ export function ExtensionsMarketplace({
 }: ExtensionsMarketplaceProps) {
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
-  // My own member id, to keep the Personal tab to resources I actually own.
-  const {
-    context: workspaceContext,
-    loading: workspaceContextLoading,
-    failure: workspaceContextFailure,
-  } = useWorkspaceContext();
-  const workspaceDimensions = workspaceAnalyticsDimensions(workspaceContext);
-  // The LATEST context, for `refresh()`'s commit guard. `refresh` is recreated
-  // every render, but the mount effect below captures one closure — so the guard
-  // must compare against a ref, not the captured prop, or it compares the
-  // identity the read was issued for against itself and never fires.
-  const emContextRef = useRef(workspaceContext);
-  emContextRef.current = workspaceContext;
   const isActiveRef = useRef(isActive);
   isActiveRef.current = isActive;
   const catalogStaleRef = useRef(false);
-  const sharedResourcesStaleRef = useRef(false);
-  const myMemberId = workspaceContext?.workspaceMemberId ?? null;
-  // The 团队 scope is a team-workspace surface backed by the resource hub: it
-  // lists the resources shared into the team and offers a share-to-team action.
-  // Gate it on TEAM IDENTITY — the same predicate the daemon uses to accept a
-  // hub share (workspaceContextHasTeamIdentity; see team-resource-share.ts) —
-  // NOT on the billing plan. A team on a free/unpaid tier (trial, lapsed, or
-  // billing not yet resolved) still has a real team resource plane with shared
-  // resources; gating on the plan hid the scope from those teams even though the
-  // daemon happily serves and shares their resources. Personal / signed-out
-  // sessions have no team plane and correctly get no team pill.
-  const hasTeamWorkspace = workspaceContextHasTeamIdentity(workspaceContext);
   const pageViewFiredRef = useRef(false);
   useEffect(() => {
     if (!isActive) return;
@@ -1094,13 +898,12 @@ export function ExtensionsMarketplace({
       extension_kind: input.kind ?? (mode === 'plugins' ? 'expert_plugin' : 'skill'),
       resource_scope: input.scope ?? scope,
       ...(input.id ? { extension_key: input.id } : {}),
-      ...workspaceDimensions,
     });
   }
   function trackResourceResult(input: {
     kind: 'expert_plugin' | 'skill';
     scope: TrackingWorkspaceScope;
-    action: 'share_to_team' | 'sync_to_team' | 'remove_from_team' | 'add';
+    action: 'add';
     result: 'success' | 'failed';
     startedAt: number;
     errorCode?: string;
@@ -1114,12 +917,8 @@ export function ExtensionsMarketplace({
       result: input.result,
       duration_ms: Math.round(performance.now() - input.startedAt),
       ...(input.errorCode ? { error_code: input.errorCode } : {}),
-      ...workspaceDimensions,
     });
   }
-  useEffect(() => {
-    if (scope === 'team' && !hasTeamWorkspace) setScope('official');
-  }, [scope, hasTeamWorkspace]);
   const [query, setQuery] = useState('');
   // Selected category chip (`null` = 全部). Slugs come from the cards in scope.
   const [category, setCategory] = useState<string | null>(null);
@@ -1141,19 +940,8 @@ export function ExtensionsMarketplace({
   const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [navigationCatalogVerified, setNavigationCatalogVerified] = useState(false);
-  const [loadedMarketplaceIdentity, setLoadedMarketplaceIdentity] = useState<string | null>(null);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   const marketplaceCatalogRequestGenerationRef = useRef(0);
-  const sharedResourcesRequestGenerationRef = useRef(0);
-
-  const [sharedPluginIds, setSharedPluginIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [sharedSkillIds, setSharedSkillIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [sharedPluginMeta, setSharedPluginMeta] = useState<ReadonlyMap<string, SharedResourceCardMeta>>(() => new Map());
-  const [sharedSkillMeta, setSharedSkillMeta] = useState<ReadonlyMap<string, SharedResourceCardMeta>>(() => new Map());
-  const [loadedSharedIdentity, setLoadedSharedIdentity] = useState<string | null>(null);
-  const loadedSharedIdentityRef = useRef(loadedSharedIdentity);
-  loadedSharedIdentityRef.current = loadedSharedIdentity;
-  const [sharingId, setSharingId] = useState<string | null>(null);
-  const [unsharingId, setUnsharingId] = useState<string | null>(null);
   const [uninstallingId, setUninstallingId] = useState<string | null>(null);
   // A Set, not a single key: the daemon-side lockfile write is now
   // serialized per-path (issue #109), so distinct plugins can install at
@@ -1240,14 +1028,14 @@ export function ExtensionsMarketplace({
 
   async function handleCreateImportUrl() {
     const url = createUrl.trim();
-    if (!url || createBusy || workspaceContextLoading) return;
+    if (!url || createBusy) return;
     const startedAt = performance.now();
     const trackingKind = createKind === 'skill' ? 'skill' : 'expert_plugin';
     trackExtension('add', { kind: trackingKind, scope: 'personal' });
     if (createKind === 'skill') {
       setCreateBusy('import');
       try {
-        const result = await installSkill({ source: url }, workspaceContext);
+        const result = await installSkill({ source: url });
         if ('error' in result) {
           trackResourceResult({
             kind: 'skill', scope: 'personal', action: 'add', result: 'failed',
@@ -1276,7 +1064,7 @@ export function ExtensionsMarketplace({
     }
     setCreateBusy('import');
     try {
-      const outcome = await installPluginSource(url, workspaceContext);
+      const outcome = await installPluginSource(url);
       if (outcome.ok) {
         await refresh();
         setCreateOpen(false);
@@ -1299,7 +1087,7 @@ export function ExtensionsMarketplace({
   }
 
   async function handleCreateUploadFolder() {
-    if (createFolderFiles.length === 0 || createBusy || workspaceContextLoading) return;
+    if (createFolderFiles.length === 0 || createBusy) return;
     const startedAt = performance.now();
     const trackingKind = createKind === 'skill' ? 'skill' : 'expert_plugin';
     trackExtension('add', { kind: trackingKind, scope: 'personal' });
@@ -1337,10 +1125,7 @@ export function ExtensionsMarketplace({
         setToast({ message: input.error.message, tone: 'error' });
         return;
       }
-      // Stamp the imported skill with the acting workspace, same as the
-      // plugin upload path just above — see `fetchSkills(workspaceContext)`
-      // in `refresh()` below for the read-side counterpart.
-      const result = await importSkill(input, workspaceContext);
+      const result = await importSkill(input);
       if ('error' in result) {
         trackResourceResult({
           kind: 'skill', scope: 'personal', action: 'add', result: 'failed',
@@ -1367,68 +1152,28 @@ export function ExtensionsMarketplace({
 
   async function refresh() {
     const requestGeneration = ++marketplaceCatalogRequestGenerationRef.current;
-    if (
-      marketplaceReadModeRef.current === 'pending'
-      || marketplaceReadModeRef.current === 'blocked'
-    ) return;
-    const read = beginWorkspaceScopedRead(emContextRef.current);
-    const accountGeneration = currentWorkspaceAccountGeneration();
-    const issuedIdentity = JSON.stringify([
-      accountGeneration,
-      workspaceIdentityCacheKey(read.context),
-      read.context ? 'scoped' : 'headerless',
-    ]);
-    const previousPluginCache = readCachedVisiblePlugins({ workspaceContext: read.context });
+    const previousPluginCache = readCachedVisiblePlugins();
     setLoading(true);
     const [rows, allRows, catalogs, skillRows] = await Promise.all([
-      listPlugins({ workspaceContext: read.context }),
-      listPlugins({ includeHidden: true, workspaceContext: read.context }),
+      listPlugins(),
+      listPlugins({ includeHidden: true }),
       listPluginMarketplaces(),
-      // Carry the acting workspace so the daemon's `GET /api/skills` applies
-      // its workspace-scoped filter — mirrors `listPlugins`'s
-      // `workspaceContext` in `PluginsView` above (routes/plugins/index.ts's
-      // `GET /api/plugins`).
-      fetchSkills(read.context),
+      fetchSkills(),
     ]);
-    // Discard an answer for an identity the user has left. `setLoading(false)` is
-    // deliberately skipped too: a stale response is not evidence that the CURRENT
-    // identity's catalog has arrived, and the successor read the effect below
-    // guarantees for every identity change owns clearing it.
-    if (
-      marketplaceCatalogRequestGenerationRef.current !== requestGeneration
-      || currentWorkspaceAccountGeneration() !== accountGeneration
-      || !read.isStillCurrent(emContextRef.current)
-    ) return;
-    const pluginCache = readCachedVisiblePlugins({ workspaceContext: read.context });
+    // Discard an answer a newer read has already superseded.
+    if (marketplaceCatalogRequestGenerationRef.current !== requestGeneration) return;
+    const pluginCache = readCachedVisiblePlugins();
     setNavigationCatalogVerified(pluginCache !== null && pluginCache !== previousPluginCache
       && pluginCache.every(plugin => allRows.includes(plugin)));
     setPlugins(rows);
     setAllInstalledPlugins(allRows);
     setMarketplaces(catalogs);
     setSkills(skillRows);
-    setLoadedMarketplaceIdentity(issuedIdentity);
+    setCatalogLoaded(true);
     setLoading(false);
   }
 
-  // `open-design:plugins-changed` re-reads on mutation. Re-registered per
-  // identity so the handler always closes over a current `refresh`.
-  const marketplaceAccountGeneration = currentWorkspaceAccountGeneration();
-  const marketplaceReadMode = workspaceContext
-    ? 'scoped'
-    : workspaceContextLoading
-      ? 'pending'
-      : workspaceContextFailure === 'unavailable'
-        ? 'blocked'
-        : 'headerless';
-  const marketplaceIdentity = JSON.stringify([
-    marketplaceAccountGeneration,
-    workspaceIdentityCacheKey(workspaceContext),
-    marketplaceReadMode,
-  ]);
-  const marketplaceIdentityRef = useRef(marketplaceIdentity);
-  marketplaceIdentityRef.current = marketplaceIdentity;
-  const marketplaceReadModeRef = useRef(marketplaceReadMode);
-  marketplaceReadModeRef.current = marketplaceReadMode;
+  // `open-design:plugins-changed` re-reads on mutation.
   useEffect(() => {
     const onPluginsChanged = () => {
       if (isActiveRef.current) void refresh();
@@ -1437,186 +1182,19 @@ export function ExtensionsMarketplace({
     window.addEventListener('open-design:plugins-changed', onPluginsChanged);
     return () => window.removeEventListener('open-design:plugins-changed', onPluginsChanged);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [marketplaceIdentity]);
-
-  // The initial read waits for the workspace context to SETTLE. This effect used
-  // to have `[]` deps, which meant the mount closure ran with whatever context
-  // existed on the first render — `null` on a cold open, since
-  // `useWorkspaceContext` seeds from a module cache that a fresh load has not
-  // filled yet. So the marketplace asked `GET /api/skills` headerless and the
-  // daemon answered fail-closed, hiding every workspace-claimed skill; and
-  // because the deps were empty, nothing ever re-read it for the real identity.
-  //
-  // Keyed on the identity digest and guarded by a ref, so a cold mount spends
-  // exactly ONE read (once the context lands) rather than one per render, and a
-  // later workspace switch spends exactly one more.
-  const refreshedIdentityRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!isActive) return;
-    if (workspaceContextLoading) return;
-    if (hasTeamWorkspace) return;
-    if (
-      refreshedIdentityRef.current === marketplaceIdentity
-      && !catalogStaleRef.current
-    ) return;
-    catalogStaleRef.current = false;
-    refreshedIdentityRef.current = marketplaceIdentity;
-    if (marketplaceReadMode === 'blocked') {
-      setPlugins([]);
-      setAllInstalledPlugins([]);
-      setMarketplaces([]);
-      setSkills([]);
-      setLoadedMarketplaceIdentity(marketplaceIdentity);
-      setLoading(false);
-      return;
-    }
-    void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasTeamWorkspace, isActive, workspaceContextLoading, marketplaceIdentity, marketplaceReadMode]);
-
-  const refreshSharedResources = useCallback(async () => {
-    const requestGeneration = ++sharedResourcesRequestGenerationRef.current;
-    const read = beginWorkspaceScopedRead(emContextRef.current);
-    const accountGeneration = currentWorkspaceAccountGeneration();
-    const issuedIdentity = marketplaceIdentityRef.current;
-    const hadCurrentSharedData = loadedSharedIdentityRef.current === issuedIdentity;
-    const readIsStillCurrent = () =>
-      sharedResourcesRequestGenerationRef.current === requestGeneration
-      && currentWorkspaceAccountGeneration() === accountGeneration
-      && marketplaceIdentityRef.current === issuedIdentity
-      && read.isStillCurrent(emContextRef.current);
-    if (!read.context || !workspaceContextHasTeamIdentity(read.context)) {
-      if (!readIsStillCurrent()) return;
-      setSharedPluginIds(new Set());
-      setSharedSkillIds(new Set());
-      setSharedPluginMeta(new Map());
-      setSharedSkillMeta(new Map());
-      setLoadedSharedIdentity(issuedIdentity);
-      return;
-    }
-    const context = read.context;
-    const loadShared = async (
-      basePath: string,
-      setter: Dispatch<SetStateAction<ReadonlySet<string>>>,
-      metaSetter: Dispatch<SetStateAction<ReadonlyMap<string, SharedResourceCardMeta>>>,
-    ): Promise<boolean> => {
-      try {
-        const res = await fetch(`/api/workspace/${basePath}/team`, {
-          cache: 'no-store',
-          headers: workspaceProjectHeaders(context),
-        });
-        if (!res.ok) return false;
-        const body = (await res.json()) as { ids?: unknown; resources?: unknown };
-        if (!readIsStillCurrent()) return false;
-        if (Array.isArray(body.ids)) {
-          const nextIds = new Set(body.ids.filter((id): id is string => typeof id === 'string'));
-          setter((prev) => setsEqual(prev, nextIds) ? prev : nextIds);
-        }
-        if (Array.isArray(body.resources)) {
-          const meta = new Map<string, SharedResourceCardMeta>();
-          for (const resource of body.resources) {
-            if (!resource || typeof resource !== 'object') continue;
-            const record = resource as Record<string, unknown>;
-            if (typeof record.id !== 'string') continue;
-            meta.set(record.id, {
-              id: record.id,
-              ...(typeof record.title === 'string' && record.title.trim() ? { title: record.title } : {}),
-              ...(typeof record.description === 'string' && record.description.trim()
-                ? { description: record.description }
-                : {}),
-              ...(typeof record.canUnshare === 'boolean' ? { canUnshare: record.canUnshare } : {}),
-              ...(typeof record.ownerMemberId === 'string' && record.ownerMemberId.trim()
-                ? { ownerMemberId: record.ownerMemberId }
-                : {}),
-            });
-          }
-          metaSetter((prev) => sharedResourceMetaEqual(prev, meta) ? prev : meta);
-        }
-        return true;
-      } catch {
-        // Off-team / offline → keep the last known collection until the next
-        // successful read, avoiding a flicker when the workspace proxy is slow.
-        return false;
-      }
-    };
-    const loaded = await Promise.all([
-      loadShared('plugins', setSharedPluginIds, setSharedPluginMeta),
-      loadShared('skills', setSharedSkillIds, setSharedSkillMeta),
-    ]);
-    if (!readIsStillCurrent()) return;
-    if (!loaded.every(Boolean) && !hadCurrentSharedData) {
-      // A last-good snapshot may be retained only for the identity that produced
-      // it. A cold/new identity with an unavailable hub gets an empty safe view,
-      // never the previous account/workspace's shared-resource membership.
-      setSharedPluginIds(new Set());
-      setSharedSkillIds(new Set());
-      setSharedPluginMeta(new Map());
-      setSharedSkillMeta(new Map());
-    }
-    setLoadedSharedIdentity(issuedIdentity);
   }, []);
 
-  const handleMarketplaceStreamActive = useWorkspaceSnapshotActivation({
-    enabled: isActive && hasTeamWorkspace,
-    identity: marketplaceIdentity,
-    refresh: () => {
-      void refresh();
-      void refreshSharedResources();
-    },
-  });
-
-  useWorkspaceInvalidation(
-    {
-      'team-resources-changed': (payload) => {
-        if (!isActiveRef.current) {
-          if (payload.resourceKind === 'plugin') sharedResourcesStaleRef.current = true;
-          if (payload.resourceKind === 'skill') {
-            catalogStaleRef.current = true;
-            sharedResourcesStaleRef.current = true;
-          }
-          return;
-        }
-        if (payload.resourceKind === 'plugin') {
-          void refreshSharedResources();
-          return;
-        }
-        if (payload.resourceKind === 'skill') {
-          void Promise.all([refresh(), refreshSharedResources()]);
-        }
-      },
-    },
-    {
-      workspaceContext: hasTeamWorkspace ? workspaceContext : null,
-      enabled: hasTeamWorkspace,
-      onActive: () => {
-        if (!isActiveRef.current) {
-          catalogStaleRef.current = true;
-          sharedResourcesStaleRef.current = true;
-          return;
-        }
-        catalogStaleRef.current = false;
-        sharedResourcesStaleRef.current = false;
-        handleMarketplaceStreamActive();
-      },
-    },
-  );
-
-  // Team-shared ids per kind. Off-team / offline just leaves the set empty so
-  // the 团队 scope shows a clean empty state instead of erroring. Re-read while
-  // the page is visible so owner/admin unshares in another client converge.
+  // One read on the first activation, and one more whenever a mutation landed
+  // while this surface was parked behind another nav view.
+  const refreshedRef = useRef(false);
   useEffect(() => {
     if (!isActive) return;
-    if (!hasTeamWorkspace) {
-      sharedResourcesStaleRef.current = false;
-      void refreshSharedResources();
-    }
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void refreshSharedResources();
-    }, 10_000);
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [hasTeamWorkspace, isActive, refreshSharedResources, marketplaceIdentity]);
+    if (refreshedRef.current && !catalogStaleRef.current) return;
+    catalogStaleRef.current = false;
+    refreshedRef.current = true;
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive]);
 
   const userPlugins = useMemo(
     () => plugins.filter(isPersonalPluginRecord),
@@ -1632,144 +1210,22 @@ export function ExtensionsMarketplace({
     [skills],
   );
 
-  async function shareResource(kind: MarketMode, id: string, title: string) {
-    if (sharingId || unsharingId) return;
-    const context = emContextRef.current;
-    if (!context || !workspaceContextHasTeamIdentity(context)) {
-      setToast({ message: t('pluginsView.shareUnavailable', { title }), tone: 'error' });
-      return;
-    }
-    // Same POST route promotes a not-yet-shared resource AND pushes an update
-    // for one that is already shared (`share()` has no "already shared"
-    // guard — see team-resource-share.ts). Only the toast copy distinguishes
-    // the two so an owner who just edited and re-shared sees "synced", not a
-    // confusing "shared" repeated on every subsequent push.
-    const wasAlreadyShared = (kind === 'plugins' ? sharedPluginIds : sharedSkillIds).has(id);
-    const startedAt = performance.now();
-    setSharingId(id);
-    setMenuId(null);
-    const basePath = kind === 'plugins' ? 'plugins' : 'skills';
-    try {
-      const res = await fetch(`/api/workspace/${basePath}/${encodeURIComponent(id)}/share`, {
-        method: 'POST',
-        headers: workspaceProjectHeaders(context),
-      });
-      const body = (await res.json().catch(() => ({}))) as { shared?: boolean };
-      if (res.ok && body.shared) {
-        await refreshSharedResources();
-        setToast({
-          message: t(wasAlreadyShared ? 'pluginsView.syncSuccess' : 'pluginsView.shareSuccess', { title }),
-          tone: 'success',
-        });
-        trackResourceResult({
-          kind: kind === 'plugins' ? 'expert_plugin' : 'skill',
-          scope: 'personal',
-          action: wasAlreadyShared ? 'sync_to_team' : 'share_to_team',
-          result: 'success',
-          startedAt,
-        });
-      } else {
-        setToast({
-          message: t(wasAlreadyShared ? 'pluginsView.syncUnavailable' : 'pluginsView.shareUnavailable', { title }),
-          tone: 'error',
-        });
-        trackResourceResult({
-          kind: kind === 'plugins' ? 'expert_plugin' : 'skill',
-          scope: 'personal',
-          action: wasAlreadyShared ? 'sync_to_team' : 'share_to_team',
-          result: 'failed',
-          startedAt,
-          errorCode: res.ok ? 'resource_not_shared' : `http_${res.status}`,
-        });
-      }
-    } catch {
-      setToast({
-        message: t(wasAlreadyShared ? 'pluginsView.syncFailed' : 'pluginsView.shareFailed', { title }),
-        tone: 'error',
-      });
-      trackResourceResult({
-        kind: kind === 'plugins' ? 'expert_plugin' : 'skill',
-        scope: 'personal',
-        action: wasAlreadyShared ? 'sync_to_team' : 'share_to_team',
-        result: 'failed',
-        startedAt,
-        errorCode: 'network_error',
-      });
-    } finally {
-      setSharingId(null);
-    }
-  }
-
-  async function unshareResource(kind: MarketMode, id: string, title: string) {
-    if (sharingId || unsharingId) return;
-    const context = emContextRef.current;
-    if (!context || !workspaceContextHasTeamIdentity(context)) {
-      setToast({ message: t('pluginsView.unshareUnavailable', { title }), tone: 'error' });
-      return;
-    }
-    setUnsharingId(id);
-    const startedAt = performance.now();
-    setMenuId(null);
-    const basePath = kind === 'plugins' ? 'plugins' : 'skills';
-    try {
-      const res = await fetch(`/api/workspace/${basePath}/${encodeURIComponent(id)}/share`, {
-        method: 'DELETE',
-        headers: workspaceProjectHeaders(context),
-      });
-      const body = (await res.json().catch(() => ({}))) as { unshared?: boolean };
-      if (res.ok && body.unshared) {
-        await refreshSharedResources();
-        setToast({ message: t('pluginsView.unshareSuccess', { title }), tone: 'success' });
-        trackResourceResult({
-          kind: kind === 'plugins' ? 'expert_plugin' : 'skill',
-          scope: 'team',
-          action: 'remove_from_team',
-          result: 'success',
-          startedAt,
-        });
-      } else {
-        setToast({ message: t('pluginsView.unshareUnavailable', { title }), tone: 'error' });
-        trackResourceResult({
-          kind: kind === 'plugins' ? 'expert_plugin' : 'skill',
-          scope: 'team',
-          action: 'remove_from_team',
-          result: 'failed',
-          startedAt,
-          errorCode: res.ok ? 'resource_not_removed' : `http_${res.status}`,
-        });
-      }
-    } catch {
-      setToast({ message: t('pluginsView.unshareFailed', { title }), tone: 'error' });
-      trackResourceResult({
-        kind: kind === 'plugins' ? 'expert_plugin' : 'skill',
-        scope: 'team',
-        action: 'remove_from_team',
-        result: 'failed',
-        startedAt,
-        errorCode: 'network_error',
-      });
-    } finally {
-      setUnsharingId(null);
-    }
-  }
-
   // Removes a resource the user owns on disk. Only reachable for records the
   // card builder marked uninstallable (never a bundled plugin or a built-in
   // skill), and only after the inline confirmation has been armed.
   async function uninstallResource(kind: MarketMode, id: string, title: string) {
-    if (uninstallingId || workspaceContextLoading) return;
+    if (uninstallingId) return;
     setUninstallingId(id);
     try {
       const ok =
         kind === 'plugins'
-          ? await uninstallPlugin(id, workspaceContext)
-          : 'ok' in (await uninstallSkill(id, workspaceContext));
+          ? await uninstallPlugin(id)
+          : 'ok' in (await uninstallSkill(id));
       if (!ok) {
         setToast({ message: t('pluginsView.uninstallFailed', { title }), tone: 'error' });
         return;
       }
       await refresh();
-      await refreshSharedResources();
       setMenuId(null);
       setConfirmUninstallId(null);
       setToast({ message: t('pluginsView.uninstallSuccess', { title }), tone: 'success' });
@@ -1781,14 +1237,11 @@ export function ExtensionsMarketplace({
   }
 
   async function installAvailable(plugin: AvailableMarketplacePlugin, title: string) {
-    if (installingKeys.has(plugin.key) || workspaceContextLoading) return;
+    if (installingKeys.has(plugin.key)) return;
     setInstallingKeys((prev) => new Set(prev).add(plugin.key));
     const startedAt = performance.now();
     try {
-      const outcome = await installPluginSource(
-        plugin.installSource ?? plugin.entry.name,
-        workspaceContext,
-      );
+      const outcome = await installPluginSource(plugin.installSource ?? plugin.entry.name);
       if (outcome.ok) {
         await refresh();
         // The open detail modal holds the pre-install catalog entry, so leaving
@@ -1834,15 +1287,9 @@ export function ExtensionsMarketplace({
   }
 
   const cards = useMemo<MarketCard[]>(() => {
-    // Catalog rows are display data, never an authority witness. Keep the last
-    // response in memory for its own identity, but do not render it during an
-    // account/workspace transition before the successor read commits.
-    if (loadedMarketplaceIdentity !== marketplaceIdentity) return [];
-    if (scope !== 'official' && loadedSharedIdentity !== marketplaceIdentity) return [];
-    const pluginRecordCard = (record: InstalledPluginRecord, personal: boolean): MarketCard => {
+    if (!catalogLoaded) return [];
+    const pluginRecordCard = (record: InstalledPluginRecord): MarketCard => {
       const title = localizePluginTitle(locale, record);
-      const shared = sharedPluginIds.has(record.id);
-      const canUnshare = sharedPluginMeta.get(record.id)?.canUnshare === true;
       return {
         id: record.id,
         title,
@@ -1850,25 +1297,14 @@ export function ExtensionsMarketplace({
         accent: marketAccent(record.id),
         action: { kind: 'try', record },
         detail: { kind: 'plugin', record },
-        // Keep the share affordance live after the first share (relabeled to
-        // "sync" by `card.isShared`) so an owner can push a local edit to the
-        // team without unsharing and resharing. Restricted to `canUnshare`
-        // once shared — the same "who may manage this" gate `unshare` already
-        // uses — so a plain member who merely has the plugin installed can't
-        // overwrite the real owner's shared copy.
-        share: personal && (!shared || canUnshare) ? { kind: 'plugins', id: record.id } : null,
-        unshare: shared && canUnshare ? { kind: 'plugins', id: record.id } : null,
         uninstall:
           record.sourceKind === 'bundled' ? null : { kind: 'plugins', id: record.id },
         stats: pluginCardStats(record),
         category: pluginCardCategory(record),
-        isShared: shared,
       };
     };
-    const skillCard = (skill: SkillSummary, personal: boolean): MarketCard => {
+    const skillCard = (skill: SkillSummary): MarketCard => {
       const { title, description } = localizeSkillCardCopy(locale, skill);
-      const shared = sharedSkillIds.has(skill.id);
-      const canUnshare = sharedSkillMeta.get(skill.id)?.canUnshare === true;
       return {
         id: skill.id,
         title,
@@ -1879,139 +1315,49 @@ export function ExtensionsMarketplace({
         // the skill at all (issue #131).
         action: { kind: 'use-skill', skill },
         detail: { kind: 'skill', skill },
-        // See the plugin card builder above: keep sharing live post-share
-        // (relabeled "sync") for whoever may manage it, so a skill owner can
-        // push local edits without unshare-then-reshare.
-        share: personal && (!shared || canUnshare) ? { kind: 'skills', id: skill.id } : null,
-        unshare: shared && canUnshare ? { kind: 'skills', id: skill.id } : null,
         uninstall: skill.source === 'user' ? { kind: 'skills', id: skill.id } : null,
         stats: null,
         category: skillCardCategory(skill),
-        isShared: shared,
       };
     };
 
     if (mode === 'plugins') {
-      if (scope === 'personal')
-        return userPlugins
-          // A locally-present plugin that is team-shared by someone ELSE is not
-          // personal — it belongs in the Team tab only. Keep unshared plugins and
-          // the ones I own.
-          .filter(
-            (record) =>
-              !sharedPluginIds.has(record.id) ||
-              sharedResourceIsMine(sharedPluginMeta.get(record.id), myMemberId),
-          )
-          .map((record) => pluginRecordCard(record, true));
-      if (scope === 'official') {
-        return availablePlugins.map((plugin) => {
-          const title = availablePluginTitle(plugin.entry, locale);
-          const installed = plugin.installedRecord ?? null;
-          return {
-            id: plugin.key,
-            title,
-            description: availablePluginDescription(plugin.entry, locale) || '',
-            accent: marketAccent(plugin.entry.name),
-            action: installed
-              ? { kind: 'try', record: installed }
-              : { kind: 'install', plugin },
-            detail: installed
-              ? { kind: 'plugin', record: installed }
-              : { kind: 'available', plugin },
-            share: null,
-            unshare: null,
-            // Official entries are bundled with the app — nothing for the user
-            // to uninstall from here.
-            uninstall: null,
-            stats: installed ? pluginCardStats(installed) : null,
-            category: installed ? pluginCardCategory(installed) : null,
-            isShared: false,
-          } satisfies MarketCard;
-        });
-      }
-      // team
-      return [...sharedPluginIds].map((id) => {
-        const meta = sharedPluginMeta.get(id);
-        const canUnshare = meta?.canUnshare === true;
-        const record =
-          allInstalledPlugins.find((plugin) => plugin.id === id) ??
-          userPlugins.find((plugin) => plugin.id === id) ??
-          null;
-        const title = record ? localizePluginTitle(locale, record) : meta?.title || id;
+      if (scope === 'personal') return userPlugins.map((record) => pluginRecordCard(record));
+      return availablePlugins.map((plugin) => {
+        const title = availablePluginTitle(plugin.entry, locale);
+        const installed = plugin.installedRecord ?? null;
         return {
-          id,
+          id: plugin.key,
           title,
-          description: (record ? localizePluginDescription(locale, record) || '' : '') || meta?.description || '',
-          accent: marketAccent(id),
-          action: record ? { kind: 'try', record } : { kind: 'none' },
-          detail: record ? { kind: 'plugin', record } : null,
-          share: null,
-          unshare: canUnshare ? { kind: 'plugins', id } : null,
-          // Removing a team resource from your own disk is not the team action;
-          // the Team tab only offers unshare.
+          description: availablePluginDescription(plugin.entry, locale) || '',
+          accent: marketAccent(plugin.entry.name),
+          action: installed
+            ? { kind: 'try', record: installed }
+            : { kind: 'install', plugin },
+          detail: installed
+            ? { kind: 'plugin', record: installed }
+            : { kind: 'available', plugin },
+          // Official entries are bundled with the app — nothing for the user
+          // to uninstall from here.
           uninstall: null,
-          stats: record ? pluginCardStats(record) : null,
-          category: record ? pluginCardCategory(record) : null,
-          isShared: true,
+          stats: installed ? pluginCardStats(installed) : null,
+          category: installed ? pluginCardCategory(installed) : null,
         } satisfies MarketCard;
       });
     }
 
     // skills
-    if (scope === 'personal')
-      return userSkills
-        // A locally-present skill that is team-shared by someone ELSE (e.g. a
-        // shared fixture both members have on disk) is not personal — it belongs
-        // in the Team tab only. Keep unshared skills and the ones I own.
-        .filter(
-          (skill) =>
-            !sharedSkillIds.has(skill.id) ||
-            sharedResourceIsMine(sharedSkillMeta.get(skill.id), myMemberId),
-        )
-        .map((skill) => skillCard(skill, true));
-    if (scope === 'official') return officialSkills.map((skill) => skillCard(skill, false));
-    return [...sharedSkillIds].map((id) => {
-      const meta = sharedSkillMeta.get(id);
-      const canUnshare = meta?.canUnshare === true;
-      const skill = skills.find((row) => row.id === id) ?? null;
-      // A team-shared skill that is also on this machine resolves through the
-      // same locale invariant as a local one; a shared row we have no local
-      // copy of falls back to the share record, which carries no translations.
-      const localized = skill ? localizeSkillCardCopy(locale, skill) : null;
-      const title = localized?.title ?? (meta?.title || id);
-      return {
-        id,
-        title,
-        description: localized?.description || meta?.description || '',
-        accent: marketAccent(id),
-        action: skill ? { kind: 'use-skill', skill } : { kind: 'none' },
-        detail: skill ? { kind: 'skill', skill } : null,
-        share: null,
-        unshare: canUnshare ? { kind: 'skills', id } : null,
-        uninstall: null,
-        stats: null,
-        category: skill ? skillCardCategory(skill) : null,
-        isShared: true,
-      } satisfies MarketCard;
-    });
+    if (scope === 'personal') return userSkills.map((skill) => skillCard(skill));
+    return officialSkills.map((skill) => skillCard(skill));
   }, [
     mode,
     scope,
     locale,
     userPlugins,
     availablePlugins,
-    sharedPluginIds,
-    sharedPluginMeta,
-    allInstalledPlugins,
     userSkills,
     officialSkills,
-    sharedSkillIds,
-    sharedSkillMeta,
-    skills,
-    myMemberId,
-    loadedMarketplaceIdentity,
-    marketplaceIdentity,
-    loadedSharedIdentity,
+    catalogLoaded,
   ]);
 
   // Category chips are built from the cards actually in this scope, so the row
@@ -2047,14 +1393,11 @@ export function ExtensionsMarketplace({
       return `${card.title} ${card.description}`.toLowerCase().includes(q);
     });
   }, [cards, category, query]);
-  const catalogLoading =
-    loading
-    || loadedMarketplaceIdentity !== marketplaceIdentity
-    || (scope !== 'official' && loadedSharedIdentity !== marketplaceIdentity);
+  const catalogLoading = loading || !catalogLoaded;
 
   usePageNavigationReady({ page: 'plugins', visible: isActive && !catalogLoading,
-    ready: isActive && !workspaceContextLoading && !catalogLoading && navigationCatalogVerified,
-    failure: isActive && (workspaceContextFailure === 'unavailable' || (!catalogLoading && !navigationCatalogVerified)), scopeKey: marketplaceIdentity });
+    ready: isActive && !catalogLoading && navigationCatalogVerified,
+    failure: isActive && !catalogLoading && !navigationCatalogVerified });
 
   if (cardDetail?.kind === 'skill') {
     const selectedSkill = cardDetail.skill;
@@ -2070,13 +1413,7 @@ export function ExtensionsMarketplace({
     return (
       <SkillDetailView
         skill={selectedSkill}
-        author={
-          scope === 'official'
-            ? 'OpenDesign'
-            : scope === 'team'
-              ? 'Nexu Team'
-              : t('chat.you')
-        }
+        author={scope === 'official' ? 'OpenDesign' : t('chat.you')}
         onBack={closeSkillDetail}
         {...(onUseSkill
           ? {
@@ -2149,7 +1486,7 @@ export function ExtensionsMarketplace({
 
       <div className="plugin-marketplace__filter-block">
         <div className="plugin-marketplace__filters" aria-label={t('pluginsView.marketplaceSourceFiltersAria')}>
-          {MARKET_SCOPES.filter((item) => item.id !== 'team' || hasTeamWorkspace).map((item) => (
+          {MARKET_SCOPES.map((item) => (
             <button
               key={item.id}
               type="button"
@@ -2223,19 +1560,11 @@ export function ExtensionsMarketplace({
               const busy =
                 card.action.kind === 'install'
                   ? installingKeys.has(card.action.plugin.key)
-                  : sharingId === card.id || unsharingId === card.id;
+                  : false;
               const uninstalling = uninstallingId === card.id;
-              // The row button carries the first available action; the overflow
-              // menu lists only what it did not take. Sharing falls back into
-              // the row slot when there is nothing to run or install, and must
-              // not then be repeated in the menu.
-              const rowHasRunOrInstall =
-                (card.action.kind === 'try' && Boolean(onUsePlugin)) ||
-                (card.action.kind === 'use-skill' && Boolean(onUseSkill)) ||
-                card.action.kind === 'install';
+              // The row button carries the run/install action; the overflow
+              // menu lists what it did not take.
               const menuActions = [
-                ...(rowHasRunOrInstall && card.share ? (['share'] as const) : []),
-                ...(rowHasRunOrInstall && card.unshare ? (['unshare'] as const) : []),
                 ...(card.uninstall ? (['uninstall'] as const) : []),
               ];
               return (
@@ -2267,12 +1596,6 @@ export function ExtensionsMarketplace({
                     <span className="plugin-marketplace__row-main">
                       <span className="plugin-marketplace__name-row">
                         <strong>{card.title}</strong>
-                        {scope === 'personal' && card.isShared ? (
-                          <span className="plugin-marketplace__team-badge">
-                            <Icon name="users" size={11} />
-                            {t('pluginsView.teamSharedBadge')}
-                          </span>
-                        ) : null}
                       </span>
                       {card.description ? <small>{card.description}</small> : null}
                       {card.stats ? (
@@ -2320,7 +1643,7 @@ export function ExtensionsMarketplace({
                       <button
                         type="button"
                         className="plugin-marketplace__row-action"
-                        disabled={busy || workspaceContextLoading}
+                        disabled={busy}
                         data-testid={`plugins-card-install-${card.id}`}
                         onClick={(event) => {
                           event.stopPropagation();
@@ -2336,36 +1659,6 @@ export function ExtensionsMarketplace({
                         {busy
                           ? t('pluginsView.installing')
                           : t('pluginsView.install')}
-                      </button>
-                    ) : card.share ? (
-                      <button
-                        type="button"
-                        className="plugin-marketplace__row-action"
-                        disabled={busy}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          const share = card.share!;
-                          void shareResource(share.kind, share.id, card.title);
-                        }}
-                      >
-                        {busy
-                          ? t('pluginsView.sharing')
-                          : card.isShared
-                            ? t('pluginsView.syncToTeam')
-                            : t('pluginsView.shareToTeam')}
-                      </button>
-                    ) : card.unshare ? (
-                      <button
-                        type="button"
-                        className="plugin-marketplace__row-action"
-                        disabled={busy}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          const unshare = card.unshare!;
-                          void unshareResource(unshare.kind, unshare.id, card.title);
-                        }}
-                      >
-                        {busy ? t('pluginsView.unsharing') : t('pluginsView.unshareFromTeam')}
                       </button>
                     ) : null}
 
@@ -2394,39 +1687,11 @@ export function ExtensionsMarketplace({
                         </button>
                         {menuId === card.id ? (
                           <span className="plugin-marketplace__menu" role="menu">
-                            {menuActions.includes('share') ? (
-                              <button
-                                type="button"
-                                role="menuitem"
-                                disabled={busy}
-                                onClick={() => {
-                                  const share = card.share!;
-                                  void shareResource(share.kind, share.id, card.title);
-                                }}
-                              >
-                                <Icon name="users" size={14} />
-                                {card.isShared ? t('pluginsView.syncToTeam') : t('pluginsView.shareToTeam')}
-                              </button>
-                            ) : null}
-                            {menuActions.includes('unshare') ? (
-                              <button
-                                type="button"
-                                role="menuitem"
-                                disabled={busy}
-                                onClick={() => {
-                                  const unshare = card.unshare!;
-                                  void unshareResource(unshare.kind, unshare.id, card.title);
-                                }}
-                              >
-                                <Icon name="close" size={14} />
-                                {t('pluginsView.unshareFromTeam')}
-                              </button>
-                            ) : null}
                             {menuActions.includes('uninstall') ? (
                               <button
                                 type="button"
                                 role="menuitem"
-                                disabled={uninstalling || workspaceContextLoading}
+                                disabled={uninstalling}
                                 onClick={() => {
                                   if (confirmUninstallId !== card.id) {
                                     setConfirmUninstallId(card.id);
@@ -2461,7 +1726,6 @@ export function ExtensionsMarketplace({
         {cardDetail?.kind === 'plugin' ? (
           <PluginDetailsModal
             record={cardDetail.record}
-            workspaceContext={workspaceContext}
             onClose={() => setCardDetail(null)}
             onUse={(record, action) => {
               setCardDetail(null);
@@ -2477,10 +1741,7 @@ export function ExtensionsMarketplace({
         {cardDetail?.kind === 'available' ? (
           <AvailablePluginDetailsModal
             plugin={cardDetail.plugin}
-            pending={
-              workspaceContextLoading
-              || installingKeys.has(cardDetail.plugin.key)
-            }
+            pending={installingKeys.has(cardDetail.plugin.key)}
             onClose={() => {
               if (!installingKeys.has(cardDetail.plugin.key)) setCardDetail(null);
             }}
@@ -2587,11 +1848,7 @@ export function ExtensionsMarketplace({
                     <button
                       type="button"
                       data-testid="plugin-create-import-url"
-                      disabled={
-                        workspaceContextLoading
-                        || createBusy !== null
-                        || createUrl.trim().length === 0
-                      }
+                      disabled={createBusy !== null || createUrl.trim().length === 0}
                       onClick={() => void handleCreateImportUrl()}
                     >
                       {createBusy === 'import' ? t('pluginsView.importing') : t('pluginsView.importAndUpload')}
@@ -2638,11 +1895,7 @@ export function ExtensionsMarketplace({
                     <button
                       type="button"
                       data-testid="plugin-create-upload-folder"
-                      disabled={
-                        workspaceContextLoading
-                        || createBusy !== null
-                        || createFolderFiles.length === 0
-                      }
+                      disabled={createBusy !== null || createFolderFiles.length === 0}
                       onClick={() => void handleCreateUploadFolder()}
                     >
                       {createBusy === 'upload'
@@ -2765,9 +2018,6 @@ function MarketEmptyState({
   if (filtered) {
     title = t('pluginsView.emptyNoMatchTitle');
     hint = t('pluginsView.emptyNoMatchHint');
-  } else if (scope === 'team') {
-    title = t('pluginsView.emptyTeamTitle');
-    hint = t('pluginsView.emptyTeamHint');
   } else if (scope === 'personal') {
     title = mode === 'plugins' ? t('pluginsView.emptyPersonalPluginsTitle') : t('pluginsView.emptyPersonalSkillsTitle');
     hint = t('pluginsView.emptyPersonalHint');
@@ -2957,7 +2207,6 @@ function pluginTabLabel(id: PluginsTab, t: ReturnType<typeof useI18n>['t']): str
     case 'installed': return t('pluginsView.tab.installed');
     case 'available': return t('pluginsView.tab.available');
     case 'sources': return t('pluginsView.tab.sources');
-    case 'team': return t('pluginsView.tab.team');
   }
 }
 
@@ -2966,7 +2215,6 @@ function pluginTabHint(id: PluginsTab, t: ReturnType<typeof useI18n>['t']): stri
     case 'installed': return t('pluginsView.tabHint.installed');
     case 'available': return t('pluginsView.tabHint.available');
     case 'sources': return t('pluginsView.tabHint.sources');
-    case 'team': return t('pluginsView.tabHint.team');
   }
 }
 
@@ -4234,234 +3482,4 @@ function pluginLookupKeys(plugin: InstalledPluginRecord): string[] {
 
 function normalizePluginName(name: string): string {
   return name.trim().toLowerCase();
-}
-
-// Team resources: the member's installed plugins and personal skills, each
-// shareable to the team so teammates can pull them. Shared resources are pushed
-// to the resource hub under their kind (`plugin` / `skill`) — the same
-// content-shared source of truth as design systems. Off-team the fetches
-// degrade to empty collections.
-function TeamPanel({
-  t,
-  plugins,
-  workspaceContext,
-  workspaceIdentity,
-  workspaceReadMode,
-}: {
-  t: ReturnType<typeof useI18n>['t'];
-  plugins: InstalledPluginRecord[];
-  /** The acting workspace, passed down from `PluginsView` (which already holds
-   *  it) rather than read again here, so this panel and the plugin list it sits
-   *  beside can never disagree about who is asking. */
-  workspaceContext: WorkspaceCollabContext | null;
-  /** Account generation + complete Workspace identity + settlement mode. */
-  workspaceIdentity: string;
-  workspaceReadMode: PluginWorkspaceReadMode;
-}) {
-  const { locale } = useI18n();
-  // The LATEST context, for async work to compare against. `refreshTeamPanelShared`
-  // is a `useCallback` with `[]` deps — it closes over the FIRST render's props
-  // forever, so reading `workspaceContext` directly inside it would pin whatever
-  // was there on mount (typically `null`) and a commit guard built on it would
-  // compare that stale value against itself and pass unconditionally.
-  const contextRef = useRef(workspaceContext);
-  contextRef.current = workspaceContext;
-  const workspaceIdentityRef = useRef(workspaceIdentity);
-  workspaceIdentityRef.current = workspaceIdentity;
-  const workspaceReadModeRef = useRef(workspaceReadMode);
-  workspaceReadModeRef.current = workspaceReadMode;
-  const [skills, setSkills] = useState<SkillSummary[]>([]);
-  const [sharedPluginIds, setSharedPluginIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [sharedSkillIds, setSharedSkillIds] = useState<ReadonlySet<string>>(() => new Set());
-  const [loadedIdentity, setLoadedIdentity] = useState<string | null>(null);
-  const [sharingId, setSharingId] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  const refreshTeamPanelShared = useCallback(async (cancelled: () => boolean = () => false) => {
-    const issuedIdentity = workspaceIdentityRef.current;
-    const issuedAccountGeneration = currentWorkspaceAccountGeneration();
-    const read = beginWorkspaceScopedRead(contextRef.current);
-    const readIsStillCurrent = () =>
-      !cancelled()
-      && currentWorkspaceAccountGeneration() === issuedAccountGeneration
-      && workspaceIdentityRef.current === issuedIdentity
-      && read.isStillCurrent(contextRef.current);
-    if (
-      workspaceReadModeRef.current !== 'scoped'
-      || !read.context
-      || !workspaceContextHasTeamIdentity(read.context)
-    ) {
-      if (!readIsStillCurrent()) return;
-      setSkills([]);
-      setSharedPluginIds(new Set());
-      setSharedSkillIds(new Set());
-      setLoadedIdentity(issuedIdentity);
-      return;
-    }
-    const context = read.context;
-    const loadShared = async (basePath: string): Promise<ReadonlySet<string>> => {
-      const res = await fetch(`/api/workspace/${basePath}/team`, {
-        cache: 'no-store',
-        headers: workspaceProjectHeaders(context),
-      });
-      if (!res.ok) throw new Error(`${basePath} team catalog ${res.status}`);
-      const body = (await res.json()) as { ids?: unknown };
-      return new Set(
-        Array.isArray(body.ids)
-          ? body.ids.filter((id): id is string => typeof id === 'string')
-          : [],
-      );
-    };
-    try {
-      // Commit the three collections atomically. If one successor read fails,
-      // none of the previous identity's skill rows or shared badges survive.
-      const [userSkills, pluginIds, skillIds] = await Promise.all([
-        fetchSkills(read.context).then((rows) => rows.filter((s) => s.source === 'user')),
-        loadShared('plugins'),
-        loadShared('skills'),
-      ]);
-      if (!readIsStillCurrent()) return;
-      setSkills(userSkills);
-      setSharedPluginIds(pluginIds);
-      setSharedSkillIds(skillIds);
-      setLoadedIdentity(issuedIdentity);
-    } catch {
-      if (!readIsStillCurrent()) return;
-      setSkills([]);
-      setSharedPluginIds(new Set());
-      setSharedSkillIds(new Set());
-      setLoadedIdentity(issuedIdentity);
-    }
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    void refreshTeamPanelShared(() => cancelled);
-    const refreshVisible = () => {
-      if (document.visibilityState === 'visible') void refreshTeamPanelShared(() => cancelled);
-    };
-    const interval = window.setInterval(refreshVisible, 10_000);
-    window.addEventListener('focus', refreshVisible);
-    window.addEventListener('pageshow', refreshVisible);
-    document.addEventListener('visibilitychange', refreshVisible);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      window.removeEventListener('focus', refreshVisible);
-      window.removeEventListener('pageshow', refreshVisible);
-      document.removeEventListener('visibilitychange', refreshVisible);
-    };
-  }, [refreshTeamPanelShared, workspaceIdentity]);
-
-  async function share(
-    basePath: string,
-    id: string,
-  ) {
-    if (sharingId) return;
-    const context = contextRef.current;
-    const issuedIdentity = workspaceIdentityRef.current;
-    const issuedAccountGeneration = currentWorkspaceAccountGeneration();
-    if (
-      workspaceReadModeRef.current !== 'scoped'
-      || !context
-      || !workspaceContextHasTeamIdentity(context)
-    ) {
-      setFailed(true);
-      return;
-    }
-    setSharingId(id);
-    setFailed(false);
-    try {
-      const res = await fetch(`/api/workspace/${basePath}/${encodeURIComponent(id)}/share`, {
-        method: 'POST',
-        headers: workspaceProjectHeaders(context),
-      });
-      const body = (await res.json().catch(() => ({}))) as { shared?: boolean };
-      if (
-        res.ok
-        && body.shared
-        && currentWorkspaceAccountGeneration() === issuedAccountGeneration
-        && workspaceIdentityRef.current === issuedIdentity
-      ) {
-        await refreshTeamPanelShared();
-      } else if (
-        currentWorkspaceAccountGeneration() === issuedAccountGeneration
-        && workspaceIdentityRef.current === issuedIdentity
-      ) {
-        setFailed(true);
-      }
-    } catch {
-      if (
-        currentWorkspaceAccountGeneration() === issuedAccountGeneration
-        && workspaceIdentityRef.current === issuedIdentity
-      ) setFailed(true);
-    } finally {
-      setSharingId(null);
-    }
-  }
-
-  const collectionsMatchIdentity = loadedIdentity === workspaceIdentity;
-  const visibleSkills = collectionsMatchIdentity ? skills : [];
-  const visibleSharedPluginIds = collectionsMatchIdentity ? sharedPluginIds : new Set<string>();
-  const visibleSharedSkillIds = collectionsMatchIdentity ? sharedSkillIds : new Set<string>();
-
-  const renderRow = (id: string, title: string, shared: boolean, onShare: () => void) => (
-    <article key={id} className="plugins-view__available-card">
-      <div className="plugins-view__available-main">
-        <div className="plugins-view__row-title">
-          <span>{title}</span>
-        </div>
-      </div>
-      <div className="plugins-view__row-actions">
-        {shared ? (
-          <span className="plugins-view__shared-badge">
-            <Icon name="check" size={13} /> {t('pluginsView.tab.team')}
-          </span>
-        ) : (
-          <button
-            type="button"
-            className="plugins-view__primary"
-            onClick={onShare}
-            disabled={sharingId === id}
-          >
-            {t('dsManager.shareToTeam')}
-          </button>
-        )}
-      </div>
-    </article>
-  );
-
-  return (
-    <section className="plugins-view__team-collection" aria-labelledby="plugins-team-title">
-      <header className="plugins-view__team-header">
-        <h2 id="plugins-team-title">{t('pluginsView.teamTitle')}</h2>
-        <p>{t('pluginsView.teamBody')}</p>
-        {failed ? <p role="alert">{t('dsManager.shareToTeamFailed')}</p> : null}
-      </header>
-      {plugins.length > 0 ? (
-        <div>
-          <h3 className="plugins-view__team-section-title">{t('entry.navPlugins')}</h3>
-          <div className="plugins-view__available-list">
-            {plugins.map((record) =>
-              renderRow(record.id, record.title, visibleSharedPluginIds.has(record.id), () =>
-                void share('plugins', record.id),
-              ),
-            )}
-          </div>
-        </div>
-      ) : null}
-      {visibleSkills.length > 0 ? (
-        <div>
-          <h3 className="plugins-view__team-section-title">{t('homeHero.skills')}</h3>
-          <div className="plugins-view__available-list">
-            {visibleSkills.map((skill) =>
-              renderRow(skill.id, localizeSkillName(locale, skill), visibleSharedSkillIds.has(skill.id), () =>
-                void share('skills', skill.id),
-              ),
-            )}
-          </div>
-        </div>
-      ) : null}
-    </section>
-  );
 }

@@ -1,5 +1,3 @@
-import { appendResourceQuery } from '../collab/workspace-identity';
-
 /**
  * A background cover iframe must never make sound.
  *
@@ -13,5 +11,5 @@ import { appendResourceQuery } from '../collab/workspace-identity';
  * host activity binding these covers do not install, freezing the animation.
  */
 export function mutedMotionCoverUrl(src: string): string {
-  return appendResourceQuery(src, 'odMotionThumbnail=1');
+  return `${src}${src.includes('?') ? '&' : '?'}odMotionThumbnail=1`;
 }

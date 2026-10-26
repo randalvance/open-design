@@ -37,9 +37,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ArtifactCards, FileOpsSummary } from '../../src/components/FileOpsSummary';
-import { CollabProvider } from '../../src/collab/collab-context';
 import type { FileOpEntry } from '../../src/runtime/file-ops';
-import { workspaceContextFixture } from '../helpers/workspace-context';
 
 /*
  * 按 `src/index.css` 的**真实顺序**注入,否则量到的是浏览器默认值:
@@ -81,33 +79,6 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
-
-function projectCollabValue() {
-  return {
-    workspaceContext: workspaceContextFixture({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-    }),
-    workspaceContextLoading: false,
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed' as const,
-    isOwner: false,
-    isEffectiveOwner: true,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: vi.fn(),
-    requestPublish: vi.fn(),
-    refreshPresence: vi.fn(),
-    checkStatusNow: vi.fn(),
-  };
-}
 
 function fileOpEntry(path: string): FileOpEntry {
   return {
@@ -163,9 +134,9 @@ const videoRef = (over: Record<string, unknown> = {}) => ({
 
 function renderPanel(entries: FileOpEntry[], props: Record<string, unknown> = {}) {
   return render(
-    <CollabProvider value={projectCollabValue()}>
+    <>
       <FileOpsSummary entries={entries} projectId={PROJECT_ID} {...props} />
-    </CollabProvider>,
+    </>,
   );
 }
 
@@ -457,7 +428,7 @@ describe('ArtifactCards 直接接收快照字段', () => {
   it('coverUrl / snapshotUrl 直接决定卡面,不再回头读工作区文件', () => {
     stubHeadProbeAsReachable();
     render(
-      <CollabProvider value={projectCollabValue()}>
+      <>
         <ArtifactCards
           items={[
             { name: 'deck.html', kind: 'html', coverUrl: HTML_SHOT },
@@ -467,7 +438,7 @@ describe('ArtifactCards 直接接收快照字段', () => {
           ]}
           projectId={PROJECT_ID}
         />
-      </CollabProvider>,
+      </>,
     );
 
     expect(mediaOf('deck.html')!.getAttribute('src')).toBe(HTML_SHOT);

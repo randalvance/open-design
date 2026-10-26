@@ -22,7 +22,6 @@ import { copyToClipboard } from '../lib/copy-to-clipboard';
 import { Icon } from './Icon';
 import { EditorIcon } from './EditorIcon';
 import { AgentIcon } from './AgentIcon';
-import { useProjectCollabContext } from '../collab/collab-context';
 
 const PREFERRED_EDITOR_KEY = 'open-design:preferred-editor';
 const PREFERRED_FRAMEWORK_KEY = 'open-design:handoff-framework';
@@ -57,7 +56,6 @@ interface CliTarget {
 }
 
 const CLI_ORDER = [
-  'amr',
   'claude',
   'codex',
   'opencode',
@@ -82,7 +80,6 @@ const CLI_ORDER = [
 ];
 
 const FALLBACK_CLI_TARGETS: CliTarget[] = [
-  { id: 'amr', name: 'OpenDesign', bin: 'vela', available: false },
   { id: 'claude', name: 'Claude Code', bin: 'claude', available: false },
   { id: 'codex', name: 'Codex CLI', bin: 'codex', available: false },
   { id: 'opencode', name: 'OpenCode', bin: 'opencode-cli', available: false },
@@ -165,7 +162,7 @@ function writePreferredFramework(id: string): void {
 }
 
 function cliDisplayName(agent: Pick<CliTarget, 'id' | 'name'>): string {
-  return agent.id === 'amr' ? 'OpenDesign' : agent.name;
+  return agent.name;
 }
 
 function mergeCliTargets(agents: AgentInfo[] | undefined): CliTarget[] {
@@ -345,7 +342,6 @@ export function HandoffButton({
 }: Props) {
   const t = useT();
   const analytics = useAnalytics();
-  const { workspaceContext } = useProjectCollabContext();
   // One-liner so every hand-off interaction emits the same
   // `ui_click` / `area=handoff` shape; callers pass only what varies. The
   // active-artifact context is attached to every event so handoff slices line
@@ -462,7 +458,7 @@ export function HandoffButton({
     setBusy(editor.id);
     writePreferred(editor.id);
     try {
-      await openProjectInEditor(projectId, editor.id, workspaceContext);
+      await openProjectInEditor(projectId, editor.id);
       setOpen(false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -615,7 +611,7 @@ export function HandoffButton({
             });
             setError(null);
             setBusy(fallbackId);
-            void openProjectInEditor(projectId, fallbackId, workspaceContext)
+            void openProjectInEditor(projectId, fallbackId)
               .catch((err) => {
                 setError(err instanceof Error ? err.message : String(err));
                 onRequestRevealInFinder?.();

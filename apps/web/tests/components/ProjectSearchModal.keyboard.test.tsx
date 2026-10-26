@@ -13,7 +13,6 @@ import {
 } from '../../src/components/ProjectSearchModal';
 import { I18nProvider } from '../../src/i18n';
 import type { Project } from '../../src/types';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 afterEach(() => cleanup());
 
@@ -35,30 +34,15 @@ const PROJECTS = [
   project('middle', 'Middle deck', 2_000),
 ];
 
-const WORKSPACE_CONTEXT = {
-  workspaceId: 'workspace-team',
-  workspaceType: 'team',
-  workspaceMemberId: 'member-1',
-  role: 'member',
-  memberStatus: 'active',
-  lifecycleState: 'active',
-  permissions: {
-    canShareProjects: false,
-    canWriteSyncedFiles: false,
-  },
-} as WorkspaceCollabContext;
-
 function renderPalette(
   onOpenProject = vi.fn(),
   onClose = vi.fn(),
   projects = PROJECTS,
-  workspaceContext: WorkspaceCollabContext | null = null,
 ) {
   render(
     <I18nProvider>
       <ProjectSearchModal
         projects={projects}
-        workspaceContext={workspaceContext}
         onOpenProject={onOpenProject}
         onClose={onClose}
       />
@@ -169,7 +153,7 @@ describe('ProjectSearchModal keyboard navigation', () => {
         kind: 'image',
       },
     } as Project;
-    renderPalette(vi.fn(), vi.fn(), [teamProject], WORKSPACE_CONTEXT);
+    renderPalette(vi.fn(), vi.fn(), [teamProject]);
 
     const image = screen.getByTestId('project-search-item-team-project').querySelector('img');
     expect(image?.getAttribute('src')).toBe(

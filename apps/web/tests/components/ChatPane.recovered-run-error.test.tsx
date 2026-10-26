@@ -31,7 +31,7 @@ import { forwardRef } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { ChatPane } from '../../src/components/ChatPane';
-import { resolveRunFailureUi } from '../../src/runtime/amr-guidance';
+import { resolveRunFailureUi } from '../../src/runtime/run-failure-ui';
 import type { AppConfig, ChatMessage } from '../../src/types';
 
 const translate = (key: string, vars?: Record<string, string | number>) => {
@@ -109,7 +109,7 @@ function recoveredMessage(): ChatMessage {
     runId: RUN_ID,
     // 真实落库值。daemon 自己重试成功,这一轮是 succeeded。
     runStatus: 'succeeded',
-    agentId: 'amr',
+    agentId: 'opencode',
     events: recoveredRunEvents(),
   } as ChatMessage;
 }
@@ -137,7 +137,7 @@ function renderChat(options: {
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
+      config={{ agentId: 'opencode', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }
@@ -196,7 +196,7 @@ describe('重试也失败:同一段原文该出 S10「服务暂时不可用」',
       createdAt: 1,
       runId: RUN_ID,
       runStatus: 'failed',
-      agentId: 'amr',
+      agentId: 'opencode',
       events: [
         { kind: 'status', label: 'starting', detail: 'amr' },
         {
@@ -249,34 +249,3 @@ describe('重试也失败:同一段原文该出 S10「服务暂时不可用」',
 // 交给升级卡(交付稿组件 18),报错卡整张不画(`suppressCard`),所以这里没有
 // 卡面文字可读。要守的东西没变 —— 这一路仍然有它自己那份人话,没被 S10
 // 「服务暂时不可用」糊掉。
-describe('余额不足那一路没有被连带糊掉', () => {
-  it('照旧是余额那一份文案,而且整张报错卡让位给升级卡', () => {
-    const message = {
-      id: 'msg-balance',
-      role: 'assistant',
-      content: '',
-      createdAt: 1,
-      runId: 'run-balance',
-      runStatus: 'failed',
-      agentId: 'amr',
-      events: [
-        {
-          kind: 'status',
-          label: 'error',
-          detail: 'Insufficient balance',
-          code: 'AMR_INSUFFICIENT_BALANCE',
-        },
-      ],
-    } as ChatMessage;
-
-    const ui = resolveRunFailureUi('AMR_INSUFFICIENT_BALANCE', undefined, 'amr');
-    expect(ui.titleKey).toBe('chat.runError.title.balance');
-    expect(ui.messageKey).toBe('chat.amrError.balanceMessage');
-    expect(ui.suppressCard).toBe(true);
-
-    const { container } = renderChat({ message });
-
-    // 白色通用报错卡不在了 —— 钱的事只有升级卡一张。
-    expect(container.querySelector('[data-user-action-card="run-recovery"]')).toBeNull();
-  });
-});

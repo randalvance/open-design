@@ -12,7 +12,7 @@ import type {
   Conversation,
   ProjectFile,
 } from '../../types';
-import type { ChatSessionMode, WorkspaceCollabContext } from '@open-design/contracts';
+import type { ChatSessionMode } from '@open-design/contracts';
 import type { ChatSendMeta } from '../ChatComposer';
 import { useConversationChat } from './useConversationChat';
 import styles from './SideChatTab.module.css';
@@ -76,11 +76,6 @@ interface Props {
   config: AppConfig;
   agentsById: Map<string, AgentInfo>;
   locale: string;
-  /** The caller's current workspace identity, forwarded to `streamViaDaemon`
-   *  so a side-chat send carries the same `x-od-workspace-*` headers the
-   *  primary chat loop sends — otherwise a team-bound project's side chat
-   *  401s against the daemon's workspace mutation gate. */
-  workspaceContext?: WorkspaceCollabContext | null;
   /** Project files for the composer's @-mention picker and produced-file chips. */
   projectFiles: ProjectFile[];
   projectFileNames?: Set<string>;
@@ -97,7 +92,6 @@ interface Props {
   onNewConversation?: () => void;
   /** Live ProjectView state for the primary conversation when this tab mirrors it. */
   activeConversationChat?: ActiveConversationChatState;
-  onSwitchConversationToCloud?: (conversationId: string, message: ChatMessage) => void;
   recoveryActionsBlockedReason?: RecoveryActionBlockReason | null;
   /** Forward produced-file / tool-card open requests to the workspace. */
   onRequestOpenFile?: (name: string) => void;
@@ -113,7 +107,6 @@ export function SideChatTab({
   config,
   agentsById,
   locale,
-  workspaceContext,
   projectFiles,
   projectFileNames,
   projectResolvedDir,
@@ -124,7 +117,6 @@ export function SideChatTab({
   onSessionModeChange,
   onNewConversation,
   activeConversationChat,
-  onSwitchConversationToCloud,
   recoveryActionsBlockedReason = null,
   onRequestOpenFile,
 }: Props) {
@@ -137,7 +129,6 @@ export function SideChatTab({
     agentsById,
     locale,
     sessionMode,
-    workspaceContext,
   });
   const controlledChat =
     activeConversationChat?.conversationId === conversationId
@@ -184,12 +175,6 @@ export function SideChatTab({
           recoveryActionsBlockedReason={recoveryBlock}
           retryPendingAssistantId={controlledChat?.retryPendingAssistantId}
           supersededErrorAssistantIds={controlledChat?.supersededErrorAssistantIds}
-          onSwitchToAmrAndRetry={onSwitchConversationToCloud
-            ? (failedAssistant) => {
-                if (recoveryBlock !== null) return;
-                onSwitchConversationToCloud(conversationId, failedAssistant);
-              }
-            : undefined}
           onStop={controlledChat?.onStop ?? chat.onStop}
           onAssistantFeedback={controlledChat?.onAssistantFeedback}
           onRequestOpenFile={onRequestOpenFile}

@@ -16,7 +16,6 @@ import {
   importClaudeDesignZip,
   importFolderProject,
   deleteTemplate,
-  invalidateWorkspaceProjectLists,
   listTemplates,
   installGeneratedPluginFolder,
   installPluginSource,
@@ -25,66 +24,19 @@ import {
   listMessages,
   invalidatePluginCatalogCache,
   listProjects,
-  listWorkspaceProjectSummaries,
   loadTabs,
-  moveWorkspaceProject,
   patchProject,
   pickLocalFolderPath,
   publishGeneratedPluginToGitHub,
-  resolvedWorkspaceContextForWrite,
   startGeneratedPluginShareTask,
   uploadPluginFolder,
   waitGeneratedPluginShareTask,
-  workspaceProjectMoveErrorCode,
 } from '../../src/state/projects';
-import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
-import {
-  projectDisplaySnapshotKey,
-  readProjectDisplaySnapshot,
-  resetProjectDisplaySnapshots,
-  writeProjectDisplaySnapshot,
-} from '../../src/state/project-display-cache';
+import { resetProjectDisplaySnapshots } from '../../src/state/project-display-cache';
 import {
   designBrowserHistoryStorageKey,
   designBrowserViewportStorageKey,
 } from '../../src/components/design-browser-storage';
-import {
-  currentWorkspaceContextRequestToken,
-  resetWorkspaceContextCache,
-} from '../../src/collab/useWorkspaceContext';
-
-function personalWorkspaceContext(): WorkspaceCollabContext {
-  return {
-    workspaceId: 'ws-personal',
-    workspaceType: 'personal',
-    workspaceMemberId: 'wm-1',
-    role: 'owner',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: null,
-    providerMode: 'platform_credits',
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 1, usedSeats: 1 }),
-    permissions: buildWorkspacePermissions({ role: 'owner', lifecycleState: 'active' }),
-  };
-}
-
-function teamWorkspaceContext(
-  overrides: Partial<WorkspaceCollabContext> = {},
-): WorkspaceCollabContext {
-  return {
-    ...personalWorkspaceContext(),
-    workspaceId: 'ws-team',
-    workspaceType: 'team',
-    role: 'member',
-    teamId: 'team-1',
-    ...overrides,
-  };
-}
 
 describe('listMessages', () => {
   afterEach(() => {
@@ -109,9 +61,8 @@ describe('listMessages', () => {
     });
   });
 
-  it('cancels a transcript HTTP read without dropping its workspace identity', async () => {
+  it('cancels a transcript HTTP read through the caller signal', async () => {
     const controller = new AbortController();
-    const context = personalWorkspaceContext();
     let requestSignal: AbortSignal | null | undefined;
     const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
       requestSignal = init?.signal;
@@ -120,11 +71,7 @@ describe('listMessages', () => {
       });
     });
     vi.stubGlobal('fetch', fetchMock);
-    const pending = listMessages('project-1', 'conversation-1', context, controller.signal);
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
-      'x-od-workspace-id': context.workspaceId,
-      'x-od-workspace-member-id': context.workspaceMemberId,
-    });
+    const pending = listMessages('project-1', 'conversation-1', controller.signal);
     expect(requestSignal).toBe(controller.signal);
     controller.abort();
     await expect(pending).rejects.toMatchObject({ name: 'ProjectMessageListError' });
@@ -352,35 +299,6 @@ describe('project detail reads', () => {
     vi.unstubAllGlobals();
   });
 
-  it('sends exact Workspace authority for getProject and getProjectDetail', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({
-      project: {
-        id: 'project-bound',
-        name: 'Bound project',
-        skillId: null,
-        designSystemId: null,
-        createdAt: 1,
-        updatedAt: 1,
-        workspaceId: 'workspace-detail',
-      },
-      resolvedDir: '/tmp/project-bound',
-    }));
-    vi.stubGlobal('fetch', fetchMock);
-    const context = teamWorkspaceContext({
-      workspaceId: 'workspace-detail',
-      workspaceMemberId: 'member-detail',
-    });
-
-    await getProject('project-bound', context);
-    await getProjectDetail('project-bound', { ensureDir: true }, context);
-
-    for (const call of fetchMock.mock.calls) {
-      const headers = new Headers(call[1]?.headers);
-      expect(headers.get('x-od-workspace-id')).toBe('workspace-detail');
-      expect(headers.get('x-od-workspace-member-id')).toBe('member-detail');
-    }
-  });
-
   it('preserves headerless reads for an unbound legacy project', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => Response.json({
       project: {
@@ -505,40 +423,6 @@ describe('applyPlugin', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('scopes same-id plugin apply requests to the exact A/B workspace', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () =>
-      new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-    const workspaceA = teamWorkspaceContext({
-      workspaceId: 'ws-a',
-      workspaceMemberId: 'wm-a',
-    });
-    const workspaceB = teamWorkspaceContext({
-      workspaceId: 'ws-b',
-      workspaceMemberId: 'wm-b',
-    });
-
-    await Promise.all([
-      applyPlugin('shared-plugin-id', { workspaceContext: workspaceA }),
-      applyPlugin('shared-plugin-id', { workspaceContext: workspaceB }),
-    ]);
-
-    const scopes = fetchMock.mock.calls.map(([, init]) => {
-      const headers = new Headers(init?.headers);
-      return [
-        headers.get('x-od-workspace-id'),
-        headers.get('x-od-workspace-member-id'),
-      ];
-    });
-    expect(scopes).toEqual([
-      ['ws-a', 'wm-a'],
-      ['ws-b', 'wm-b'],
-    ]);
-  });
 });
 
 describe('listProjects', () => {
@@ -579,227 +463,6 @@ describe('listProjects', () => {
     expect(c).toBe(a);
   });
 
-  it('returns raw workspace summaries with the captured member scope', async () => {
-    const summary = { id: 'p1', project: { id: 'p1' } };
-    const fetchMock = vi.fn<typeof fetch>(async () =>
-      new Response(JSON.stringify({ projects: [summary] }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-    const context = teamWorkspaceContext();
-
-    await expect(listWorkspaceProjectSummaries({
-      context,
-      workspaceView: 'team',
-      throwOnError: true,
-    })).resolves.toEqual([summary]);
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/workspaces/ws-team/projects?view=team',
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'ws-team',
-          'x-od-workspace-member-id': 'wm-1',
-        }),
-      }),
-    );
-  });
-
-  it('returns one card model when workspace summaries repeat a logical project', async () => {
-    const localProject = {
-      id: 'shared-project',
-      name: 'Local project',
-      createdAt: 1,
-      updatedAt: 3,
-    };
-    const remoteProject = {
-      id: 'shared-project',
-      name: 'Remote catalog copy',
-      createdAt: 1,
-      updatedAt: 2,
-    };
-    const fetchMock = vi.fn<typeof fetch>(async () =>
-      new Response(JSON.stringify({
-        projects: [
-          { id: 'local-summary', project: localProject },
-          { id: 'remote-resource-summary', project: remoteProject },
-        ],
-      }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    await expect(listProjects({
-      workspaceContext: teamWorkspaceContext(),
-      workspaceView: 'recent',
-      throwOnError: true,
-    })).resolves.toEqual([localProject]);
-  });
-
-  it('restores the exact wrapper Workspace and visibility onto project card models', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async (input) => {
-      const requestedWorkspaceId = new URL(String(input), 'http://localhost').pathname.split('/')[3]!;
-      return Response.json({
-        projects: [
-          {
-            id: 'summary-first',
-            workspaceId: requestedWorkspaceId,
-            visibility: 'team',
-            project: {
-              id: 'project-shared',
-              name: `First catalog row in ${requestedWorkspaceId}`,
-              createdAt: 1,
-              updatedAt: 3,
-            },
-          },
-          {
-            id: 'summary-duplicate',
-            workspaceId: requestedWorkspaceId,
-            visibility: 'personal',
-            project: {
-              id: 'project-shared',
-              name: 'Duplicate catalog row',
-              createdAt: 1,
-              updatedAt: 2,
-            },
-          },
-          {
-            id: 'summary-second',
-            workspaceId: requestedWorkspaceId,
-            visibility: 'personal',
-            project: {
-              id: 'project-second',
-              name: 'Second project',
-              createdAt: 1,
-              updatedAt: 1,
-            },
-          },
-        ],
-      });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    const workspaceA = teamWorkspaceContext({
-      workspaceId: 'workspace-wrapper-a',
-      workspaceMemberId: 'member-a',
-    });
-    const workspaceB = teamWorkspaceContext({
-      workspaceId: 'workspace-wrapper-b',
-      workspaceMemberId: 'member-b',
-    });
-
-    const workspaceAProjects = await listProjects({
-      workspaceContext: workspaceA,
-      workspaceView: 'recent',
-      throwOnError: true,
-    });
-    const workspaceBProjects = await listProjects({
-      workspaceContext: workspaceB,
-      workspaceView: 'recent',
-      throwOnError: true,
-    });
-
-    expect(workspaceAProjects).toEqual([
-      expect.objectContaining({
-        id: 'project-shared',
-        name: 'First catalog row in workspace-wrapper-a',
-        workspaceId: 'workspace-wrapper-a',
-        workspaceVisibility: 'team',
-      }),
-      expect.objectContaining({
-        id: 'project-second',
-        name: 'Second project',
-        workspaceId: 'workspace-wrapper-a',
-        workspaceVisibility: 'personal',
-      }),
-    ]);
-    expect(workspaceBProjects).toEqual([
-      expect.objectContaining({
-        id: 'project-shared',
-        name: 'First catalog row in workspace-wrapper-b',
-        workspaceId: 'workspace-wrapper-b',
-        workspaceVisibility: 'team',
-      }),
-      expect.objectContaining({
-        id: 'project-second',
-        name: 'Second project',
-        workspaceId: 'workspace-wrapper-b',
-        workspaceVisibility: 'personal',
-      }),
-    ]);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-  });
-
-  it('does not coalesce workspace snapshots across different members', async () => {
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const fetchMock = vi.fn<typeof fetch>(async () => {
-      await gate;
-      return new Response(JSON.stringify({ projects: [] }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const first = listWorkspaceProjectSummaries({
-      context: teamWorkspaceContext({ workspaceMemberId: 'wm-1' }),
-      workspaceView: 'team',
-    });
-    const second = listWorkspaceProjectSummaries({
-      context: teamWorkspaceContext({ workspaceMemberId: 'wm-2' }),
-      workspaceView: 'team',
-    });
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    release();
-    await Promise.all([first, second]);
-  });
-
-  it('does not coalesce the same member across a permission transition', async () => {
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const fetchMock = vi.fn<typeof fetch>(async () => {
-      await gate;
-      return Response.json({ projects: [] });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const before = teamWorkspaceContext({
-      workspaceId: 'ws-permission-transition',
-      workspaceMemberId: 'wm-same',
-      permissions: {
-        ...teamWorkspaceContext().permissions,
-        canShareProjects: false,
-        canWriteSyncedFiles: false,
-      },
-    });
-    const after = {
-      ...before,
-      permissions: {
-        ...before.permissions,
-        canShareProjects: true,
-      },
-    };
-    const first = listWorkspaceProjectSummaries({
-      context: before,
-      workspaceView: 'team',
-    });
-    const second = listWorkspaceProjectSummaries({
-      context: after,
-      workspaceView: 'team',
-    });
-
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    release();
-    await Promise.all([first, second]);
-  });
 });
 
 describe('createProject', () => {
@@ -833,36 +496,6 @@ describe('createProject', () => {
     );
   });
 
-  it('attaches the resolved workspace and member identity to project creation', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => new Response(
-      JSON.stringify({
-        project: { id: 'scoped-project' },
-        conversationId: 'scoped-conversation',
-      }),
-      { status: 200, headers: { 'content-type': 'application/json' } },
-    ));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await createProject({
-      name: 'Scoped project',
-      skillId: null,
-      designSystemId: null,
-      workspaceContext: teamWorkspaceContext(),
-    });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/projects',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'ws-team',
-          'x-od-workspace-member-id': 'wm-1',
-          'x-od-workspace-type': 'team',
-        }),
-      }),
-    );
-  });
-
   it('uses a caller-minted project id for an optimistic route handoff', async () => {
     const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
       const body = JSON.parse(String(init?.body)) as { id: string };
@@ -888,109 +521,6 @@ describe('createProject', () => {
       (fetchMock.mock.calls[0]![1] as RequestInit).body as string,
     ) as { id: string };
     expect(body.id).toBe('optimistic-project');
-  });
-
-  it('fails closed while modern workspace authority is unresolved or unavailable', () => {
-    expect(() => resolvedWorkspaceContextForWrite({
-      context: null,
-      loading: true,
-    })).toThrow('Workspace context is unavailable');
-
-    expect(() => resolvedWorkspaceContextForWrite({
-      context: null,
-      loading: false,
-      failure: 'unavailable',
-    })).toThrow('Workspace context is unavailable');
-
-    expect(() => resolvedWorkspaceContextForWrite({
-      context: teamWorkspaceContext(),
-      loading: false,
-      identityChangePending: true,
-    })).toThrow('Workspace context is unavailable');
-  });
-
-  it('passes a retained last-good context through a transient outage when it belongs to the current generation', () => {
-    // Task#5: a vela authority outage set `failure: 'unavailable'`, but the
-    // shell still holds a directory-verified context resolved under the CURRENT
-    // identity generation. The old fail-closed behavior threw here, which turned
-    // every create click during the outage into a dead button + retry storm.
-    // The backend re-verifies the claimed identity, so honor the cache.
-    resetWorkspaceContextCache();
-    const context = teamWorkspaceContext();
-    expect(resolvedWorkspaceContextForWrite({
-      context,
-      loading: false,
-      failure: 'unavailable',
-      resourceReadIdentity: {
-        context,
-        generation: currentWorkspaceContextRequestToken(),
-      },
-    })).toBe(context);
-  });
-
-  it('still fails closed when the retained context belongs to a RETIRED generation (account switch)', () => {
-    // An account switch advanced the request token; the state still carries the
-    // previous account's cached context stamped with the OLD generation. Passing
-    // it through would authorize a write under the wrong account (cross-account
-    // write). The generation mismatch must keep this fail-closed.
-    resetWorkspaceContextCache();
-    const previousAccountContext = teamWorkspaceContext();
-    expect(() => resolvedWorkspaceContextForWrite({
-      context: previousAccountContext,
-      loading: false,
-      failure: 'unavailable',
-      resourceReadIdentity: {
-        context: previousAccountContext,
-        generation: 'retired-generation',
-      },
-    })).toThrow('Workspace context is unavailable');
-
-    // And the unscoped policy yields null (not the stale context) in that case.
-    expect(resolvedWorkspaceContextForWrite(
-      {
-        context: previousAccountContext,
-        loading: false,
-        failure: 'unavailable',
-        resourceReadIdentity: {
-          context: previousAccountContext,
-          generation: 'retired-generation',
-        },
-      },
-      { unavailablePolicy: 'unscoped' },
-    )).toBeNull();
-  });
-
-  it('allows an explicitly local project-create caller to remain unscoped while workspace sync is unresolved', () => {
-    expect(resolvedWorkspaceContextForWrite(
-      { context: null, loading: true },
-      { unavailablePolicy: 'unscoped' },
-    )).toBeNull();
-
-    expect(resolvedWorkspaceContextForWrite(
-      { context: null, loading: false, failure: 'unavailable' },
-      { unavailablePolicy: 'unscoped' },
-    )).toBeNull();
-
-    expect(resolvedWorkspaceContextForWrite(
-      {
-        context: teamWorkspaceContext(),
-        loading: false,
-        identityChangePending: true,
-      },
-      { unavailablePolicy: 'unscoped' },
-    )).toBeNull();
-  });
-
-  it('preserves explicit anonymous and old-daemon headerless compatibility', () => {
-    expect(resolvedWorkspaceContextForWrite({
-      context: null,
-      loading: false,
-    })).toBeNull();
-    expect(resolvedWorkspaceContextForWrite({
-      context: null,
-      loading: false,
-      failure: 'unsupported',
-    })).toBeNull();
   });
 
   // P1.C: the daemon returns 503 WORKSPACE_AUTHORITY_UNAVAILABLE (retryable) when
@@ -1052,11 +582,11 @@ describe('createProject', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('preserves the structured AMR auth error for the caller instead of reducing it to text', async () => {
+  it('preserves the structured auth error for the caller instead of reducing it to text', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(
       JSON.stringify({
         error: {
-          code: 'AMR_AUTH_REQUIRED',
+          code: 'UNAUTHORIZED',
           message: 'Sign in again to continue.',
           retryable: false,
           requestId: 'req-expired-1',
@@ -1075,7 +605,7 @@ describe('createProject', () => {
     expect(failure).toBeInstanceOf(ProjectCreateError);
     expect(failure).toMatchObject({
       status: 401,
-      code: 'AMR_AUTH_REQUIRED',
+      code: 'UNAUTHORIZED',
       retryable: false,
       requestId: 'req-expired-1',
     });
@@ -1130,42 +660,12 @@ describe('createProject', () => {
   });
 });
 
-// recvq5ecTkar91: a team project that leaked into a personal workspace's 草稿
-// grid was also really deletable from there, not just visible — because this
-// call never told the daemon which workspace it was acting from.
-// `enforceWorkspaceProjectMutation` (apps/daemon/src/routes/project/index.ts)
-// treats a request with NEITHER `x-od-workspace-id` NOR
-// `x-od-workspace-member-id` as a legacy caller outside the workspace system
-// entirely and skips its ownership check — so every delete from a
-// workspace-team build silently bypassed cross-workspace permission checking,
-// wrong-workspace project or not. Attaching the same headers
-// `moveWorkspaceProject` already sends is what lets the daemon's existing
-// (correct) `getWorkspaceProject(ctx.workspaceId, projectId)` scoping fire.
 describe('deleteProject', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('attaches workspace identity headers so the daemon can enforce ownership', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => new Response(null, { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await deleteProject('leaked-team-project', personalWorkspaceContext());
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/projects/leaked-team-project',
-      expect.objectContaining({
-        method: 'DELETE',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'ws-personal',
-          'x-od-workspace-member-id': 'wm-1',
-          'x-od-workspace-type': 'personal',
-        }),
-      }),
-    );
-  });
-
-  it('omits workspace headers when there is no workspace context (legacy local mode)', async () => {
+  it('sends a plain DELETE', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(null, { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
 
@@ -1178,7 +678,7 @@ describe('deleteProject', () => {
   it('reports failure when the daemon refuses the delete', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(null, { status: 403 })));
 
-    await expect(deleteProject('someone-elses-project', personalWorkspaceContext())).rejects.toMatchObject({
+    await expect(deleteProject('someone-elses-project')).rejects.toMatchObject({
       name: 'ProjectDeleteError',
       status: 403,
     });
@@ -1193,7 +693,7 @@ describe('deleteProject', () => {
       },
     }), { status: 503 })));
 
-    await expect(deleteProject('project-1', personalWorkspaceContext())).rejects.toMatchObject({
+    await expect(deleteProject('project-1')).rejects.toMatchObject({
       name: 'ProjectDeleteError',
       status: 503,
       code: 'WORKSPACE_AUTHORITY_UNAVAILABLE',
@@ -1209,13 +709,13 @@ describe('deleteProject', () => {
       },
     }), { status: 404 })));
 
-    await expect(deleteProject('already-deleted', personalWorkspaceContext())).resolves.toBe(true);
+    await expect(deleteProject('already-deleted')).resolves.toBe(true);
   });
 
   it('does not hide an unstructured 404 from an incompatible daemon', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(null, { status: 404 })));
 
-    await expect(deleteProject('project-1', personalWorkspaceContext())).rejects.toMatchObject({
+    await expect(deleteProject('project-1')).rejects.toMatchObject({
       name: 'ProjectDeleteError',
       status: 404,
     });
@@ -1231,30 +731,7 @@ describe('duplicateProject', () => {
     vi.unstubAllGlobals();
   });
 
-  it('attaches workspace identity headers so the daemon can enforce ownership', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () =>
-      new Response(
-        JSON.stringify({ project: { id: 'dup-1' }, conversationId: 'conv-1', copiedFiles: [] }),
-        { status: 200 },
-      ),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    await duplicateProject('leaked-team-project', {}, personalWorkspaceContext());
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/projects/leaked-team-project/duplicate',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'ws-personal',
-          'x-od-workspace-member-id': 'wm-1',
-        }),
-      }),
-    );
-  });
-
-  it('omits workspace headers when there is no workspace context (legacy local mode)', async () => {
+  it('posts a plain JSON duplicate request', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(
         JSON.stringify({ project: { id: 'dup-1' }, conversationId: 'conv-1', copiedFiles: [] }),
@@ -1270,37 +747,12 @@ describe('duplicateProject', () => {
   });
 });
 
-// Same enforceWorkspaceProjectMutation bypass as deleteProject/duplicateProject:
-// a rename, metadata patch, or pendingPrompt clear sent no workspace headers,
-// so a read-only team member could still push a PATCH through.
 describe('patchProject', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('attaches workspace identity headers so the daemon can enforce ownership', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => new Response(
-      JSON.stringify({ id: 'leaked-team-project', name: 'Renamed' }),
-      { status: 200 },
-    ));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await patchProject('leaked-team-project', { name: 'Renamed' }, personalWorkspaceContext());
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/projects/leaked-team-project',
-      expect.objectContaining({
-        method: 'PATCH',
-        headers: expect.objectContaining({
-          'Content-Type': 'application/json',
-          'x-od-workspace-id': 'ws-personal',
-          'x-od-workspace-member-id': 'wm-1',
-        }),
-      }),
-    );
-  });
-
-  it('omits workspace headers when there is no workspace context (legacy local mode)', async () => {
+  it('sends a plain JSON PATCH', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(
       JSON.stringify({ id: 'local-only-project', name: 'Renamed' }),
       { status: 200 },
@@ -1317,7 +769,7 @@ describe('patchProject', () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(null, { status: 403 })));
 
     await expect(
-      patchProject('someone-elses-project', { name: 'Renamed' }, personalWorkspaceContext()),
+      patchProject('someone-elses-project', { name: 'Renamed' }),
     ).resolves.toBeNull();
   });
 });
@@ -1327,7 +779,7 @@ describe('createDesignSystemProjectFromProject', () => {
     vi.unstubAllGlobals();
   });
 
-  it('attaches workspace identity headers so the daemon can enforce ownership', async () => {
+  it('posts a plain JSON design-system copy request', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       new Response(
         JSON.stringify({
@@ -1341,16 +793,14 @@ describe('createDesignSystemProjectFromProject', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await createDesignSystemProjectFromProject('leaked-team-project', {}, personalWorkspaceContext());
+    await createDesignSystemProjectFromProject('source-project', { name: 'Brand' });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/projects/leaked-team-project/design-system-copy',
+      '/api/projects/source-project/design-system-copy',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'ws-personal',
-          'x-od-workspace-member-id': 'wm-1',
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Brand' }),
       }),
     );
   });
@@ -1403,167 +853,16 @@ describe('listPlugins', () => {
     expect(rows.map((row) => row.id)).toEqual(['od-default', 'od-new-generation']);
   });
 
-  it('keeps a settled signed-out catalog request headerless', async () => {
+  it('reads the catalog with a plain request', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(
       JSON.stringify({ plugins: [] }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ));
     vi.stubGlobal('fetch', fetchMock);
 
-    await listPluginsFresh({ workspaceContext: null, accountGeneration: 3 });
+    await listPluginsFresh();
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/plugins', undefined);
-  });
-
-  it('partitions the warm visible catalog by account generation and full workspace identity', async () => {
-    const requestedHeaders: Array<Record<string, string>> = [];
-    const fetchMock = vi.fn<typeof fetch>(async (_url, init) => {
-      requestedHeaders.push(Object.fromEntries(new Headers(init?.headers).entries()));
-      const workspaceId = new Headers(init?.headers).get('x-od-workspace-id');
-      const memberId = new Headers(init?.headers).get('x-od-workspace-member-id');
-      return new Response(JSON.stringify({
-        plugins: [{ id: `${workspaceId}:${memberId}:${requestedHeaders.length}`, manifest: {} }],
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const firstIdentity = teamWorkspaceContext({
-      workspaceId: 'workspace-shared',
-      workspaceMemberId: 'member-shared',
-    });
-    const secondIdentity = teamWorkspaceContext({
-      workspaceId: 'workspace-b',
-      workspaceMemberId: 'member-b',
-    });
-
-    const first = await listPluginsFresh({
-      workspaceContext: firstIdentity,
-      accountGeneration: 7,
-    });
-    const firstAgain = await listPluginsFresh({
-      workspaceContext: firstIdentity,
-      accountGeneration: 7,
-    });
-    const second = await listPluginsFresh({
-      workspaceContext: secondIdentity,
-      accountGeneration: 7,
-    });
-    const nextAccountSameFields = await listPluginsFresh({
-      workspaceContext: firstIdentity,
-      accountGeneration: 8,
-    });
-
-    expect(firstAgain).toEqual(first);
-    expect(second[0]?.id).toContain('workspace-b:member-b');
-    expect(nextAccountSameFields).not.toEqual(first);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(requestedHeaders).toEqual([
-      expect.objectContaining({
-        'x-od-workspace-id': 'workspace-shared',
-        'x-od-workspace-member-id': 'member-shared',
-      }),
-      expect.objectContaining({
-        'x-od-workspace-id': 'workspace-b',
-        'x-od-workspace-member-id': 'member-b',
-      }),
-      expect.objectContaining({
-        'x-od-workspace-id': 'workspace-shared',
-        'x-od-workspace-member-id': 'member-shared',
-      }),
-    ]);
-  });
-
-  it('evicts only the exact account generation and Workspace plugin catalog', async () => {
-    let fetchSequence = 0;
-    const fetchMock = vi.fn<typeof fetch>(async (_url, init) => {
-      fetchSequence += 1;
-      const headers = new Headers(init?.headers);
-      const workspaceId = headers.get('x-od-workspace-id');
-      const memberId = headers.get('x-od-workspace-member-id');
-      return new Response(JSON.stringify({
-        plugins: [{
-          id: `${workspaceId}:${memberId}:fetch-${fetchSequence}`,
-          manifest: {},
-        }],
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    const workspaceA = teamWorkspaceContext({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-    });
-    const workspaceB = teamWorkspaceContext({
-      workspaceId: 'workspace-b',
-      workspaceMemberId: 'member-b',
-    });
-
-    const account7A = await listPluginsFresh({ workspaceContext: workspaceA, accountGeneration: 7 });
-    const account7B = await listPluginsFresh({ workspaceContext: workspaceB, accountGeneration: 7 });
-    const account8A = await listPluginsFresh({ workspaceContext: workspaceA, accountGeneration: 8 });
-    invalidatePluginCatalogCache({ workspaceContext: workspaceA, accountGeneration: 7 });
-
-    const refreshed7A = await listPluginsFresh({
-      workspaceContext: workspaceA,
-      accountGeneration: 7,
-    });
-    const cached7B = await listPluginsFresh({
-      workspaceContext: workspaceB,
-      accountGeneration: 7,
-    });
-    const cached8A = await listPluginsFresh({
-      workspaceContext: workspaceA,
-      accountGeneration: 8,
-    });
-
-    expect(refreshed7A).not.toEqual(account7A);
-    expect(cached7B).toEqual(account7B);
-    expect(cached8A).toEqual(account8A);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-  });
-
-  it('does not let an invalidated in-flight plugin read overwrite the fresh exact-scope cache', async () => {
-    let resolveStaleA7!: (response: Response) => void;
-    let resolveB7!: (response: Response) => void;
-    let resolveA8!: (response: Response) => void;
-    const staleA7 = new Promise<Response>((resolve) => { resolveStaleA7 = resolve; });
-    const pendingB7 = new Promise<Response>((resolve) => { resolveB7 = resolve; });
-    const pendingA8 = new Promise<Response>((resolve) => { resolveA8 = resolve; });
-    const fetchMock = vi.fn<typeof fetch>();
-    fetchMock
-      .mockReturnValueOnce(staleA7)
-      .mockReturnValueOnce(pendingB7)
-      .mockReturnValueOnce(pendingA8)
-      .mockResolvedValueOnce(Response.json({
-        plugins: [{ id: 'fresh-a7', manifest: {} }],
-      }));
-    vi.stubGlobal('fetch', fetchMock);
-    const workspaceA = teamWorkspaceContext({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-    });
-    const workspaceB = teamWorkspaceContext({
-      workspaceId: 'workspace-b',
-      workspaceMemberId: 'member-b',
-    });
-    const a7Options = { workspaceContext: workspaceA, accountGeneration: 7 };
-    const b7Options = { workspaceContext: workspaceB, accountGeneration: 7 };
-    const a8Options = { workspaceContext: workspaceA, accountGeneration: 8 };
-
-    const oldA7Read = listPlugins(a7Options);
-    const b7Read = listPlugins(b7Options);
-    const a8Read = listPlugins(a8Options);
-    invalidatePluginCatalogCache(a7Options);
-    const freshA7 = await listPluginsFresh(a7Options);
-
-    resolveB7(Response.json({ plugins: [{ id: 'workspace-b-account-7', manifest: {} }] }));
-    resolveA8(Response.json({ plugins: [{ id: 'workspace-a-account-8', manifest: {} }] }));
-    resolveStaleA7(Response.json({ plugins: [{ id: 'stale-a7', manifest: {} }] }));
-    await Promise.all([oldA7Read, b7Read, a8Read]);
-
-    expect(await listPluginsFresh(a7Options)).toEqual(freshA7);
-    expect((await listPluginsFresh(b7Options))[0]?.id).toBe('workspace-b-account-7');
-    expect((await listPluginsFresh(a8Options))[0]?.id).toBe('workspace-a-account-8');
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledWith('/api/plugins');
   });
 
   it('keeps the latest-started same-scope plugin read cached when responses finish in reverse order', async () => {
@@ -1575,22 +874,15 @@ describe('listPlugins', () => {
       .mockReturnValueOnce(olderResponse)
       .mockReturnValueOnce(newerResponse);
     vi.stubGlobal('fetch', fetchMock);
-    const options = {
-      workspaceContext: teamWorkspaceContext({
-        workspaceId: 'workspace-latest',
-        workspaceMemberId: 'member-latest',
-      }),
-      accountGeneration: 9,
-    };
 
-    const olderRead = listPlugins(options);
-    const newerRead = listPlugins(options);
+    const olderRead = listPlugins();
+    const newerRead = listPlugins();
     resolveNewer(Response.json({ plugins: [{ id: 'newer-snapshot', manifest: {} }] }));
     const newerRows = await newerRead;
     resolveOlder(Response.json({ plugins: [{ id: 'older-snapshot', manifest: {} }] }));
     await olderRead;
 
-    expect(await listPluginsFresh(options)).toEqual(newerRows);
+    expect(await listPluginsFresh()).toEqual(newerRows);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
@@ -1615,45 +907,26 @@ describe('installGeneratedPluginFolder', () => {
     ));
     vi.stubGlobal('fetch', fetchMock);
 
-    const context = teamWorkspaceContext({
-      workspaceId: 'workspace-install',
-      workspaceMemberId: 'member-install',
-    });
-    const outcome = await installGeneratedPluginFolder(
-      'project-1',
-      'generated-plugin',
-      context,
-    );
+    const outcome = await installGeneratedPluginFolder('project-1', 'generated-plugin');
 
     expect(outcome.ok).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/projects/project-1/plugins/install-folder',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'workspace-install',
-          'x-od-workspace-member-id': 'member-install',
-        }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'generated-plugin' }),
       }),
     );
     expect(dispatchEvent).toHaveBeenCalled();
   });
 
-  it('evicts only the installed plugin Workspace catalog even when no listener is mounted', async () => {
+  it('evicts the warm plugin catalog even when no listener is mounted', async () => {
     const dispatchEvent = vi.fn();
     vi.stubGlobal('window', { dispatchEvent });
-    const workspaceA = teamWorkspaceContext({
-      workspaceId: 'workspace-install-a',
-      workspaceMemberId: 'member-install-a',
-    });
-    const workspaceB = teamWorkspaceContext({
-      workspaceId: 'workspace-install-b',
-      workspaceMemberId: 'member-install-b',
-    });
     let installed = false;
-    const pluginReads: string[] = [];
-    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+    let pluginReads = 0;
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
       const url = String(input);
       if (url.endsWith('/plugins/install-folder')) {
         installed = true;
@@ -1665,38 +938,26 @@ describe('installGeneratedPluginFolder', () => {
           log: [],
         });
       }
-      const workspaceId = new Headers(init?.headers).get('x-od-workspace-id') ?? 'unscoped';
-      pluginReads.push(workspaceId);
+      pluginReads += 1;
       return Response.json({
         plugins: [{
-          id: `${workspaceId}:${installed ? 'after-install' : 'before-install'}`,
+          id: installed ? 'after-install' : 'before-install',
           manifest: {},
         }],
       });
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    const optionsA = { workspaceContext: workspaceA };
-    const optionsB = { workspaceContext: workspaceB };
-    expect((await listPluginsFresh(optionsA))[0]?.id).toContain('before-install');
-    const cachedB = await listPluginsFresh(optionsB);
+    expect((await listPluginsFresh())[0]?.id).toBe('before-install');
+    // Warm: a second read within the TTL answers from the cache.
+    expect((await listPluginsFresh())[0]?.id).toBe('before-install');
+    expect(pluginReads).toBe(1);
 
-    const outcome = await installGeneratedPluginFolder(
-      'project-1',
-      'generated-plugin',
-      workspaceA,
-    );
+    const outcome = await installGeneratedPluginFolder('project-1', 'generated-plugin');
 
     expect(outcome.ok).toBe(true);
-    expect((await listPluginsFresh(optionsA))[0]?.id).toBe(
-      'workspace-install-a:after-install',
-    );
-    expect(await listPluginsFresh(optionsB)).toEqual(cachedB);
-    expect(pluginReads).toEqual([
-      'workspace-install-a',
-      'workspace-install-b',
-      'workspace-install-a',
-    ]);
+    expect((await listPluginsFresh())[0]?.id).toBe('after-install');
+    expect(pluginReads).toBe(2);
     expect(dispatchEvent).toHaveBeenCalledTimes(1);
   });
 
@@ -1776,37 +1037,6 @@ describe('importClaudeDesignZip', () => {
     );
   });
 
-  it('sends the exact workspace/member authority with the ZIP import', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => new Response(
-      JSON.stringify({
-        project: { id: 'claude-project', name: 'Claude import' },
-        conversationId: 'claude-conversation',
-        entryFile: 'index.html',
-      }),
-      { status: 200, headers: { 'content-type': 'application/json' } },
-    ));
-    vi.stubGlobal('fetch', fetchMock);
-
-    const context = teamWorkspaceContext({
-      workspaceId: 'workspace-claude',
-      workspaceMemberId: 'member-claude',
-    });
-    await importClaudeDesignZip(
-      new File(['zip-bytes'], 'claude-design.zip', { type: 'application/zip' }),
-      context,
-    );
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/import/claude-design',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'workspace-claude',
-          'x-od-workspace-member-id': 'member-claude',
-        }),
-      }),
-    );
-  });
 });
 
 describe('generated plugin share actions', () => {
@@ -1826,20 +1056,8 @@ describe('generated plugin share actions', () => {
     ));
     vi.stubGlobal('fetch', fetchMock);
 
-    const context = teamWorkspaceContext({
-      workspaceId: 'workspace-share',
-      workspaceMemberId: 'member-share',
-    });
-    const publish = await publishGeneratedPluginToGitHub(
-      'project-1',
-      'generated-plugin',
-      context,
-    );
-    const contribute = await contributeGeneratedPluginToOpenDesign(
-      'project-1',
-      'generated-plugin',
-      context,
-    );
+    const publish = await publishGeneratedPluginToGitHub('project-1', 'generated-plugin');
+    const contribute = await contributeGeneratedPluginToOpenDesign('project-1', 'generated-plugin');
 
     expect(publish).toMatchObject({ ok: true, message: 'Ready' });
     expect(contribute).toMatchObject({ ok: true, message: 'Ready' });
@@ -1848,10 +1066,7 @@ describe('generated plugin share actions', () => {
       '/api/projects/project-1/plugins/publish-github',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'workspace-share',
-          'x-od-workspace-member-id': 'member-share',
-        }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'generated-plugin' }),
       }),
     );
@@ -1860,10 +1075,7 @@ describe('generated plugin share actions', () => {
       '/api/projects/project-1/plugins/contribute-open-design',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({
-          'x-od-workspace-id': 'workspace-share',
-          'x-od-workspace-member-id': 'member-share',
-        }),
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: 'generated-plugin' }),
       }),
     );
@@ -1875,7 +1087,7 @@ describe('generated plugin share tasks', () => {
     vi.unstubAllGlobals();
   });
 
-  it('keeps the initiating Workspace identity on both start and long-poll requests', async () => {
+  it('starts a share task and long-polls it by task id', async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(new Response(
         JSON.stringify({
@@ -1902,24 +1114,20 @@ describe('generated plugin share tasks', () => {
         { status: 200, headers: { 'content-type': 'application/json' } },
       ));
     vi.stubGlobal('fetch', fetchMock);
-    const capturedContext = teamWorkspaceContext({
-      workspaceId: 'workspace-start',
-      workspaceMemberId: 'member-start',
-    });
 
     const task = await startGeneratedPluginShareTask(
       'project-1',
       'generated-plugin',
       'publish-github',
-      capturedContext,
     );
-    await waitGeneratedPluginShareTask(task.taskId, 0, 25_000, capturedContext);
+    const snapshot = await waitGeneratedPluginShareTask(task.taskId, 0, 25_000);
 
-    for (const call of fetchMock.mock.calls) {
-      const headers = new Headers(call[1]?.headers);
-      expect(headers.get('x-od-workspace-id')).toBe('workspace-start');
-      expect(headers.get('x-od-workspace-member-id')).toBe('member-start');
-    }
+    expect(task.taskId).toBe('task-1');
+    expect(snapshot.status).toBe('done');
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+      '/api/projects/project-1/plugins/share-tasks',
+      '/api/plugins/share-tasks/task-1/wait',
+    ]);
   });
 });
 
@@ -2019,32 +1227,6 @@ describe('importFolderProject', () => {
     expect(result).toMatchObject({ project: { id: 'p-1' }, entryFile: 'index.html' });
   });
 
-  it('sends the exact workspace/member authority with a browser folder import', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => new Response(
-      JSON.stringify({
-        project: { id: 'p-workspace', name: 'Workspace folder' },
-        conversationId: 'conv-workspace',
-        entryFile: 'index.html',
-      }),
-      { status: 200, headers: { 'content-type': 'application/json' } },
-    ));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await importFolderProject(
-      { baseDir: '/home/user/project' },
-      teamWorkspaceContext({
-        workspaceId: 'workspace-folder',
-        workspaceMemberId: 'member-folder',
-      }),
-    );
-
-    const [, init] = fetchMock.mock.calls[0]!;
-    expect(init?.headers).toMatchObject({
-      'x-od-workspace-id': 'workspace-folder',
-      'x-od-workspace-member-id': 'member-folder',
-    });
-  });
-
   it('throws with daemon error message for filesystem root', async () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(
       JSON.stringify({ error: { code: 'BAD_REQUEST', message: 'cannot import the filesystem root' } }),
@@ -2091,7 +1273,7 @@ describe('duplicatePluginAsProject', () => {
     vi.unstubAllGlobals();
   });
 
-  it('sends the exact workspace/member authority with Plugin Remix', async () => {
+  it('posts a Plugin Remix duplicate request', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => new Response(
       JSON.stringify({
         ok: true,
@@ -2103,20 +1285,13 @@ describe('duplicatePluginAsProject', () => {
     ));
     vi.stubGlobal('fetch', fetchMock);
 
-    await duplicatePluginAsProject(
-      'plugin-a',
-      { name: 'Plugin A' },
-      teamWorkspaceContext({
-        workspaceId: 'workspace-plugin',
-        workspaceMemberId: 'member-plugin',
-      }),
-    );
+    const result = await duplicatePluginAsProject('plugin-a', { name: 'Plugin A' });
 
-    const [, init] = fetchMock.mock.calls[0]!;
-    expect(init?.headers).toMatchObject({
-      'x-od-workspace-id': 'workspace-plugin',
-      'x-od-workspace-member-id': 'member-plugin',
-    });
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('/api/plugins/plugin-a/duplicate-project');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(String(init?.body))).toEqual({ name: 'Plugin A' });
+    expect(result.projectId).toBe('plugin-project');
   });
 });
 
@@ -2157,131 +1332,10 @@ describe('pickLocalFolderPath', () => {
   });
 });
 
-describe('moveWorkspaceProject error surfaces (recvqzjnshIlOe)', () => {
+describe('project list invalidation', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     resetProjectDisplaySnapshots();
-  });
-
-  it('carries the daemon contract error code so the UI can tell a permanent owner conflict from a transient failure', async () => {
-    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(
-      JSON.stringify({
-        error: {
-          code: 'TEAM_PROJECT_OWNER_CONFLICT',
-          message: 'Error: … 403: {"error":"team_project_owner_conflict"}',
-        },
-      }),
-      { status: 409, headers: { 'content-type': 'application/json' } },
-    )));
-
-    const attempt = moveWorkspaceProject({
-      projectId: 'wsclone-visual-verify',
-      visibility: 'team',
-      workspaceContext: teamWorkspaceContext(),
-    });
-    const error = await attempt.then(
-      () => {
-        throw new Error('expected the move to reject');
-      },
-      (err: unknown) => err,
-    );
-    expect(workspaceProjectMoveErrorCode(error)).toBe('TEAM_PROJECT_OWNER_CONFLICT');
-    expect(String(error)).toMatch(/team_project_owner_conflict/);
-  });
-
-  it('classifies a body-less failure as code-less (generic handling)', async () => {
-    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(null, { status: 502 })));
-
-    const error = await moveWorkspaceProject({
-      projectId: 'p1',
-      visibility: 'team',
-      workspaceContext: teamWorkspaceContext(),
-    }).then(
-      () => {
-        throw new Error('expected the move to reject');
-      },
-      (err: unknown) => err,
-    );
-    expect(workspaceProjectMoveErrorCode(error)).toBeNull();
-  });
-
-  it('invalidates every cached Workspace project view after a successful move', async () => {
-    const context = teamWorkspaceContext({
-      workspaceId: 'ws-move-cache-invalidation',
-      workspaceMemberId: 'wm-move-cache-invalidation',
-    });
-    const responses = [
-      Response.json({ projects: [{ id: 'recent-before', project: { id: 'recent-before' } }] }),
-      Response.json({ projects: [{ id: 'draft-before', project: { id: 'draft-before' } }] }),
-      Response.json({ project: { id: 'recent-before', visibility: 'team' } }),
-      Response.json({ projects: [{ id: 'recent-after', project: { id: 'recent-after' } }] }),
-      Response.json({ projects: [{ id: 'draft-after', project: { id: 'draft-after' } }] }),
-    ];
-    const fetchMock = vi.fn<typeof fetch>(async () => responses.shift()!);
-    vi.stubGlobal('fetch', fetchMock);
-    const recentDisplayScope = { accountGeneration: 7, context, view: 'recent' as const };
-    const draftsDisplayScope = { accountGeneration: 7, context, view: 'drafts' as const };
-    writeProjectDisplaySnapshot(recentDisplayScope, []);
-    writeProjectDisplaySnapshot(draftsDisplayScope, []);
-
-    await listWorkspaceProjectSummaries({ context, workspaceView: 'recent' });
-    await listWorkspaceProjectSummaries({ context, workspaceView: 'drafts' });
-    await moveWorkspaceProject({
-      projectId: 'recent-before',
-      visibility: 'team',
-      workspaceContext: context,
-    });
-    expect(readProjectDisplaySnapshot(projectDisplaySnapshotKey(recentDisplayScope))?.dirty)
-      .toBe(true);
-    expect(readProjectDisplaySnapshot(projectDisplaySnapshotKey(draftsDisplayScope))?.dirty)
-      .toBe(true);
-
-    await expect(listWorkspaceProjectSummaries({ context, workspaceView: 'recent' }))
-      .resolves.toMatchObject([{ id: 'recent-after' }]);
-    await expect(listWorkspaceProjectSummaries({ context, workspaceView: 'drafts' }))
-      .resolves.toMatchObject([{ id: 'draft-after' }]);
-    expect(fetchMock).toHaveBeenCalledTimes(5);
-  });
-
-  it('invalidates every cached Workspace project view after a successful patch', async () => {
-    const context = teamWorkspaceContext({
-      workspaceId: 'ws-patch-cache-invalidation',
-      workspaceMemberId: 'wm-patch-cache-invalidation',
-    });
-    const reads = new Map<string, number>();
-    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
-      const url = new URL(String(input), 'http://d.local');
-      if (init?.method === 'PATCH') {
-        return Response.json({ project: { id: 'p1', name: 'After rename' } });
-      }
-      const view = url.searchParams.get('view') ?? 'unknown';
-      const read = (reads.get(view) ?? 0) + 1;
-      reads.set(view, read);
-      return Response.json({
-        projects: [{
-          id: 'p1',
-          project: { id: 'p1', name: read === 1 ? 'Before rename' : 'After rename' },
-        }],
-      });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    for (const view of ['all', 'recent', 'drafts', 'team'] as const) {
-      await listWorkspaceProjectSummaries({ context, workspaceView: view });
-    }
-    await expect(patchProject('p1', { name: 'After rename' }, context))
-      .resolves.toMatchObject({ id: 'p1', name: 'After rename' });
-    for (const view of ['all', 'recent', 'drafts', 'team'] as const) {
-      await expect(listWorkspaceProjectSummaries({ context, workspaceView: view }))
-        .resolves.toMatchObject([{ project: { id: 'p1', name: 'After rename' } }]);
-    }
-
-    expect(reads).toEqual(new Map([
-      ['all', 2],
-      ['recent', 2],
-      ['drafts', 2],
-      ['team', 2],
-    ]));
   });
 
   it('invalidates the unscoped project list after a successful patch', async () => {
@@ -2303,23 +1357,6 @@ describe('moveWorkspaceProject error surfaces (recvqzjnshIlOe)', () => {
     expect(listReads).toBe(2);
   });
 
-  it('invalidates display snapshots only for the current account generation', () => {
-    const context = teamWorkspaceContext({
-      workspaceId: 'ws-external-catalog-invalidation',
-      workspaceMemberId: 'wm-external-catalog-invalidation',
-    });
-    const currentScope = { accountGeneration: 7, context, view: 'recent' as const };
-    const previousAccountScope = { accountGeneration: 6, context, view: 'recent' as const };
-    writeProjectDisplaySnapshot(currentScope, []);
-    writeProjectDisplaySnapshot(previousAccountScope, []);
-
-    invalidateWorkspaceProjectLists(context, 7);
-
-    expect(readProjectDisplaySnapshot(projectDisplaySnapshotKey(currentScope))?.dirty)
-      .toBe(true);
-    expect(readProjectDisplaySnapshot(projectDisplaySnapshotKey(previousAccountScope))?.dirty)
-      .toBe(false);
-  });
 });
 
 describe('plugin upload diagnostics', () => {
@@ -2420,7 +1457,7 @@ describe('saved project tabs cache', () => {
       tabs: [], active: null, hasSavedState: false,
     })));
 
-    await expect(loadTabs(projectId, null, { reconcileNewerCacheToDaemon: false }))
+    await expect(loadTabs(projectId, { reconcileNewerCacheToDaemon: false }))
       .resolves.toEqual({ ...selection, updatedAt: 2, hasSavedState: true });
   });
 
@@ -2474,12 +1511,12 @@ describe('saved project tabs cache', () => {
   });
 });
 
-describe('read-only project tabs cache', () => {
+describe('project tabs cache reconcile opt-out', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('does not reconcile a newer member-scoped cache back to the daemon', async () => {
+  it('does not reconcile a newer local cache back to the daemon when asked not to', async () => {
     const store = new Map<string, string>();
     vi.stubGlobal('window', {
       localStorage: {
@@ -2492,18 +1529,11 @@ describe('read-only project tabs cache', () => {
         },
       },
     });
-    const context = teamWorkspaceContext({
-      workspaceId: 'workspace-read-only-tabs',
-      workspaceMemberId: 'member-read-only-tabs',
-    });
     cacheTabsLocally(
       'project-read-only-tabs',
       { tabs: ['local.html'], active: 'local.html' },
-      context,
     );
-    expect([...store.keys()][0]).toContain(
-      'workspace-read-only-tabs:team:member-read-only-tabs',
-    );
+    expect([...store.keys()][0]).toBe('open-design:project-tabs:v1:project-read-only-tabs');
     const fetchMock = vi.fn<typeof fetch>(async (_input, init) => {
       if (init?.method === 'PUT') return new Response(null, { status: 204 });
       return Response.json({
@@ -2516,7 +1546,6 @@ describe('read-only project tabs cache', () => {
 
     const loaded = await loadTabs(
       'project-read-only-tabs',
-      context,
       { reconcileNewerCacheToDaemon: false },
     );
     await Promise.resolve();

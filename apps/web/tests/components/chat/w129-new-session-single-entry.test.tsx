@@ -113,7 +113,6 @@ function renderChat(opts: { onNewConversation?: (() => void) | null } = {}) {
       onSend={vi.fn()}
       onStop={vi.fn()}
       onRetry={vi.fn()}
-      amrBalanceCardUsd={null}
       conversations={[
         { projectId: 'project-1', id: 'conv-1', title: 'Current', createdAt: 1, updatedAt: 1 },
       ]}
@@ -121,7 +120,7 @@ function renderChat(opts: { onNewConversation?: (() => void) | null } = {}) {
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
       onNewConversation={onNewConversation}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
+      config={{ agentId: 'opencode', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }

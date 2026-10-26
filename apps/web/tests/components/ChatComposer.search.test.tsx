@@ -298,7 +298,7 @@ describe('ChatComposer /search command', () => {
     await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
     expect(mockedUploadProjectFiles).toHaveBeenCalledWith('project-1', [
       expect.objectContaining({ name: 'drawing.png', type: 'image/png' }),
-    ], undefined, null);
+    ]);
     expect(onSend).toHaveBeenCalledWith(
       'please update this spot',
       [{ path: 'uploads/drawing.png', name: 'drawing.png', kind: 'image', order: 0 }],

@@ -14,7 +14,6 @@ import type {
   BrandSummary,
   BrandVoice,
   DesignSystemPackageInfo,
-  WorkspaceCollabContext,
 } from '@open-design/contracts';
 import { designSystemStaticUrl, fetchDesignSystemStaticText, fetchProjectFileText, projectRawUrl } from '../providers/registry';
 import { parseDesignMd, type ParsedDesignMd } from './design-md-parse';
@@ -351,7 +350,6 @@ interface BrandKitOptions {
   host?: string;
   showcaseHtml?: string | null;
   reloadKey?: number | string;
-  workspaceContext?: WorkspaceCollabContext | null;
   /** The system/ artifacts only exist once a brand is finalized; gate the kit
    *  iframe + asset tiles so an in-flight brand does not point at 404s. */
   ready?: boolean;
@@ -365,8 +363,8 @@ export function brandToKit(brand: Brand, opts: BrandKitOptions): DesignKit {
   const hasAssetSource = Boolean(projectId || (opts.publishedAssets && opts.designSystemId));
   const showSystem = ready && hasAssetSource;
   const assetUrl = (rel: string): string => opts.publishedAssets && opts.designSystemId
-    ? designSystemStaticUrl(opts.designSystemId, rel, opts.workspaceContext)
-    : projectRawUrl(projectId ?? '', rel, opts.workspaceContext);
+    ? designSystemStaticUrl(opts.designSystemId, rel)
+    : projectRawUrl(projectId ?? '', rel);
   const asset = (rel: string): string | null => hasAssetSource
     ? withCacheBust(assetUrl(rel), opts.reloadKey)
     : null;
@@ -445,10 +443,7 @@ export function brandToKit(brand: Brand, opts: BrandKitOptions): DesignKit {
 }
 
 /** Convenience: build a kit straight from a BrandSummary (Brands surfaces). */
-export function brandSummaryToKit(
-  summary: BrandSummary,
-  workspaceContext: WorkspaceCollabContext | null = null,
-): DesignKit {
+export function brandSummaryToKit(summary: BrandSummary): DesignKit {
   const host = hostnameOf(summary.meta.sourceUrl);
   if (!summary.brand) {
     return {
@@ -473,7 +468,6 @@ export function brandSummaryToKit(
     editable: true,
     host,
     ready: summary.meta.status === 'ready',
-    workspaceContext,
   });
 }
 
@@ -487,7 +481,6 @@ interface ParsedKitOptions {
   packageInfo?: DesignSystemPackageInfo;
   showcaseHtml?: string | null;
   reloadKey?: number | string;
-  workspaceContext?: WorkspaceCollabContext | null;
 }
 
 function packageFontsToTypography(
@@ -544,11 +537,7 @@ export function parsedToKit(parsed: ParsedDesignMd, opts: ParsedKitOptions): Des
     samples: [],
   };
   const staticUrl = !opts.editable && opts.designSystemId && opts.packageInfo?.manifest
-    ? (rel: string): string => designSystemStaticUrl(
-        opts.designSystemId!,
-        rel,
-        opts.workspaceContext,
-      )
+    ? (rel: string): string => designSystemStaticUrl(opts.designSystemId!, rel)
     : null;
   const manifestFiles = opts.packageInfo?.manifest?.files;
   const kitPath = staticUrl
@@ -618,9 +607,6 @@ export interface DesignKitSource {
   host?: string;
   /** Bump to force a brand.json re-read after an upload writes a module. */
   reloadKey?: number;
-  workspaceContext?: WorkspaceCollabContext | null;
-  /** Re-run Workspace resource reads when a newer directory witness lands. */
-  workspaceReadGeneration?: string;
 }
 
 function tryParseBrand(raw: string | null): Brand | null {
@@ -682,14 +668,13 @@ function mergeLegacyBrandLogo(
     designSystemId?: string;
     publishedAssets?: boolean;
     reloadKey?: number | string;
-    workspaceContext?: WorkspaceCollabContext | null;
   },
 ): DesignKit {
   if (!logo || (!options.projectId && !(options.publishedAssets && options.designSystemId))) return kit;
   const asset = (filePath: string) => withCacheBust(
     options.publishedAssets && options.designSystemId
-      ? designSystemStaticUrl(options.designSystemId, filePath, options.workspaceContext)
-      : projectRawUrl(options.projectId!, filePath, options.workspaceContext),
+      ? designSystemStaticUrl(options.designSystemId, filePath)
+      : projectRawUrl(options.projectId!, filePath),
     options.reloadKey,
   );
   return {
@@ -721,8 +706,6 @@ export function useDesignKit(source: DesignKitSource): { kit: DesignKit | null; 
     editable,
     host,
     reloadKey,
-    workspaceContext,
-    workspaceReadGeneration,
   } = source;
   const [kit, setKit] = useState<DesignKit | null>(null);
   const [loading, setLoading] = useState(false);
@@ -740,7 +723,6 @@ export function useDesignKit(source: DesignKitSource): { kit: DesignKit | null; 
         packageInfo,
         showcaseHtml,
         reloadKey,
-        workspaceContext,
       });
 
     if (!projectId && !publishedAssets) {
@@ -756,8 +738,8 @@ export function useDesignKit(source: DesignKitSource): { kit: DesignKit | null; 
       // Fetch brand.json (richest) and DESIGN.md (fallback) together so the kit
       // resolves in a single async hop — brand.json wins when it is a valid kit.
       const read = (filePath: string) => publishedAssets
-        ? fetchDesignSystemStaticText(designSystemId, filePath, workspaceContext)
-        : fetchProjectFileText(projectId!, filePath, { cache: 'no-store', cacheBustKey: reloadKey, workspaceContext });
+        ? fetchDesignSystemStaticText(designSystemId, filePath)
+        : fetchProjectFileText(projectId!, filePath, { cache: 'no-store', cacheBustKey: reloadKey });
       const [rawBrand, rawDesignMd] = await Promise.all([
         read('brand.json'),
         body != null ? Promise.resolve(body) : read('DESIGN.md'),
@@ -774,7 +756,6 @@ export function useDesignKit(source: DesignKitSource): { kit: DesignKit | null; 
           host,
           showcaseHtml,
           reloadKey,
-          workspaceContext,
         });
         setKit(mergeBrandKitWithDesignMd(brandKit, rawDesignMd ?? '', {
           designSystemId,
@@ -785,13 +766,12 @@ export function useDesignKit(source: DesignKitSource): { kit: DesignKit | null; 
           swatches,
           packageInfo,
           showcaseHtml,
-          workspaceContext,
         }));
       } else {
         setKit(mergeLegacyBrandLogo(
           fromDesignMd(rawDesignMd ?? ''),
           tryParseLegacyBrandLogo(rawBrand),
-          { projectId, designSystemId, publishedAssets, reloadKey, workspaceContext },
+          { projectId, designSystemId, publishedAssets, reloadKey },
         ));
       }
       setLoading(false);
@@ -812,8 +792,6 @@ export function useDesignKit(source: DesignKitSource): { kit: DesignKit | null; 
     editable,
     host,
     reloadKey,
-    workspaceContext,
-    workspaceReadGeneration,
   ]);
 
   return { kit, loading };

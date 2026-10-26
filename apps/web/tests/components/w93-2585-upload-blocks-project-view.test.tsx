@@ -46,19 +46,11 @@ import {
   listTemplates,
   patchProject,
 } from '../../src/state/projects';
-import {
-  resetTeamProjectsCache,
-  resetWorkspaceContextCache,
-} from '../../src/collab/useWorkspaceContext';
 import { resetCoalescedGet } from '../../src/lib/coalesced-get';
 import { resetProjectDisplaySnapshots } from '../../src/state/project-display-cache';
 
 /** 视频里那一批的规模:六个文件一起挑,一起传。 */
 const STAGED_FILE_COUNT = 6;
-
-vi.mock('../../src/collab/workspace-events', () => ({
-  useWorkspaceInvalidation: vi.fn(() => ({ connected: false })),
-}));
 
 vi.mock('../../src/components/IframeKeepAlivePool', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/components/IframeKeepAlivePool')>()),
@@ -291,8 +283,6 @@ async function sendFromHomeWithAttachments() {
 describe('OPEND-2585 · 首帧不等上传', () => {
   beforeEach(() => {
     resetCoalescedGet();
-    resetWorkspaceContextCache();
-    resetTeamProjectsCache();
     resetProjectDisplaySnapshots();
     window.history.replaceState(null, '', '/');
     window.sessionStorage.clear();
@@ -331,8 +321,6 @@ describe('OPEND-2585 · 首帧不等上传', () => {
     cleanup();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
-    resetWorkspaceContextCache();
-    resetTeamProjectsCache();
     resetProjectDisplaySnapshots();
     resetCoalescedGet();
   });

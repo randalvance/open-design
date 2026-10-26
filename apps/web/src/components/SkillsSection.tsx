@@ -18,14 +18,6 @@ import {
   updateSkill,
   type SkillFileEntry,
 } from '../providers/registry';
-import {
-  beginWorkspaceScopedRead,
-  currentWorkspaceAccountGeneration,
-  useWorkspaceContext,
-  workspaceIdentityCacheKey,
-} from '../collab/useWorkspaceContext';
-import { useWorkspaceInvalidation } from '../collab/workspace-events';
-import { useWorkspaceSnapshotActivation } from '../collab/workspace-snapshot-activation';
 
 // Functional skills only — design templates render in EntryView's
 // Templates tab and are managed under their own daemon registry. See
@@ -105,36 +97,9 @@ function skillMatchesSearch(skill: SkillSummary, q: string, locale: Locale): boo
 
 export function SkillsSection({ cfg, setCfg, onSkillsRefresh, onSkillsChanged }: Props) {
   const { locale, t } = useI18n();
-  const workspaceContextState = useWorkspaceContext();
-  const { context: workspaceContext } = workspaceContextState;
-  const workspaceContextRef = useRef(workspaceContext);
-  workspaceContextRef.current = workspaceContext;
-  const accountGeneration = currentWorkspaceAccountGeneration();
-  const workspaceReadMode = workspaceContextState.identityChangePending
-    || (!workspaceContext && workspaceContextState.loading)
-    ? 'pending'
-    : workspaceContextState.failure === 'unavailable'
-      ? 'blocked'
-      : workspaceContext
-        ? 'scoped'
-        : 'headerless';
-  const workspaceCatalogIdentity = JSON.stringify([
-    accountGeneration,
-    workspaceIdentityCacheKey(workspaceContext),
-    workspaceReadMode,
-  ]);
-  const workspaceCatalogIdentityRef = useRef(workspaceCatalogIdentity);
-  workspaceCatalogIdentityRef.current = workspaceCatalogIdentity;
   const skillsRequestGenerationRef = useRef(0);
-  const workspaceWriteBlocked = workspaceReadMode === 'pending' || workspaceReadMode === 'blocked';
 
-  const [skillsCatalog, setSkillsCatalog] = useState<{
-    identity: string | null;
-    items: SkillSummary[];
-  }>({ identity: null, items: [] });
-  const skills = skillsCatalog.identity === workspaceCatalogIdentity
-    ? skillsCatalog.items
-    : [];
+  const [skills, setSkills] = useState<SkillSummary[]>([]);
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all');
   const [modeFilter, setModeFilter] = useState<string>('all');
@@ -164,7 +129,6 @@ export function SkillsSection({ cfg, setCfg, onSkillsRefresh, onSkillsChanged }:
   // user can collapse a row and come back without losing progress
   // (we drop it only on Save / Cancel).
   const [draft, setDraft] = useState<DraftState>(EMPTY_DRAFT);
-  const [draftIdentity, setDraftIdentity] = useState<string | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
   const [draftSaving, setDraftSaving] = useState(false);
 
@@ -179,65 +143,17 @@ export function SkillsSection({ cfg, setCfg, onSkillsRefresh, onSkillsChanged }:
     string | null
   >(null);
 
-  const previousWorkspaceIdentityRef = useRef(workspaceCatalogIdentity);
-  useEffect(() => {
-    if (previousWorkspaceIdentityRef.current === workspaceCatalogIdentity) return;
-    previousWorkspaceIdentityRef.current = workspaceCatalogIdentity;
-    setBodyById({});
-    setFilesById({});
-    setBodyLoadingId(null);
-    setFilesLoadingId(null);
-    setExpandedId(null);
-    setEditingId(null);
-    setCreating(false);
-    setDraft(EMPTY_DRAFT);
-    setDraftIdentity(null);
-    setDraftError(null);
-    setDraftSaving(false);
-    setConfirmDeleteId(null);
-    setConfirmBuiltInEditId(null);
-  }, [workspaceCatalogIdentity]);
-
   const refresh = useCallback(async () => {
-    if (workspaceReadMode === 'pending' || workspaceReadMode === 'blocked') return [];
     const requestGeneration = ++skillsRequestGenerationRef.current;
-    const issuedGeneration = currentWorkspaceAccountGeneration();
-    const issuedIdentity = workspaceCatalogIdentity;
-    const read = beginWorkspaceScopedRead(workspaceContext);
-    const list = await fetchSkills(read.context);
-    if (
-      skillsRequestGenerationRef.current !== requestGeneration
-      || currentWorkspaceAccountGeneration() !== issuedGeneration
-      || workspaceCatalogIdentityRef.current !== issuedIdentity
-      || !read.isStillCurrent(workspaceContextRef.current)
-    ) return [];
-    setSkillsCatalog({ identity: issuedIdentity, items: list });
+    const list = await fetchSkills();
+    if (skillsRequestGenerationRef.current !== requestGeneration) return [];
+    setSkills(list);
     return list;
-  }, [workspaceCatalogIdentity, workspaceContext, workspaceReadMode]);
+  }, []);
 
   useEffect(() => {
-    if (workspaceContext?.workspaceType === 'team') return;
     void refresh();
-  }, [refresh, workspaceContext?.workspaceType]);
-
-  const handleSkillStreamActive = useWorkspaceSnapshotActivation({
-    enabled: workspaceReadMode === 'scoped' && workspaceContext?.workspaceType === 'team',
-    identity: workspaceCatalogIdentity,
-    refresh: () => { void refresh(); },
-  });
-
-  useWorkspaceInvalidation(
-    {
-      'team-resources-changed': (payload) => {
-        if (payload.resourceKind === 'skill') void refresh();
-      },
-    },
-    {
-      workspaceContext: workspaceReadMode === 'scoped' ? workspaceContext : null,
-      enabled: workspaceReadMode === 'scoped',
-      onActive: handleSkillStreamActive,
-    },
-  );
+  }, [refresh]);
 
   const disabledSkills = useMemo(
     () => new Set(cfg.disabledSkills ?? []),
@@ -359,55 +275,33 @@ export function SkillsSection({ cfg, setCfg, onSkillsRefresh, onSkillsChanged }:
 
   const ensureBody = useCallback(
     async (id: string) => {
-      if (workspaceWriteBlocked) return undefined;
       if (bodyById[id] !== undefined) return bodyById[id];
-      const issuedGeneration = currentWorkspaceAccountGeneration();
-      const issuedIdentity = workspaceCatalogIdentity;
-      const read = beginWorkspaceScopedRead(workspaceContextRef.current);
       setBodyLoadingId(id);
       try {
-        const detail = await fetchSkill(id, read.context);
-        if (
-          currentWorkspaceAccountGeneration() !== issuedGeneration
-          || workspaceCatalogIdentityRef.current !== issuedIdentity
-          || !read.isStillCurrent(workspaceContextRef.current)
-        ) return undefined;
+        const detail = await fetchSkill(id);
         const body = detail?.body ?? '';
         setBodyById((cur) => ({ ...cur, [id]: body }));
         return body;
       } finally {
-        if (workspaceCatalogIdentityRef.current === issuedIdentity) {
-          setBodyLoadingId((cur) => (cur === id ? null : cur));
-        }
+        setBodyLoadingId((cur) => (cur === id ? null : cur));
       }
     },
-    [bodyById, workspaceCatalogIdentity, workspaceWriteBlocked],
+    [bodyById],
   );
 
   const ensureFiles = useCallback(
     async (id: string) => {
-      if (workspaceWriteBlocked) return undefined;
       if (filesById[id]) return filesById[id]!;
-      const issuedGeneration = currentWorkspaceAccountGeneration();
-      const issuedIdentity = workspaceCatalogIdentity;
-      const read = beginWorkspaceScopedRead(workspaceContextRef.current);
       setFilesLoadingId(id);
       try {
-        const files = await fetchSkillFiles(id, read.context);
-        if (
-          currentWorkspaceAccountGeneration() !== issuedGeneration
-          || workspaceCatalogIdentityRef.current !== issuedIdentity
-          || !read.isStillCurrent(workspaceContextRef.current)
-        ) return undefined;
+        const files = await fetchSkillFiles(id);
         setFilesById((cur) => ({ ...cur, [id]: files }));
         return files;
       } finally {
-        if (workspaceCatalogIdentityRef.current === issuedIdentity) {
-          setFilesLoadingId((cur) => (cur === id ? null : cur));
-        }
+        setFilesLoadingId((cur) => (cur === id ? null : cur));
       }
     },
-    [filesById, workspaceCatalogIdentity, workspaceWriteBlocked],
+    [filesById],
   );
 
   const toggleExpanded = useCallback(
@@ -427,23 +321,19 @@ export function SkillsSection({ cfg, setCfg, onSkillsRefresh, onSkillsChanged }:
   );
 
   const startCreate = useCallback(() => {
-    if (workspaceWriteBlocked) return;
     setCreating(true);
     setDraft(EMPTY_DRAFT);
-    setDraftIdentity(workspaceCatalogIdentity);
     setDraftError(null);
     setEditingId(null);
     setConfirmDeleteId(null);
     setConfirmBuiltInEditId(null);
-  }, [workspaceCatalogIdentity, workspaceWriteBlocked]);
+  }, []);
 
   const startEdit = useCallback(
     async (skill: SkillSummary) => {
-      const issuedIdentity = workspaceCatalogIdentity;
       const body = await ensureBody(skill.id);
-      if (body === undefined || workspaceCatalogIdentityRef.current !== issuedIdentity) return;
+      if (body === undefined) return;
       setDraft(summaryToDraft(skill, body ?? ''));
-      setDraftIdentity(issuedIdentity);
       setDraftError(null);
       setEditingId(skill.id);
       setExpandedId(skill.id);
@@ -451,7 +341,7 @@ export function SkillsSection({ cfg, setCfg, onSkillsRefresh, onSkillsChanged }:
       setConfirmDeleteId(null);
       setConfirmBuiltInEditId(null);
     },
-    [ensureBody, workspaceCatalogIdentity],
+    [ensureBody],
   );
 
   const requestEdit = useCallback(
@@ -472,18 +362,13 @@ export function SkillsSection({ cfg, setCfg, onSkillsRefresh, onSkillsChanged }:
 
   const cancelDraft = useCallback(() => {
     setDraft(EMPTY_DRAFT);
-    setDraftIdentity(null);
     setDraftError(null);
     setEditingId(null);
     setCreating(false);
   }, []);
 
   const submitDraft = useCallback(async () => {
-    if (
-      draftSaving
-      || workspaceWriteBlocked
-      || draftIdentity !== workspaceCatalogIdentity
-    ) return;
+    if (draftSaving) return;
     const name = draft.name.trim();
     const body = draft.body.trim();
     if (!name) {
@@ -501,19 +386,12 @@ export function SkillsSection({ cfg, setCfg, onSkillsRefresh, onSkillsChanged }:
       body,
       triggers,
     };
-    const issuedGeneration = currentWorkspaceAccountGeneration();
-    const issuedIdentity = workspaceCatalogIdentity;
-    const issuedContext = workspaceContextRef.current;
     setDraftSaving(true);
     setDraftError(null);
     const result =
       editingId
-        ? await updateSkill(editingId, payload, issuedContext)
-        : await importSkill(payload, issuedContext);
-    if (
-      currentWorkspaceAccountGeneration() !== issuedGeneration
-      || workspaceCatalogIdentityRef.current !== issuedIdentity
-    ) return;
+        ? await updateSkill(editingId, payload)
+        : await importSkill(payload);
     setDraftSaving(false);
     if ('error' in result) {
       setDraftError(result.error.message);
@@ -521,15 +399,7 @@ export function SkillsSection({ cfg, setCfg, onSkillsRefresh, onSkillsChanged }:
     }
     const updated = result.skill;
     await refresh();
-    if (
-      currentWorkspaceAccountGeneration() !== issuedGeneration
-      || workspaceCatalogIdentityRef.current !== issuedIdentity
-    ) return;
     await onSkillsRefresh?.();
-    if (
-      currentWorkspaceAccountGeneration() !== issuedGeneration
-      || workspaceCatalogIdentityRef.current !== issuedIdentity
-    ) return;
     setBodyById((cur) => ({ ...cur, [updated.id]: body }));
     // Drop the cached file tree for this id so the next expand
     // re-walks the on-disk folder; SKILL.md may have been the only
@@ -543,31 +413,21 @@ export function SkillsSection({ cfg, setCfg, onSkillsRefresh, onSkillsChanged }:
     setEditingId(null);
     setCreating(false);
     setDraft(EMPTY_DRAFT);
-    setDraftIdentity(null);
     setFilesLoadingId(updated.id);
     try {
-      const files = await fetchSkillFiles(updated.id, issuedContext);
-      if (
-        currentWorkspaceAccountGeneration() !== issuedGeneration
-        || workspaceCatalogIdentityRef.current !== issuedIdentity
-      ) return;
+      const files = await fetchSkillFiles(updated.id);
       setFilesById((cur) => ({ ...cur, [updated.id]: files }));
     } finally {
-      if (workspaceCatalogIdentityRef.current === issuedIdentity) {
-        setFilesLoadingId((cur) => (cur === updated.id ? null : cur));
-      }
+      setFilesLoadingId((cur) => (cur === updated.id ? null : cur));
     }
     onSkillsChanged?.(updated.id);
   }, [
     draft,
-    draftIdentity,
     draftSaving,
     editingId,
     onSkillsChanged,
     onSkillsRefresh,
     refresh,
-    workspaceCatalogIdentity,
-    workspaceWriteBlocked,
   ]);
 
   const armDelete = useCallback((id: string) => {
@@ -580,29 +440,14 @@ export function SkillsSection({ cfg, setCfg, onSkillsRefresh, onSkillsChanged }:
 
   const commitDelete = useCallback(
     async (id: string) => {
-      if (workspaceWriteBlocked) return;
-      const issuedGeneration = currentWorkspaceAccountGeneration();
-      const issuedIdentity = workspaceCatalogIdentity;
-      const result = await deleteSkill(id, workspaceContextRef.current);
-      if (
-        currentWorkspaceAccountGeneration() !== issuedGeneration
-        || workspaceCatalogIdentityRef.current !== issuedIdentity
-      ) return;
+      const result = await deleteSkill(id);
       if ('error' in result) {
         setDraftError(result.error.message);
         return;
       }
       setConfirmDeleteId(null);
       await refresh();
-      if (
-        currentWorkspaceAccountGeneration() !== issuedGeneration
-        || workspaceCatalogIdentityRef.current !== issuedIdentity
-      ) return;
       await onSkillsRefresh?.();
-      if (
-        currentWorkspaceAccountGeneration() !== issuedGeneration
-        || workspaceCatalogIdentityRef.current !== issuedIdentity
-      ) return;
       setBodyById((cur) => {
         const next = { ...cur };
         delete next[id];
@@ -624,7 +469,6 @@ export function SkillsSection({ cfg, setCfg, onSkillsRefresh, onSkillsChanged }:
       if (editingId === id) {
         setEditingId(null);
         setDraft(EMPTY_DRAFT);
-        setDraftIdentity(null);
       }
       onSkillsChanged?.(id);
     },
@@ -635,8 +479,6 @@ export function SkillsSection({ cfg, setCfg, onSkillsRefresh, onSkillsChanged }:
       onSkillsRefresh,
       refresh,
       setCfg,
-      workspaceCatalogIdentity,
-      workspaceWriteBlocked,
     ],
   );
 
@@ -668,7 +510,6 @@ export function SkillsSection({ cfg, setCfg, onSkillsRefresh, onSkillsChanged }:
             type="button"
             className="primary skills-add-btn"
             onClick={startCreate}
-            disabled={workspaceWriteBlocked}
             data-testid="skills-new"
           >
             <Icon name="plus" size={14} />

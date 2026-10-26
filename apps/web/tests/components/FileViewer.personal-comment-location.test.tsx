@@ -1,17 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { CollabProvider, type CollabContextValue } from '../../src/collab/collab-context';
 import { FileViewer } from '../../src/components/FileViewer';
 import type { PreviewComment, ProjectFile } from '../../src/types';
 
-const personal: CollabContextValue = {
-  workspaceContext: null, workspaceContextLoading: false, enabled: false,
-  member: null, present: [], publishedVersion: null, syncState: 'synced', viewerOnly: false,
-  writerAuthority: 'allowed', isOwner: true, isEffectiveOwner: true, isSharedNonOwner: false,
-  ownerDisplayName: null, ownerRole: null, downloadPending: false,
-  reportChange() {}, requestPublish() {}, refreshPresence() {}, checkStatusNow() {},
-};
 const file: ProjectFile = { name: 'index.html', path: 'index.html', type: 'file', size: 100,
   mtime: 1, kind: 'html', mime: 'text/html' };
 const uuid = '8b9f8213-bad2-45cd-adf3-81fd2770cf35';
@@ -22,9 +14,9 @@ const comment: PreviewComment = {
   note: 'Personal feedback', status: 'open', createdAt: 1, updatedAt: 1,
 };
 const html = `<html><body><p data-od-comment-id="${uuid}">Target</p></body></html>`;
-const tree = (currentFile = file, content = html, comments = [comment], enabled = false) => <CollabProvider value={enabled ? { ...personal, enabled: true, publishedVersion: 2 } : personal}>
+const tree = (currentFile = file, content = html, comments = [comment], enabled = false) => <>
   <FileViewer projectId="p" projectKind="prototype" file={currentFile} liveHtml={content} previewComments={comments} />
-</CollabProvider>;
+</>;
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.history.replaceState(null, '', '/'); });
 async function setup(transport: 'url' | 'srcdoc' = 'url', enabled = false, comments = [comment]) {
   if (transport === 'srcdoc') window.history.replaceState(null, '', '/?forceInline=1');
@@ -266,9 +258,9 @@ it('Personal: file/project changes clear loss and reject the old request while t
   fireEvent.click(screen.getByTestId('comment-panel-toggle'));
   fireEvent.click(screen.getByTestId('comment-side-item'));
   expect(screen.queryByTestId('comment-location-unavailable')).toBeNull();
-  view.rerender(<CollabProvider value={personal}>
+  view.rerender(<>
     <FileViewer projectId="other-project" projectKind="prototype" file={file} liveHtml={html} previewComments={[comment]} />
-  </CollabProvider>);
+  </>);
   await dispatch({ type: 'od:comment-location-missing', requestId: old.requestId });
   expect(screen.queryByTestId('comment-location-unavailable')).toBeNull();
 });

@@ -96,7 +96,7 @@ function failedMessage(opts: { agentId: string; code: string }): ChatMessage {
 /** 渲染一轮失败,回读报错卡**标题**那一行的文字 */
 function errorCardTitle(
   opts: { agentId: string; code: string },
-  onSwitchToAmrAndRetry = vi.fn(),
+  onRetry = vi.fn(),
 ): string {
   render(
     <ChatPane
@@ -108,9 +108,7 @@ function errorCardTitle(
       onEnsureProject={async () => 'project-1'}
       onSend={vi.fn()}
       onStop={vi.fn()}
-      onRetry={vi.fn()}
-      onSwitchToAmrAndRetry={onSwitchToAmrAndRetry}
-      amrBalanceCardUsd={null}
+      onRetry={onRetry}
       onOpenSettings={vi.fn() as never}
       conversations={[
         { projectId: 'project-1', id: 'conv-1', title: 'Current', createdAt: 1, updatedAt: 1 },
@@ -149,41 +147,16 @@ describe('报错卡标题 · S01 / S02 / S04', () => {
       .toBe('请先完成 Claude 的登录，再重新尝试。');
   });
 
-  it('S04:Open Design 智能体没授权 —— 标题说的是 Open Design 自己', () => {
-    const title = errorCardTitle({ agentId: 'amr', code: 'AMR_AUTH_REQUIRED' });
-
-    expect(title).not.toMatch(/\{agent\}/);
-    expect(title).toBe('Open Design 尚未登录');
-    expect(screen.getByTestId('chat-run-error-description').textContent)
-      .toBe('请先登录，以便查看项目和继续对话。');
-  });
-
-  it('S02 和 S04 不是同一句话 —— 一个键装不下两格', () => {
-    const s02 = errorCardTitle({ agentId: 'claude', code: 'AGENT_AUTH_REQUIRED' });
-    cleanup();
-    const s04 = errorCardTitle({ agentId: 'amr', code: 'AMR_AUTH_REQUIRED' });
-
-    expect(s02).not.toBe(s04);
-    /*
-     * 「两句不一样」单独一条**照不出合并回去**:S02 那句带 `{agent}` 插值,
-     * AMR 的 agent 名恰好是 `OpenDesign`,所以哪怕两格共用一个键,渲染出来
-     * 也是「Claude 尚未登录」对「OpenDesign 尚未登录」—— 仍然不相等。
-     * 判据要钉在 S04 说的**是不是产品那句**:`OpenDesign`(无空格)是 agent
-     * 标签,`Open Design`(有空格)才是产品名。
-     */
-    expect(s04).not.toContain('OpenDesign');
-  });
-
   /*
    * Antigravity 的登录只能在终端里做,所以它有自己的分流分支 —— 但它**是**
    * 一个本地 agent 没登录,归 S02 那一边。拆键时最容易漏的就是这一个:
    * 它离另外两个调用点有一百多行,而且 code 和 S02 完全一样。
    */
-  it('Antigravity 认证失败保留 S02 文案,固定入口切换到 Cloud', () => {
-    const onSwitchToAmrAndRetry = vi.fn();
+  it('Antigravity 认证失败保留 S02 文案,固定入口是〔重试〕', () => {
+    const onRetry = vi.fn();
     const title = errorCardTitle(
       { agentId: 'antigravity', code: 'AGENT_AUTH_REQUIRED' },
-      onSwitchToAmrAndRetry,
+      onRetry,
     );
 
     expect(title).not.toMatch(/\{agent\}/);
@@ -193,24 +166,13 @@ describe('报错卡标题 · S01 / S02 / S04', () => {
       .toBe('请先完成 Antigravity 的登录，再重新尝试。');
     const card = screen.getByTestId('chat-run-error-card');
     expect(within(card).getAllByRole('button').map((button) => button.textContent?.trim()))
-      .toEqual(['联系我们', '导出日志', '切换到 OpenDesign Cloud']);
+      .toEqual(['联系我们', '导出日志', '重试']);
     expect(within(card).queryByRole('button', { name: '在终端中登录' })).toBeNull();
-    fireEvent.click(within(card).getByRole('button', { name: '切换到 OpenDesign Cloud' }));
-    expect(onSwitchToAmrAndRetry).toHaveBeenCalledOnce();
-    expect(onSwitchToAmrAndRetry).toHaveBeenCalledWith(expect.objectContaining({
+    fireEvent.click(within(card).getByRole('button', { name: '重试' }));
+    expect(onRetry).toHaveBeenCalledOnce();
+    expect(onRetry).toHaveBeenCalledWith(expect.objectContaining({
       id: 'msg-failed', agentId: 'antigravity', runId: 'run-failed',
-    }));
+    }), 'manual_retry');
   });
 
-  it('AMR 的通用 401(UNAUTHORIZED)仍然是 S04 那句,不会掉到 S02', () => {
-    const title = errorCardTitle({ agentId: 'amr', code: 'UNAUTHORIZED' });
-
-    expect(title).toBe('Open Design 尚未登录');
-  });
-
-  it('非 AMR 的通用 401(UNAUTHORIZED)是 S02 那句', () => {
-    const title = errorCardTitle({ agentId: 'codex', code: 'UNAUTHORIZED' });
-
-    expect(title).toBe('Codex 尚未登录');
-  });
 });

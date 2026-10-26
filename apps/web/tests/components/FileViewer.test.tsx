@@ -103,103 +103,12 @@ import { emptyManualEditStyles } from '../../src/edit-mode/types';
 import { __resetPreviewIsolationCache } from '../../src/runtime/powered-preview';
 import { installPreviewIframeMessageObserver } from '../../src/observability/iframe-error';
 import { readExpandedIndexCss } from '../helpers/read-expanded-css';
-import { resetWorkspaceContextCache } from '../../src/collab/useWorkspaceContext';
-import {
-  CollabProvider,
-  type CollabContextValue,
-} from '../../src/collab/collab-context';
-import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
-
-/** A team workspace context — the only state that can address the resource hub,
- *  and therefore the only one where the public "Publish file" entry is offered. */
-function teamWorkspaceContext(): WorkspaceCollabContext {
-  return {
-    workspaceId: 'ws-1',
-    workspaceType: 'team',
-    teamId: 'team-1',
-    workspaceMemberId: 'wm-1',
-    role: 'member',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: null,
-    providerMode: 'platform_credits',
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 5, usedSeats: 1 }),
-    permissions: buildWorkspacePermissions({ role: 'member', lifecycleState: 'active' }),
-  };
-}
-
-function personalWorkspaceContext(): WorkspaceCollabContext {
-  return {
-    ...teamWorkspaceContext(),
-    workspaceId: 'personal-ws-1',
-    workspaceType: 'personal',
-    teamId: undefined,
-  };
-}
-
-/** Fetch stub that answers the workspace-context read with `context`, and every
- *  other route with the empty-deployments payload these viewer tests expect. */
-function stubFetchWithWorkspaceContext(context: WorkspaceCollabContext | null): void {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('/api/workspace/context')) {
-        return new Response(JSON.stringify({ context }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    }),
-  );
-}
-
-function renderWithProjectWorkspace(
-  ui: ReactElement,
-  workspaceContext: WorkspaceCollabContext | null,
-) {
-  const value = projectWorkspaceCollabValue(workspaceContext);
-  return render(<CollabProvider value={value}>{ui}</CollabProvider>);
-}
-
-function projectWorkspaceCollabValue(
-  workspaceContext: WorkspaceCollabContext | null,
-): CollabContextValue {
-  return {
-    workspaceContext,
-    workspaceContextLoading: false,
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed',
-    isOwner: false,
-    isEffectiveOwner: false,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: () => {},
-    requestPublish: () => {},
-    refreshPresence: () => {},
-    checkStatusNow: () => {},
-  };
-}
 
 const TEST_SNAPSHOT_DATA_URL = 'data:image/png;base64,c25hcHNob3Q=';
 
 afterEach(() => {
   cleanup();
   __resetPreviewIsolationCache();
-  // `useWorkspaceContext` caches the last resolved context at module scope so a
-  // remount does not flash the signed-out state. Left alone, a test that signs
-  // into a team would silently sign the NEXT test in too.
-  resetWorkspaceContextCache();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   analyticsTrackMock.mockReset();
@@ -668,317 +577,6 @@ describe('FileViewer preview scale', () => {
     expect(css).toContain('@keyframes od-viewer-loading-sweep');
     expect(css).toMatch(
       /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*\.viewer-loading-stage,[\s\S]*animation: none;/,
-    );
-  });
-
-  it('waits for exact Team authority before loading initial raw source', async () => {
-    const file = baseFile({
-      name: 'first-open.html',
-      path: 'first-open.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'html',
-        title: 'First open',
-        entry: 'first-open.html',
-        renderer: 'html',
-        exports: ['html'],
-      },
-    });
-    const rawReads: Array<{ init?: RequestInit; url: string }> = [];
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes('/raw/first-open.html')) {
-        rawReads.push({ init, url });
-        return new Response('<html><body>Materialized</body></html>', { status: 200 });
-      }
-      if (url.endsWith('/files')) {
-        return new Response(JSON.stringify({ files: [file] }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    }));
-
-    const pendingContext = {
-      ...projectWorkspaceCollabValue(null),
-      workspaceContextLoading: true,
-      projectResourceAuthority: 'pending' as const,
-    };
-    const { rerender } = render(
-      <CollabProvider value={pendingContext}>
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={file}
-        />
-      </CollabProvider>,
-    );
-
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(rawReads).toEqual([]);
-    expect(document.querySelector('.viewer-loading')).not.toBeNull();
-    expect(screen.queryByTestId('artifact-preview-frame')).toBeNull();
-
-    rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(teamWorkspaceContext()),
-        workspaceContextLoading: true,
-        projectResourceAuthority: 'workspace',
-      }}>
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={file}
-        />
-      </CollabProvider>,
-    );
-
-    await waitFor(() => {
-      expect(rawReads).toHaveLength(1);
-      expect(document.querySelector('.viewer-loading')).toBeNull();
-      expect(screen.getByTestId('artifact-preview-frame')).toBeTruthy();
-    });
-    expect(rawReads[0]?.url).not.toContain('workspaceId=');
-    expect(rawReads[0]?.url).not.toContain('workspaceMemberId=');
-    expect(rawReads[0]?.init?.headers).toMatchObject({
-      'x-od-workspace-id': 'ws-1',
-      'x-od-workspace-member-id': 'wm-1',
-    });
-  });
-
-  it('recovers the same preview mount when pending authority settles as local', async () => {
-    const file = baseFile({
-      name: 'local-first-open.html',
-      path: 'local-first-open.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'html',
-        title: 'Local first open',
-        entry: 'local-first-open.html',
-        renderer: 'html',
-        exports: ['html'],
-      },
-    });
-    const rawReads: Array<{ init?: RequestInit; url: string }> = [];
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes('/raw/local-first-open.html')) {
-        rawReads.push({ init, url });
-        return new Response('<html><body>Local materialized</body></html>', { status: 200 });
-      }
-      if (url.endsWith('/files')) {
-        return new Response(JSON.stringify({ files: [file] }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    }));
-
-    const { rerender } = render(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(teamWorkspaceContext()),
-        workspaceContextLoading: true,
-        projectResourceAuthority: 'pending',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-
-    expect(document.querySelector('.viewer-loading')).not.toBeNull();
-    expect(screen.queryByTestId('artifact-preview-frame')).toBeNull();
-    expect(rawReads).toEqual([]);
-
-    rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        workspaceContextLoading: false,
-        projectResourceAuthority: 'local',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-
-    await waitFor(() => {
-      expect(rawReads).toHaveLength(1);
-      expect(document.querySelector('.viewer-loading')).toBeNull();
-      expect(screen.getByTestId('artifact-preview-frame')).toBeTruthy();
-    });
-    expect(rawReads[0]?.url).not.toContain('workspaceId=');
-    expect(rawReads[0]?.url).not.toContain('workspaceMemberId=');
-    expect(rawReads[0]?.init?.headers).toBeUndefined();
-  });
-
-  it('warms a newly retained inactive HTML viewer without forcing a GPU layer on activation', async () => {
-    const file = baseFile({
-      name: 'inactive-first-open.html',
-      path: 'inactive-first-open.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'html',
-        title: 'Inactive first open',
-        entry: 'inactive-first-open.html',
-        renderer: 'html',
-        exports: ['html'],
-      },
-    });
-    const rawReads: string[] = [];
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes('/raw/inactive-first-open.html')) {
-        rawReads.push(url);
-        return new Response('<html><body>Already warm</body></html>', { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    }));
-    const props = {
-      projectId: 'project-1',
-      projectKind: 'prototype' as const,
-      file,
-    };
-    const { container, rerender } = render(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'local',
-      }}>
-        <FileViewer {...props} workspaceActive={false} />
-      </CollabProvider>,
-    );
-
-    const retainedFrame = await waitFor(() => {
-      expect(rawReads).toHaveLength(1);
-      const frame = document.querySelector<HTMLIFrameElement>(
-        'iframe[data-testid="artifact-preview-frame-retained-inactive-first-open.html"], iframe[data-testid="artifact-preview-frame-srcdoc-retained-inactive-first-open.html"]',
-      );
-      expect(frame).not.toBeNull();
-      return frame!;
-    });
-    expect(container.querySelector<HTMLElement>('.viewer-toolbar')?.style.visibility).toBe('hidden');
-    expect(retainedFrame.style.visibility).toBe('');
-    expect(retainedFrame.style.transform).toBe('');
-    expect(retainedFrame.style.willChange).toBe('');
-    expect(retainedFrame.dataset.odActive).toBe('true');
-
-    rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'local',
-      }}>
-        <FileViewer {...props} workspaceActive />
-      </CollabProvider>,
-    );
-
-    expect(document.querySelector('iframe[data-testid="artifact-preview-frame"]')).toBe(retainedFrame);
-    expect(container.querySelector<HTMLElement>('.viewer-toolbar')?.style.visibility).toBe('');
-    expect(retainedFrame.style.visibility).toBe('');
-    expect(retainedFrame.style.transform).toBe('');
-    expect(retainedFrame.style.willChange).toBe('');
-    expect(rawReads).toHaveLength(1);
-  });
-
-  it('never downgrades denied project resources to local reads', async () => {
-    const file = baseFile({
-      name: 'authority.html',
-      path: 'authority.html',
-      mime: 'text/html',
-      kind: 'html',
-    });
-    const rawReads: Array<{ init?: RequestInit; url: string }> = [];
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes('/raw/authority.html')) {
-        rawReads.push({ init, url });
-        return new Response('<html><body>Authorized</body></html>', { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    }));
-
-    const denied = render(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'denied',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(rawReads).toEqual([]);
-    expect(document.querySelector('.viewer-loading')).toBeNull();
-    expect(screen.getByText(/Preview unavailable/)).toBeTruthy();
-    denied.unmount();
-
-    const local = render(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'local',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    await waitFor(() => expect(rawReads).toHaveLength(1));
-    expect(rawReads[0]?.url).not.toContain('workspaceId=');
-    expect(new Headers(rawReads[0]?.init?.headers).get('x-od-workspace-id')).toBeNull();
-
-    local.rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'denied',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    await waitFor(() => expect(screen.getByText(/Preview unavailable/)).toBeTruthy());
-    expect(rawReads).toHaveLength(1);
-  });
-
-  it('gates non-HTML resource URLs for pending and denied projects', () => {
-    const file = baseFile({
-      name: 'private.png',
-      path: 'private.png',
-      mime: 'image/png',
-      kind: 'image',
-    });
-    const { rerender } = render(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        workspaceContextLoading: true,
-        projectResourceAuthority: 'pending',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    expect(document.querySelector('.viewer-loading')).not.toBeNull();
-    expect(screen.queryByRole('img')).toBeNull();
-
-    rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'denied',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    expect(document.querySelector('.viewer-loading')).toBeNull();
-    expect(screen.getByText(/Preview unavailable/)).toBeTruthy();
-    expect(screen.queryByRole('img')).toBeNull();
-
-    rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'local',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    expect(screen.getByRole('img').getAttribute('src')).toContain(
-      '/api/projects/project-1/raw/private.png',
     );
   });
 
@@ -1601,9 +1199,8 @@ describe('FileViewer SVG artifacts', () => {
       );
     }
 
-    const view = renderWithProjectWorkspace(
+    const view = render(
       <Shell version={file.mtime} />,
-      teamWorkspaceContext(),
     );
     await waitFor(() => expect(sourceReads).toHaveLength(1));
 
@@ -1617,24 +1214,11 @@ describe('FileViewer SVG artifacts', () => {
     expect(sourceReads).toHaveLength(1);
 
     view.rerender(
-      <CollabProvider value={projectWorkspaceCollabValue(teamWorkspaceContext())}>
+      <>
         <Shell version={file.mtime + 1} />
-      </CollabProvider>,
+      </>,
     );
     await waitFor(() => expect(sourceReads).toHaveLength(2));
-
-    const nextWorkspaceContext = {
-      ...teamWorkspaceContext(),
-      workspaceId: 'ws-2',
-      workspaceMemberId: 'wm-2',
-      teamId: 'team-2',
-    };
-    view.rerender(
-      <CollabProvider value={projectWorkspaceCollabValue(nextWorkspaceContext)}>
-        <Shell version={file.mtime + 1} />
-      </CollabProvider>,
-    );
-    await waitFor(() => expect(sourceReads).toHaveLength(3));
   });
 
   it('promotes large HTML files to the srcDoc path when the routing preview shows sandbox-unsafe scripts', async () => {
@@ -2251,13 +1835,12 @@ describe('FileViewer SVG artifacts', () => {
   });
 
   it('does not mint a second preview capability for Workspace URL-load HTML', () => {
-    const context = teamWorkspaceContext();
     const fetchMock = vi.fn(async (_input: RequestInfo | URL) => (
       Response.json({ deployments: [] })
     ));
     vi.stubGlobal('fetch', fetchMock);
 
-    renderWithProjectWorkspace(
+    render(
       <FileViewer
         projectId="project-1"
         projectKind="prototype"
@@ -2277,7 +1860,6 @@ describe('FileViewer SVG artifacts', () => {
         })}
         liveHtml="<html><body>URL loaded</body></html>"
       />,
-      context,
     );
 
     expect(
@@ -2306,14 +1888,14 @@ describe('FileViewer SVG artifacts', () => {
     });
 
     const markup = renderToStaticMarkup(
-      <CollabProvider value={projectWorkspaceCollabValue(teamWorkspaceContext())}>
+      <>
         <FileViewer
           projectId="project-1"
           projectKind="prototype"
           file={file}
           liveHtml="<html><body>team</body></html>"
         />
-      </CollabProvider>,
+      </>,
     );
 
     expect(markup).toContain('data-od-render-mode="url-load" data-od-active="true"');
@@ -5351,187 +4933,6 @@ describe('FileViewer SVG artifacts', () => {
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts allow-forms allow-downloads');
   });
 
-  it('disables React component sharing controls for viewer-only shared projects', async () => {
-    const file = baseFile({
-      name: 'Card.jsx',
-      path: 'Card.jsx',
-      mime: 'text/jsx',
-      kind: 'code',
-      artifactManifest: {
-        version: 1,
-        kind: 'react-component',
-        title: 'Card',
-        entry: 'Card.jsx',
-        renderer: 'react-component',
-        exports: ['jsx', 'html', 'zip'],
-      },
-    });
-    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url === '/api/projects/project-1/raw/Card.jsx') {
-        return new Response('export default function Card() { return <button>Readonly</button>; }');
-      }
-      return new Response('', { status: 404 });
-    }));
-
-    render(<FileViewer projectId="project-1" projectKind="prototype" file={file} viewerOnly />);
-
-    const shareButton = await screen.findByRole('button', { name: 'Share' });
-    expect(shareButton).toBeDisabled();
-    expect(shareButton).toHaveAttribute(
-      'title',
-      'Shared project is read-only: you can comment, but cannot edit or export.',
-    );
-  });
-
-  it('keeps React-component sharing disabled across module reclassification', async () => {
-    const makeFile = (name: string, mtime = 1) => baseFile({
-      name, path: name, mtime, mime: 'text/jsx', kind: 'code',
-      artifactManifest: { version: 1, kind: 'react-component', title: name, entry: name, renderer: 'react-component', exports: ['jsx'] },
-    });
-    let activeProjectId = 'project-1';
-    let referencingHtml = false;
-    let resolveHtml!: (response: Response) => void;
-    const pendingHtml = new Promise<Response>((resolve) => { resolveHtml = resolve; });
-    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url.includes(`/api/projects/${activeProjectId}/files`)) {
-        return new Response(JSON.stringify({ files: referencingHtml
-          ? [{ name: 'A.jsx', path: 'A.jsx' }, { name: 'backups.html', path: 'backups.html' }]
-          : [{ name: 'A.jsx', path: 'A.jsx' }] }));
-      }
-      if (url.includes(`/api/projects/${activeProjectId}/raw/backups.html`)) return pendingHtml;
-      if (url.endsWith('/raw/A.jsx') || url.endsWith('/raw/B.jsx')) return new Response('export default function Icon() { return null; }');
-      return new Response('', { status: 404 });
-    }));
-
-    const { rerender } = render(<FileViewer projectId="project-1" projectKind="prototype" file={makeFile('A.jsx')} />);
-    const share = await screen.findByRole('button', { name: /share/i });
-    await waitFor(() => expect(share).toBeDisabled());
-    expect(share.getAttribute('title')).toBeTruthy();
-
-    referencingHtml = true;
-    activeProjectId = 'project-2';
-    rerender(<FileViewer projectId="project-2" projectKind="prototype" file={makeFile('A.jsx', 2)} />);
-    // Let the component's source refresh finish, but keep sibling HTML pending.
-    // This exposes the old toolbar state during module reclassification.
-    await waitFor(() => expect(vi.mocked(fetch).mock.calls.filter(([input]) => String(input).endsWith('/raw/A.jsx')).length).toBeGreaterThan(1));
-    await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).includes('/raw/backups.html'))).toBe(true));
-    expect(screen.queryByRole('menu')).toBeNull();
-    resolveHtml(new Response('<script type="text/babel" src="A.jsx"></script>'));
-    await waitFor(() => expect(screen.getByRole('button', { name: /share/i })).toBeDisabled());
-    expect(screen.queryByRole('menu')).toBeNull();
-    expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).includes('publish-public'))).toBe(false);
-  });
-
-  it.each(['Widget.jsx', 'Widget.tsx'])('keeps standalone %s HTML-only for sharing', async (name) => {
-    const file = baseFile({
-      name, path: name, mime: 'text/plain', kind: 'code',
-      artifactManifest: { version: 1, kind: 'react-component', title: 'Widget', entry: name, renderer: 'react-component', exports: ['jsx'] },
-    });
-    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url === '/api/projects/project-1/files') {
-        return Response.json({ files: [{ name, path: name }] });
-      }
-      if (url === `/api/projects/project-1/raw/${name}`) return new Response('export default function Widget() { return null; }');
-      return new Response('', { status: 404 });
-    }));
-
-    render(<FileViewer projectId="project-1" projectKind="prototype" file={file} />);
-    const share = await screen.findByRole('button', { name: /share/i });
-    await waitFor(() => expect(share).toBeDisabled());
-    expect(share).toHaveAttribute('title', 'Only self-contained HTML files can be shared. Export this component as HTML first.');
-    fireEvent.click(share);
-    expect(screen.queryByRole('menu')).toBeNull();
-    expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).includes('publish-public'))).toBe(false);
-  });
-
-  it('points a .jsx module loaded by a sibling HTML to that entry, not the React error (issue #2744)', async () => {
-    const file = baseFile({
-      name: 'icons.jsx',
-      path: 'icons.jsx',
-      mime: 'text/jsx',
-      kind: 'code',
-      artifactManifest: {
-        version: 1,
-        kind: 'react-component',
-        title: 'icons',
-        entry: 'icons.jsx',
-        renderer: 'react-component',
-        exports: ['jsx'],
-      },
-    });
-    let resolveHtmlSource!: (response: Response) => void;
-    const pendingHtmlSource = new Promise<Response>((resolve) => { resolveHtmlSource = resolve; });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: string | URL | Request) => {
-        const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-        if (url === '/api/projects/project-1/files') {
-          return new Response(
-            JSON.stringify({
-              files: [
-                { name: 'icons.jsx', path: 'icons.jsx' },
-                { name: 'backups.html', path: 'backups.html' },
-              ],
-            }),
-          );
-        }
-        if (url === '/api/projects/project-1/raw/backups.html') {
-          return pendingHtmlSource;
-        }
-        if (url === '/api/projects/project-1/raw/icons.jsx') {
-          return new Response('window.I = { star: null };');
-        }
-        return new Response('', { status: 404 });
-      }),
-    );
-
-    const onOpenFileReplacing = vi.fn();
-    const { container } = render(
-      <FileViewer
-        projectId="project-1"
-        projectKind="prototype"
-        file={file}
-        onOpenFileReplacing={onOpenFileReplacing}
-      />,
-    );
-
-    // Module status is unknown until the sibling HTML read finishes. Fail
-    // closed during that window, then resolve the fixture's real module link.
-    const shareButton = await screen.findByRole('button', { name: /share/i });
-    expect(shareButton).toBeDisabled();
-    expect(shareButton.getAttribute('title')).toBeTruthy();
-    resolveHtmlSource(new Response('<script type="text/babel" src="icons.jsx"></script>'));
-
-    // The module points at its HTML entry instead of rendering the React
-    // runtime (which would throw "No React component export found").
-    await screen.findByRole('button', { name: /backups\.html/ });
-    expect(screen.queryByTestId('react-component-preview-frame')).toBeNull();
-
-    // Sharing a referenced module is unsupported: wait for classification, then
-    // verify the toolbar gives a reason and no public publish request occurred.
-    await waitFor(() => expect(shareButton).toBeDisabled());
-    expect(shareButton.getAttribute('title')).toBeTruthy();
-    fireEvent.click(shareButton);
-    expect(screen.queryByRole('menu')).toBeNull();
-    const fetchMock = vi.mocked(fetch);
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('publish-public'))).toBe(false);
-
-    // The toolbar still offers a way to read the raw code: clicking the Code
-    // tab swaps the pointer for the file's source. Issue #2744 follow-up.
-    fireEvent.click(screen.getByRole('button', { name: /^code$/i }));
-    expect(container.textContent).toContain('window.I');
-    expect(screen.queryByRole('button', { name: /backups\.html/ })).toBeNull();
-
-    // Back on Preview, clicking the entry opens the HTML page and closes the
-    // dead-end module tab (icons.jsx) in one move.
-    fireEvent.click(screen.getByRole('button', { name: /^preview$/i }));
-    fireEvent.click(await screen.findByRole('button', { name: /backups\.html/ }));
-    expect(onOpenFileReplacing).toHaveBeenCalledWith('backups.html', 'icons.jsx');
-  });
-
   it('keeps decks on the srcDoc path so the deck postMessage bridge can run', () => {
     const file = baseFile({
       name: 'deck.html',
@@ -5668,63 +5069,6 @@ describe('FileViewer SVG artifacts', () => {
 
     expect(screen.queryByTestId('speaker-notes-panel')).toBeNull();
     expect(screen.queryByTestId('deck-thumbnail-rail')).toBeNull();
-  });
-
-  it('keeps deck thumbnail resource URLs independent of shell Workspace changes', async () => {
-    const file = baseFile({
-      name: 'deck.html',
-      path: 'deck.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'deck',
-        title: 'Deck',
-        entry: 'deck.html',
-        renderer: 'deck-html',
-        exports: ['html'],
-      },
-    });
-    const workspaceA = teamWorkspaceContext();
-    const workspaceB: WorkspaceCollabContext = {
-      ...workspaceA,
-      workspaceId: 'ws-2',
-      teamId: 'team-2',
-      workspaceMemberId: 'wm-2',
-    };
-    const viewer = (
-      <FileViewer
-        projectId="project-1"
-        projectKind="prototype"
-        file={file}
-        isDeck
-        liveHtml={'<html><body><section class="slide">one</section></body></html>'}
-      />
-    );
-    const { container, rerender } = render(
-      <CollabProvider value={projectWorkspaceCollabValue(workspaceA)}>
-        {viewer}
-      </CollabProvider>,
-    );
-
-    const thumbnail = container.querySelector('.deck-thumbnail-frame iframe') as HTMLIFrameElement | null;
-    expect(thumbnail).toBeTruthy();
-    expect(thumbnail!.srcdoc).not.toContain('workspaceId=');
-    expect(thumbnail!.srcdoc).not.toContain('workspaceMemberId=');
-    const originalSrcDoc = thumbnail!.srcdoc;
-
-    rerender(
-      <CollabProvider value={projectWorkspaceCollabValue(workspaceB)}>
-        {viewer}
-      </CollabProvider>,
-    );
-
-    await waitFor(() => {
-      const updated = container.querySelector('.deck-thumbnail-frame iframe') as HTMLIFrameElement | null;
-      expect(updated?.srcdoc).toBe(originalSrcDoc);
-      expect(updated?.srcdoc).not.toContain('workspaceId=');
-      expect(updated?.srcdoc).not.toContain('workspaceMemberId=');
-    });
   });
 
   it('shows speaker notes panel with existing real notes', () => {
@@ -6085,503 +5429,6 @@ describe('FileViewer SVG artifacts', () => {
     });
   });
 
-  it('shows Cloudflare Pages as a deploy action without requiring a project name input', async () => {
-    const file = baseFile({
-      name: 'index.html',
-      path: 'index.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'html',
-        title: 'Page',
-        entry: 'index.html',
-        renderer: 'html',
-        exports: ['html'],
-      },
-    });
-
-    const view = render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={file}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-    );
-
-    await openUnifiedShareTab();
-
-    fireEvent.click(screen.getByRole('button', { name: 'More sharing options' }));
-    expect(screen.getByRole('menuitem', { name: /Deploy to Vercel/i })).toBeTruthy();
-    fireEvent.click(screen.getByRole('menuitem', { name: /Deploy to Cloudflare Pages/i }));
-
-    const dialog = await screen.findByRole('dialog');
-    expect(dialog).toBeTruthy();
-    expect(within(dialog).getByRole('heading', { name: /Deploy to Cloudflare Pages/i })).toBeTruthy();
-    expect(within(dialog).queryByRole('heading', { name: /Publish share page/i })).toBeNull();
-    const backdrop = document.body.querySelector('.viewer-modal-backdrop.deploy-flow-backdrop');
-    expect(backdrop).toBeTruthy();
-    expect(backdrop?.parentElement).toBe(document.body);
-    expect(view.container.querySelector('.viewer-modal-backdrop')).toBeNull();
-    expect(screen.getByText('Account ID')).toBeTruthy();
-    expect(screen.getByText(/Select Pages Edit when creating the API token/i)).toBeTruthy();
-    expect(screen.getByText(/Zone Read/i)).toBeTruthy();
-    expect(screen.getByText(/custom domains need Zone Read \/ DNS Edit/i)).toBeTruthy();
-    expect(screen.queryByText(/Pages Read\/Write/i)).toBeNull();
-    const subdomainInput = screen.getByLabelText('Subdomain prefix');
-    const domainSelect = screen.getByLabelText('Domain');
-    expect(Boolean(subdomainInput.compareDocumentPosition(domainSelect) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
-    expect(screen.queryByText('Pages project name')).toBeNull();
-    expect(screen.queryByText(/generates a Pages project name automatically/i)).toBeNull();
-    expect(screen.queryByText(/project name is selected automatically/i)).toBeNull();
-    expect(screen.queryByLabelText('Pages project name')).toBeNull();
-  });
-
-  it('closes the deploy/share modal from the backdrop or Escape', async () => {
-    const file = baseFile({
-      name: 'index.html',
-      path: 'index.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'html',
-        title: 'Page',
-        entry: 'index.html',
-        renderer: 'html',
-        exports: ['html'],
-      },
-    });
-    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url === '/api/projects/project-1/deployments') {
-        return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-      }
-      if (url === '/api/deploy/config?providerId=vercel-self') {
-        return new Response(JSON.stringify({
-          providerId: 'vercel-self',
-          configured: false,
-          tokenMask: '',
-          teamId: '',
-          teamSlug: '',
-          target: 'preview',
-        }), { status: 200 });
-      }
-      return new Response(JSON.stringify({}), { status: 404 });
-    }));
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={file}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-    );
-
-    const openDeployModal = async () => {
-      await openUnifiedShareTab();
-      fireEvent.click(await screen.findByRole('button', { name: 'More sharing options' }));
-      fireEvent.click(await screen.findByRole('menuitem', { name: /Deploy to Vercel/i }));
-      return screen.findByRole('dialog');
-    };
-
-    const dialog = await openDeployModal();
-    expect(dialog).toBeTruthy();
-    fireEvent.click(dialog);
-    expect(screen.getByRole('dialog')).toBeTruthy();
-    const backdrop = document.querySelector<HTMLElement>('.deploy-flow-backdrop');
-    expect(backdrop).toBeTruthy();
-    fireEvent.click(backdrop!);
-    expect(screen.queryByRole('dialog')).toBeNull();
-
-    expect(await openDeployModal()).toBeTruthy();
-    fireEvent.keyDown(window, { key: 'Escape' });
-    expect(screen.queryByRole('dialog')).toBeNull();
-  });
-
-  it('nudges the export button once when an artifact becomes exportable', async () => {
-    const file = baseFile({
-      name: 'nudge.html',
-      path: 'nudge.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'html',
-        title: 'Nudge',
-        entry: 'nudge.html',
-        renderer: 'html',
-        exports: ['html'],
-      },
-    });
-
-    render(
-      <FileViewer
-        projectId="project-nudge"
-        projectKind="prototype"
-        file={file}
-        liveHtml="<html><body><h1>Ready</h1></body></html>"
-      />,
-    );
-
-    const exportButton = screen.getByRole('button', { name: /export/i });
-    await waitFor(() => {
-      expect(exportButton.classList.contains('export-ready-nudge')).toBe(true);
-    });
-
-    fireEvent.click(exportButton);
-
-    expect(exportButton.classList.contains('export-ready-nudge')).toBe(false);
-  });
-
-  it('nudges each exportable artifact once when the mounted viewer switches files', async () => {
-    const firstFile = baseFile({
-      name: 'nudge-first.html',
-      path: 'nudge-first.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'html',
-        title: 'First',
-        entry: 'nudge-first.html',
-        renderer: 'html',
-        exports: ['html'],
-      },
-    });
-    const secondFile = baseFile({
-      name: 'nudge-second.html',
-      path: 'nudge-second.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'html',
-        title: 'Second',
-        entry: 'nudge-second.html',
-        renderer: 'html',
-        exports: ['html'],
-      },
-    });
-
-    const { rerender } = render(
-      <FileViewer
-        projectId="project-nudge-switch"
-        projectKind="prototype"
-        file={firstFile}
-        liveHtml="<html><body><h1>First</h1></body></html>"
-      />,
-    );
-
-    const firstExportButton = screen.getByRole('button', { name: /export/i });
-    await waitFor(() => {
-      expect(firstExportButton.classList.contains('export-ready-nudge')).toBe(true);
-    });
-    fireEvent.click(firstExportButton);
-    expect(firstExportButton.classList.contains('export-ready-nudge')).toBe(false);
-
-    rerender(
-      <FileViewer
-        projectId="project-nudge-switch"
-        projectKind="prototype"
-        file={secondFile}
-        liveHtml="<html><body><h1>Second</h1></body></html>"
-      />,
-    );
-
-    const secondExportButton = screen.getByRole('button', { name: /export/i });
-    await waitFor(() => {
-      expect(secondExportButton.classList.contains('export-ready-nudge')).toBe(true);
-    });
-  });
-
-  it('keeps the explicitly selected deploy provider when another provider already has a deployment', async () => {
-    const file = baseFile({
-      name: 'index.html',
-      path: 'index.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'html',
-        title: 'Page',
-        entry: 'index.html',
-        renderer: 'html',
-        exports: ['html'],
-      },
-    });
-    const fetchMock = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url === '/api/projects/project-1/deployments') {
-        return new Response(JSON.stringify({
-          deployments: [
-            {
-              id: 'vercel-deploy',
-              projectId: 'project-1',
-              fileName: 'index.html',
-              providerId: 'vercel-self',
-              url: 'https://vercel.example',
-              deploymentCount: 1,
-              target: 'preview',
-              status: 'ready',
-              createdAt: 1,
-              updatedAt: 2,
-            },
-          ],
-        }), { status: 200 });
-      }
-      if (url === '/api/deploy/config?providerId=cloudflare-pages') {
-        return new Response(JSON.stringify({
-          providerId: 'cloudflare-pages',
-          configured: true,
-          tokenMask: 'saved-cloudflare-token',
-          accountId: 'account-123',
-        }), { status: 200 });
-      }
-      if (url === '/api/deploy/config?providerId=vercel-self') {
-        return new Response(JSON.stringify({
-          providerId: 'vercel-self',
-          configured: true,
-          tokenMask: 'saved-vercel-token',
-        }), { status: 200 });
-      }
-      return new Response(JSON.stringify({}), { status: 404 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={file}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-    );
-
-    await openUnifiedShareTab();
-    fireEvent.click(await screen.findByRole('button', { name: 'More sharing options' }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Deploy to Cloudflare Pages/i }));
-
-    const providerSelect = await screen.findByRole('combobox', { name: /Provider/i });
-    await waitFor(() => {
-      expect((providerSelect as HTMLSelectElement).value).toBe('cloudflare-pages');
-    });
-
-    const calledUrls = fetchMock.mock.calls.map(([input]) => (
-      typeof input === 'string' ? input : input instanceof Request ? input.url : String(input)
-    ));
-    expect(calledUrls).toContain('/api/deploy/config?providerId=cloudflare-pages');
-    expect(calledUrls).not.toContain('/api/deploy/config?providerId=vercel-self');
-    expect((screen.getByLabelText(/Cloudflare API token/i) as HTMLInputElement).value).toBe('saved-cloudflare-token');
-  });
-
-  it('ignores stale deploy config loads after switching providers', async () => {
-    const file = baseFile({
-      name: 'index.html',
-      path: 'index.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'html',
-        title: 'Page',
-        entry: 'index.html',
-        renderer: 'html',
-        exports: ['html'],
-      },
-    });
-    const delayedCloudflareConfig = deferredResponse();
-    const fetchMock = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url === '/api/projects/project-1/deployments') {
-        return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-      }
-      if (url === '/api/deploy/config?providerId=cloudflare-pages') {
-        return delayedCloudflareConfig.promise;
-      }
-      if (url === '/api/deploy/config?providerId=vercel-self') {
-        return new Response(JSON.stringify({
-          providerId: 'vercel-self',
-          configured: true,
-          tokenMask: 'saved-vercel-token',
-        }), { status: 200 });
-      }
-      if (url === '/api/deploy/cloudflare-pages/zones') {
-        return new Response(JSON.stringify({
-          zones: [{ id: 'zone-1', name: 'example.com', status: 'active', type: 'full' }],
-        }), { status: 200 });
-      }
-      return new Response(JSON.stringify({}), { status: 404 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={file}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-    );
-
-    await openUnifiedShareTab();
-    fireEvent.click(await screen.findByRole('button', { name: 'More sharing options' }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Deploy to Cloudflare Pages/i }));
-
-    const providerSelect = await screen.findByRole('combobox', { name: /Provider/i });
-    await waitFor(() => {
-      expect((providerSelect as HTMLSelectElement).value).toBe('cloudflare-pages');
-    });
-    fireEvent.change(providerSelect, { target: { value: 'vercel-self' } });
-
-    await waitFor(() => {
-      expect((providerSelect as HTMLSelectElement).value).toBe('vercel-self');
-    });
-    expect((screen.getByLabelText(/Vercel token/i) as HTMLInputElement).value).toBe('saved-vercel-token');
-
-    delayedCloudflareConfig.resolve(new Response(JSON.stringify({
-      providerId: 'cloudflare-pages',
-      configured: true,
-      tokenMask: 'saved-cloudflare-token',
-      accountId: 'account-123',
-      cloudflarePages: {
-        lastZoneId: 'zone-1',
-        lastDomainPrefix: 'demo',
-      },
-    }), { status: 200 }));
-
-    await waitFor(() => {
-      expect((providerSelect as HTMLSelectElement).value).toBe('vercel-self');
-      expect((screen.getByLabelText(/Vercel token/i) as HTMLInputElement).value).toBe('saved-vercel-token');
-    });
-    expect(screen.queryByLabelText(/Cloudflare API token/i)).toBeNull();
-  });
-
-  it('loads Cloudflare domains, sends the selected custom domain, and renders both links', async () => {
-    const file = baseFile({
-      name: 'index.html',
-      path: 'index.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'html',
-        title: 'Page',
-        entry: 'index.html',
-        renderer: 'html',
-        exports: ['html'],
-      },
-    });
-    let deployBody: any = null;
-    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      const method = init?.method || (input instanceof Request ? input.method : 'GET');
-      if (url === '/api/projects/project-1/deployments') {
-        return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-      }
-      if (url === '/api/deploy/config?providerId=cloudflare-pages') {
-        return new Response(JSON.stringify({
-          providerId: 'cloudflare-pages',
-          configured: true,
-          tokenMask: 'saved-cloudflare-token',
-          teamId: '',
-          teamSlug: '',
-          accountId: 'account-123',
-          target: 'preview',
-        }), { status: 200 });
-      }
-      if (url === '/api/deploy/cloudflare-pages/zones') {
-        return new Response(JSON.stringify({
-          zones: [{ id: 'zone-1', name: 'example.com', status: 'active', type: 'full' }],
-        }), { status: 200 });
-      }
-      if (url === '/api/deploy/config' && method === 'PUT') {
-        const body = JSON.parse(String(init?.body ?? '{}'));
-        return new Response(JSON.stringify({
-          providerId: 'cloudflare-pages',
-          configured: true,
-          tokenMask: 'saved-cloudflare-token',
-          teamId: '',
-          teamSlug: '',
-          accountId: body.accountId,
-          cloudflarePages: body.cloudflarePages,
-          target: 'preview',
-        }), { status: 200 });
-      }
-      if (url === '/api/projects/project-1/deploy' && method === 'POST') {
-        deployBody = JSON.parse(String(init?.body ?? '{}'));
-        return new Response(JSON.stringify({
-          id: 'cloudflare-deploy',
-          projectId: 'project-1',
-          fileName: 'index.html',
-          providerId: 'cloudflare-pages',
-          url: 'https://demo-pages.pages.dev',
-          deploymentId: 'cf-dep-1',
-          deploymentCount: 1,
-          target: 'preview',
-          status: 'ready',
-          cloudflarePages: {
-            projectName: 'demo-pages',
-            pagesDev: {
-              url: 'https://demo-pages.pages.dev',
-              status: 'ready',
-            },
-            customDomain: {
-              hostname: 'demo.example.com',
-              url: 'https://demo.example.com',
-              zoneId: 'zone-1',
-              zoneName: 'example.com',
-              domainPrefix: 'demo',
-              status: 'ready',
-              dnsStatus: 'created',
-              domainStatus: 'active',
-            },
-          },
-          createdAt: 1,
-          updatedAt: 2,
-        }), { status: 200 });
-      }
-      return new Response(JSON.stringify({}), { status: 404 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={file}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-    );
-
-    await openUnifiedShareTab();
-    fireEvent.click(await screen.findByRole('button', { name: 'More sharing options' }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Deploy to Cloudflare Pages/i }));
-
-    const zoneSelect = await screen.findByRole('combobox', { name: /Domain/i });
-    await waitFor(() => {
-      expect((zoneSelect as HTMLSelectElement).value).toBe('zone-1');
-    });
-    fireEvent.change(screen.getByLabelText(/Subdomain prefix/i), { target: { value: 'demo' } });
-
-    const deployButtons = screen.getAllByRole('button', { name: /^Deploy$/i });
-    fireEvent.click(deployButtons[deployButtons.length - 1]!);
-
-    const pagesDevLabel = await screen.findByText('pages.dev URL');
-    const customDomainLabel = await screen.findByText('Custom domain');
-    expect(customDomainLabel).toBeTruthy();
-    expect(pagesDevLabel.closest('.deploy-result-block')).toBe(customDomainLabel.closest('.deploy-result-block'));
-    expect(screen.getByText('https://demo-pages.pages.dev')).toBeTruthy();
-    // The custom domain is also the public share URL, so it renders both in the
-    // result block and in the social-share header; scope to the result block.
-    const resultBlock = customDomainLabel.closest('.deploy-result-block') as HTMLElement;
-    expect(within(resultBlock).getByText('https://demo.example.com')).toBeTruthy();
-    // Deploy result feedback renders through `ShareFeedbackToast` (already
-    // converted from the generic `Toast` before this pass — see its own
-    // "Item 5 (2026 refactor)" comment in FileViewer.tsx), not `.od-toast`.
-    const deployToast = document.querySelector('[data-tone="success"]');
-    expect(deployToast).not.toBeNull();
-    expect(deployToast?.textContent).toContain('Deployment uploaded successfully');
-    expect(deployToast?.textContent).toContain('Cloudflare Pages');
-    expect(deployToast?.textContent).toContain('https://demo-pages.pages.dev');
-    expect(deployBody).toMatchObject({
-      fileName: 'index.html',
-      providerId: 'cloudflare-pages',
-      cloudflarePages: {
-        zoneId: 'zone-1',
-        zoneName: 'example.com',
-        domainPrefix: 'demo',
-      },
-    });
-  });
-
   it('copies the newest deployment URL across providers', async () => {
     const file = baseFile({
       name: 'index.html',
@@ -6885,7 +5732,7 @@ describe('FileViewer SVG artifacts', () => {
     expect(screen.queryByRole('menuitem', { name: /Copy Cloudflare link/i })).toBeNull();
   });
 
-  it('separates deploy sharing actions from download actions', async () => {
+  it('disables share link actions while the artifact is still streaming', async () => {
     const file = baseFile({
       name: 'index.html',
       path: 'index.html',
@@ -6900,62 +5747,96 @@ describe('FileViewer SVG artifacts', () => {
         exports: ['html'],
       },
     });
-    const context = teamWorkspaceContext();
-    stubFetchWithWorkspaceContext(context);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      deployments: [
+        {
+          id: 'vercel-deploy',
+          projectId: 'project-1',
+          fileName: 'index.html',
+          providerId: 'vercel-self',
+          url: 'https://vercel.example',
+          deploymentCount: 1,
+          target: 'preview',
+          status: 'ready',
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+    }), { status: 200 })));
 
-    renderWithProjectWorkspace(
+    render(
+      <FileViewer projectId="project-1" projectKind="prototype" file={file}
+        liveHtml="<html><body><h1>Hello</h1></body></html>"
+        streaming
+      />,
+    );
+
+    await openUnifiedShareTab();
+
+    const copyShareLink = await screen.findByRole('menuitem', { name: /Copy share link/i }) as HTMLButtonElement;
+    const openSharePage = screen.getByRole('menuitem', { name: /Open share page/i }) as HTMLButtonElement;
+    expect(copyShareLink.disabled).toBe(true);
+    expect(openSharePage.disabled).toBe(true);
+    expect(screen.getAllByText(/Share after generation completes/i).length).toBeGreaterThan(0);
+  });
+
+  it('shows failed copy feedback when deployed link copying is blocked', async () => {
+    const file = baseFile({
+      name: 'index.html',
+      path: 'index.html',
+      mime: 'text/html',
+      kind: 'html',
+      artifactManifest: {
+        version: 1,
+        kind: 'html',
+        title: 'Page',
+        entry: 'index.html',
+        renderer: 'html',
+        exports: ['html'],
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      deployments: [
+        {
+          id: 'vercel-deploy',
+          projectId: 'project-1',
+          fileName: 'index.html',
+          providerId: 'vercel-self',
+          url: 'https://vercel.example',
+          deploymentCount: 1,
+          target: 'preview',
+          status: 'ready',
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+    }), { status: 200 })));
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+    });
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: vi.fn(() => false),
+    });
+
+    render(
       <FileViewer projectId="project-1" projectKind="prototype" file={file}
         liveHtml="<html><body><h1>Hello</h1></body></html>"
       />,
-      context,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
+    await openUnifiedShareTab();
+    const copyShareLink = await screen.findByRole('menuitem', { name: /Copy share link/i });
+    expect((copyShareLink as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(copyShareLink);
 
-    // Share panel: actions that produce a shareable link. No file formats and
-    // no save/template authoring controls.
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    expect(screen.getByText('Visibility in workspace')).toBeTruthy();
-    expect(await screen.findByText('Generate and copy link')).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: /Generate and copy link/i })).toBeTruthy();
-    expect(screen.queryByText('SHARE ON YOUR OWN HOSTING')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'More sharing options' }));
-    expect(screen.getByRole('menuitem', { name: /Deploy to Vercel/i })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: /Deploy to Cloudflare Pages/i })).toBeTruthy();
-    // The "publish online first" guide row is gone — the publish button above
-    // IS that step now.
-    expect(screen.queryByRole('menuitem', { name: /Publish online above to enable share/i })).toBeNull();
-    expect(screen.queryByRole('menuitem', { name: /Export as PDF/i })).toBeNull();
-    expect(screen.queryByRole('menuitem', { name: /Export as image/i })).toBeNull();
-    expect(screen.queryByRole('menuitem', { name: /Save as template/i })).toBeNull();
-
-    fireEvent.click(screen.getByRole('button', { name: /export/i }));
-
-    // Export panel: pure file formats, nothing publish/deploy flavored.
-    const menuItems = screen.getAllByRole('menuitem').map((item) => item.textContent ?? '');
-    expect(menuItems).toContain('Export as PDF');
-    expect(menuItems).toContain('Export as image');
-    expect(menuItems).toContain('Download as .zip');
-    expect(menuItems).toContain('Export as standalone HTML');
-    expect(screen.queryByText('SHARE ON YOUR OWN HOSTING')).toBeNull();
-    expect(menuItems).not.toContain('Publish online above to enable share ↑');
-    expect(menuItems).not.toContain('Deploy to Vercel');
-    expect(menuItems).not.toContain('Deploy to Cloudflare Pages');
-    expect(menuItems).not.toContain('Save as template…');
-
-    expect(menuItems).not.toContain('Export as PPTX');
-    expect(menuItems).not.toContain('Export as PPTX (images)');
-    expect(menuItems).not.toContain('Export as PPTX (editable)');
-    expect(menuItems).not.toContain('Export as Markdown');
-
-    // 「截图」 (clipboard capture) is NOT an export. Export produces a file or a
-    // link to hand to someone; a clipboard copy is a different job that the
-    // toolbar's screenshot-to-chat already leads with. "Export as image" — the
-    // row that DOES write a file — stays, and is asserted present above.
-    expect(menuItems).not.toContain('Screenshot');
+    expect(await screen.findByRole('menuitem', { name: /Copy failed/i })).toBeTruthy();
+    expect(screen.getAllByText('Copy failed').length).toBeGreaterThan(1);
+    expect(screen.getByRole('menu')).toBeTruthy();
   });
 
-  it('opens the current Share panel from an artifact card', async () => {
+  it('closes the deploy/share modal from the backdrop or Escape', async () => {
     const file = baseFile({
       name: 'index.html',
       path: 'index.html',
@@ -6970,42 +5851,430 @@ describe('FileViewer SVG artifacts', () => {
         exports: ['html'],
       },
     });
-    const context = teamWorkspaceContext();
-    stubFetchWithWorkspaceContext(context);
-    const anchorId = 'publish:turn-2:index.html';
-    const anchor = document.createElement('button');
-    anchor.setAttribute('data-artifact-anchor', anchorId);
-    anchor.getBoundingClientRect = () => ({
-      x: 220,
-      y: 300,
-      left: 220,
-      top: 300,
-      right: 278,
-      bottom: 328,
-      width: 58,
-      height: 28,
-      toJSON: () => ({}),
-    } as DOMRect);
-    document.body.appendChild(anchor);
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+      if (url === '/api/projects/project-1/deployments') {
+        return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
+      }
+      if (url === '/api/deploy/config?providerId=vercel-self') {
+        return new Response(JSON.stringify({
+          providerId: 'vercel-self',
+          configured: false,
+          tokenMask: '',
+          teamId: '',
+          teamSlug: '',
+          target: 'preview',
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 404 });
+    }));
 
-    renderWithProjectWorkspace(
-      <FileViewer
-        projectId="project-1"
-        projectKind="prototype"
-        file={file}
+    render(
+      <FileViewer projectId="project-1" projectKind="prototype" file={file}
         liveHtml="<html><body><h1>Hello</h1></body></html>"
-        shareRequest={{ nonce: 1_730_000_249_000, anchorId }}
       />,
-      context,
     );
 
-    expect(await screen.findByText('Generate and copy link')).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: /Generate and copy link/i })).toBeTruthy();
-    expect(screen.queryByText('Share project in workspace')).toBeNull();
-    expect(screen.getByText('Visibility in workspace')).toBeVisible();
-    expect(screen.queryByText('SHARE ON YOUR OWN HOSTING')).toBeNull();
-    expect(screen.queryByRole('menuitem', { name: /Deploy to Vercel/i })).toBeNull();
-    expect(screen.queryByRole('menuitem', { name: /Save as template/i })).toBeNull();
+    const openDeployModal = async () => {
+      await openUnifiedShareTab();
+      fireEvent.click(await screen.findByRole('menuitem', { name: /Deploy to Vercel/i }));
+      return screen.findByRole('dialog');
+    };
+
+    const dialog = await openDeployModal();
+    expect(dialog).toBeTruthy();
+    fireEvent.click(dialog);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    const backdrop = document.querySelector<HTMLElement>('.deploy-flow-backdrop');
+    expect(backdrop).toBeTruthy();
+    fireEvent.click(backdrop!);
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    expect(await openDeployModal()).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('nudges the export button once when an artifact becomes exportable', async () => {
+    const file = baseFile({
+      name: 'nudge.html',
+      path: 'nudge.html',
+      mime: 'text/html',
+      kind: 'html',
+      artifactManifest: {
+        version: 1,
+        kind: 'html',
+        title: 'Nudge',
+        entry: 'nudge.html',
+        renderer: 'html',
+        exports: ['html'],
+      },
+    });
+
+    render(
+      <FileViewer
+        projectId="project-nudge"
+        projectKind="prototype"
+        file={file}
+        liveHtml="<html><body><h1>Ready</h1></body></html>"
+      />,
+    );
+
+    const exportButton = screen.getByRole('button', { name: /export/i });
+    await waitFor(() => {
+      expect(exportButton.classList.contains('export-ready-nudge')).toBe(true);
+    });
+
+    fireEvent.click(exportButton);
+
+    expect(exportButton.classList.contains('export-ready-nudge')).toBe(false);
+  });
+
+  it('nudges each exportable artifact once when the mounted viewer switches files', async () => {
+    const firstFile = baseFile({
+      name: 'nudge-first.html',
+      path: 'nudge-first.html',
+      mime: 'text/html',
+      kind: 'html',
+      artifactManifest: {
+        version: 1,
+        kind: 'html',
+        title: 'First',
+        entry: 'nudge-first.html',
+        renderer: 'html',
+        exports: ['html'],
+      },
+    });
+    const secondFile = baseFile({
+      name: 'nudge-second.html',
+      path: 'nudge-second.html',
+      mime: 'text/html',
+      kind: 'html',
+      artifactManifest: {
+        version: 1,
+        kind: 'html',
+        title: 'Second',
+        entry: 'nudge-second.html',
+        renderer: 'html',
+        exports: ['html'],
+      },
+    });
+
+    const { rerender } = render(
+      <FileViewer
+        projectId="project-nudge-switch"
+        projectKind="prototype"
+        file={firstFile}
+        liveHtml="<html><body><h1>First</h1></body></html>"
+      />,
+    );
+
+    const firstExportButton = screen.getByRole('button', { name: /export/i });
+    await waitFor(() => {
+      expect(firstExportButton.classList.contains('export-ready-nudge')).toBe(true);
+    });
+    fireEvent.click(firstExportButton);
+    expect(firstExportButton.classList.contains('export-ready-nudge')).toBe(false);
+
+    rerender(
+      <FileViewer
+        projectId="project-nudge-switch"
+        projectKind="prototype"
+        file={secondFile}
+        liveHtml="<html><body><h1>Second</h1></body></html>"
+      />,
+    );
+
+    const secondExportButton = screen.getByRole('button', { name: /export/i });
+    await waitFor(() => {
+      expect(secondExportButton.classList.contains('export-ready-nudge')).toBe(true);
+    });
+  });
+
+  it('keeps the explicitly selected deploy provider when another provider already has a deployment', async () => {
+    const file = baseFile({
+      name: 'index.html',
+      path: 'index.html',
+      mime: 'text/html',
+      kind: 'html',
+      artifactManifest: {
+        version: 1,
+        kind: 'html',
+        title: 'Page',
+        entry: 'index.html',
+        renderer: 'html',
+        exports: ['html'],
+      },
+    });
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+      if (url === '/api/projects/project-1/deployments') {
+        return new Response(JSON.stringify({
+          deployments: [
+            {
+              id: 'vercel-deploy',
+              projectId: 'project-1',
+              fileName: 'index.html',
+              providerId: 'vercel-self',
+              url: 'https://vercel.example',
+              deploymentCount: 1,
+              target: 'preview',
+              status: 'ready',
+              createdAt: 1,
+              updatedAt: 2,
+            },
+          ],
+        }), { status: 200 });
+      }
+      if (url === '/api/deploy/config?providerId=cloudflare-pages') {
+        return new Response(JSON.stringify({
+          providerId: 'cloudflare-pages',
+          configured: true,
+          tokenMask: 'saved-cloudflare-token',
+          accountId: 'account-123',
+        }), { status: 200 });
+      }
+      if (url === '/api/deploy/config?providerId=vercel-self') {
+        return new Response(JSON.stringify({
+          providerId: 'vercel-self',
+          configured: true,
+          tokenMask: 'saved-vercel-token',
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <FileViewer projectId="project-1" projectKind="prototype" file={file}
+        liveHtml="<html><body><h1>Hello</h1></body></html>"
+      />,
+    );
+
+    await openUnifiedShareTab();
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Deploy to Cloudflare Pages/i }));
+
+    const providerSelect = await screen.findByRole('combobox', { name: /Provider/i });
+    await waitFor(() => {
+      expect((providerSelect as HTMLSelectElement).value).toBe('cloudflare-pages');
+    });
+
+    const calledUrls = fetchMock.mock.calls.map(([input]) => (
+      typeof input === 'string' ? input : input instanceof Request ? input.url : String(input)
+    ));
+    expect(calledUrls).toContain('/api/deploy/config?providerId=cloudflare-pages');
+    expect(calledUrls).not.toContain('/api/deploy/config?providerId=vercel-self');
+    expect((screen.getByLabelText(/Cloudflare API token/i) as HTMLInputElement).value).toBe('saved-cloudflare-token');
+  });
+
+  it('ignores stale deploy config loads after switching providers', async () => {
+    const file = baseFile({
+      name: 'index.html',
+      path: 'index.html',
+      mime: 'text/html',
+      kind: 'html',
+      artifactManifest: {
+        version: 1,
+        kind: 'html',
+        title: 'Page',
+        entry: 'index.html',
+        renderer: 'html',
+        exports: ['html'],
+      },
+    });
+    const delayedCloudflareConfig = deferredResponse();
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+      if (url === '/api/projects/project-1/deployments') {
+        return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
+      }
+      if (url === '/api/deploy/config?providerId=cloudflare-pages') {
+        return delayedCloudflareConfig.promise;
+      }
+      if (url === '/api/deploy/config?providerId=vercel-self') {
+        return new Response(JSON.stringify({
+          providerId: 'vercel-self',
+          configured: true,
+          tokenMask: 'saved-vercel-token',
+        }), { status: 200 });
+      }
+      if (url === '/api/deploy/cloudflare-pages/zones') {
+        return new Response(JSON.stringify({
+          zones: [{ id: 'zone-1', name: 'example.com', status: 'active', type: 'full' }],
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <FileViewer projectId="project-1" projectKind="prototype" file={file}
+        liveHtml="<html><body><h1>Hello</h1></body></html>"
+      />,
+    );
+
+    await openUnifiedShareTab();
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Deploy to Cloudflare Pages/i }));
+
+    const providerSelect = await screen.findByRole('combobox', { name: /Provider/i });
+    await waitFor(() => {
+      expect((providerSelect as HTMLSelectElement).value).toBe('cloudflare-pages');
+    });
+    fireEvent.change(providerSelect, { target: { value: 'vercel-self' } });
+
+    await waitFor(() => {
+      expect((providerSelect as HTMLSelectElement).value).toBe('vercel-self');
+    });
+    expect((screen.getByLabelText(/Vercel token/i) as HTMLInputElement).value).toBe('saved-vercel-token');
+
+    delayedCloudflareConfig.resolve(new Response(JSON.stringify({
+      providerId: 'cloudflare-pages',
+      configured: true,
+      tokenMask: 'saved-cloudflare-token',
+      accountId: 'account-123',
+      cloudflarePages: {
+        lastZoneId: 'zone-1',
+        lastDomainPrefix: 'demo',
+      },
+    }), { status: 200 }));
+
+    await waitFor(() => {
+      expect((providerSelect as HTMLSelectElement).value).toBe('vercel-self');
+      expect((screen.getByLabelText(/Vercel token/i) as HTMLInputElement).value).toBe('saved-vercel-token');
+    });
+    expect(screen.queryByLabelText(/Cloudflare API token/i)).toBeNull();
+  });
+
+  it('loads Cloudflare domains, sends the selected custom domain, and renders both links', async () => {
+    const file = baseFile({
+      name: 'index.html',
+      path: 'index.html',
+      mime: 'text/html',
+      kind: 'html',
+      artifactManifest: {
+        version: 1,
+        kind: 'html',
+        title: 'Page',
+        entry: 'index.html',
+        renderer: 'html',
+        exports: ['html'],
+      },
+    });
+    let deployBody: any = null;
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
+      const method = init?.method || (input instanceof Request ? input.method : 'GET');
+      if (url === '/api/projects/project-1/deployments') {
+        return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
+      }
+      if (url === '/api/deploy/config?providerId=cloudflare-pages') {
+        return new Response(JSON.stringify({
+          providerId: 'cloudflare-pages',
+          configured: true,
+          tokenMask: 'saved-cloudflare-token',
+          teamId: '',
+          teamSlug: '',
+          accountId: 'account-123',
+          target: 'preview',
+        }), { status: 200 });
+      }
+      if (url === '/api/deploy/cloudflare-pages/zones') {
+        return new Response(JSON.stringify({
+          zones: [{ id: 'zone-1', name: 'example.com', status: 'active', type: 'full' }],
+        }), { status: 200 });
+      }
+      if (url === '/api/deploy/config' && method === 'PUT') {
+        const body = JSON.parse(String(init?.body ?? '{}'));
+        return new Response(JSON.stringify({
+          providerId: 'cloudflare-pages',
+          configured: true,
+          tokenMask: 'saved-cloudflare-token',
+          teamId: '',
+          teamSlug: '',
+          accountId: body.accountId,
+          cloudflarePages: body.cloudflarePages,
+          target: 'preview',
+        }), { status: 200 });
+      }
+      if (url === '/api/projects/project-1/deploy' && method === 'POST') {
+        deployBody = JSON.parse(String(init?.body ?? '{}'));
+        return new Response(JSON.stringify({
+          id: 'cloudflare-deploy',
+          projectId: 'project-1',
+          fileName: 'index.html',
+          providerId: 'cloudflare-pages',
+          url: 'https://demo-pages.pages.dev',
+          deploymentId: 'cf-dep-1',
+          deploymentCount: 1,
+          target: 'preview',
+          status: 'ready',
+          cloudflarePages: {
+            projectName: 'demo-pages',
+            pagesDev: {
+              url: 'https://demo-pages.pages.dev',
+              status: 'ready',
+            },
+            customDomain: {
+              hostname: 'demo.example.com',
+              url: 'https://demo.example.com',
+              zoneId: 'zone-1',
+              zoneName: 'example.com',
+              domainPrefix: 'demo',
+              status: 'ready',
+              dnsStatus: 'created',
+              domainStatus: 'active',
+            },
+          },
+          createdAt: 1,
+          updatedAt: 2,
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 404 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <FileViewer projectId="project-1" projectKind="prototype" file={file}
+        liveHtml="<html><body><h1>Hello</h1></body></html>"
+      />,
+    );
+
+    await openUnifiedShareTab();
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Deploy to Cloudflare Pages/i }));
+
+    const zoneSelect = await screen.findByRole('combobox', { name: /Domain/i });
+    await waitFor(() => {
+      expect((zoneSelect as HTMLSelectElement).value).toBe('zone-1');
+    });
+    fireEvent.change(screen.getByLabelText(/Subdomain prefix/i), { target: { value: 'demo' } });
+
+    const deployButtons = screen.getAllByRole('button', { name: /^Deploy$/i });
+    fireEvent.click(deployButtons[deployButtons.length - 1]!);
+
+    const pagesDevLabel = await screen.findByText('pages.dev URL');
+    const customDomainLabel = await screen.findByText('Custom domain');
+    expect(customDomainLabel).toBeTruthy();
+    expect(pagesDevLabel.closest('.deploy-result-block')).toBe(customDomainLabel.closest('.deploy-result-block'));
+    expect(screen.getByText('https://demo-pages.pages.dev')).toBeTruthy();
+    // The custom domain is also the public share URL, so it renders both in the
+    // result block and in the social-share header; scope to the result block.
+    const resultBlock = customDomainLabel.closest('.deploy-result-block') as HTMLElement;
+    expect(within(resultBlock).getByText('https://demo.example.com')).toBeTruthy();
+    // Deploy result feedback renders through the generic `Toast`.
+    const deployToast = document.querySelector('.od-toast.tone-success');
+    expect(deployToast).not.toBeNull();
+    expect(deployToast?.textContent).toContain('Deployment uploaded successfully');
+    expect(deployToast?.textContent).toContain('Cloudflare Pages');
+    expect(deployToast?.textContent).toContain('https://demo-pages.pages.dev');
+    expect(deployBody).toMatchObject({
+      fileName: 'index.html',
+      providerId: 'cloudflare-pages',
+      cloudflarePages: {
+        zoneId: 'zone-1',
+        zoneName: 'example.com',
+        domainPrefix: 'demo',
+      },
+    });
   });
 
   // The per-file "Publish" entry point (a single file → a backend link) is
@@ -7037,409 +6306,11 @@ describe('FileViewer SVG artifacts', () => {
     });
   }
 
-  it('offers the public publish entry to a personal workspace', async () => {
-    const context: WorkspaceCollabContext = {
-      ...teamWorkspaceContext(),
-      workspaceType: 'personal',
-      teamId: undefined,
-    };
-    stubFetchWithWorkspaceContext(context);
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    // The single-file publish card — the thing the dogfood report said was
-    // missing — is back for a personal workspace.
-    expect(await screen.findByText('Generate and copy link')).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: /Generate and copy link/i })).toBeTruthy();
-    // "Share project in workspace" is TEAM project sharing, which a personal
-    // workspace has no team to receive — see the dedicated test below
-    // (recvq5bM78HWCE) for the card's own gating.
-    expect(screen.queryByText('Share project in workspace')).toBeNull();
-    expect(screen.queryByText('Visibility in workspace')).toBeNull();
-  });
-
-  // recvq56lzckGtE: publishing a file from a real team workspace 403'd against
-  // the daemon's `canShareProjectsForRequest` gate (daemon routes,
-  // collab-sync.ts), which reads `x-od-workspace-can-share-projects` etc. and
-  // falls back to a headerless context re-read (often false/denied) when those
-  // headers are missing. `publishProjectFilePublic`/`fetchProjectFilePublicPublication`/
-  // `unpublishProjectFilePublic` never attached `workspaceProjectHeaders`, unlike
-  // every other workspace-scoped mutation in state/projects.ts — so a team
-  // member's publish request always looked headerless to the daemon.
-  it('attaches the workspace identity headers to every publish-public request', async () => {
-    const context = teamWorkspaceContext();
-    const calls: Array<{ url: string; headers: Record<string, string> }> = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        if (url.includes('/api/workspace/context')) {
-          return new Response(JSON.stringify({ context }), { status: 200 });
-        }
-        if (url.includes('publish-public')) {
-          calls.push({ url, headers: (init?.headers as Record<string, string>) ?? {} });
-          return new Response(JSON.stringify({ url: 'https://pub.example/x', slug: 'x', fileName: 'index.html' }), {
-            status: 200,
-          });
-        }
-        return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-      }),
-    );
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Generate and copy link/i }));
-
-    await waitFor(() => expect(calls.some((call) => call.url.includes('publish-public'))).toBe(true));
-    const publishCall = calls.find((call) => call.url.includes('publish-public'));
-    expect(publishCall?.headers['x-od-workspace-id']).toBe(context.workspaceId);
-    expect(publishCall?.headers['x-od-workspace-member-id']).toBe(context.workspaceMemberId);
-    expect(publishCall?.headers['x-od-workspace-can-share-projects']).toBe(
-      String(context.permissions.canShareProjects),
-    );
-  });
-
-  it.each([
-    ['with a Viewer link', 'https://viewer.example.test/artifact/project-1/manual-revoke-slug'],
-    ['without a Viewer origin', null],
-  ] as const)('exposes Stop sharing when publication persistence and compensation both fail (%s)', async (_label, publicUrl) => {
-    const dispatch = vi.spyOn(window, 'dispatchEvent');
-    const context = teamWorkspaceContext();
-    const unpublishBodies: unknown[] = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        if (url.includes('/api/workspace/context')) {
-          return new Response(JSON.stringify({ context }), { status: 200 });
-        }
-        if (url.includes('publish-public')) {
-          const method = (init?.method ?? 'GET').toUpperCase();
-          if (method === 'GET') {
-            return new Response(JSON.stringify({ publication: null }), { status: 200 });
-          }
-          if (method === 'DELETE') {
-            unpublishBodies.push(JSON.parse(String(init?.body)));
-            return new Response(
-              JSON.stringify({ ok: true, slug: 'manual-revoke-slug', fileName: 'index.html' }),
-              { status: 200 },
-            );
-          }
-          return new Response(
-            JSON.stringify({
-              error: {
-                code: 'PUBLIC_FILE_MANUAL_REVOKE_REQUIRED',
-                message: 'The public share may remain accessible.',
-                data: {
-                  projectId: 'project-1',
-                  url: publicUrl,
-                  slug: 'manual-revoke-slug',
-                  fileName: 'index.html',
-                },
-              },
-            }),
-            { status: 502 },
-          );
-        }
-        return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-      }),
-    );
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Generate and copy link/i }));
-
-    expect(await screen.findByText(publicUrl ?? 'Published, but the share link is temporarily unavailable.')).toBeTruthy();
-    // A live publication never falls back to the Publish row, with or without a URL.
-    expect(screen.queryByRole('menuitem', { name: /Generate and copy link/i })).toBeNull();
-    const stopSwitch = screen.getByRole('switch', { name: /link access/i });
-    expect(stopSwitch).toHaveAttribute('aria-checked', 'true');
-    fireEvent.click(stopSwitch);
-
-    await waitFor(() => expect(unpublishBodies).toEqual([{ slug: 'manual-revoke-slug' }]));
-    await waitFor(() => expect(stopSwitch).toHaveAttribute('aria-checked', 'false'));
-    expect(stopSwitch).toBeEnabled();
-    expect(screen.getByText('The link is disabled.')).toBeVisible();
-    expect(screen.queryByRole('menuitem', { name: /Generate and copy link/i })).toBeNull();
-    const confirmedStops = dispatch.mock.calls.map(([event]) => event)
-      .filter((event) => event.type === 'od:project-share-history-changed')
-      .map((event) => (event as CustomEvent).detail)
-      .filter((detail) => detail?.confirmedStop);
-    expect(confirmedStops).toEqual([{
-      projectId: 'project-1',
-      confirmedStop: { sourceFilePath: 'index.html', accountScope: expect.any(String), generation: expect.any(Number) },
-    }]);
-  });
-
   // The current panel presents link access inline. Reading it must not publish.
   function publishHelpCase(fileFor: () => ProjectFile, label: string) {
-    it(`reads the publish help without publishing (${label})`, async () => {
-      const context = teamWorkspaceContext();
-      // Only the mutating POST counts — the viewer GETs the same path on mount
-      // to read the current publication state, which is not a publish.
-      const publishCalls: string[] = [];
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-          const url = typeof input === 'string' ? input : input.toString();
-          if (url.includes('/api/workspace/context')) {
-            return new Response(JSON.stringify({ context }), { status: 200 });
-          }
-          if (url.includes('publish-public')) {
-            if ((init?.method ?? 'GET').toUpperCase() === 'GET') {
-              return Response.json({ publication: null });
-            }
-            publishCalls.push(`${init?.method} ${url}`);
-            return new Response(
-              JSON.stringify({ url: 'https://pub.example/x', slug: 'x', fileName: 'index.html' }),
-              { status: 200 },
-            );
-          }
-          return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-        }),
-      );
-
-      renderWithProjectWorkspace(
-        <FileViewer projectId="project-1" projectKind="prototype" file={fileFor()}
-          liveHtml="<html><body><h1>Hello</h1></body></html>"
-        />,
-        context,
-      );
-
-      fireEvent.click(await screen.findByRole('button', { name: /share/i }));
-      expect(await screen.findByRole('menu')).toBeTruthy();
-
-      expect(await screen.findByText('Recipients can view the preview and existing comments — not the conversation or code.')).toBeVisible();
-
-      // No public link was created by a help-discovery gesture.
-      await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
-      expect(publishCalls).toEqual([]);
-      // The publish row is still sitting there unactivated.
-      expect(screen.getByRole('menuitem', { name: label === 'HtmlViewer' ? /Generate and copy link/i : /Get a share link/i })).toBeTruthy();
-    });
   }
 
   publishHelpCase(publicPublishFile, 'HtmlViewer');
-  it('supports scope keyboard navigation in the HTML viewer without writing', async () => {
-    const context = teamWorkspaceContext();
-    stubFetchWithWorkspaceContext(context);
-    const file = publicPublishFile();
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={file}
-        liveHtml="<html><body>Scope keyboard</body></html>" />,
-      context,
-    );
-    fireEvent.click(await screen.findByRole('button', { name: /share/i }));
-    const menu = await screen.findByRole('menu');
-    const trigger = menu.querySelector<HTMLButtonElement>('.chrome-access-trigger')!;
-    expect(trigger).toBeEnabled();
-    trigger.focus();
-    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-    const options = await screen.findAllByRole('option');
-    expect(screen.getByRole('option', { selected: true })).toHaveFocus();
-    fireEvent.keyDown(document.activeElement!, { key: 'End' });
-    expect(options.at(-1)).toHaveFocus();
-    fireEvent.keyDown(document.activeElement!, { key: 'Home' });
-    expect(options[0]).toHaveFocus();
-    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
-    expect(screen.queryByRole('listbox')).toBeNull();
-    expect(trigger).toHaveFocus();
-    expect(menu).toBeInTheDocument();
-    expect(screen.queryByRole('alertdialog')).toBeNull();
-    const writes = vi.mocked(fetch).mock.calls.filter(([input, init]) =>
-      !String(input).endsWith('/share-plan')
-      && !['GET', 'HEAD'].includes((init?.method ?? 'GET').toUpperCase()));
-    expect(writes).toEqual([]);
-  });
-
-  // Scope help is persistent content in the HTML share panel. It remains
-  // team-gated; unlike provider tooltips it needs no focus or hover.
-  it('shows workspace-access help inline without a focus or hover prerequisite', async () => {
-    const context = teamWorkspaceContext();
-    stubFetchWithWorkspaceContext(context);
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(await screen.findByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-
-    const description = await screen.findByText('Only you can access this project. Choose workspace members to share it with the team.');
-    expect(description.tagName).toBe('P');
-    expect(description).toBeVisible();
-    expect(description.closest('[role="menuitem"]')).toBeNull();
-    expect(screen.queryByTestId('workspace-access-help')).toBeNull();
-  });
-
-  // recvq5bM78HWCE: the "在工作空间中分享项目" card rendered for a personal
-  // workspace with no gate at all, so clicking its access toggle called
-  // `moveWorkspaceProject({ visibility: 'team' })`, which the daemon's
-  // `teamShareRefusalFor` always refuses outside a team workspace — the click
-  // silently failed. The public single-file publish card right above it is
-  // unaffected (that one IS meant to work for a personal workspace).
-  it('hides the team-only workspace-share card for a personal workspace', async () => {
-    const context: WorkspaceCollabContext = {
-      ...teamWorkspaceContext(),
-      workspaceType: 'personal',
-      teamId: undefined,
-    };
-    stubFetchWithWorkspaceContext(context);
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    await screen.findByText('Generate and copy link');
-    expect(screen.queryByText('Share project in workspace')).toBeNull();
-    expect(screen.queryByText('Visibility in workspace')).toBeNull();
-  });
-
-  // recvqgif6Xa7Wb: product ruled the "no team to share with yet" bridge card
-  // (added for recvqae3pK5hyx/recvq6W8GX8NaH) out entirely — it was never a
-  // designed surface, just a stopgap to avoid a blank tab. A personal
-  // workspace that can already publish must show ONLY the publish card, with
-  // no team-CTA card and no create-team link underneath it.
-  it('does not show a create-team CTA for a personal workspace that can already publish', async () => {
-    const context: WorkspaceCollabContext = {
-      ...teamWorkspaceContext(),
-      workspaceType: 'personal',
-      teamId: undefined,
-      workspaceSettingsUrl: 'https://web.example.com/console/settings?workspaceId=ws-1',
-    };
-    stubFetchWithWorkspaceContext(context);
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    await screen.findByText('Generate and copy link');
-    expect(screen.queryByText('Nothing to share yet')).toBeNull();
-    expect(screen.queryByText('No team to share with yet')).toBeNull();
-    expect(screen.queryByRole('link', { name: /create team/i })).toBeNull();
-  });
-
-  // The team-workspace side of the same rule: the card must still render
-  // there — "separates deploy sharing actions from download actions" above
-  // already pins this, this test names the invariant directly.
-  it('offers the workspace-share card to a team workspace', async () => {
-    const context = teamWorkspaceContext();
-    stubFetchWithWorkspaceContext(context);
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    expect(screen.getByText('Visibility in workspace')).toBeTruthy();
-  });
-
-  it('hides the public publish entry when there is no workspace at all', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('/api/workspace/context')) {
-        return new Response(JSON.stringify({ context: null }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    // Gone, not merely disabled — a signed-out caller has no id to publish
-    // under and the daemon answers 409 WORKSPACE_IDENTITY_REQUIRED.
-    expect(screen.queryByText('Generate and copy link')).toBeNull();
-    expect(screen.queryByRole('menuitem', { name: /Generate and copy link/i })).toBeNull();
-    expect(screen.queryByText('Share project in workspace')).toBeNull();
-    expect(screen.queryByText('Visibility in workspace')).toBeNull();
-    // recvqgif6Xa7Wb: the "no team to share with yet" bridge card that used to
-    // fill this gap was product-ruled out entirely (never a designed surface —
-    // see recvqae3pK5hyx/recvq6W8GX8NaH history). With neither card able to
-    // render, the share tab is simply empty now — no fallback text, no
-    // create-team link.
-    expect(screen.queryByText('Nothing to share yet')).toBeNull();
-    expect(screen.queryByText('No team to share with yet')).toBeNull();
-    expect(screen.queryByRole('link', { name: /create team/i })).toBeNull();
-
-    // And nothing may probe the endpoint on behalf of a caller it will refuse.
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const requested = fetchMock.mock.calls.map(([input]) =>
-      typeof input === 'string' ? input : String(input),
-    );
-    expect(requested.some((url) => url.includes('publish-public'))).toBe(false);
-  });
-
-  // The version-history entry carries the same disabled contract as the Share
-  // button beside it in the same toolbar: `viewerOnly`, with
-  // `fileViewer.readonlySharedNoExport` as the reason.
-  //
-  // This supersedes recvq56vFjQKfT, which had un-gated the entry on the
-  // reasoning that browsing history is a pure read action. That reasoning does
-  // not survive what the entry actually leads to: `.file-versions` is excluded
-  // from member mirrors, so a readonly member's panel can never hold the
-  // owner's history — measured live, the owner's 4 versions rendered as 1
-  // synthetic entry the member's own read had just created (飞书 recvqAMSX4RXPm,
-  // daemon side fixed in 5f34ae655). An entry that can only ever open an empty
-  // panel is not a read affordance worth keeping.
-  it('disables the version-history entry for a viewer-only shared project, like Share', async () => {
-    const file = publicPublishFile(); // an .html file, so versioningAvailable is true
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ deployments: [] }), { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={file}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-        viewerOnly
-      />,
-    );
-
-    const historyButton = await screen.findByRole('button', { name: 'Versions' });
-    expect(historyButton).toBeDisabled();
-    expect(historyButton).toHaveAttribute('title', 'Shared project is read-only: you can comment, but cannot edit or export.');
-  });
 
   it('keeps plain .slide pages on page-mode export routing', async () => {
     const file = baseFile({
@@ -8044,143 +6915,6 @@ describe('FileViewer SVG artifacts', () => {
     expect(postMessage).not.toHaveBeenCalled();
   });
 
-  it('hides standalone HTML for historical versions without a dependency snapshot', async () => {
-    const originalCreateObjectUrl = URL.createObjectURL;
-    const originalRevokeObjectUrl = URL.revokeObjectURL;
-    let capturedBlob: Blob | null = null;
-    Object.defineProperty(URL, 'createObjectURL', {
-      configurable: true,
-      value: vi.fn((blob: Blob) => {
-        capturedBlob = blob;
-        return 'blob:version-export';
-      }),
-    });
-    Object.defineProperty(URL, 'revokeObjectURL', {
-      configurable: true,
-      value: vi.fn(),
-    });
-    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-
-    const file = baseFile({
-      name: 'index.html',
-      path: 'index.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'html',
-        title: 'Page',
-        entry: 'index.html',
-        renderer: 'html',
-        exports: ['html'],
-      },
-    });
-    const currentVersion = {
-      id: 'v2',
-      fileName: 'index.html',
-      version: 2,
-      label: 'Current checkpoint',
-      createdAt: 1_725_000_000_000,
-      source: 'manual',
-      prompt: 'Current prompt',
-      size: 42,
-      mime: 'text/html',
-      kind: 'html',
-      current: true,
-    };
-    const priorVersion = {
-      ...currentVersion,
-      id: 'v1',
-      version: 1,
-      label: 'Prior checkpoint',
-      prompt: 'Prior prompt',
-      current: false,
-    };
-    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      const method = init?.method ?? 'GET';
-      if (url === '/api/projects/project-1/files/index.html/versions' && method === 'GET') {
-        return new Response(JSON.stringify({ file, versions: [currentVersion, priorVersion] }), { status: 200 });
-      }
-      if (url === '/api/projects/project-1/files/index.html/versions/v1' && method === 'GET') {
-        return new Response(JSON.stringify({
-          version: priorVersion,
-          content: '<html><body><h1>Prior version export</h1></body></html>',
-        }), { status: 200 });
-      }
-      if (url === '/api/projects/project-1/export/html' && method === 'POST') {
-        return Response.json({
-          error: {
-            code: 'CONFLICT',
-            message: 'standalone HTML cannot export a historical entry with current project dependencies',
-          },
-        }, { status: 409 });
-      }
-      return new Response(JSON.stringify({}), { status: 404 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    try {
-      const workspaceContext = teamWorkspaceContext();
-      renderWithProjectWorkspace(
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={file}
-          liveHtml="<html><body><h1>Current</h1></body></html>"
-        />,
-        workspaceContext,
-      );
-
-      fireEvent.click(screen.getByRole('button', { name: 'Versions' }));
-      const versionDialog = await screen.findByRole('dialog', { name: 'Versions' });
-      fireEvent.click(within(versionDialog).getByRole('option', { name: /Prior prompt/ }));
-      await waitFor(() => {
-        expect(within(versionDialog).getByRole('button', { name: 'Download Version 1' })).toBeTruthy();
-      });
-      fireEvent.click(within(versionDialog).getByRole('button', { name: 'Download Version 1' }));
-
-      const menuItems = within(versionDialog).getAllByRole('menuitem').map((item) => item.textContent ?? '');
-      expect(menuItems).toEqual([
-        'Export as PDF',
-        'Export as image',
-        'Download as .zip',
-      ]);
-      expect(menuItems).not.toContain('Save as template…');
-      expect(within(versionDialog).queryByRole('menuitem', { name: 'Export as standalone HTML' })).toBeNull();
-      expect(capturedBlob).toBeNull();
-      expect(fetchMock.mock.calls.some(([input]) => String(input) === '/api/projects/project-1/files/index.html/versions/v1')).toBe(true);
-      const versionRead = fetchMock.mock.calls.find(
-        ([input]) => String(input) === '/api/projects/project-1/files/index.html/versions/v1',
-      );
-      expect(new Headers(versionRead?.[1]?.headers).get('x-od-workspace-id'))
-        .toBe(workspaceContext.workspaceId);
-      expect(new Headers(versionRead?.[1]?.headers).get('x-od-workspace-member-id'))
-        .toBe(workspaceContext.workspaceMemberId);
-      const exportCall = fetchMock.mock.calls.find(
-        ([input]) => String(input) === '/api/projects/project-1/export/html',
-      );
-      expect(exportCall).toBeUndefined();
-    } finally {
-      if (originalCreateObjectUrl) {
-        Object.defineProperty(URL, 'createObjectURL', {
-          configurable: true,
-          value: originalCreateObjectUrl,
-        });
-      } else {
-        Reflect.deleteProperty(URL, 'createObjectURL');
-      }
-      if (originalRevokeObjectUrl) {
-        Object.defineProperty(URL, 'revokeObjectURL', {
-          configurable: true,
-          value: originalRevokeObjectUrl,
-        });
-      } else {
-        Reflect.deleteProperty(URL, 'revokeObjectURL');
-      }
-    }
-  });
-
   it('closes the version modal and shows success feedback after switching versions', async () => {
     const file = baseFile({
       name: 'index.html',
@@ -8423,54 +7157,6 @@ describe('FileViewer SVG artifacts', () => {
     expect(screen.queryByText('Export started')).toBeNull();
   });
 
-  it('disables share link actions while the artifact is still streaming', async () => {
-    const file = baseFile({
-      name: 'index.html',
-      path: 'index.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'html',
-        title: 'Page',
-        entry: 'index.html',
-        renderer: 'html',
-        exports: ['html'],
-      },
-    });
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
-      deployments: [
-        {
-          id: 'vercel-deploy',
-          projectId: 'project-1',
-          fileName: 'index.html',
-          providerId: 'vercel-self',
-          url: 'https://vercel.example',
-          deploymentCount: 1,
-          target: 'preview',
-          status: 'ready',
-          createdAt: 1,
-          updatedAt: 2,
-        },
-      ],
-    }), { status: 200 })));
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={file}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-        streaming
-      />,
-    );
-
-    await openUnifiedShareTab();
-
-    const copyShareLink = await screen.findByRole('menuitem', { name: /Copy share link/i }) as HTMLButtonElement;
-    const openSharePage = screen.getByRole('menuitem', { name: /Open share page/i }) as HTMLButtonElement;
-    expect(copyShareLink.disabled).toBe(true);
-    expect(openSharePage.disabled).toBe(true);
-    expect(screen.getAllByText(/Share after generation completes/i).length).toBeGreaterThan(0);
-  });
-
   it('shows markdown export without exposing deploy actions for markdown artifacts', async () => {
     const file = baseFile({
       name: 'notes.md',
@@ -8625,63 +7311,7 @@ describe('FileViewer SVG artifacts', () => {
     expect(editorTop).toBe(1800);
   });
 
-  it('shows failed copy feedback when deployed link copying is blocked', async () => {
-    const file = baseFile({
-      name: 'index.html',
-      path: 'index.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'html',
-        title: 'Page',
-        entry: 'index.html',
-        renderer: 'html',
-        exports: ['html'],
-      },
-    });
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
-      deployments: [
-        {
-          id: 'vercel-deploy',
-          projectId: 'project-1',
-          fileName: 'index.html',
-          providerId: 'vercel-self',
-          url: 'https://vercel.example',
-          deploymentCount: 1,
-          target: 'preview',
-          status: 'ready',
-          createdAt: 1,
-          updatedAt: 2,
-        },
-      ],
-    }), { status: 200 })));
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
-    });
-    Object.defineProperty(document, 'execCommand', {
-      configurable: true,
-      value: vi.fn(() => false),
-    });
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={file}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-    );
-
-    await openUnifiedShareTab();
-    const copyShareLink = await screen.findByRole('menuitem', { name: /Copy share link/i });
-    expect((copyShareLink as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(copyShareLink);
-
-    expect(await screen.findByRole('menuitem', { name: /Copy failed/i })).toBeTruthy();
-    expect(screen.getAllByText('Copy failed').length).toBeGreaterThan(1);
-    expect(screen.getByRole('menu')).toBeTruthy();
-  });
-
-  it('keeps deployment available from More sharing options before any link exists', async () => {
+  it('keeps deployment available from the share panel before any link exists', async () => {
     const file = baseFile({
       name: 'index.html',
       path: 'index.html',
@@ -8722,12 +7352,11 @@ describe('FileViewer SVG artifacts', () => {
 
     await openUnifiedShareTab();
 
-    // A first deployment remains reachable through the current overflow entry.
-    fireEvent.click(await screen.findByRole('button', { name: 'More sharing options' }));
+    // A first deployment remains reachable from the share panel.
     expect(await screen.findByRole('menuitem', { name: /Deploy to Vercel/i })).toBeTruthy();
   });
 
-  it('keeps deployment available from More sharing options for protected deployments', async () => {
+  it('keeps deployment available from the share panel for protected deployments', async () => {
     const file = baseFile({
       name: 'index.html',
       path: 'index.html',
@@ -8784,7 +7413,6 @@ describe('FileViewer SVG artifacts', () => {
     await openUnifiedShareTab();
 
     // A protected deployment must not remove the existing deployment action.
-    fireEvent.click(await screen.findByRole('button', { name: 'More sharing options' }));
     expect(await screen.findByRole('menuitem', { name: /Deploy to Vercel/i })).toBeTruthy();
   });
 
@@ -9102,162 +7730,6 @@ describe('FileViewer tweaks toolbar', () => {
     expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Redo' })).toBeTruthy();
     expect((screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement).srcdoc).toBe(frame.srcdoc);
-  });
-
-  it('uses a project-scoped preview base for runtime-created relative assets in srcDoc', async () => {
-    const context = teamWorkspaceContext();
-    const file = htmlPreviewFile({ name: 'brand.html', path: 'brand.html' });
-    const srcDocHtml = '<!doctype html><html><head></head><body><script>location.reload(); const img = document.createElement("img"); img.src = "logos/mark.png";</script></body></html>';
-    const urlLoadHtml = '<!doctype html><html><body>URL loaded</body></html>';
-    const renderViewer = (liveHtml: string) => (
-      <CollabProvider value={projectWorkspaceCollabValue(context)}>
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={file}
-          liveHtml={liveHtml}
-        />
-      </CollabProvider>
-    );
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('/api/projects/project-1/preview-url')) {
-        return new Response(JSON.stringify({
-          url: '/api/projects/project-1/preview/scope-1/brand.html',
-          file: 'brand.html',
-          csp: "default-src 'none'",
-          iframeSandbox: 'allow-scripts allow-forms',
-          opaqueOrigin: true,
-        }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const { rerender } = render(renderViewer(srcDocHtml));
-
-    const frame = await waitFor(() => {
-      const activeFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(activeFrame.getAttribute('data-od-render-mode')).toBe('srcdoc');
-      expect(activeFrame.srcdoc).toContain(
-        '<base href="http://localhost:3000/api/projects/project-1/preview/scope-1/" data-od-project-preview-base>',
-      );
-      return activeFrame;
-    });
-    expect(frame.srcdoc).toContain('img.src = "logos/mark.png"');
-    expect(frame.srcdoc).not.toContain('/api/projects/project-1/raw/?workspaceId=');
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/projects/project-1/preview-url?file=brand.html',
-      { cache: 'no-store' },
-    );
-
-    rerender(renderViewer(urlLoadHtml));
-    await waitFor(() => {
-      expect(
-        (screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement)
-          .getAttribute('data-od-render-mode'),
-      ).toBe('url-load');
-    });
-    await act(async () => {
-      rerender(renderViewer(srcDocHtml));
-      await Promise.resolve();
-    });
-    await waitFor(() => {
-      const activeFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(activeFrame.getAttribute('data-od-render-mode')).toBe('srcdoc');
-      expect(activeFrame.srcdoc).toContain(
-        '<base href="http://localhost:3000/api/projects/project-1/preview/scope-1/" data-od-project-preview-base>',
-      );
-    });
-    expect(fetchMock.mock.calls.filter(([input]) => (
-      String(input).includes('/api/projects/project-1/preview-url')
-    ))).toHaveLength(1);
-  });
-
-  it('recovers when an asynchronously scoped base replaces an already verified srcDoc navigation', async () => {
-    vi.useFakeTimers();
-    const context = teamWorkspaceContext();
-    const previewBaseResponse = deferredResponse();
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).includes('/api/projects/project-1/preview-url')) {
-        return previewBaseResponse.promise;
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    try {
-      renderWithProjectWorkspace(
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile({ name: 'brand.html', path: 'brand.html' })}
-          liveHtml={'<!doctype html><html><body><script>location.reload()</script></body></html>'}
-        />,
-        context,
-      );
-
-      const initialFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      const initialGeneration = initialFrame.srcdoc.match(
-        /data-od-srcdoc-transport-activation>[\s\S]*?var generation = "([^"]+)";/,
-      )?.[1];
-      expect(initialGeneration).toBeTruthy();
-
-      const postMessage = vi.spyOn(initialFrame.contentWindow!, 'postMessage');
-      fireEvent.load(initialFrame);
-      const initialProbe = postMessage.mock.calls.find(
-        ([message]) => (message as { type?: unknown }).type === 'od:srcdoc-transport-ready-probe',
-      )?.[0] as { probeId?: string } | undefined;
-      expect(initialProbe?.probeId).toBeTruthy();
-      act(() => {
-        window.dispatchEvent(new MessageEvent('message', {
-          source: initialFrame.contentWindow,
-          data: {
-            type: 'od:srcdoc-transport-activated',
-            generation: initialGeneration,
-            probeId: initialProbe!.probeId,
-            bodyComplete: true,
-          },
-        }));
-      });
-
-      await act(async () => {
-        previewBaseResponse.resolve(new Response(JSON.stringify({
-          url: '/api/projects/project-1/preview/scope-1/brand.html',
-          file: 'brand.html',
-          csp: "default-src 'none'",
-          iframeSandbox: 'allow-scripts allow-forms',
-          opaqueOrigin: true,
-        }), { status: 200 }));
-        await Promise.resolve();
-        await Promise.resolve();
-      });
-
-      const scopedFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(scopedFrame).toBe(initialFrame);
-      expect(scopedFrame.srcdoc).toContain(
-        '<base href="http://localhost:3000/api/projects/project-1/preview/scope-1/" data-od-project-preview-base>',
-      );
-      const scopedGeneration = scopedFrame.srcdoc.match(
-        /data-od-srcdoc-transport-activation>[\s\S]*?var generation = "([^"]+)";/,
-      )?.[1];
-      expect(scopedGeneration).toBeTruthy();
-      expect(scopedGeneration).not.toBe(initialGeneration);
-
-      act(() => {
-        // Model Electron's aborted second about:srcdoc navigation: the new
-        // document sends neither load nor activation, so recovery must not
-        // trust the verified witness from the pre-base document.
-        vi.runAllTimers();
-      });
-
-      const recoveredFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(recoveredFrame).not.toBe(scopedFrame);
-      expect(recoveredFrame.srcdoc).toContain('data-od-lazy-srcdoc-transport');
-    } finally {
-      previewBaseResponse.resolve(new Response('', { status: 404 }));
-      vi.useRealTimers();
-    }
   });
 
   it('cancels an in-flight srcDoc recovery probe when the viewer unmounts', () => {
@@ -9890,7 +8362,6 @@ describe('FileViewer tweaks toolbar', () => {
   });
 
   it('preserves an authored base without minting a project-scoped preview capability', async () => {
-    const context = teamWorkspaceContext();
     const authoredBase = '<base href="https://cdn.example/assets/">';
     const fetchMock = vi.fn(async (_input: RequestInfo | URL) => (
       new Response(JSON.stringify({ deployments: [] }), { status: 200 })
@@ -9898,14 +8369,14 @@ describe('FileViewer tweaks toolbar', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     render(
-      <CollabProvider value={projectWorkspaceCollabValue(context)}>
+      <>
         <FileViewer
           projectId="project-1"
           projectKind="prototype"
           file={htmlPreviewFile({ name: 'brand.html', path: 'brand.html' })}
           liveHtml={`<!doctype html><html><head>${authoredBase}</head><body><script>location.reload()</script></body></html>`}
         />
-      </CollabProvider>,
+      </>,
     );
 
     await waitFor(() => {
@@ -9915,54 +8386,6 @@ describe('FileViewer tweaks toolbar', () => {
       expect(fetchMock.mock.calls.some(([input]) => (
         String(input).includes('/api/projects/project-1/files')
       ))).toBe(true);
-    });
-    expect(fetchMock.mock.calls.some(([input]) => (
-      String(input).includes('/api/projects/project-1/preview-url')
-    ))).toBe(false);
-  });
-
-  it('does not mint from the previous file source while switching to an authored-base srcDoc', async () => {
-    const context = teamWorkspaceContext();
-    const authoredBase = '<base href="https://cdn.example/brand/">';
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes('/api/projects/project-1/preview-url')) {
-        return new Response(JSON.stringify({
-          url: '/api/projects/project-1/preview/scope-1/first.html',
-          file: 'first.html',
-          csp: "default-src 'none'",
-          iframeSandbox: 'allow-scripts allow-forms',
-          opaqueOrigin: true,
-        }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    const renderViewer = (fileName: string, liveHtml: string) => (
-      <CollabProvider value={projectWorkspaceCollabValue(context)}>
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile({ name: fileName, path: fileName })}
-          liveHtml={liveHtml}
-        />
-      </CollabProvider>
-    );
-    const firstHtml = '<!doctype html><html><body><script>location.reload()</script></body></html>';
-    const secondHtml = `<!doctype html><html><head>${authoredBase}</head><body><script>location.reload()</script></body></html>`;
-    const { rerender } = render(renderViewer('first.html', firstHtml));
-
-    await waitFor(() => {
-      expect(fetchMock.mock.calls.filter(([input]) => (
-        String(input).includes('/api/projects/project-1/preview-url')
-      ))).toHaveLength(1);
-    });
-    fetchMock.mockClear();
-
-    rerender(renderViewer('second.html', secondHtml));
-    await waitFor(() => {
-      const activeFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(activeFrame.srcdoc).toContain(authoredBase);
     });
     expect(fetchMock.mock.calls.some(([input]) => (
       String(input).includes('/api/projects/project-1/preview-url')
@@ -10206,14 +8629,13 @@ describe('FileViewer tweaks toolbar', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    renderWithProjectWorkspace(
+    render(
       <FileViewer
         projectId="project-1"
         projectKind="prototype"
         file={htmlPreviewFile()}
         liveHtml={source}
       />,
-      personalWorkspaceContext(),
     );
 
     await waitFor(() => {
@@ -10246,14 +8668,13 @@ describe('FileViewer tweaks toolbar', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     try {
-      renderWithProjectWorkspace(
+      render(
         <FileViewer
           projectId="project-1"
           projectKind="prototype"
           file={htmlPreviewFile({ name: 'page.html', path: 'page.html' })}
           liveHtml={'<html><body><script>localStorage.getItem("ready");</script><img src="assets/hero.png"></body></html>'}
         />,
-        personalWorkspaceContext(),
       );
 
       const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
@@ -10292,58 +8713,6 @@ describe('FileViewer tweaks toolbar', () => {
     } finally {
       filesResponse.resolve(new Response(JSON.stringify({ files: [] }), { status: 200 }));
     }
-  });
-
-  it('surfaces raw-route security failures for Team preview assets without leaking the symlink target', async () => {
-    const source = '<html><body><img src="assets/hero.png" alt="Hero"></body></html>';
-    const fetchMock = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url.includes('/api/projects/project-1/files')) {
-        return new Response(JSON.stringify({
-          files: [
-            htmlPreviewFile(),
-            baseFile({
-              name: 'assets/hero.png',
-              path: 'assets/hero.png',
-              type: 'file',
-              kind: 'image',
-              mime: 'image/png',
-            }),
-          ],
-        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-      }
-      if (url.includes('/api/projects/project-1/deployments')) {
-        return new Response(JSON.stringify({ deployments: [] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      if (url.includes('/api/projects/project-1/raw/assets/hero.png')) {
-        return new Response(JSON.stringify({
-          error: {
-            code: 'BAD_REQUEST',
-            message: 'Error: path escapes project dir via symlink /Users/me/.ssh/id_rsa',
-          },
-        }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-      }
-      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    renderWithProjectWorkspace(
-      <FileViewer
-        projectId="project-1"
-        projectKind="prototype"
-        file={htmlPreviewFile()}
-        liveHtml={source}
-      />,
-      teamWorkspaceContext(),
-    );
-
-    const warning = await screen.findByTestId('preview-asset-warning');
-    expect(warning.textContent).toContain('assets/hero.png');
-    expect(warning.textContent).toContain('Replace external symlinks');
-    expect(warning.textContent).not.toContain('/Users/me/.ssh');
   });
 
   it('always injects the manual-edit bridge into the preview srcDoc so entering Edit after materialization does not reload', async () => {
@@ -10746,134 +9115,6 @@ describe('FileViewer tweaks toolbar', () => {
     expect(srcDocFrame.srcdoc).toContain('data-od-selection-bridge');
   });
 
-  it('does not expose unresolved relative assets while a team srcDoc preview is materializing', async () => {
-    const filesResponse = deferredResponse();
-    const projectId = 'scoped-assets-project';
-    const fontPath = 'fonts/inter-variable-400.woff2';
-    const fetchMock = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === 'string'
-        ? input
-        : input instanceof Request
-          ? input.url
-          : String(input);
-      if (url === `/api/projects/${projectId}/files`) return filesResponse.promise;
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    try {
-      renderWithProjectWorkspace(
-        <FileViewer
-          projectId={projectId}
-          projectKind="prototype"
-          file={htmlPreviewFile({
-            name: 'system/artifacts/poster.html',
-            path: 'system/artifacts/poster.html',
-          })}
-          liveHtml={'<html><head><style>@font-face{src:url("../../fonts/inter-variable-400.woff2")}</style></head><body>Poster</body></html>'}
-        />,
-        teamWorkspaceContext(),
-      );
-
-      fireEvent.click(screen.getByTestId('comment-panel-toggle'));
-
-      const pendingFrame = await waitFor(() => {
-        const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-        expect(frame.getAttribute('data-od-render-mode')).toBe('srcdoc');
-        return frame;
-      });
-      expect(pendingFrame.srcdoc).not.toContain('../../fonts/inter-variable-400.woff2');
-
-      filesResponse.resolve(new Response(JSON.stringify({
-        files: [
-          htmlPreviewFile({
-            name: 'system/artifacts/poster.html',
-            path: 'system/artifacts/poster.html',
-          }),
-          baseFile({
-            name: fontPath,
-            path: fontPath,
-            mime: 'font/woff2',
-          }),
-        ],
-      }), { status: 200 }));
-
-      await waitFor(() => {
-        const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-        expect(frame.srcdoc).toContain(
-          `/api/projects/${projectId}/raw/${fontPath}`,
-        );
-        expect(frame.srcdoc).not.toContain('workspaceMemberId=');
-        expect(frame.srcdoc).not.toContain('../../fonts/inter-variable-400.woff2');
-      });
-    } finally {
-      filesResponse.resolve(new Response(JSON.stringify({ files: [] }), { status: 200 }));
-    }
-  });
-
-  it('materializes Team deck relative assets into server-authorized raw URLs before showing srcDoc', async () => {
-    const filesResponse = deferredResponse();
-    const projectId = 'scoped-deck-assets-project';
-    const deckPath = 'system/deck.html';
-    const imagePath = 'images/hero.png';
-    const fetchMock = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === 'string'
-        ? input
-        : input instanceof Request
-          ? input.url
-          : String(input);
-      if (url === `/api/projects/${projectId}/files`) return filesResponse.promise;
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    try {
-      renderWithProjectWorkspace(
-        <FileViewer
-          projectId={projectId}
-          projectKind="prototype"
-          file={htmlPreviewFile({
-            name: deckPath,
-            path: deckPath,
-            artifactManifest: {
-              version: 1,
-              kind: 'deck',
-              title: 'Scoped deck',
-              entry: deckPath,
-              renderer: 'deck-html',
-              exports: ['html'],
-            },
-          })}
-          isDeck
-          liveHtml={'<html><body><section class="slide"><img src="../images/hero.png"></section></body></html>'}
-        />,
-        teamWorkspaceContext(),
-      );
-
-      const pendingFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(pendingFrame.getAttribute('data-od-render-mode')).toBe('srcdoc');
-      expect(pendingFrame.srcdoc).not.toContain('../images/hero.png');
-
-      filesResponse.resolve(new Response(JSON.stringify({
-        files: [
-          htmlPreviewFile({ name: deckPath, path: deckPath }),
-          baseFile({ name: imagePath, path: imagePath }),
-        ],
-      }), { status: 200 }));
-
-      await waitFor(() => {
-        const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-        expect(frame.srcdoc).toContain(
-          `/api/projects/${projectId}/raw/${imagePath}`,
-        );
-        expect(frame.srcdoc).not.toContain('workspaceMemberId=');
-        expect(frame.srcdoc).not.toContain('../images/hero.png');
-      });
-    } finally {
-      filesResponse.resolve(new Response(JSON.stringify({ files: [] }), { status: 200 }));
-    }
-  });
-
   it('lets Draw direct send emit a queued annotation while a task is running', async () => {
     const annotationSpy = vi.fn();
     installCanvasSnapshotMocks();
@@ -11137,139 +9378,6 @@ describe('FileViewer tweaks toolbar', () => {
     ).toBeTruthy();
   });
 
-  it('keeps the unread dot independent from the open count and clears it only from authoritative read responses', async () => {
-    const comment = (id: string, createdAt: number, authorMemberId?: string): PreviewComment => ({
-      id, projectId: 'project-1', conversationId: 'conversation-1', filePath: 'preview.html',
-      elementId: id, selector: `[data-od-id="${id}"]`, label: id, text: '', htmlHint: '',
-      position: { x: 0, y: 0, width: 1, height: 1 }, note: id, status: 'open', createdAt, updatedAt: createdAt, authorMemberId,
-    });
-    const comments = [comment('one', 101), comment('two', 102), comment('three', 103)];
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).endsWith('/comments/read')) {
-        return new Response(JSON.stringify(init?.method === 'PUT'
-          ? { projectId: 'project-1', lastReadAt: 103 }
-          : { projectId: 'project-1', lastReadAt: 100 }), { headers: { 'Content-Type': 'application/json' } });
-      }
-      return new Response('{}', { headers: { 'Content-Type': 'application/json' } });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml="<html><body /></html>" previewComments={comments} />);
-    const unreadBadge = await screen.findByTestId('comment-unread-dot');
-    expect(unreadBadge).toBeEmptyDOMElement();
-    expect(unreadBadge).toHaveStyle({ width: '7px', height: '7px', position: 'absolute', background: 'var(--red)' });
-    expect(screen.getByTestId('comment-panel-toggle').getAttribute('aria-label')).toBe('Comments (3)');
-    fireEvent.click(screen.getByTestId('comment-panel-toggle'));
-    await waitFor(() => expect(screen.queryByTestId('comment-unread-dot')).toBeNull());
-    expect(screen.getByTestId('comment-panel-toggle').getAttribute('aria-label')).toBe('Comments (3)');
-  });
-
-  it('does not mark folded arrivals read until the floating rail is expanded', async () => {
-    const comment = (id: string, createdAt: number, overrides: Partial<PreviewComment> = {}): PreviewComment => ({
-      id, projectId: 'project-1', conversationId: 'conversation-1', filePath: 'preview.html',
-      elementId: id, selector: `[data-od-id="${id}"]`, label: id, text: '', htmlHint: '',
-      position: { x: 0, y: 0, width: 1, height: 1 }, note: id, status: 'open', createdAt, updatedAt: createdAt,
-      ...overrides,
-    });
-    const readRequests = vi.fn();
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (!String(input).endsWith('/comments/read')) return new Response('{}');
-      if (init?.method === 'PUT') readRequests();
-      return new Response(JSON.stringify({ projectId: 'project-1', lastReadAt: init?.method === 'PUT' ? 200 : 100 }), {
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }));
-    const portalId = 'project-comments-read-rail';
-    const initial = [comment('backfill', 99)];
-    const workspace = teamWorkspaceContext();
-    const { rerender } = render(
-      <CollabProvider value={projectWorkspaceCollabValue(workspace)}>
-        <>
-          <div id={portalId} />
-          <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml="<html><body /></html>" previewComments={initial} commentPortalId={portalId} />
-        </>
-      </CollabProvider>,
-    );
-
-    fireEvent.click(screen.getByTestId('comment-panel-toggle'));
-    await waitFor(() => expect(readRequests).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole('button', { name: /hide comments/i }));
-    await screen.findByTestId('comment-side-collapsed-rail');
-    expect(screen.queryByTestId('comment-rail-unread-dot')).toBeNull();
-
-    rerender(
-      <CollabProvider value={projectWorkspaceCollabValue(workspace)}>
-        <>
-          <div id={portalId} />
-          <FileViewer
-            projectId="project-1"
-            projectKind="prototype"
-            file={htmlPreviewFile()}
-            liveHtml="<html><body /></html>"
-            commentPortalId={portalId}
-            previewComments={[
-              comment('external-new', 201),
-              comment('own', 300, { authorMemberId: 'wm-1' }),
-              comment('backfill', 99),
-              comment('other-file', 400, { filePath: 'other.html' }),
-              comment('sent', 500, { status: 'attached' }),
-            ]}
-          />
-        </>
-      </CollabProvider>,
-    );
-
-    await waitFor(() => expect(readRequests).toHaveBeenCalledTimes(1));
-    expect(await screen.findByTestId('comment-rail-unread-dot')).toBeVisible();
-    expect(screen.getByTestId('comment-rail-unread-dot')).toHaveStyle({ background: 'var(--red)' });
-    expect(screen.getByTestId('comment-side-collapsed-rail')).toContainElement(screen.getByTestId('comment-rail-unread-dot'));
-    fireEvent.click(screen.getByTestId('comment-side-collapsed-rail'));
-    expect(screen.queryByTestId('comment-rail-unread-dot')).toBeNull();
-    await waitFor(() => expect(readRequests).toHaveBeenCalledTimes(2));
-  });
-
-
-  it('does not light the dot for a newer trusted member self comment or another member at the read boundary', async () => {
-    const own: PreviewComment = {
-      id: 'own', projectId: 'project-1', conversationId: 'conversation-1', filePath: 'preview.html', elementId: 'own', selector: '[data-od-id="own"]', label: 'own', text: '', htmlHint: '', position: { x: 0, y: 0, width: 1, height: 1 }, note: 'own', status: 'open', createdAt: 102, updatedAt: 102, authorMemberId: 'wm-1',
-    };
-    const readFetch = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith('/comments/read')
-      ? new Response(JSON.stringify({ projectId: 'project-1', lastReadAt: 101 }), { headers: { 'Content-Type': 'application/json' } })
-      : new Response('{}', { headers: { 'Content-Type': 'application/json' } }));
-    vi.stubGlobal('fetch', readFetch);
-    renderWithProjectWorkspace(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml="<html><body /></html>" previewComments={[own, { ...own, id: 'boundary', authorMemberId: 'wm-other', createdAt: 101, updatedAt: 101 }]} />, teamWorkspaceContext());
-    await waitFor(() => expect(readFetch.mock.calls.some(([input]) => String(input).endsWith('/comments/read'))).toBe(true));
-    await act(async () => { await Promise.resolve(); });
-    expect(screen.queryByTestId('comment-unread-dot')).toBeNull();
-  });
-
-  it('keeps the unread dot after a failed read acknowledgment until a later server-confirmed retry', async () => {
-    const firstRead = deferredResponse();
-    let readWrites = 0;
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (!String(input).endsWith('/comments/read')) return new Response('{}');
-      if (init?.method === 'PUT') {
-        readWrites++;
-        return readWrites === 1 ? firstRead.promise : new Response(JSON.stringify({ projectId: 'project-1', lastReadAt: 103 }), { headers: { 'Content-Type': 'application/json' } });
-      }
-      return new Response(JSON.stringify({ projectId: 'project-1', lastReadAt: 100 }), { headers: { 'Content-Type': 'application/json' } });
-    }));
-    const external: PreviewComment = {
-      id: 'external', projectId: 'project-1', conversationId: 'conversation-1', filePath: 'preview.html', elementId: 'external', selector: '[data-od-id="external"]', label: 'external', text: '', htmlHint: '', position: { x: 0, y: 0, width: 1, height: 1 }, note: 'external', status: 'open', createdAt: 103, updatedAt: 103,
-    };
-    render(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml="<html><body /></html>" previewComments={[external]} />);
-    expect(await screen.findByTestId('comment-unread-dot')).toBeVisible();
-    fireEvent.click(screen.getByTestId('comment-panel-toggle'));
-    await waitFor(() => expect(readWrites).toBe(1));
-    fireEvent.click(screen.getByTestId('comment-panel-toggle'));
-    expect(screen.getByTestId('comment-unread-dot')).toBeVisible();
-    await act(async () => firstRead.resolve(new Response('{}', { status: 500 })));
-    expect(screen.getByTestId('comment-unread-dot')).toBeVisible();
-    fireEvent.click(screen.getByTestId('comment-panel-toggle'));
-    await waitFor(() => expect(readWrites).toBe(2));
-    await act(async () => { await Promise.resolve(); });
-    fireEvent.click(screen.getByTestId('comment-panel-toggle'));
-    expect(screen.queryByTestId('comment-unread-dot')).toBeNull();
-  });
 
   it('keeps comments and annotation picker mutually exclusive', () => {
     const { container } = render(
@@ -11779,66 +9887,6 @@ describe('FileViewer tweaks toolbar', () => {
       expect(layout.contains(popover)).toBe(true);
       expect(canvas.contains(popover)).toBe(false);
     });
-  });
-
-  it('keeps the Comment CTA for a new element annotation in a viewer-only team project', async () => {
-    const collab: CollabContextValue = {
-      workspaceContext: teamWorkspaceContext(),
-      workspaceContextLoading: false,
-      enabled: true,
-      member: { memberId: 'wm-1', name: 'Member', role: 'member' },
-      present: [],
-      publishedVersion: 1,
-      syncState: 'synced',
-      viewerOnly: true,
-      writerAuthority: 'denied',
-      isOwner: false,
-      isEffectiveOwner: false,
-      isSharedNonOwner: true,
-      ownerDisplayName: 'Owner',
-      ownerRole: 'owner',
-      downloadPending: false,
-      reportChange: () => {},
-      requestPublish: () => {},
-      refreshPresence: () => {},
-      checkStatusNow: () => {},
-    };
-
-    render(
-      <CollabProvider value={collab}>
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile()}
-          liveHtml='<html><body><main data-od-id="hero">Hero</main></body></html>'
-          viewerOnly
-          onSavePreviewComment={vi.fn()}
-        />
-      </CollabProvider>,
-    );
-
-    clickAgentTool('board-mode-toggle');
-    const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-    window.dispatchEvent(new MessageEvent('message', {
-      source: frame.contentWindow,
-      data: {
-        type: 'od:comment-target',
-        elementId: 'hero',
-        selector: '[data-od-id="hero"]',
-        label: 'Hero',
-        text: 'Hero',
-        position: { x: 8, y: 12, width: 120, height: 48 },
-        hoverPoint: { x: 12, y: 16 },
-        htmlHint: '<main data-od-id="hero">Hero</main>',
-      },
-    }));
-
-    const input = await screen.findByTestId('comment-popover-input');
-    fireEvent.change(input, { target: { value: 'Please tighten this heading.' } });
-
-    expect(input).not.toHaveAttribute('readonly');
-    expect(screen.getByTestId('comment-popover-save')).toHaveTextContent('Comment');
-    expect(screen.queryByTestId('comment-add-send')).toBeNull();
   });
 
   it('docks the comment side panel outside the clickable preview canvas', () => {
@@ -13591,83 +11639,6 @@ describe('FileViewer tweaks toolbar', () => {
     ]);
   });
 
-  it('keeps delivered external comments unhighlighted and sends them through the member send-to-chat path for a confirmed owner', async () => {
-    const comments: PreviewComment[] = [
-      {
-        id: 'external-comment', projectId: 'project-1', conversationId: 'conversation-1',
-        filePath: 'preview.html', elementId: 'external-anchor', selector: '[data-od-id="external-anchor"]',
-        label: 'External anchor', text: 'External target', htmlHint: '<p data-od-id="external-anchor">',
-        position: { x: 12, y: 24, width: 180, height: 40 }, note: 'External feedback.', status: 'open',
-        authorKind: 'user', authorAppUserId: 'share-user-1', authorDisplayName: 'Avery Visitor',
-        authorKey: 'share-user-key', createdAt: 10, updatedAt: 10,
-      },
-      {
-        id: 'member-comment', projectId: 'project-1', conversationId: 'conversation-1',
-        filePath: 'preview.html', elementId: 'member-anchor', selector: '[data-od-id="member-anchor"]',
-        label: 'Member anchor', text: 'Member target', htmlHint: '<p data-od-id="member-anchor">',
-        position: { x: 36, y: 48, width: 220, height: 52 }, note: 'Member feedback.', status: 'open',
-        authorKind: 'member', authorMemberId: 'member-2', authorDisplayName: 'Morgan Member',
-        authorKey: 'member-key', createdAt: 20, updatedAt: 20,
-      },
-    ];
-    const onSendBoardCommentAttachments = vi.fn().mockResolvedValue({
-      status: 'queued',
-      commentIds: comments.map((comment) => comment.id),
-    });
-    const ownerWorkspace = {
-      ...teamWorkspaceContext(),
-      role: 'owner' as const,
-      permissions: buildWorkspacePermissions({ role: 'owner', lifecycleState: 'active' }),
-    };
-    const ownerCollab: CollabContextValue = {
-      ...projectWorkspaceCollabValue(ownerWorkspace),
-      enabled: true,
-      member: { memberId: 'owner-member', name: 'Owner', role: 'owner' },
-      isOwner: true,
-      isEffectiveOwner: true,
-      writerAuthority: 'allowed',
-    };
-
-    render(
-      <CollabProvider value={ownerCollab}>
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile()}
-          liveHtml='<html><body><p data-od-id="external-anchor">External target</p><p data-od-id="member-anchor">Member target</p></body></html>'
-          previewComments={comments}
-          onSendBoardCommentAttachments={onSendBoardCommentAttachments}
-        />
-      </CollabProvider>,
-    );
-
-    fireEvent.click(screen.getByTestId('comment-panel-toggle'));
-    const rows = await screen.findAllByTestId('comment-side-item');
-    expect(rows).toHaveLength(2);
-    for (const row of rows) {
-      expect(row.className).not.toMatch(/highlight/i);
-    }
-
-    const selectButtons = screen.getAllByRole('button', { name: 'Select' });
-    expect(selectButtons).toHaveLength(2);
-    for (const button of selectButtons) fireEvent.click(button);
-    fireEvent.click(screen.getByTestId('comment-side-send-claude'));
-
-    await waitFor(() => expect(onSendBoardCommentAttachments).toHaveBeenCalledTimes(1));
-    expect(onSendBoardCommentAttachments.mock.calls[0]?.[0]).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        id: 'external-comment', comment: 'External feedback.', filePath: 'preview.html',
-        elementId: 'external-anchor', selector: '[data-od-id="external-anchor"]',
-        pagePosition: { x: 12, y: 24, width: 180, height: 40 },
-      }),
-      expect.objectContaining({
-        id: 'member-comment', comment: 'Member feedback.', filePath: 'preview.html',
-        elementId: 'member-anchor', selector: '[data-od-id="member-anchor"]',
-        pagePosition: { x: 36, y: 48, width: 220, height: 52 },
-      }),
-    ]));
-  });
-
   it('moves focus between comment side panel toggles when collapsing and expanding without a pre-focused click target', async () => {
     const onCollapseChange = vi.fn();
     const onSelectAll = vi.fn();
@@ -13781,161 +11752,6 @@ describe('FileViewer tweaks toolbar', () => {
     expect(showComments.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('renders the signed-in user own avatar and name on their comment when the member roster is empty', async () => {
-    // A personal workspace (and the cold window before a team roster lands)
-    // answers `/api/workspace/members` 200 with an empty list, so NOTHING
-    // resolves through the directory — including the viewer themselves. The
-    // viewer's own identity must still render: it comes from the workspace
-    // context the caller already holds, not from this roster.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        if (url.includes('/api/workspace/members')) {
-          return new Response(JSON.stringify({ members: [] }), { status: 200 });
-        }
-        return new Response(JSON.stringify({}), { status: 200 });
-      }),
-    );
-
-    const comment: PreviewComment = {
-      id: 'comment-mine',
-      projectId: 'project-1',
-      conversationId: 'conversation-1',
-      filePath: 'preview.html',
-      elementId: 'hero-copy',
-      selector: '[data-od-id="hero-copy"]',
-      label: 'Hero copy',
-      text: 'Hero copy',
-      htmlHint: '<p data-od-id="hero-copy">',
-      position: { x: 16, y: 24, width: 320, height: 48 },
-      note: 'Tighten this headline.',
-      status: 'open',
-      authorMemberId: 'wm-self',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    render(
-      <CommentSidePanel
-        comments={[comment]}
-        currentUser={{ memberId: 'wm-self', displayName: '琼羽', role: 'owner' }}
-        selectedIds={new Set()}
-        activeCommentId={null}
-        collapsed={false}
-        onCollapsedChange={() => {}}
-        onToggleSelect={() => {}}
-        onSelectAll={() => {}}
-        onClearSelection={() => {}}
-        onReply={() => {}}
-        onSendSelected={() => {}}
-        sending={false}
-        t={t}
-      />,
-    );
-
-    const item = await screen.findByTestId('comment-side-item');
-    await waitFor(() => {
-      expect(item.querySelector('.comment-side-avatar')?.textContent).toBe('琼');
-    });
-    expect(within(item).getByText(/琼羽/)).toBeTruthy();
-    expect(within(item).getByText(/comment.authorRole.owner/)).toBeTruthy();
-  });
-
-  it.each(['personal', 'team'] as const)('matches saved, active and draft initials to the current user in a %s workspace with an empty roster', async workspaceType => {
-    const context = {
-      ...(workspaceType === 'personal' ? personalWorkspaceContext() : teamWorkspaceContext()),
-      workspaceMemberId: 'wm-self', displayName: '琼羽',
-    };
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).includes('/api/workspace/context')) return Response.json({ context });
-      if (String(input).includes('/api/workspace/members')) return Response.json({ members: [] });
-      return Response.json({});
-    }));
-    const comment: PreviewComment = {
-      id: 'mine', projectId: 'project-1', conversationId: 'conversation-1', filePath: 'preview.html',
-      elementId: 'hero-copy', selector: '[data-od-id="hero-copy"]', label: 'Hero', text: 'Hero',
-      htmlHint: '<p data-od-id="hero-copy">Hero</p>', position: { x: 16, y: 24, width: 320, height: 48 },
-      note: 'My comment', status: 'open', authorMemberId: 'wm-self', createdAt: 10, updatedAt: 10,
-    };
-    renderWithProjectWorkspace(<FileViewer projectId="project-1" projectKind="prototype"
-      file={htmlPreviewFile()} liveHtml='<html><body><p data-od-id="hero-copy">Hero</p></body></html>'
-      previewComments={[comment]} />, context);
-    fireEvent.click(screen.getByTestId('comment-panel-toggle'));
-    const row = await screen.findByTestId('comment-side-item');
-    await waitFor(() => expect(row.querySelector('.comment-side-avatar')).toHaveTextContent('琼'));
-    const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-    act(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: {
-      type: 'od:comment-targets', targets: [{ elementId: comment.elementId, selector: comment.selector,
-        label: comment.label, text: comment.text, htmlHint: comment.htmlHint, position: comment.position }],
-    } })));
-    const pin = await screen.findByTestId('comment-saved-marker-hero-copy');
-    expect(pin.querySelector('.comment-saved-pin')).toHaveTextContent('琼');
-    fireEvent.click(pin);
-    expect(await screen.findByTestId('comment-active-pin')).toHaveTextContent('琼');
-    act(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: {
-      type: 'od:comment-target', elementId: 'new-target', selector: 'h2', label: 'New target', text: '', htmlHint: '',
-      position: { x: 16, y: 80, width: 100, height: 30 },
-    } })));
-    expect(await screen.findByTestId('comment-active-pin')).toHaveTextContent('琼');
-    expect(screen.getByTestId('comment-active-pin')).toHaveAttribute('data-pin-number', '2');
-  });
-
-  it('renders an unresolved member from its trusted display-name snapshot', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        if (url.includes('/api/workspace/members')) {
-          return new Response(JSON.stringify({ members: [] }), { status: 200 });
-        }
-        return new Response(JSON.stringify({}), { status: 200 });
-      }),
-    );
-
-    const comment: PreviewComment = {
-      id: 'comment-theirs',
-      projectId: 'project-1',
-      conversationId: 'conversation-1',
-      filePath: 'preview.html',
-      elementId: 'hero-copy',
-      selector: '[data-od-id="hero-copy"]',
-      label: 'Hero copy',
-      text: 'Hero copy',
-      htmlHint: '<p data-od-id="hero-copy">',
-      position: { x: 16, y: 24, width: 320, height: 48 },
-      note: 'Tighten this headline.',
-      status: 'open',
-      authorMemberId: 'wm-someone-else',
-      authorDisplayName: 'Snapshot Member',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    render(
-      <CommentSidePanel
-        comments={[comment]}
-        currentUser={{ memberId: 'wm-self', displayName: '琼羽', role: 'owner' }}
-        selectedIds={new Set()}
-        activeCommentId={null}
-        collapsed={false}
-        onCollapsedChange={() => {}}
-        onToggleSelect={() => {}}
-        onSelectAll={() => {}}
-        onClearSelection={() => {}}
-        onReply={() => {}}
-        onSendSelected={() => {}}
-        sending={false}
-        t={t}
-      />,
-    );
-
-    const item = await screen.findByTestId('comment-side-item');
-    expect(item.querySelector('.comment-side-avatar')?.textContent).toBe('S');
-    expect(within(item).getByText(/Snapshot Member/)).toBeTruthy();
-    expect(within(item).queryByText(/Open Design 用户/)).toBeNull();
-  });
-
   it('uses the shared 30-color author palette with stable selection', () => {
     expect(COMMENT_AUTHOR_AVATAR_COLORS).toEqual([
       { bg: '#7DB7FF', fg: '#144582' },
@@ -14019,46 +11835,6 @@ describe('FileViewer tweaks toolbar', () => {
       .toEqual([expected.style.color, expected.style.color]);
   });
 
-  it('renders a user author from its trusted snapshot without querying the member directory', async () => {
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(
-      JSON.stringify({ members: [] }),
-      { status: 200 },
-    ));
-    vi.stubGlobal('fetch', fetchMock);
-    const comment: PreviewComment = {
-      id: 'comment-user', projectId: 'project-1', conversationId: 'conversation-1',
-      filePath: 'preview.html', elementId: 'hero-copy', selector: '[data-od-id="hero-copy"]',
-      label: 'Hero copy', text: 'Hero copy', htmlHint: '<p data-od-id="hero-copy">',
-      position: { x: 16, y: 24, width: 320, height: 48 }, note: 'External feedback.', status: 'open',
-      authorKind: 'user', authorDisplayName: 'Avery Visitor', authorAppUserId: 'user-1',
-      authorKey: 'a'.repeat(64),
-      createdAt: Date.now(), updatedAt: Date.now(),
-    };
-
-    renderWithProjectWorkspace(
-      <CommentSidePanel
-        comments={[comment]} selectedIds={new Set()} activeCommentId={null} collapsed={false}
-        onCollapsedChange={() => {}} onToggleSelect={() => {}} onSelectAll={() => {}}
-        onClearSelection={() => {}} onReply={() => {}} onSendSelected={() => {}}
-        sending={false} t={t}
-      />,
-      teamWorkspaceContext(),
-    );
-
-    const item = await screen.findByTestId('comment-side-item');
-    const avatar = item.querySelector<HTMLElement>('.comment-side-avatar');
-    expect(avatar?.textContent).toBe('A');
-    const swatch = commentAuthorAvatarColor('a'.repeat(64));
-    const expected = document.createElement('span');
-    expected.style.background = swatch.bg;
-    expected.style.color = swatch.fg;
-    expect(avatar?.style.background).toBe(expected.style.background);
-    expect(avatar?.style.color).toBe(expected.style.color);
-    expect(within(item).getByText(/Avery Visitor/)).toBeTruthy();
-    expect(within(item).getByText(/comment.authorRole.sharePage/)).toBeTruthy();
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/workspace/members'))).toBe(false);
-  });
-
   it.each(['', '   ', undefined])('O4 shows a question-mark avatar and no author line for blank name %s', async (authorDisplayName) => {
     const comment: PreviewComment = {
       id: 'blank-author', projectId: 'project-1', conversationId: 'conversation-1',
@@ -14087,43 +11863,6 @@ describe('FileViewer tweaks toolbar', () => {
     expect(avatar?.style.color).toBe(expectedColor.style.color);
     expect(item.querySelector('.comment-side-author-copy small')).toBeNull();
     expect(document.querySelector('.comment-side-title')?.textContent).toBe(t('chat.tabComments'));
-  });
-
-  it('renders an empty external author as a key-colored question-mark avatar without a name line', async () => {
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => new Response(
-      JSON.stringify({ members: [] }),
-      { status: 200 },
-    ));
-    vi.stubGlobal('fetch', fetchMock);
-    const emptyNameComment = (id: string, authorDisplayName?: string): PreviewComment => ({
-      id, projectId: 'project-1', conversationId: 'conversation-1',
-      filePath: 'preview.html', elementId: id, selector: '[data-od-id="hero-copy"]',
-      label: 'Hero copy', text: 'Hero copy', htmlHint: '<p data-od-id="hero-copy">',
-      position: { x: 16, y: 24, width: 320, height: 48 }, note: 'External feedback.', status: 'open',
-      authorKind: 'user', authorDisplayName, authorAppUserId: 'user-1', authorKey: 'same-author-key',
-      createdAt: Date.now(), updatedAt: Date.now(),
-    });
-
-    renderWithProjectWorkspace(
-      <CommentSidePanel
-        comments={[
-          emptyNameComment('empty', ''), emptyNameComment('whitespace', '   '), emptyNameComment('missing'),
-        ]}
-        selectedIds={new Set()} activeCommentId={null} collapsed={false}
-        onCollapsedChange={() => {}} onToggleSelect={() => {}} onSelectAll={() => {}}
-        onClearSelection={() => {}} onReply={() => {}} onSendSelected={() => {}}
-        sending={false} t={t}
-      />,
-      teamWorkspaceContext(),
-    );
-
-    const items = await screen.findAllByTestId('comment-side-item');
-    const avatars = items.map((item) => item.querySelector<HTMLElement>('.comment-side-avatar'));
-    expect(avatars.map((avatar) => avatar?.textContent)).toEqual(['?', '?', '?']);
-    expect(avatars[0]?.style.background).toBe(avatars[1]?.style.background);
-    expect(avatars[1]?.style.background).toBe(avatars[2]?.style.background);
-    for (const item of items) expect(item.querySelector('.comment-side-author-copy small')).toBeNull();
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/workspace/members'))).toBe(false);
   });
 
   it('keeps relative comment-time boundaries stable across clock boundaries', () => {
@@ -15710,69 +13449,6 @@ describe('LiveArtifactRefreshHistoryPanel', () => {
     expect(markup).toContain('从未');
     expect(markup).not.toContain('Last refreshed');
     expect(markup).not.toContain('>Never<');
-  });
-
-  it.each([
-    ['reanchored', 'versioned', '基于旧版本', { anchoredVersion: 1 }, { elementId: 'versioned', selector: '[data-od-id="versioned"]' }],
-    ['stale', 'moved', '锚点可能已移动', {}, { elementId: 'moved-now', selector: '[data-od-id="moved"]' }],
-    ['lost', 'lost', '锚点已丢失', {}, null],
-  ] as const)('localizes the %s anchor tooltip at the rendered marker', async (_state, elementId, expected, extra, target) => {
-    const comment: PreviewComment = {
-      id: `comment-${elementId}`,
-      projectId: 'project-1',
-      conversationId: 'conversation-1',
-      filePath: 'preview.html',
-      elementId,
-      selector: '[data-od-id="moved"]',
-      label: 'Heading',
-      text: 'Heading',
-      htmlHint: '<h1>Heading</h1>',
-      position: { x: 24, y: 32, width: 18, height: 18 },
-      note: 'Original note',
-      status: 'open',
-      createdAt: 1,
-      updatedAt: 1,
-      ...extra,
-    };
-    const collab: CollabContextValue = { ...projectWorkspaceCollabValue(teamWorkspaceContext()), enabled: true, publishedVersion: 2 };
-
-    render(
-      <I18nProvider initial="zh-CN">
-        <CollabProvider value={collab}>
-          <FileViewer projectId="project-1" projectKind="prototype" file={baseFile({ name: 'preview.html', path: 'preview.html', kind: 'html', mime: 'text/html' })} liveHtml='<html><body><main>Hero</main></body></html>' previewComments={[comment]} />
-        </CollabProvider>
-      </I18nProvider>,
-    );
-    fireEvent.click(screen.getByTestId('comment-panel-toggle'));
-    if (target) {
-      const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      window.dispatchEvent(new MessageEvent('message', {
-        source: frame.contentWindow,
-        data: {
-          type: 'od:comment-target',
-          ...target,
-          label: 'Heading',
-          text: 'Heading',
-          position: { x: 24, y: 32, width: 18, height: 18 },
-          htmlHint: '<h1>Heading</h1>',
-        },
-      }));
-    }
-
-    const marker = await screen.findByTestId(`comment-saved-marker-${elementId}`);
-    const pin = marker.querySelector('button');
-    expect(marker).toHaveClass(`comment-saved-marker--${_state}`);
-    expect(pin).toHaveClass('comment-saved-pin');
-    expect(pin).not.toHaveClass('od-tooltip');
-    expect(pin).toHaveAttribute('title', expect.stringContaining(expected));
-    expect(pin).toHaveAccessibleDescription(expect.stringContaining(expected));
-
-    fireEvent.pointerOver(pin!);
-    expect(pin).toHaveAttribute('title', expect.stringContaining(expected));
-    fireEvent.pointerOut(pin!);
-    fireEvent.focusIn(pin!);
-    expect(pin).toHaveAttribute('title', expect.stringContaining(expected));
-    fireEvent.focusOut(pin!);
   });
 
   it('keeps D1–D4 marker and deck-page presentation on the rendered selectors', () => {

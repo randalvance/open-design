@@ -53,7 +53,6 @@ function renderList(props: Partial<React.ComponentProps<typeof RecentProjectsStr
       projects={PROJECTS}
       limit={PROJECTS.length}
       onOpen={() => {}}
-      canManageProjectCollection
       {...props}
     />,
   );
@@ -97,12 +96,6 @@ describe('RecentProjectsStrip toolbar (OPEND-3107)', () => {
     const { container } = renderList();
 
     expect(toolbarButtons(container)).toEqual(['Multi-select', 'Any type', DISPLAY_TRIGGER]);
-  });
-
-  it('keeps the owner filter ahead of the type filter in a team space', () => {
-    const { container } = renderList({ heading: 'All projects', space: 'team' });
-
-    expect(toolbarButtons(container)).toEqual(['Multi-select', 'All', 'Any type', DISPLAY_TRIGGER]);
   });
 
   it('never renders a standalone clear-filters button; the type filter resets through Any type', () => {

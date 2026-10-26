@@ -22,9 +22,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AssistantMessage } from '../../src/components/AssistantMessage';
-import { CollabProvider } from '../../src/collab/collab-context';
 import type { ChatMessage, ProjectFile } from '../../src/types';
-import { workspaceContextFixture } from '../helpers/workspace-context';
 
 const PROJECT_ID = 'c7e3b234-2fb3-4f6e-8aae-a3a00697c476';
 const HTML_SHOT = '/api/projects/p1/chat-artifact-snapshots/snap-html-1/thumbnail';
@@ -54,33 +52,6 @@ function stubHeadProbeAsReachable() {
   return vi
     .spyOn(globalThis, 'fetch')
     .mockImplementation(async () => new Response('', { status: 200 }));
-}
-
-function projectCollabValue() {
-  return {
-    workspaceContext: workspaceContextFixture({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-    }),
-    workspaceContextLoading: false,
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed' as const,
-    isOwner: false,
-    isEffectiveOwner: true,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: vi.fn(),
-    requestPublish: vi.fn(),
-    refreshPresence: vi.fn(),
-    checkStatusNow: vi.fn(),
-  };
 }
 
 function projectFile(name: string, kind: 'html' | 'image'): ProjectFile {
@@ -117,7 +88,7 @@ function turn(files: ProjectFile[], overrides: Partial<ChatMessage> = {}): ChatM
 
 function renderTurn(message: ChatMessage, files: ProjectFile[], props: Record<string, unknown> = {}) {
   return render(
-    <CollabProvider value={projectCollabValue()}>
+    <>
       <AssistantMessage
         message={message}
         streaming={false}
@@ -126,7 +97,7 @@ function renderTurn(message: ChatMessage, files: ProjectFile[], props: Record<st
         isLast
         {...props}
       />
-    </CollabProvider>,
+    </>,
   );
 }
 

@@ -188,7 +188,7 @@ function buildMessages(): ChatMessage[] {
     createdAt: 4,
     runId: 'run-1',
     runStatus: 'done',
-    agentId: 'amr',
+    agentId: 'opencode',
     events: [],
   } as unknown as ChatMessage);
   return out;
@@ -212,7 +212,7 @@ function renderChat() {
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
+      config={{ agentId: 'opencode', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }

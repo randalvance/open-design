@@ -52,7 +52,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { resolveRunFailureUi } from '../../src/runtime/amr-guidance';
+import { resolveRunFailureUi } from '../../src/runtime/run-failure-ui';
 import { LOCALES, type Dict, type Locale } from '../../src/i18n/types';
 
 const CODE = 'od_next_clarification_repeated';
@@ -73,24 +73,21 @@ async function loadDict(locale: Locale): Promise<Dict> {
 
 describe('智能体又问一次那一轮的报错卡', () => {
   it('有自己的卡面文案,不再掉进通用兜底', () => {
-    const ui = resolveRunFailureUi(CODE, null, 'mock-agent', null);
+    const ui = resolveRunFailureUi(CODE, null, 'mock-agent');
     expect(ui.messageKey).toBe(MESSAGE_KEY);
     expect(ui.titleKey).toBe(TITLE_KEY);
   });
 
   it('不复用「回复没记下来」那一格 —— 两件事,两套话', () => {
-    const ui = resolveRunFailureUi(CODE, null, 'mock-agent', null);
+    const ui = resolveRunFailureUi(CODE, null, 'mock-agent');
     // 复用那四条是最省事也最错的写法:用户看到的会是「回复没记下来」,
     // 而他眼前其实是又一个问题表单。
     expect(ui.messageKey).not.toBe(REPLY_INCOMPLETE_MESSAGE_KEY);
   });
 
   it('仍然给〔重试〕—— 重试重开一个任务,提问那一次就合法了', () => {
-    const ui = resolveRunFailureUi(CODE, null, 'mock-agent', null);
-    // 主按钮位归 Cloud CTA(OPEND-2772,非 Cloud 的卡一律有),但〔重试〕**没被删** ——
-    // 它退到次级,仍然是这一档自己的答案。
+    const ui = resolveRunFailureUi(CODE, null, 'mock-agent');
     expect(ui.primaryAction).toBe('retry');
-    expect(ui.cloudSwitchCta).toBe(true);
     expect(ui.secondaryRetry).toBe(false);
     expect(ui.suppressCard).not.toBe(true);
   });

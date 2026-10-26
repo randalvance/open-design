@@ -539,16 +539,6 @@
   background: color-mix(in srgb, var(--brand) 40%, var(--brand-soft));
   color: var(--brand-text);
 }
-/* While the vela device-auth flow is pending the card stops being a button:
-   the body swaps to a progress line + cancel, so the hover lift would lie. */
-.entry-local-mode-tip.is-signing {
-  cursor: default;
-}
-.entry-local-mode-tip.is-signing:hover {
-  transform: none;
-  border-color: var(--border);
-  background: var(--bg-panel);
-}
 .entry-local-mode-tip__login-badge.is-pending {
   background: var(--bg-subtle);
   color: var(--text-muted);
@@ -597,121 +587,6 @@
 }
 .entry-local-mode-tip__error {
   color: var(--red);
-}
-
-/* ---------- Rail account skeleton (RailAccountSyncTip) ----------
-   Stand-in for the account row (`.entry-nav-rail__account-trigger` below)
-   while the just-signed-in `GET /api/workspace/context` re-read is still in
-   flight. Unlike `.entry-local-mode-tip` (absolutely positioned with a fixed
-   `bottom` so its card shape never collides with the rail-actions row below
-   it), this is a normal flex child of `.entry-nav-rail__footer` — the same
-   flow `.entry-rail-actions` already uses (`width: calc(100% - 18px); margin:
-   0 auto;`). That keeps it clear of the actions row through ordinary flex
-   stacking instead of a guessed pixel offset, AND lands its bottom edge
-   close to the panel's bottom padding the same way the real account-trigger
-   does once it mounts in `.entry-nav-rail__group` — so the loading→loaded
-   swap reads as one row filling in, not a card jumping to a different slot
-   (recvqgpXSYFNTq follow-up, 2026-07-24 product feedback). */
-.entry-rail-account-skeleton {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: calc(100% - 18px);
-  margin: 0 auto;
-  min-height: 34px;
-  padding: 4px 6px;
-  box-sizing: border-box;
-}
-.entry-rail-account-skeleton__avatar,
-.entry-rail-account-skeleton__name {
-  display: block;
-  /* House skeleton sweep (matches DesignSystemsTab's `.skeletonBlock`): a
-     soft highlight passing over a muted base, timed with the repo's default
-     UI ease-out (AGENTS.md "UI animation philosophy") rather than a linear
-     or ease-in-out sweep. */
-  background:
-    linear-gradient(
-      110deg,
-      transparent 28%,
-      color-mix(in srgb, #fff 34%, transparent) 50%,
-      transparent 72%
-    ) 0 0 / 200% 100%,
-    color-mix(in srgb, var(--bg-muted) 84%, var(--bg-panel));
-  animation: entry-rail-account-skeleton-sheen 1.55s cubic-bezier(0.23, 1, 0.32, 1) infinite;
-}
-
-.entry-rail-account-recovery {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: calc(100% - 18px);
-  min-height: 34px;
-  margin: 0 auto;
-  padding: 4px 6px;
-  box-sizing: border-box;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.entry-rail-account-recovery__spinner {
-  width: 14px;
-  height: 14px;
-  flex: 0 0 14px;
-  border: 1.5px solid color-mix(in srgb, var(--text-muted) 30%, transparent);
-  border-top-color: var(--text-muted);
-  border-radius: 50%;
-  animation: entry-rail-account-recovery-spin 900ms linear infinite;
-}
-
-@keyframes entry-rail-account-recovery-spin {
-  to { transform: rotate(360deg); }
-}
-
-.entry-rail-account-recovery__text {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-[data-theme="dark"] .entry-rail-account-skeleton__avatar,
-[data-theme="dark"] .entry-rail-account-skeleton__name {
-  background:
-    linear-gradient(
-      110deg,
-      transparent 28%,
-      color-mix(in srgb, #fff 13%, transparent) 50%,
-      transparent 72%
-    ) 0 0 / 200% 100%,
-    color-mix(in srgb, var(--bg-elevated) 68%, var(--bg-muted));
-}
-.entry-rail-account-skeleton__avatar {
-  /* Mirrors `.entry-nav-rail__account-avatar`'s 24×25 box. That box's own
-     `clip-path: url(#od-avatar-squircle)` currently has no matching SVG
-     `<clipPath>` in the tree, so the real avatar renders as a plain square —
-     this placeholder stays a plain rounded square too rather than chasing a
-     squircle the live row does not actually show. */
-  width: 24px;
-  height: 25px;
-  flex: 0 0 24px;
-  border-radius: 6px;
-}
-.entry-rail-account-skeleton__name {
-  /* A representative name-length bar, sized to the real row's 13px/500 text
-     (`.entry-nav-rail__account-name`) rather than stretching full width —
-     the real row's name is short and left-aligned, not a full-width line. */
-  width: 62px;
-  height: 13px;
-  border-radius: 4px;
-}
-@keyframes entry-rail-account-skeleton-sheen {
-  to {
-    background-position: -200% 0, 0 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .entry-rail-account-skeleton__avatar,
-  .entry-rail-account-skeleton__name {
-    animation: none;
-  }
 }
 
 /* ---------- Right-side hover tooltip (rail items only) ----------
@@ -1758,63 +1633,6 @@
 .entry-top-right-cluster * {
   -webkit-app-region: no-drag;
 }
-
-.entry-deepseek-campaign-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 26px;
-  padding: 4px 11px 4px 13px;
-  border: 1px solid color-mix(in srgb, var(--brand) 42%, var(--border));
-  border-radius: var(--radius-pill);
-  color: var(--brand-text);
-  background: color-mix(in srgb, var(--brand-soft) 82%, var(--bg-panel));
-  box-shadow: var(--shadow-xs);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  font-size: 12px;
-  font-weight: 700;
-  font-family: inherit;
-  line-height: 1;
-  text-decoration: none;
-  cursor: pointer;
-  pointer-events: auto;
-  -webkit-app-region: no-drag;
-  transition:
-    border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
-    background 140ms cubic-bezier(0.23, 1, 0.32, 1),
-    transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.entry-deepseek-campaign-badge::before {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 auto;
-  border-radius: var(--radius-circular);
-  background: var(--brand-text);
-  content: '';
-}
-
-.entry-deepseek-campaign-badge svg {
-  color: var(--brand-text);
-}
-
-.entry-deepseek-campaign-badge:hover {
-  border-color: color-mix(in srgb, var(--brand) 70%, var(--border));
-  background: var(--brand-soft);
-  transform: translateY(-1px);
-}
-
-.entry-deepseek-campaign-badge:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-@media (max-width: 760px) {
-  .entry-deepseek-campaign-badge {
-    max-width: calc(100vw - 88px);
-  }
-}
 /* Frosted top edge: content scrolling up toward the (transparent) tab strip
    melts into a progressive blur instead of hard-clipping at the row
    boundary. The material token degrades it away under reduced transparency /
@@ -2471,18 +2289,6 @@
 .inline-switcher--compact .inline-switcher__chip-text {
   display: none;
 }
-.inline-switcher__amr-reminder-dot {
-  position: absolute;
-  z-index: 1;
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-pill);
-  background: var(--danger, #dc2626);
-  box-shadow:
-    0 0 0 2px var(--bg-panel),
-    0 0 0 4px color-mix(in srgb, var(--danger, #dc2626) 12%, transparent);
-  pointer-events: none;
-}
 /* Popover */
 .inline-switcher__popover {
   position: absolute;
@@ -2700,10 +2506,6 @@
     transition: none;
   }
 }
-.inline-switcher__amr-reminder-dot--agent {
-  top: 6px;
-  left: 26px;
-}
 .inline-switcher__agent-name {
   flex: 1 1 auto;
   min-width: 0;
@@ -2711,18 +2513,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: left;
-}
-
-.inline-switcher__chip[data-campaign-highlight='true'] {
-  border-color: var(--accent);
-  animation: deepseek-campaign-chip-pulse 760ms cubic-bezier(0.23, 1, 0.32, 1) 2;
-}
-@keyframes deepseek-campaign-chip-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); }
-  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .inline-switcher__chip[data-campaign-highlight='true'] { animation: none; }
 }
 .inline-switcher__agent-status {
   display: inline-flex;
@@ -3056,7 +2846,6 @@
   color: var(--text-muted);
 }
 
-
 .inline-switcher__select {
   appearance: none;
   width: 100%;
@@ -3279,7 +3068,7 @@
    critically — its `align-content: start`, which stops the grid row at its
    content height instead of stretching it, leaving the art panel short with
    a blank gap. The extra specificity makes every override here unconditional. */
-.onboarding-view.onboarding-view--cloud {
+.onboarding-view.onboarding-view--landing {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: stretch;
@@ -3299,7 +3088,7 @@
   gap: 0;
 }
 
-.onboarding-cloud__pane {
+.onboarding-landing__pane {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -3316,14 +3105,14 @@
    track but never shrink it below that minimum, so the column (and the
    image) end up as tall as the image's natural aspect ratio at this column's
    width, overflowing past the section's actual height instead of matching it. */
-.onboarding-cloud__art {
+.onboarding-landing__art {
   position: relative;
   min-width: 0;
   min-height: 0;
   padding: 8px 8px 8px 0;
 }
 
-.onboarding-cloud__art img {
+.onboarding-landing__art img {
   display: block;
   width: 100%;
   height: 100%;
@@ -3332,41 +3121,40 @@
 }
 
 /* Below this width, the two-column grid can no longer give the text pane its
-   full designed width (.onboarding-cloud__center's 440px) alongside the art
+   full designed width (.onboarding-landing__center's 440px) alongside the art
    panel — half the viewport minus the pane's 64px side padding drops under
    440px once the viewport is narrower than 2 * (440 + 64 + 64) = 1136px.
    Stack to a single column and hide the art before the text pane gets
    cramped, rather than waiting until it visibly wraps. */
 @media (max-width: 1136px) {
-  .onboarding-view.onboarding-view--cloud {
+  .onboarding-view.onboarding-view--landing {
     grid-template-columns: 1fr;
   }
 
-  .onboarding-cloud__art {
+  .onboarding-landing__art {
     display: none;
   }
 
-  .onboarding-cloud__pane {
+  .onboarding-landing__pane {
     align-items: center;
     padding: 72px 24px 64px;
   }
 
-  .onboarding-cloud__center {
+  .onboarding-landing__center {
     align-items: center;
     text-align: center;
   }
 
-  .onboarding-cloud__body,
-  .onboarding-cloud__alts,
-  .onboarding-cloud__error {
+  .onboarding-landing__body,
+  .onboarding-landing__alts {
     text-align: center;
   }
 
-  .onboarding-cloud__alts {
+  .onboarding-landing__alts {
     justify-content: center;
   }
 
-  .onboarding-cloud__footer {
+  .onboarding-landing__footer {
     left: 24px;
     justify-content: center;
     text-align: center;
@@ -3390,7 +3178,7 @@
   color: var(--text-strong);
 }
 
-.onboarding-cloud__center {
+.onboarding-landing__center {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3398,7 +3186,7 @@
   width: min(440px, 100%);
 }
 
-.onboarding-cloud__title {
+.onboarding-landing__title {
   margin: 0;
   color: var(--text-strong);
   font-size: 32px;
@@ -3407,7 +3195,7 @@
   letter-spacing: -0.01em;
 }
 
-.onboarding-cloud__body {
+.onboarding-landing__body {
   margin: 14px 0 0;
   max-width: 42ch;
   color: var(--text-muted);
@@ -3415,107 +3203,9 @@
   line-height: 1.6;
 }
 
-.onboarding-cloud__primary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 52px;
-  margin-top: 32px;
-  padding: 0 20px;
-  border: 0;
-  border-radius: 14px;
-  background: var(--text-strong);
-  color: var(--bg);
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition:
-    opacity 160ms cubic-bezier(0.23, 1, 0.32, 1),
-    transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.onboarding-cloud__primary:hover:not(:disabled) {
-  /* Keep the dark fill on hover — the global `button:hover` rule in
-     primitives.css would otherwise repaint the background to --bg-subtle and
-     wash the white label away. Opacity alone carries the hover feedback. */
-  background: var(--text-strong);
-  border-color: transparent;
-  opacity: 0.88;
-}
-
-.onboarding-cloud__primary:active:not(:disabled) {
-  transform: translateY(1px);
-}
-
-.onboarding-cloud__primary:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.onboarding-cloud__primary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.onboarding-cloud__cancel {
-  margin-top: 22px;
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: color 160ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.onboarding-cloud__cancel:hover {
-  color: var(--text-strong);
-}
-
-/* Sign-in fallback on the cloud landing: one quiet line under the primary
- * button rather than a card, so the pending state keeps a single focal CTA
- * and a single cancel. Settings/AmrLoginPill and CloudSignInTip keep their
- * own `.amr-login-activation` card (artifacts.css). */
-.onboarding-cloud__activation {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: center;
-  gap: 4px 6px;
-  margin: 14px 0 0;
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.5;
-  text-align: center;
-}
-
-.onboarding-cloud__activation-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  color: var(--text-strong);
-  font-weight: 600;
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
-  text-underline-offset: 3px;
-  transition: text-decoration-color 160ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.onboarding-cloud__activation-link:hover {
-  text-decoration-color: currentColor;
-}
-
-.onboarding-cloud__activation-link:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 4px;
-}
-
 /* Two runtime-choice buttons ("local CLI" or "your own key") on one row,
    centered as a unit under the full-width primary CTA above. */
-.onboarding-cloud__alts {
+.onboarding-landing__alts {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3526,30 +3216,18 @@
 
 /* Double-class selector to out-specificity the shared Button module's
    `.button`/`.subtle` rules (same 0-1-0 specificity) without `!important`. */
-.onboarding-cloud__alts .onboarding-cloud__alt-btn {
+.onboarding-landing__alts .onboarding-landing__alt-btn {
   border-radius: var(--radius-pill);
   color: var(--text-muted);
   font-size: 14px;
 }
 
-.onboarding-cloud__alts-or {
-  color: var(--text-muted);
-  font-size: 14px;
-}
-
-.onboarding-cloud__error {
-  margin-top: 16px;
-  color: var(--danger-text, #991b1b);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.onboarding-cloud__footer {
+.onboarding-landing__footer {
   position: absolute;
   left: 64px;
   right: 24px;
   /* An absolutely positioned child's containing block is the ancestor's
-     padding box, so this offset is NOT added on top of .onboarding-cloud__pane's
+     padding box, so this offset is NOT added on top of .onboarding-landing__pane's
      own 64px bottom padding — it replaces it. Match that 64px directly so the
      footer's bottom edge lines up with the padding boundary the rest of the
      pane's content already respects, instead of sitting almost flush with
@@ -3567,9 +3245,9 @@
 /* Dim the copyright line only — NOT the whole footer, since the language
    switcher's popover is a DOM descendant here (position: absolute doesn't
    exempt it from an ancestor's opacity). A blanket opacity on
-   .onboarding-cloud__footer would wash the open dropdown out to match, so
+   .onboarding-landing__footer would wash the open dropdown out to match, so
    the copyright text and the closed pill get their own opacity instead. */
-.onboarding-cloud__footer > span {
+.onboarding-landing__footer > span {
   opacity: 0.8;
 }
 
@@ -3577,7 +3255,7 @@
    sidebar's `.entry-side-foot .foot-pill` look, scoped locally since this
    footer sits outside that sidebar. Non-compact: shows the current
    language label, not just the icon. */
-.onboarding-cloud__footer .foot-pill {
+.onboarding-landing__footer .foot-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -3592,7 +3270,7 @@
   opacity: 0.8;
 }
 
-.onboarding-cloud__footer .foot-pill:hover {
+.onboarding-landing__footer .foot-pill:hover {
   background: var(--bg-panel);
   border-color: var(--border-strong);
   color: var(--text);
@@ -3604,7 +3282,7 @@
    content — a stretched back link therefore floats its label mid-column
    instead of sitting at the content column's left edge, above the panel
    title (issue #138). */
-.onboarding-view__back-to-cloud {
+.onboarding-view__back {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -3620,7 +3298,7 @@
   transition: color 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-.onboarding-view__back-to-cloud:hover {
+.onboarding-view__back:hover {
   color: var(--text-strong);
 }
 
@@ -4768,65 +4446,6 @@
   pointer-events: none;
 }
 
-.onboarding-view__card-status .amr-account-control {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  max-width: 100%;
-  min-height: 20px;
-  gap: 6px;
-  padding: 0 8px;
-  border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--border));
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--bg-panel) 90%, var(--accent) 10%);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
-  color: currentColor;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-}
-
-.onboarding-view__card-status .amr-account-control__status {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  gap: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.onboarding-view__card-status .amr-account-control__status::before {
-  content: '';
-  flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-pill);
-  background: currentColor;
-  opacity: 0.7;
-}
-
-.onboarding-view__card-status .amr-account-control--signed-in {
-  color: var(--success-text, #15803d);
-  border-color: color-mix(in srgb, var(--success-text, #15803d) 18%, var(--border));
-  background: color-mix(in srgb, var(--bg-panel) 88%, var(--success-text, #15803d) 12%);
-}
-
-.onboarding-view__card-status .amr-account-control--signing-in {
-  color: var(--accent-strong);
-}
-
-.onboarding-view__card-status .amr-account-control--error {
-  color: var(--danger-text, #991b1b);
-  border-color: color-mix(in srgb, var(--danger-text, #991b1b) 18%, var(--border));
-  background: color-mix(in srgb, var(--bg-panel) 88%, var(--danger-text, #991b1b) 12%);
-}
-
-.onboarding-view__card-status .amr-account-control__error {
-  display: none;
-}
-
 .onboarding-view__card-action {
   grid-column: 2;
   justify-self: start;
@@ -5624,8 +5243,6 @@
 .onboarding-view__build-back {
   margin-inline-end: auto;
 }
-
-
 
 /* ============================================================
    GitHub star pill — sticky top-bar CTA.
@@ -6777,7 +6394,6 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  /* Shared cluster row height — see .entry-deepseek-campaign-badge. */
   min-height: 28px;
   padding: 0 11px;
   border: 1px solid var(--material-separator);
@@ -7689,8 +7305,7 @@ button.entry-nav-rail__menu-credits-row:active:not(:disabled) {
 [data-testid="entry-view-design-systems"][data-active="true"],
 [data-testid="entry-view-plugins"][data-active="true"],
 [data-testid="entry-view-members"][data-active="true"],
-[data-testid="entry-view-dashboard"][data-active="true"],
-[data-testid="entry-view-workspace-settings"][data-active="true"] {
+[data-testid="entry-view-dashboard"][data-active="true"] {
   padding-top: var(--spacing-32);
 }
 
@@ -7879,27 +7494,6 @@ button.entry-nav-rail__menu-credits-row:active:not(:disabled) {
   object-fit: contain;
 }
 
-[data-testid="design-system-collab-demo"] {
-  display: grid;
-  gap: 16px;
-  padding: 18px;
-  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
-  border-radius: var(--radius-lg);
-  background: var(--bg-panel);
-}
-
-[data-testid="design-system-collab-demo"] > div:first-child {
-  display: flex;
-  justify-content: space-between;
-  gap: 18px;
-}
-
-[data-testid="design-system-collab-demo"] > div:nth-child(2) {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.92fr);
-  gap: 14px;
-}
-
 [data-collab-card] {
   display: grid;
   align-content: start;
@@ -7959,12 +7553,6 @@ button.entry-nav-rail__menu-credits-row:active:not(:disabled) {
   padding: 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-}
-
-@media (max-width: 900px) {
-  [data-testid="design-system-collab-demo"] > div:nth-child(2) {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 900px) {
@@ -8911,7 +8499,6 @@ button.entry-nav-rail__menu-credits-row:active:not(:disabled) {
   }
 }
 
-
 /* ---- Restored: branch-local styles clobbered by the #5517 whole-file
    entry-layout.css replacement (2567c3e6f) — language submenu, menu chevron,
    workspace menu meta, InviteDialog art, InlineModelSwitcher account block.
@@ -8979,11 +8566,6 @@ button.entry-nav-rail__menu-credits-row:active:not(:disabled) {
   position: relative;
   flex: 0 0 auto;
   display: inline-flex;
-}
-
-.inline-switcher__amr-reminder-dot--account {
-  top: -1px;
-  right: -1px;
 }
 
 .inline-switcher__account-name {
@@ -9184,7 +8766,6 @@ button.entry-nav-rail__menu-credits-row:active:not(:disabled) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 
 /* The invite rows scroll within a capped region so adding many members can't
    grow the dialog past the viewport; the header labels and submit stay put. */

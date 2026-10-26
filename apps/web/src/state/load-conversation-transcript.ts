@@ -1,4 +1,3 @@
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import type { ChatMessage } from '../types';
 import { listMessages, ProjectMessageListError } from './projects';
 
@@ -41,7 +40,6 @@ function waitForRetry(delayMs: number, signal: AbortSignal): Promise<void> {
 export async function loadConversationTranscript(
   projectId: string,
   conversationId: string,
-  workspaceContext: WorkspaceCollabContext | null,
   signal: AbortSignal,
 ): Promise<ChatMessage[]> {
   signal.throwIfAborted();
@@ -63,7 +61,7 @@ export async function loadConversationTranscript(
     for (;;) {
       controller.signal.throwIfAborted();
       try {
-        return await listMessages(projectId, conversationId, workspaceContext, controller.signal);
+        return await listMessages(projectId, conversationId, controller.signal);
       } catch (error) {
         controller.signal.throwIfAborted();
         const delay = RETRY_DELAYS_MS[attempt];

@@ -64,7 +64,7 @@ const failedMessage: ChatMessage = {
   createdAt: 2,
   runId: 'run-1',
   runStatus: 'failed',
-  agentId: 'amr',
+  agentId: 'opencode',
   events: [
     {
       kind: 'status',
@@ -87,7 +87,7 @@ const replacementRunningMessage: ChatMessage = {
   content: '',
   createdAt: 3,
   runStatus: 'running',
-  agentId: 'amr',
+  agentId: 'opencode',
 } as ChatMessage;
 
 function renderChat(extraProps: Partial<ComponentProps<typeof ChatPane>> = {}) {
@@ -103,14 +103,13 @@ function renderChat(extraProps: Partial<ComponentProps<typeof ChatPane>> = {}) {
       onSend={vi.fn()}
       onStop={vi.fn()}
       onRetry={onRetry}
-      onSwitchToAmrAndRetry={vi.fn()}
       conversations={[
         { projectId: 'project-1', id: 'conv-1', title: 'Current', createdAt: 1, updatedAt: 1 },
       ]}
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
+      config={{ agentId: 'opencode', agentCliEnv: {} } as unknown as AppConfig}
       {...extraProps}
     />,
   );

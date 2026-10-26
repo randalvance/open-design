@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { buildWorkspacePermissions, buildWorkspaceSeatSummary, type Brand, type WorkspaceCollabContext } from '@open-design/contracts';
+import type { Brand } from '@open-design/contracts';
 import { useDesignKit } from '../../src/runtime/design-kit';
 
 const brand: Brand = {
@@ -16,29 +16,20 @@ const brand: Brand = {
   imagery: { style: '', subjects: [], treatment: '', avoid: [] },
   layout: { radius: '', borderWeight: '', spacing: '', postureRules: [] },
 };
-const context: WorkspaceCollabContext = {
-  workspaceId: 'team-a', teamId: 'team-a', workspaceType: 'team', workspaceMemberId: 'member-a',
-  role: 'member', memberStatus: 'active', lifecycleState: 'active', billingState: 'active',
-  planId: null, providerMode: 'platform_credits',
-  seatSummary: buildWorkspaceSeatSummary({ seatLimit: 3, usedSeats: 2 }),
-  permissions: buildWorkspacePermissions({ role: 'member', lifecycleState: 'active' }),
-};
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-it.each([true, false])('publishedAssets=%s uses only its authorized resource family', async publishedAssets => {
-  const requests: Array<{ url: string; headers: Headers }> = [];
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    requests.push({ url: String(input), headers: new Headers(init?.headers) });
+it.each([true, false])('publishedAssets=%s uses only its resource family', async publishedAssets => {
+  const requests: Array<{ url: string }> = [];
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    requests.push({ url: String(input) });
     return Response.json(brand);
   }));
   const { result } = renderHook(() => useDesignKit({
     designSystemId: 'user:shared', projectId: 'private-backing-project', title: 'Shared brand',
-    body: '# Shared brand', editable: false, publishedAssets, workspaceContext: context,
+    body: '# Shared brand', editable: false, publishedAssets,
   }));
   await waitFor(() => expect(result.current.kit?.logoSrc).toBeTruthy());
   expect(requests).toHaveLength(1);
-  expect(requests[0]?.headers.get('x-od-workspace-id')).toBe('team-a');
-  expect(requests[0]?.headers.get('x-od-workspace-member-id')).toBe('member-a');
   if (publishedAssets) {
     expect(requests[0]?.url).toContain('/api/design-systems/user%3Ashared/static?path=brand.json');
     expect(requests[0]?.url).not.toContain('/api/projects/');

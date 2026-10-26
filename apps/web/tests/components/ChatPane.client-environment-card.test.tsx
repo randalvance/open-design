@@ -28,7 +28,7 @@ vi.mock('../../src/i18n', () => ({
 afterEach(() => cleanup());
 
 /** 同事真机上撞到的那一格:opencode 的证书报错原样传到 daemon 并被命名。 */
-function certificateFailureTurn(agentId = 'amr'): ChatMessage[] {
+function certificateFailureTurn(agentId = 'claude'): ChatMessage[] {
   return [
     { id: 'user-1', role: 'user', content: 'Build it', createdAt: 0 },
     {
@@ -88,24 +88,6 @@ describe('G16 · 环境类报错卡的固定按钮', () => {
     expect(onOpenSettings).not.toHaveBeenCalled();
   });
 
-  it('本地 CLI 证书失败只交给 Cloud，不调用本地重试或设置', () => {
-    const onRetry = vi.fn();
-    const onOpenSettings = vi.fn();
-    const onSwitchToAmrAndRetry = vi.fn();
-    renderPane({ messages: certificateFailureTurn('opencode'), onRetry, onOpenSettings, onSwitchToAmrAndRetry });
-    const card = screen.getByTestId('chat-run-error-card');
-    expect(within(card).getAllByRole('button').map((button) => button.textContent?.trim()))
-      .toEqual(['联系我们', '导出日志', '切换到 OpenDesign Cloud']);
-    fireEvent.click(within(card).getByRole('button', { name: '切换到 OpenDesign Cloud' }));
-    expect(onSwitchToAmrAndRetry).toHaveBeenCalledWith(expect.objectContaining({ id: 'assistant-1', agentId: 'opencode' }));
-    expect(onRetry).not.toHaveBeenCalled();
-    expect(onOpenSettings).not.toHaveBeenCalled();
-  });
-
-  it('固定动作不额外生成另一张 Cloud 指导卡', () => {
-    const { container } = renderPane({ onOpenSettings: vi.fn(), onRetry: vi.fn() });
-    expect(container.querySelector('.amr-guidance')).toBeNull();
-  });
 });
 
 describe('S30 · 环境类报错卡的文案', () => {

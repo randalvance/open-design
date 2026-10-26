@@ -13,7 +13,6 @@
 // glyph on a chat-bubble mark instead of the folder.
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EntryNavRail } from '../../src/components/EntryNavRail';
@@ -27,16 +26,6 @@ vi.mock('../../src/router', async () => {
   const actual = await vi.importActual<typeof import('../../src/router')>('../../src/router');
   return { ...actual, navigate: vi.fn() };
 });
-
-const signedInContext = {
-  workspaceId: 'ws-personal',
-  workspaceType: 'personal',
-  workspaceMemberId: 'wm-1',
-  role: 'owner',
-  memberStatus: 'active',
-  lifecycleState: 'active',
-  permissions: { canInviteMembers: false, canViewWorkspaceSettings: false },
-} as unknown as WorkspaceCollabContext;
 
 function project(id: string, name: string, updatedAt: number): Project {
   return { id, name, skillId: null, designSystemId: null, createdAt: updatedAt, updatedAt };
@@ -118,7 +107,6 @@ function renderBoth() {
         onViewChange={() => {}}
         onNewProject={() => {}}
         open
-        context={signedInContext}
         recentProjects={PROJECTS}
         onOpenRecentProject={onOpen}
       />

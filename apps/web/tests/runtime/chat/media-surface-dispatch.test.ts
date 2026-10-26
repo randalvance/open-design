@@ -2,7 +2,7 @@
  * OPEND-2625:音频 / 视频生成被画成生图。
  *
  * 用户看见的缺口(Beta 0.21.1-beta.7,Media generation 项目,音频模型
- * `minimax-tts`、视频模型 `vela/doubao-seedance-2-0-260128`):不管生成的是
+ * `minimax-tts`、视频模型 `doubao-seedance-2-0-260128`):不管生成的是
  * 音频还是视频,执行记录上写的都是 `Generating illustrations · 1 images`,
  * 音频那一条还挂着一枚破图缩略图。
  *
@@ -109,7 +109,7 @@ describe('OPEND-2625 · 媒体行要如实报出它是哪一类', () => {
   it('一条任务都还没轮询到:命令行上的 --surface 就是证据', () => {
     const blocks = buildTurnBlocks({
       events: [
-        bash('t1', 'od media generate --surface video --model vela/doubao-seedance-2-0-260128 --prompt "一段镜头"'),
+        bash('t1', 'od media generate --surface video --model doubao-seedance-2-0-260128 --prompt "一段镜头"'),
         bashResult('t1', '{"status":"done","file":{"name":"shot.mp4"}}'),
       ],
       mediaTasks: [],

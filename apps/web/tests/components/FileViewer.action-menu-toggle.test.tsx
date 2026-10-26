@@ -18,9 +18,7 @@
  *  4. 点面板和按钮**之外**的地方收起 —— 但按钮自身那一下 `mousedown` 不算
  *     「外部」,否则 `mousedown` 先关、`click` 再开,用户会看到「点了没反应」。
  *
- * 为什么不是断言 `data-testid`:线上这块菜单没有 testid,按 testid 查恒为 null,
- * 每条断言都会假绿(`share-request-replay` 那个文件的第一版就这么翻过车)。这里
- * 一律认分享面板**只在展开时才存在**的标题；部署行属于二级菜单。
+ * 分享面板只在展开时才挂载 `artifact-share-panel`;导出页签认展开时才存在的导出行。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -75,8 +73,8 @@ function renderViewer() {
   );
 }
 
-/** 分享标题仅随分享面板挂载，不依赖登录状态或二级菜单展开。 */
-const sharePanel = () => screen.queryByRole('heading', { name: 'Share', level: 2 });
+/** 分享面板仅在展开时挂载。 */
+const sharePanel = () => screen.queryByTestId('artifact-share-panel');
 /** 展开时才存在的导出行。 */
 const exportPanel = () => screen.queryByRole('menuitem', { name: /Export as PDF/i });
 /** 整块面板 —— 用来数「有没有叠出第二块」。 */

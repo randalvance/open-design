@@ -38,7 +38,6 @@ function renderState(props: Partial<Parameters<typeof DesignFilesBuildingState>[
         file={file()}
         filesRefreshKey={7}
         steps={[step()]}
-        workspaceContext={null}
         {...props}
       />
     </I18nProvider>,

@@ -22,7 +22,6 @@
 //    file is an authoritative "no cover" (cacheable); a network failure is
 //    transient (`undefined`) and must not be cached.
 
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 import { isDesignSystemProject } from '../components/design-system-project';
 import {
@@ -31,7 +30,6 @@ import {
   selectProjectFileCover,
   type ProjectCoverOverride,
 } from '../components/project-cover';
-import { workspaceProjectHeaders } from '../collab/workspace-identity';
 import { fetchProjectFiles, fetchProjectFileText } from '../providers/registry';
 import type { Project, ProjectFile } from '../types';
 
@@ -60,22 +58,14 @@ export function getCachedDeckCover(src: string): string | undefined {
 export async function resolveProjectCover(
   project: Project,
   signal: AbortSignal,
-  requestWorkspaceContext: WorkspaceCollabContext | null,
   freshFiles = false,
 ): Promise<ProjectCoverOverride | null | undefined> {
-  // Catalog-only Team projects intentionally have no local directory until
-  // the first open materializes them. Probing `/files` here can only produce
-  // a noisy 404. This is transient rather than an authoritative no-cover
-  // decision: hydration can clear the stamp without changing id/updatedAt,
-  // at which point coverFetchKey starts the first real scan.
-  if (project.metadata?.sharedProjectPlaceholderAt != null) return undefined;
   const designSystemProject = isDesignSystemProject(project);
   if (project.metadata?.entryFile && !designSystemProject) return null;
   let files: Awaited<ReturnType<typeof fetchProjectFiles>>;
   try {
     files = await fetchProjectFiles(project.id, {
       signal,
-      workspaceContext: requestWorkspaceContext,
       ...(freshFiles ? { fresh: true } : {}),
     });
   } catch {
@@ -83,26 +73,16 @@ export async function resolveProjectCover(
   }
   if (signal.aborted) return undefined;
   if (designSystemProject) {
-    return (await findDesignSystemCover(
-      project.id,
-      files,
-      signal,
-      requestWorkspaceContext,
-    )) ?? null;
+    return (await findDesignSystemCover(project.id, files, signal)) ?? null;
   }
   const cover = selectProjectFileCover(files);
   if (cover?.kind !== 'html') return cover;
 
-  const src = projectCoverUrl(
-    project.id,
-    cover.name,
-    cover.mtime,
-    requestWorkspaceContext,
-  );
+  const src = projectCoverUrl(project.id, cover.name, cover.mtime);
   const diagnostic = `${project.id}:${cover.name}`;
   if (project.metadata?.kind === 'deck') {
     try {
-      await loadDeckCover(src, signal, requestWorkspaceContext);
+      await loadDeckCover(src, signal);
       return signal.aborted ? undefined : cover;
     } catch (err) {
       if (signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) return undefined;
@@ -116,9 +96,6 @@ export async function resolveProjectCover(
       method: 'HEAD',
       cache: 'no-store',
       signal,
-      ...(requestWorkspaceContext
-        ? { headers: workspaceProjectHeaders(requestWorkspaceContext) }
-        : {}),
     });
     if (signal.aborted) return undefined;
     if (response.ok || response.status === 304) return cover;
@@ -139,15 +116,11 @@ export async function resolveProjectCover(
 export async function loadDeckCover(
   src: string,
   signal?: AbortSignal,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<string> {
   const cached = deckCoverCache.get(src);
   if (cached) return cached;
   if (signal) {
-    const response = await fetch(src, {
-      signal,
-      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
-    });
+    const response = await fetch(src, { signal });
     if (!response.ok) throw new Error(`Failed to load project cover: ${response.status}`);
     const parsed = deckPreviewSrcDoc(await response.text());
     if (!signal.aborted) deckCoverCache.set(src, parsed);
@@ -323,15 +296,9 @@ export async function findDesignSystemCover(
   projectId: string,
   files: ProjectFile[],
   signal?: AbortSignal,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ProjectCoverOverride | null> {
   const knownFiles = new Map(files.map((file) => [file.path ?? file.name, file]));
-  const brandCover = await designSystemCoverFromBrandJson(
-    projectId,
-    knownFiles,
-    signal,
-    workspaceContext,
-  );
+  const brandCover = await designSystemCoverFromBrandJson(projectId, knownFiles, signal);
   if (signal?.aborted) return null;
   if (brandCover) return brandCover;
 
@@ -344,12 +311,10 @@ async function designSystemCoverFromBrandJson(
   projectId: string,
   knownFiles: ReadonlyMap<string, ProjectFile>,
   signal?: AbortSignal,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ProjectCoverOverride | null> {
   const raw = await fetchProjectFileText(projectId, 'brand.json', {
     cache: 'no-store',
     signal,
-    workspaceContext,
   });
   if (signal?.aborted) return null;
   if (!raw) return null;

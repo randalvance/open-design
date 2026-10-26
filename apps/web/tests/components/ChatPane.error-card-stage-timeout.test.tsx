@@ -65,7 +65,7 @@ function failedMessage(code?: string): ChatMessage {
     createdAt: 1,
     runId: 'run-1',
     runStatus: 'failed',
-    agentId: 'amr',
+    agentId: 'opencode',
     events: [
       {
         kind: 'status',
@@ -101,7 +101,7 @@ function renderChat(message: ChatMessage) {
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
+      config={{ agentId: 'opencode', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }

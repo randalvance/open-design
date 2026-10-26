@@ -101,7 +101,7 @@ describe('ChatPane media-task polling', () => {
     );
 
     await waitFor(() => {
-      expect(registryMocks.fetchProjectMediaTasks).toHaveBeenCalledWith('project-1', null);
+      expect(registryMocks.fetchProjectMediaTasks).toHaveBeenCalledWith('project-1');
       expect(screen.getByTestId('assistant-media-assistant-1').textContent).toBe('media-1:running');
     });
   });

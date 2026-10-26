@@ -44,7 +44,6 @@ vi.mock('../../src/providers/daemon', () => ({
   fetchChatRunStatus: vi.fn(),
   listActiveChatRuns: vi.fn().mockResolvedValue([]),
   listProjectRuns: vi.fn().mockResolvedValue([]),
-  publishDaemonRunFinishedEvent: vi.fn(),
   reattachDaemonRun: vi.fn(),
   streamViaDaemon: vi.fn(),
 }));
@@ -135,6 +134,7 @@ vi.mock('../../src/components/FileWorkspace', () => ({
 
 vi.mock('../../src/components/Loading', () => ({
   CenteredLoader: () => <div data-testid="loader" />,
+  Spinner: () => null,
 }));
 
 vi.mock('../../src/components/ChatPane', () => ({
@@ -305,7 +305,6 @@ describe('ProjectView tab URL hydration', () => {
     expect(mockedCacheTabsLocally.mock.calls.at(-1)).toEqual([
       project.id,
       { tabs: ['brand.html'], active: 'brand.html' },
-      null,
     ]);
   });
 
@@ -425,7 +424,6 @@ describe('ProjectView tab URL hydration', () => {
     expect(mockedCacheTabsLocally).toHaveBeenCalledWith(
       project.id,
       { tabs: ['index.html'], active: 'index.html' },
-      null,
     );
 
     fireEvent.click(screen.getByTestId('close-all-tabs'));
@@ -435,7 +433,6 @@ describe('ProjectView tab URL hydration', () => {
       expect(mockedCacheTabsLocally.mock.calls.at(-1)).toEqual([
         project.id,
         { tabs: [], active: null },
-        null,
       ]);
     });
     // Exactly two writes — the initial primary open and the close-all — proving
@@ -458,7 +455,7 @@ describe('ProjectView tab URL hydration', () => {
     }));
     let restored;
     try {
-      restored = await actual.loadTabs(cachedProjectId, null, {
+      restored = await actual.loadTabs(cachedProjectId, {
         reconcileNewerCacheToDaemon: false,
       });
     } finally {

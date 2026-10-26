@@ -179,10 +179,9 @@ interface SearchableModelSelectProps
    * models on the right) once the list is long enough to benefit from it.
    * Explicit opt-in rather than always-on: company identity is derived from
    * the model id's leading token, which only carries real vendor meaning for
-   * a genuinely cross-provider catalog (AMR's). A single provider's own raw
+   * a genuinely cross-provider catalog. A single provider's own raw
    * model ids (e.g. Codex's `o1`/`o3`/`o4-mini` alongside `gpt-*`) would
-   * otherwise get split into misleading fake "companies". Callers pass
-   * `groupByCompany={agent.id === 'amr'}` or similar.
+   * otherwise get split into misleading fake "companies".
    */
   groupByCompany?: boolean;
   minSearchableOptions?: number;

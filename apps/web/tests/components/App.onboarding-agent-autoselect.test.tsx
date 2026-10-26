@@ -14,7 +14,6 @@ import {
   fetchPromptTemplates,
   fetchSkills,
 } from '../../src/providers/registry';
-import { fetchAmrModels } from '../../src/providers/daemon';
 import { listProjects, listTemplates } from '../../src/state/projects';
 
 vi.mock('../../src/router', () => ({
@@ -72,7 +71,6 @@ vi.mock('../../src/providers/daemon', async () => {
   );
   return {
     ...actual,
-    fetchAmrModels: vi.fn(),
   };
 });
 
@@ -116,7 +114,6 @@ const mockedFetchAppVersionInfo = vi.mocked(fetchAppVersionInfo);
 const mockedFetchDesignSystems = vi.mocked(fetchDesignSystems);
 const mockedFetchPromptTemplates = vi.mocked(fetchPromptTemplates);
 const mockedFetchSkills = vi.mocked(fetchSkills);
-const mockedFetchAmrModels = vi.mocked(fetchAmrModels);
 const mockedListProjects = vi.mocked(listProjects);
 const mockedListTemplates = vi.mocked(listTemplates);
 const mockedLoadConfig = vi.mocked(loadConfig);
@@ -169,11 +166,6 @@ describe('App first-run agent auto-select', () => {
     mockedFetchAppVersionInfo.mockResolvedValue(null);
     mockedListProjects.mockResolvedValue([]);
     mockedListTemplates.mockResolvedValue([]);
-    mockedFetchAmrModels.mockResolvedValue({
-      source: 'preset',
-      refreshing: false,
-      models: [{ id: 'amr-model', label: 'AMR Model' }],
-    });
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }),

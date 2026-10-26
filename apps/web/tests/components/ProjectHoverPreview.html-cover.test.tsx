@@ -67,7 +67,7 @@ function project(id: string, metadata: Project['metadata'] = undefined): Project
 
 /** A row's worth of the hook + card: resolve on mount, the way a hover does. */
 function Preview({ project: subject }: { project: Project }) {
-  const cover = useProjectHoverCover(subject, null);
+  const cover = useProjectHoverCover(subject);
   const { resolveCover } = cover;
   useEffect(() => {
     void resolveCover();
@@ -180,7 +180,7 @@ describe('ProjectHoverPreview — HTML and deck covers (OPEND-2766)', () => {
 
     let resolveCover: (() => Promise<void>) | null = null;
     function Capture() {
-      const cover = useProjectHoverCover(subject, null);
+      const cover = useProjectHoverCover(subject);
       resolveCover = cover.resolveCover;
       return null;
     }

@@ -43,18 +43,10 @@ import {
 const brandBrowserBridgeMocks = vi.hoisted(() => ({
   getBrandBrowser: vi.fn(),
 }));
-const registryOriginals = vi.hoisted(() => ({
-  fetchProjectFiles: null as null | ((
-    projectId: string,
-    options?: {
-      signal?: AbortSignal;
-      workspaceContext?: import('@open-design/contracts').WorkspaceCollabContext | null;
-      fresh?: boolean;
-      requireAuthoritative?: boolean;
-    },
-  ) => Promise<ProjectFile[]>),
-}));
 
+const registryOriginals = vi.hoisted(() => ({
+  fetchProjectFiles: null as null | typeof import('../../src/providers/registry').fetchProjectFiles,
+}));
 const fileWorkspaceSpy = vi.hoisted(() => vi.fn());
 const chatPaneSpy = vi.hoisted(() => vi.fn());
 const chatPaneMounts = vi.hoisted(() => ({ count: 0 }));
@@ -98,26 +90,12 @@ vi.mock('../../src/providers/daemon', () => ({
   fetchChatRunStatus: vi.fn(),
   listActiveChatRuns: vi.fn().mockResolvedValue([]),
   listProjectRuns: vi.fn().mockResolvedValue([]),
-  publishDaemonRunFinishedEvent: vi.fn(),
   reattachDaemonRun: vi.fn(),
   streamViaDaemon: vi.fn(),
 }));
 
 vi.mock('../../src/providers/project-events', () => ({
   useProjectFileEvents: vi.fn(),
-}));
-
-vi.mock('../../src/collab/useProjectWorkspaceScope', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useProjectWorkspaceScope')>()),
-  useProjectWorkspaceScope: (projectId: string) => ({
-    loading: false,
-    scope: {
-      kind: 'unbound',
-      projectId,
-      workspaceId: null,
-      context: null,
-    },
-  }),
 }));
 
 vi.mock('../../src/runtime/brands', async () => {
@@ -248,6 +226,7 @@ vi.mock('../../src/components/FileWorkspace', () => ({
 
 vi.mock('../../src/components/Loading', () => ({
   CenteredLoader: () => <div data-testid="loader" />,
+  Spinner: () => null,
 }));
 
 vi.mock('../../src/components/ChatPane', async () => {
@@ -1185,7 +1164,7 @@ describe('ProjectView pending prompt seeding', () => {
       expect(mockedContinueBrandExtraction).toHaveBeenCalledWith(projectId);
     });
     await waitFor(() => {
-      expect(mockedListMessages).toHaveBeenCalledWith(projectId, 'conv-brand-replacement', null, expect.any(AbortSignal));
+      expect(mockedListMessages).toHaveBeenCalledWith(projectId, 'conv-brand-replacement', expect.any(AbortSignal));
     });
     await waitFor(() => {
       expect(screen.getByTestId('active-conversation').textContent).toBe('conv-brand-replacement');

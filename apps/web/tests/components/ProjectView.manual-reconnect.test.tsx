@@ -63,7 +63,6 @@ vi.mock('../../src/providers/daemon', () => ({
   fetchChatRunStatus: (...args: unknown[]) => fetchChatRunStatus(...args),
   listActiveChatRuns: (...args: unknown[]) => listActiveChatRuns(...args),
   listProjectRuns: (...args: unknown[]) => listProjectRuns(...args),
-  publishDaemonRunFinishedEvent: (...args: unknown[]) => publishDaemonRunFinishedEvent(...args),
   reattachDaemonRun: (...args: unknown[]) => reattachDaemonRun(...args),
   streamViaDaemon: (...args: unknown[]) => streamViaDaemon(...args),
 }));
@@ -101,7 +100,7 @@ vi.mock('../../src/state/projects', () => ({
 
 vi.mock('../../src/components/AppChromeHeader', () => ({ AppChromeHeader: () => null }));
 vi.mock('../../src/components/AvatarMenu', () => ({ AvatarMenu: () => null }));
-vi.mock('../../src/components/Loading', () => ({ CenteredLoader: () => null }));
+vi.mock('../../src/components/Loading', () => ({ CenteredLoader: () => null, Spinner: () => null }));
 vi.mock('../../src/components/FileWorkspace', () => ({
   DESIGN_SYSTEM_TAB: '__design_system__',
   FileWorkspace: () => null,

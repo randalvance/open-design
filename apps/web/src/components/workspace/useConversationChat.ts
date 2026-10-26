@@ -23,7 +23,7 @@ import type {
   ChatCommentAttachment,
   ChatMessage,
 } from '../../types';
-import type { ChatSessionMode, WorkspaceCollabContext } from '@open-design/contracts';
+import type { ChatSessionMode } from '@open-design/contracts';
 
 // ---------------------------------------------------------------------------
 // useConversationChat — drives a secondary ChatPane bound to a single
@@ -58,15 +58,6 @@ export interface ConversationChatContext {
   /** UI locale forwarded to the daemon so prompts compose in-language. */
   locale: string;
   sessionMode: ChatSessionMode;
-  /**
-   * The caller's current workspace identity, forwarded to `streamViaDaemon`
-   * so POST /api/runs carries the same `x-od-workspace-*` headers the
-   * primary ProjectView chat loop sends. Without this a side-chat send
-   * against a team-bound project would 401 against the daemon's workspace
-   * mutation gate even for a fully authorized member. Null/omitted for
-   * signed-out / personal usage.
-   */
-  workspaceContext?: WorkspaceCollabContext | null;
 }
 
 export interface UseConversationChatResult {
@@ -130,11 +121,7 @@ export function useConversationChat(
     messagesReadyScopeKeyRef.current = null;
     void (async () => {
       try {
-        const list = await listMessages(
-          projectId,
-          conversationId,
-          ctx.workspaceContext,
-        );
+        const list = await listMessages(projectId, conversationId);
         if (cancelled) return;
         setMessages(list);
         setMessagesReadyScopeKey(messageScopeKey);
@@ -161,13 +148,11 @@ export function useConversationChat(
       textBufferRef.current?.cancel();
       textBufferRef.current = null;
     };
-  }, [projectId, conversationId, ctx.workspaceContext, messageScopeKey]);
+  }, [projectId, conversationId, messageScopeKey]);
 
   const persist = useCallback(
     (message: ChatMessage) => {
-      void saveMessage(projectId, conversationId, message, {
-        workspaceContext: ctxRef.current.workspaceContext,
-      });
+      void saveMessage(projectId, conversationId, message);
     },
     [projectId, conversationId],
   );
@@ -191,7 +176,6 @@ export function useConversationChat(
         agentsById: agents,
         locale: loc,
         sessionMode,
-        workspaceContext,
       } = ctxRef.current;
       if (messagesReadyScopeKeyRef.current !== messageScopeKey) return;
       // This controller is installed synchronously before dispatch, so two
@@ -265,8 +249,7 @@ export function useConversationChat(
       cancelRef.current = cancelController;
       requestOwnerRef.current = controller;
       const ownsScope = () => requestOwnerRef.current === controller
-        && currentScopeRef.current === messageScopeKey
-        && ctxRef.current.workspaceContext === workspaceContext;
+        && currentScopeRef.current === messageScopeKey;
       const acceptsCallback = () => ownsScope() && !controller.signal.aborted;
       const updateOwnedAssistant = (updater: (previous: ChatMessage) => ChatMessage) => {
         if (!ownsScope()) return;
@@ -368,7 +351,6 @@ export function useConversationChat(
         skillId: null,
         skillIds: [],
         designSystemId: cfg.designSystemId ?? null,
-        workspaceContext,
         attachments: (userMsg.attachments ?? []).map((a) => a.path),
         commentAttachments: userMsg.commentAttachments ?? [],
         model: choice?.model ?? null,

@@ -59,7 +59,6 @@ import type {
   PluginSourceKind,
   ResearchOptions,
   RunContextSelection,
-  WorkspaceCollabContext,
   WorkspaceContextItem,
 } from '@open-design/contracts';
 import { buildVisualAnnotationAttachment, commentTargetDisplayName } from '../comments';
@@ -99,7 +98,6 @@ import {
   type InlineMentionEntity,
 } from '../utils/inlineMentions';
 import { workspaceContextLinkedDir, workspaceContextLinkedDirs } from './workspace-context';
-import { useProjectCollabContext } from '../collab/collab-context';
 import {
   LexicalComposerInput,
   type LexicalComposerInputHandle,
@@ -649,7 +647,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
   ) {
     const { locale, t } = useI18n();
     const analytics = useAnalytics();
-    const { workspaceContext } = useProjectCollabContext();
     const activeFileContext =
       projectMetadata?.importedFrom === 'folder' && activeProjectFileName
         ? activeProjectFileName
@@ -888,7 +885,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       try {
         const result = await duplicatePluginAsProject(record.id, {
           name: localizePluginTitle(locale, record),
-        }, workspaceContext);
+        });
         setDetailsRecord(null);
         navigate({
           kind: 'project',
@@ -1938,7 +1935,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       }
       if (changed) {
         const metadata: ProjectMetadata = { ...base, linkedDirs: nextLinkedDirs };
-        const result = await patchProject(projectId, { metadata }, workspaceContext);
+        const result = await patchProject(projectId, { metadata });
         if (!result?.metadata) {
           onShowToast?.(t('homeWorkingDir.applyFailed'));
           return false;
@@ -2268,7 +2265,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
       const currentLinkedDirs = base.linkedDirs ?? [...tracked.previousLinkedDirs, tracked.dir];
       const nextLinkedDirs = currentLinkedDirs.filter((dir) => dir !== tracked.dir);
       const metadata: ProjectMetadata = { ...base, linkedDirs: nextLinkedDirs };
-      const result = await patchProject(projectId, { metadata }, workspaceContext);
+      const result = await patchProject(projectId, { metadata });
       if (!result?.metadata) {
         onShowToast?.(t('homeWorkingDir.applyFailed'));
         return false;
@@ -2384,8 +2381,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
         const result = await uploadProjectFiles(
           projectIdForUpload,
           [local.file],
-          undefined,
-          workspaceContext,
         );
         const uploaded = result.uploaded[0];
         // 人在等结果的这几秒里把卡撤了,结果就地丢掉(文件本身已经落到项目里,
@@ -2512,9 +2507,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           const res = await applyLibraryAsset(
             asset.id,
             id,
-            undefined,
-            undefined,
-            workspaceContext,
           );
           if (!res?.relPath) {
             failed += 1;
@@ -2606,7 +2598,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
                 return;
               }
               setUploading(true);
-              const result = await uploadProjectFiles(id, annotationFiles, undefined, workspaceContext);
+              const result = await uploadProjectFiles(id, annotationFiles);
               if (result.uploaded.length > 0) {
                 uploaded = assignChatAttachmentOrders(result.uploaded, orderStart);
               }
@@ -3130,7 +3122,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
 
     async function applyProjectSkill(skill: SkillSummary): Promise<boolean> {
       if (!projectId) return false;
-      const result = await patchProject(projectId, { skillId: skill.id }, workspaceContext);
+      const result = await patchProject(projectId, { skillId: skill.id });
       if (!result) return false;
       onProjectSkillChange?.(result.skillId ?? skill.id);
       return true;
@@ -3424,7 +3416,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               onMouseLeave={scheduleComposerPanelClose}
             >
               <DesignToolboxPanel
-                workspaceContext={workspaceContext}
                 actions={DESIGN_TOOLBOX_ACTIONS}
                 skills={skills}
                 plugins={pluginsForComposer}
@@ -3485,7 +3476,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               onMouseLeave={scheduleComposerPanelClose}
             >
               <StandalonePluginsPane
-                workspaceContext={workspaceContext}
                 plugins={pluginsForComposer}
                 onPick={(record) => {
                   trackComposerBar({
@@ -3734,7 +3724,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
               }}
             />
             <ComposerPlusMenu
-              workspaceContext={workspaceContext}
               triggerTestId="chat-plus-trigger"
               placementPreference="up"
               // The menu no longer carries a toolbox row (OPEND-3085, per the
@@ -3967,7 +3956,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
         {detailsRecord ? (
           <PluginDetailsModal
             record={detailsRecord}
-            workspaceContext={workspaceContext}
             onClose={() => setDetailsRecord(null)}
             onUse={async (record) => {
               inlineBackedPluginRef.current = null;
@@ -3995,7 +3983,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
           <FigmaImportModal
             onClose={() => setFigmaModalOpen(false)}
             resolveProjectId={async () => projectId}
-            workspaceContext={workspaceContext}
             onImported={(result) => {
               // Prefill the composer with the reshape prompt; the user reviews
               // and sends to build the page from the decoded snapshot.
@@ -4018,7 +4005,6 @@ export const ChatComposer = forwardRef<ChatComposerHandle, Props>(
         {projectReferenceOpen ? (
           <ProjectReferenceModal
             currentProjectId={projectId}
-            workspaceContext={workspaceContext}
             onClose={() => {
               // Only the dismiss paths (X / backdrop / Escape / Cancel) land
               // here — a confirmed pick closes via handleReferenceProjects,
@@ -4413,7 +4399,6 @@ function StagedRunContexts({
   onSkillDetails?: (id: string) => void;
   t: TranslateFn;
 }) {
-  const { workspaceContext } = useProjectCollabContext();
   return (
     <div
       className="staged-row staged-context-row"
@@ -4589,7 +4574,6 @@ export function StagedAttachmentTray({
   onRetryPending: (pendingId: string) => void;
   t: TranslateFn;
 }) {
-  const { workspaceContext } = useProjectCollabContext();
   const rowRef = useRef<HTMLDivElement>(null);
   const { prev, next, page } = useStagedTrayNav(rowRef, cards.length);
   // 点缩略图看大图 —— 这是产品**已有**的能力,稿子那一格把卡画成了不可点的
@@ -4597,7 +4581,7 @@ export function StagedAttachmentTray({
   const [preview, setPreview] = useState<StagedAttachmentCard | null>(null);
   const previewUrl = preview
     ? preview.previewUrl
-      ?? (preview.path && projectId ? projectRawUrl(projectId, preview.path, workspaceContext) : null)
+      ?? (preview.path && projectId ? projectRawUrl(projectId, preview.path) : null)
     : null;
   useEffect(() => {
     if (!preview) return;
@@ -4645,7 +4629,7 @@ export function StagedAttachmentTray({
               );
             }
             const thumbUrl = card.previewUrl
-              ?? (card.path && projectId ? projectRawUrl(projectId, card.path, workspaceContext) : null);
+              ?? (card.path && projectId ? projectRawUrl(projectId, card.path) : null);
             return (
               <span key={card.key} className={`msg-att-img${stateClass}`} data-testid="staged-attachment-image">
                 <span className="msg-att-ph">
@@ -4961,12 +4945,10 @@ function StandalonePluginsPane({
   plugins,
   onPick,
   onAdd,
-  workspaceContext,
 }: {
   plugins: InstalledPluginRecord[];
   onPick: (record: InstalledPluginRecord) => void;
   onAdd?: () => void;
-  workspaceContext: WorkspaceCollabContext | null;
 }) {
   const { locale, t } = useI18n();
   const [query, setQuery] = useState('');
@@ -5034,7 +5016,6 @@ function StandalonePluginsPane({
         <ComposerPluginPreview
           record={hoveredPlugin}
           locale={locale}
-          workspaceContext={workspaceContext}
         />
       ) : null}
     </div>
@@ -5296,7 +5277,6 @@ function DesignToolboxPanel({
   onPickSkill,
   onPickResource,
   onOpened,
-  workspaceContext,
 }: {
   actions: DesignToolboxAction[];
   skills: SkillSummary[];
@@ -5314,7 +5294,6 @@ function DesignToolboxPanel({
   onPickSkill: (skill: SkillSummary) => void;
   onPickResource: (resource: DesignToolboxResource) => void;
   onOpened?: () => void;
-  workspaceContext: WorkspaceCollabContext | null;
 }) {
   const { locale, t } = useI18n();
   const [query, setQuery] = useState('');
@@ -5494,7 +5473,6 @@ function DesignToolboxPanel({
                     <ComposerPluginPreview
                       record={resource.plugin}
                       locale={locale}
-                      workspaceContext={workspaceContext}
                     />
                   ) : (
                     <>

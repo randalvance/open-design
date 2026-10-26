@@ -19,10 +19,8 @@ import { canDuplicatePluginPreview } from './plugins-home/duplicate';
 import { PluginDetailsModal } from './PluginDetailsModal';
 import type { PluginUseAction } from './plugins-home/useActions';
 import { useInView } from './plugins-home/useInView';
-import { useWorkspaceContext } from '../collab/useWorkspaceContext';
 import { useAnalytics } from '../analytics/provider';
 import { trackCommunityTemplateClick, trackPageView } from '../analytics/events';
-import { workspaceAnalyticsDimensions } from '../analytics/workspace';
 
 export interface CommunityTemplateUseTarget {
   templateId: string;
@@ -110,8 +108,6 @@ const MASONRY_TYPES = new Set<TemplateType>(['Image', 'Video']);
 export function CommunityView({ onRemixTemplate, onUsePrompt, onUsePlugin }: CommunityViewProps) {
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
-  const { context: workspaceContext } = useWorkspaceContext();
-  const workspaceDimensions = workspaceAnalyticsDimensions(workspaceContext);
   const pageViewRecordedRef = useRef(false);
   useEffect(() => {
     // React StrictMode replays mount effects in development. Keep one
@@ -187,8 +183,8 @@ export function CommunityView({ onRemixTemplate, onUsePrompt, onUsePlugin }: Com
     return () => { cancelled = true; };
   }, []);
   const templates = useMemo(
-    () => buildCommunityTemplates(plugins, locale, t, workspaceContext),
-    [plugins, locale, t, workspaceContext],
+    () => buildCommunityTemplates(plugins, locale, t),
+    [plugins, locale, t],
   );
   const pluginById = useMemo(
     () => new Map(plugins.map((record) => [record.id, record])),
@@ -232,7 +228,6 @@ export function CommunityView({ onRemixTemplate, onUsePrompt, onUsePlugin }: Com
       element: 'filter',
       filter_type: 'category',
       filter_value: type,
-      ...workspaceDimensions,
     });
     setActiveType(type);
   };
@@ -273,7 +268,6 @@ export function CommunityView({ onRemixTemplate, onUsePrompt, onUsePlugin }: Com
       template_key: template.id,
       template_type: template.type,
       resource_scope: templateScope(template.id),
-      ...workspaceDimensions,
     });
     remixingIdRef.current = template.id;
     setRemixingId(template.id);
@@ -290,7 +284,6 @@ export function CommunityView({ onRemixTemplate, onUsePrompt, onUsePlugin }: Com
       resource_scope: templateScope(template.id),
       use_source: 'card',
       use_action: 'use_with_query',
-      ...workspaceDimensions,
     });
     const record = pluginById.get(template.id);
     if (record && onUsePlugin) {
@@ -317,7 +310,6 @@ export function CommunityView({ onRemixTemplate, onUsePrompt, onUsePlugin }: Com
       template_key: template.id,
       template_type: template.type,
       resource_scope: templateScope(template.id),
-      ...workspaceDimensions,
     });
     const record = plugins.find((row) => row.id === template.id) ?? null;
     setDetailsRecord(record);
@@ -339,7 +331,6 @@ export function CommunityView({ onRemixTemplate, onUsePrompt, onUsePlugin }: Com
       resource_scope: templateScope(template.id),
       use_source: 'detail_modal',
       use_action: action === 'use-with-query' ? 'use_with_query' : 'use',
-      ...workspaceDimensions,
     });
     const target = templateUseTarget(template);
     if (onUsePlugin) {
@@ -509,7 +500,6 @@ export function CommunityView({ onRemixTemplate, onUsePrompt, onUsePlugin }: Com
       {detailsRecord ? (
         <PluginDetailsModal
           record={detailsRecord}
-          workspaceContext={workspaceContext}
           onClose={() => setDetailsRecord(null)}
           onUse={handleDetailsUse}
           onDuplicate={handleDetailsRemix}

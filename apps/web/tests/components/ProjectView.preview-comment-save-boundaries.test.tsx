@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import type { ComponentProps } from 'react';
-import type { ProjectWorkspaceScopeResponse } from '@open-design/contracts';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectView } from '../../src/components/ProjectView';
@@ -87,7 +86,7 @@ vi.mock('../../src/components/FileWorkspace', () => ({
   DESIGN_SYSTEM_TAB: '__design_system__',
   FileWorkspace: (props: Record<string, unknown>) => { fileWorkspaceSpy(props); return null; },
 }));
-vi.mock('../../src/components/Loading', () => ({ CenteredLoader: () => null }));
+vi.mock('../../src/components/Loading', () => ({ CenteredLoader: () => null, Spinner: () => null }));
 
 afterEach(() => {
   cleanup();
@@ -122,9 +121,6 @@ const savedComment: PreviewComment = {
 };
 const commentsPath = `/api/projects/${project.id}/conversations/${conversation.id}/comments`;
 const uploadPath = `/api/projects/${project.id}/upload`;
-const unboundScope: ProjectWorkspaceScopeResponse = {
-  scope: { kind: 'unbound', projectId: project.id, workspaceId: null, context: null },
-};
 
 type PreviewState = {
   onSavePreviewComment: (
@@ -194,10 +190,6 @@ describe('S26 additional ProjectView save boundaries', () => {
     createConversation.mockReturnValue(creating);
     const requests: Array<{ url: string; init: RequestInit }> = [];
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      // Empty projects seed only after the real scope hook confirms authority.
-      if (String(input) === `/api/projects/${project.id}/workspace-scope`) {
-        return Response.json(unboundScope);
-      }
       if (init?.method === 'POST' || init?.method === 'DELETE') {
         requests.push({ url: String(input), init });
       }
@@ -288,9 +280,6 @@ describe('S26 additional ProjectView save boundaries', () => {
     listConversations.mockResolvedValue([]);
     createConversation.mockReturnValue(creating);
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input) === `/api/projects/${project.id}/workspace-scope`) {
-        return Response.json(unboundScope);
-      }
       return Response.json({});
     });
     renderOwner(null);

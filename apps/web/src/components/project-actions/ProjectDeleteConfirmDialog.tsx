@@ -2,8 +2,6 @@ import { useId } from 'react';
 import { Dialog, DialogDescription, DialogFooter, DialogTitle } from '@open-design/components';
 
 import { useT } from '../../i18n';
-import type { ProjectShareReadStatus } from '../share/useProjectShareHistory';
-import styles from './ProjectDeleteConfirmDialog.module.css';
 
 /**
  * The one delete confirmation every project entry point shows (OPEND-2797):
@@ -17,8 +15,6 @@ import styles from './ProjectDeleteConfirmDialog.module.css';
  */
 export function ProjectDeleteConfirmDialog({
   projectName,
-  activeShareCount = null,
-  shareReadStatus,
   pending,
   failed,
   errorMessage,
@@ -26,8 +22,6 @@ export function ProjectDeleteConfirmDialog({
   onConfirm,
 }: {
   projectName: string;
-  activeShareCount?: number | null;
-  shareReadStatus: ProjectShareReadStatus;
   pending: boolean;
   failed: boolean;
   errorMessage?: string | null;
@@ -36,10 +30,9 @@ export function ProjectDeleteConfirmDialog({
 }) {
   const t = useT();
   const titleId = useId();
-  const hasActiveShares = activeShareCount !== null && Number.isSafeInteger(activeShareCount) && activeShareCount > 0;
   return (
     <Dialog
-      className={hasActiveShares ? `modal-confirm ${styles.activeShareDialog}` : 'modal-confirm'}
+      className="modal-confirm"
       role="alertdialog"
       onClose={() => {
         if (pending) return;
@@ -50,34 +43,28 @@ export function ProjectDeleteConfirmDialog({
       ariaLabelledBy={titleId}
       data-testid="project-delete-confirm-dialog"
     >
-      <DialogTitle id={titleId}>{hasActiveShares
-        ? t('designs.deleteConfirm', { name: projectName })
-        : t('designs.deleteTitle')}</DialogTitle>
-      <DialogDescription role={shareReadStatus === 'error' ? 'alert' : undefined}>
-        {shareReadStatus === 'error' ? t('ds.actionFailed')
-          : shareReadStatus !== 'ready' ? t('common.loading')
-          : hasActiveShares ? t('designs.deleteActiveShares', { count: activeShareCount })
-          : t('designs.deleteConfirm', { name: projectName })}
+      <DialogTitle id={titleId}>{t('designs.deleteTitle')}</DialogTitle>
+      <DialogDescription>
+        {t('designs.deleteConfirm', { name: projectName })}
       </DialogDescription>
       {failed ? (
         <p className="recent-projects__card-menu-error" role="alert">
           {errorMessage || t('ds.actionFailed')}
         </p>
       ) : null}
-      <DialogFooter className={hasActiveShares ? `row ${styles.activeShareFooter}` : 'row'}>
+      <DialogFooter className="row">
         <button
           type="button"
           disabled={pending}
           onClick={onCancel}
-          className={hasActiveShares ? styles.activeShareCancel : undefined}
           data-testid="project-delete-confirm-cancel"
         >
           {t('designs.renameCancel')}
         </button>
         <button
           type="button"
-          className={hasActiveShares ? `primary danger ${styles.activeShareDelete}` : 'primary danger'}
-          disabled={pending || shareReadStatus !== 'ready' || activeShareCount === null}
+          className="primary danger"
+          disabled={pending}
           onClick={onConfirm}
           data-testid="project-delete-confirm-accept"
         >
