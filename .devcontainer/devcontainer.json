@@ -1,0 +1,31 @@
+{
+  "name": "Open Design",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+  "remoteUser": "node",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1": {}
+  },
+  "mounts": [
+    "source=open-design-node_modules-${devcontainerId},target=${containerWorkspaceFolder}/node_modules,type=volume"
+  ],
+  "containerEnv": {
+    "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0",
+    "OD_HOST": "0.0.0.0",
+    "npm_config_store_dir": "${containerWorkspaceFolder}/node_modules/.pnpm-store"
+  },
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "appPort": [17573],
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "ms-playwright.playwright",
+        "vitest.explorer"
+      ]
+    }
+  }
+}
