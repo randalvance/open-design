@@ -1,8 +1,4 @@
-import { pendingCommentFileRetirements } from './collab/comment-file-retirements.js';
-import { withCommentFileDeletion, type CommentFileDeletion } from './collab/comment-file-deletion.js';
 import type { Express, Response } from 'express';
-import { publicFileMutationHandler } from './routes/public-file-mutation-handler.js';
-import type { PublicFileMutations } from './collab/public-file-mutations.js';
 import { deleteProjectWorkspaceArtifacts } from './chat-artifacts/store.js';
 import {
   PROJECT_EXPORT_MANIFEST_SCHEMA,
@@ -19,8 +15,7 @@ import type {
   AuthorizedProjectToolRequest,
   AuthorizeProjectRequest,
   AuthorizeProjectToolRequest,
-} from './collab/project-request-authority.js';
-import { workspaceResourceContextFromRequest } from './collab/workspace-resource-mutation.js';
+} from './project-authority.js';
 import { PROJECT_EXPORT_TOOL_ENDPOINT } from './tool-tokens.js';
 import {
   InlineAssetsLimitError,
@@ -46,19 +41,8 @@ import { readProjectFileVersion } from './project-file-versions.js';
 import { authorizeReasoningEgress, sendReasoningEgressDenial } from './reasoning-egress.js';
 import { sandboxImportedProjectRootUnavailableReason } from './sandbox-mode.js';
 import { parseOrchestratorWorkspace } from './workspace-contract.js';
-import {
-  authorizeCreatedProjectWorkspace,
-  bindCreatedProjectToWorkspace,
-  sendCreatedProjectWorkspaceError,
-} from './collab/created-project-workspace.js';
-import type { WorkspaceDirectoryFetchResult } from './collab/vela-workspace-context.js';
-import type { BoundWorkspaceResourceMutationGate } from './collab/workspace-resource-mutation.js';
 
 export interface RegisterImportRoutesDeps extends RouteDeps<'db' | 'http' | 'uploads' | 'node' | 'ids' | 'paths' | 'imports' | 'auth' | 'projectStore' | 'conversations' | 'projectFiles' | 'validation'> {
-  publicFileMutations?: PublicFileMutations;
-  stopPublicFilesBeforeDelete?: CommentFileDeletion;
-  fetchProjectCreationWorkspaceDirectory?: () => Promise<WorkspaceDirectoryFetchResult>;
-  enforceWorkspaceProjectMutation?: BoundWorkspaceResourceMutationGate;
 }
 
 export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps) {
@@ -100,11 +84,8 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
   } = ctx.auth;
   const {
     getProject,
-    getWorkspaceProject,
-    getWorkspaceProjectByProjectId,
     insertProject,
     updateProject,
-    ensureWorkspaceProject,
   } = ctx.projectStore;
   const { insertConversation } = ctx.conversations;
   const { setTabs } = ctx.projectFiles;
@@ -120,14 +101,6 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
       try {
         if (!req.file)
           return res.status(400).json({ error: 'zip file required' });
-        const createWorkspace = await authorizeCreatedProjectWorkspace(
-          req,
-          ctx.fetchProjectCreationWorkspaceDirectory,
-        );
-        if (!createWorkspace.ok) {
-          fs.promises.unlink(req.file.path).catch(() => {});
-          return sendCreatedProjectWorkspaceError(res, createWorkspace);
-        }
         const originalName =
           req.file.originalname || 'Claude Design export.zip';
         if (!/\.zip$/i.test(originalName)) {
@@ -170,12 +143,6 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
             updatedAt: now,
           });
           setTabs(db, id, [imported.entryFile], imported.entryFile);
-          bindCreatedProjectToWorkspace(
-            (input) => ensureWorkspaceProject(db, input),
-            createWorkspace.context,
-            id,
-            now,
-          );
           return createdProject;
         })();
         res.json({
@@ -202,27 +169,12 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
   // Replace an existing project's working directory in-place. Mirrors
   // the same trust-gate, realpath, and data-dir checks as folder import,
   // but updates metadata.baseDir on an existing project record.
-  app.post('/api/projects/:id/working-dir', publicFileMutationHandler(ctx.publicFileMutations, async (req, res) => {
+  app.post('/api/projects/:id/working-dir', async (req, res) => {
     try {
       const projectId = typeof req.params.id === 'string' ? req.params.id : '';
       const existing = getProject(db, projectId);
       if (!existing) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
-      }
-      if (
-        ctx.enforceWorkspaceProjectMutation
-        && !(await ctx.enforceWorkspaceProjectMutation(
-          req,
-          res,
-          sendApiError,
-          getWorkspaceProject,
-          getWorkspaceProjectByProjectId,
-          db,
-          projectId,
-          'writeFiles',
-        ))
-      ) {
-        return;
       }
       const { baseDir, orchestratorWorkspace } = req.body || {};
       if (typeof baseDir !== 'string' || !baseDir.trim()) {
@@ -320,10 +272,8 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
       const entryFile = await detectEntryFile(normalizedPath);
       const previousRoot = await fs.promises.realpath(existing.metadata?.baseDir ?? projectDir(PROJECTS_DIR, projectId)).catch(() => null);
       const replacing = previousRoot !== normalizedPath;
-      const pendingRetirements = pendingCommentFileRetirements(db, projectId);
-      if (!replacing && pendingRetirements.some(row => !row.committed)) throw new Error('COMMENT_FILE_RETIREMENT_PENDING');
       let updated: ReturnType<typeof updateProject> = null;
-      await withCommentFileDeletion(replacing || pendingRetirements.length ? ctx.stopPublicFilesBeforeDelete : undefined, projectId, undefined, async () => {
+      await (async () => {
         const existingMeta = getProject(db, projectId)?.metadata ?? {};
         const { orchestratorWorkspace: _existingOrchestratorWorkspace, ...preservedMeta } =
           existingMeta;
@@ -340,14 +290,12 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
         };
         // End every old local pointer with the root switch, including local-only
         // notes with no admitted fact. Remote retirement may fail afterward.
-        return db.transaction((): void | false => {
+        db.transaction((): void => {
           updated = updateProject(db, projectId, { metadata: nextMeta });
           if (!updated) throw new Error('PROJECT_NOT_FOUND');
-          if (!replacing) return false;
-          deleteProjectWorkspaceArtifacts(db, projectId);
+          if (replacing) deleteProjectWorkspaceArtifacts(db, projectId);
         })();
-      }, replacing ? undefined : 'committed-retry');
-      // Retirement adopts reserved metadata after the root mutation commits.
+      })();
       updated = getProject(db, projectId);
       if (!updated) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
@@ -362,17 +310,10 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
     } catch (err: any) {
       sendApiError(res, 400, 'BAD_REQUEST', String(err?.message || err));
     }
-  }));
+  });
 
   app.post('/api/import/folder', async (req, res) => {
     try {
-      const createWorkspace = await authorizeCreatedProjectWorkspace(
-        req,
-        ctx.fetchProjectCreationWorkspaceDirectory,
-      );
-      if (!createWorkspace.ok) {
-        return sendCreatedProjectWorkspaceError(res, createWorkspace);
-      }
       const { baseDir, name, skillId, designSystemId, orchestratorWorkspace } = req.body || {};
       if (typeof baseDir !== 'string' || !baseDir.trim()) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'baseDir required');
@@ -487,7 +428,6 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
       const entryFile = await detectEntryFile(normalizedPath);
       const designSystemValidation = await validateProjectDesignSystemId(
         designSystemId,
-        { workspaceId: createWorkspace.context?.workspaceId ?? null },
       );
       if (!designSystemValidation.ok) {
         return sendApiError(
@@ -499,7 +439,6 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
       }
       const skillValidation = await validateProjectSkillId(
         skillId,
-        { workspaceId: createWorkspace.context?.workspaceId ?? null },
       );
       if (!skillValidation.ok) {
         return sendApiError(
@@ -541,12 +480,6 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
         // the imported folder's artifacts. Persist an empty saved tab state so
         // ProjectView does not auto-open the detected primary file on hydration.
         setTabs(db, id, [], null);
-        bindCreatedProjectToWorkspace(
-          (input) => ensureWorkspaceProject(db, input),
-          createWorkspace.context,
-          id,
-          now,
-        );
         return createdProject;
       })();
       /** @type {import('@open-design/contracts').ImportFolderResponse} */
@@ -731,15 +664,7 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
         : { mode: 'read' },
     );
     if (!authorized) return null;
-    const requestWorkspace = workspaceResourceContextFromRequest(req);
-    return {
-      previewWorkspace: requestWorkspace === null || requestWorkspace === 'missing'
-        ? null
-        : {
-            workspaceId: requestWorkspace.workspaceId,
-            workspaceMemberId: requestWorkspace.workspaceMemberId,
-          },
-    };
+    return { previewWorkspace: null };
   }
 
   function isNoSlideDeckRenderError(rendered: { ok: boolean; error?: string }): boolean {

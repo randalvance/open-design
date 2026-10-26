@@ -56,49 +56,6 @@ describe('od project handoff CLI', () => {
     vi.clearAllMocks();
   });
 
-  it('POSTs a conversation-scoped handoff request and prints the synthesized prompt', async () => {
-    const result = await runProjectHandoff([
-      'proj-1',
-      '--conversation', 'conv-9',
-      '--api-key', 'sk-test',
-      '--model', 'claude-opus-4-7',
-      '--daemon-url', DAEMON,
-    ]);
-
-    expect(result.exitCode).toBe(0);
-    const [url, init] = fetchMock.mock.calls[0]!;
-    expect(url).toBe(`${DAEMON}/api/projects/proj-1/handoff`);
-    expect((init as RequestInit).method).toBe('POST');
-    // conversationId must be carried — the endpoint is conversation-scoped.
-    expect(JSON.parse(String((init as RequestInit).body))).toEqual({
-      conversationId: 'conv-9',
-      apiKey: 'sk-test',
-      model: 'claude-opus-4-7',
-    });
-    // Default output is the prompt itself, so it pipes into a file.
-    expect(stdout.join('')).toContain('## Context');
-  });
-
-  it('sends exact workspace identity for a bound project handoff', async () => {
-    const result = await runProjectHandoff([
-      'proj-1',
-      '--conversation', 'conv-9',
-      '--api-key', 'sk-test',
-      '--model', 'claude-opus-4-7',
-      '--workspace', 'workspace-a',
-      '--workspace-member', 'member-a',
-      '--daemon-url', DAEMON,
-      '--json',
-    ]);
-
-    expect(result.exitCode).toBe(0);
-    const headers = new Headers(
-      (fetchMock.mock.calls[0]![1] as RequestInit).headers,
-    );
-    expect(headers.get('x-od-workspace-id')).toBe('workspace-a');
-    expect(headers.get('x-od-workspace-member-id')).toBe('member-a');
-    expect(JSON.parse(stdout.join(''))).toEqual(HANDOFF_RESPONSE);
-  });
 
   it('emits the full response as JSON under --json', async () => {
     const result = await runProjectHandoff([

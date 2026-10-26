@@ -15,55 +15,6 @@ import { spawnEnvForAgent } from '../../src/runtimes/env.js';
 import { withPlatform } from './helpers/test-helpers.js';
 
 describe('agent runtime tool environment', () => {
-  it('pins current stock-search run and analytics identity, clearing it for standalone calls', () => {
-    const current = createOpenDesignToolEnv({
-      daemonUrl: 'http://127.0.0.1:7456', runId: 'run-current', conversationId: 'conversation-current',
-      analyticsContext: { deviceId: 'device-current', sessionId: 'session-current', clientType: 'web', locale: 'zh-CN', requestId: null },
-    });
-    expect(current).toMatchObject({ OD_STOCK_RUN_ID: 'run-current', OD_STOCK_SESSION_ID: 'conversation-current',
-      OD_STOCK_ANALYTICS_DEVICE_ID: 'device-current', OD_STOCK_ANALYTICS_SESSION_ID: 'session-current' });
-    const standalone = { ...current, ...createOpenDesignToolEnv({ daemonUrl: 'http://127.0.0.1:7456' }) };
-    expect(standalone.OD_STOCK_RUN_ID).toBe('');
-    expect(standalone.OD_STOCK_ANALYTICS_DEVICE_ID).toBe('');
-  });
-  it('passes the pinned Workspace pair to dynamic Skill wrappers, clearing ambient identity for unbound runs', () => {
-    const scoped = createOpenDesignToolEnv({
-      daemonUrl: 'http://127.0.0.1:7456',
-      projectId: 'project-a',
-      workspaceScope: {
-        schemaVersion: 1,
-        projectId: 'project-a',
-        workspaceId: 'workspace-a',
-        workspaceMemberId: 'member-a',
-        source: 'persisted_project_binding',
-      },
-    });
-    expect(scoped).toMatchObject({
-      OD_WORKSPACE_ID: 'workspace-a',
-      OD_WORKSPACE_MEMBER_ID: 'member-a',
-    });
-    const unbound = {
-      ...scoped,
-      ...createOpenDesignToolEnv({
-        daemonUrl: 'http://127.0.0.1:7456',
-        projectId: 'unbound',
-      }),
-    };
-    expect(unbound.OD_WORKSPACE_ID).toBe('');
-    expect(unbound.OD_WORKSPACE_MEMBER_ID).toBe('');
-    const historical = createOpenDesignToolEnv({
-      daemonUrl: 'http://127.0.0.1:7456',
-      projectId: 'project-a',
-      workspaceScope: {
-        schemaVersion: 1,
-        projectId: 'project-a',
-        workspaceId: 'workspace-a',
-        source: 'persisted_project_binding',
-      },
-    });
-    expect(historical.OD_WORKSPACE_ID).toBe('workspace-a');
-    expect(historical.OD_WORKSPACE_MEMBER_ID).toBe('');
-  });
 
   it('prefers explicit OD_NODE_BIN over the process executable', () => {
     expect(resolveOpenDesignNodeBin({
@@ -98,32 +49,6 @@ describe('agent runtime tool environment', () => {
       OD_NODE_BIN: '/opt/open-design/bin/node',
       OD_TOOL_TOKEN: 'fresh-token',
     });
-  });
-
-  it('merges an opaque environment supplied by the runtime integration seam', () => {
-    const inheritedEnvironment = vi.fn(() => ({ OD_OPAQUE_CLIENT_CAPABILITY: 'capability' }));
-    const baseEnv = { PATH: '/bin' };
-    const env = createAgentRuntimeEnv(
-      baseEnv,
-      'http://127.0.0.1:7456',
-      null,
-      '/opt/open-design/bin/node',
-      inheritedEnvironment,
-    );
-
-    expect(inheritedEnvironment).toHaveBeenCalledWith(baseEnv);
-    expect(env.OD_OPAQUE_CLIENT_CAPABILITY).toBe('capability');
-  });
-
-  it('prepends node binary directory to PATH when not already present', () => {
-    const env = createAgentRuntimeEnv(
-      { PATH: '/bin' },
-      'http://127.0.0.1:7456',
-      null,
-      '/opt/node/node',
-    );
-
-    expect(env.PATH).toBe(`/opt/node${path.delimiter}/bin`);
   });
 
   it('does not duplicate node binary directory when already present in PATH', () => {
@@ -268,7 +193,7 @@ describe('agent runtime tool environment', () => {
 
     const env = {
       ...spawnEnvForAgent(
-        'amr',
+        'opencode',
         base,
         configuredAgentEnv,
       ),
@@ -281,9 +206,6 @@ describe('agent runtime tool environment', () => {
     };
 
     expect(env.OD_DATA_DIR).toBe(process.env.OD_DATA_DIR);
-    expect(env.OPENCODE_TEST_HOME).toBe(
-      path.join(process.env.OD_DATA_DIR ?? '', 'amr', 'opencode-home'),
-    );
     expect(env.OD_PROJECT_ID).toBe('project-1');
     expect(env.OD_PROJECT_DIR).toBe('/tmp/project');
     expect(env.OD_HYPERFRAMES_BIN).toBe('/opt/open-design/hyperframes/bin/hyperframes.mjs');

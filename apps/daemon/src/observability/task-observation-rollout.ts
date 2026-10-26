@@ -74,7 +74,6 @@ const runtimeObservationAdapterVersions: ReadonlyMap<string, string> = new Map([
   ['codex', 'od-codex-json-events/v1'],
   ['claude', 'od-claude-stream-json/v1'],
   ['opencode', 'od-opencode-json-events/v1'],
-  ['amr', 'od-vela-opencode-acp/v1'],
 ]);
 
 export interface TaskObservationRolloutConfig {

@@ -43,12 +43,8 @@ import {
 } from './services/diagnostics-evidence.js';
 import { diagnosticId } from './services/diagnostics-environment.js';
 import { daemonHealthPaths } from './services/daemon-health.js';
-import { readVelaLoginStatus } from './integrations/vela.js';
 
 interface ResolvedDiagnosticsAgentEnvironment {
-  amrHome: string | null;
-  amrOpenCodeHome: string | null;
-  amrConfiguredEnv: Record<string, string>;
   claudeConfigDir: string | null;
   codexHome: string | null;
   openCodeXdgDataHome: string | null;
@@ -62,9 +58,6 @@ async function resolveDiagnosticsAgentEnvironment(
   dataDir: string | null | undefined,
 ): Promise<ResolvedDiagnosticsAgentEnvironment> {
   const empty: ResolvedDiagnosticsAgentEnvironment = {
-    amrHome: null,
-    amrOpenCodeHome: null,
-    amrConfiguredEnv: {},
     claudeConfigDir: null,
     codexHome: null,
     openCodeXdgDataHome: null,
@@ -83,9 +76,6 @@ async function resolveDiagnosticsAgentEnvironment(
       return trimmed && trimmed.length > 0 ? trimmed : null;
     };
     return {
-      amrHome: clean(envFor('amr').AMR_HOME),
-      amrOpenCodeHome: clean(envFor('amr').OPENCODE_TEST_HOME),
-      amrConfiguredEnv: agentCliEnvForAgent(appConfig.agentCliEnv, 'amr'),
       claudeConfigDir: clean(envFor('claude').CLAUDE_CONFIG_DIR),
       codexHome: clean(envFor('codex').CODEX_HOME),
       // OpenCode resolves its data/log dir from XDG_DATA_HOME; sandbox mode
@@ -268,48 +258,6 @@ function resolveDesktopCrashDumpsDir(runtime: SidecarRuntimeContext<LegacySideca
   return join(dirname(desktopLog), 'crashes');
 }
 
-/**
- * AMR's runtime log (`$AMR_HOME/logs/agent-runtime.jsonl`) is shared by every run.
- * `opencode_session_created` carries the Open Design run id; later records such as
- * `opencode_event_stream_failure` only carry the OpenCode session id. Keep this run's
- * records and its sessions' records until another run takes a session over.
- */
-export function selectAmrRuntimeRunLines(runId: string): (lines: string[]) => string[] {
-  return (lines) => {
-    const sessions = new Set<string>();
-    return lines.filter((line) => {
-      let record: Record<string, unknown>;
-      try { record = JSON.parse(line) as Record<string, unknown>; } catch { return false; }
-      const session = typeof record.opencodeSessionId === 'string' ? record.opencodeSessionId : '';
-      if (record.event === 'opencode_session_created' && session) {
-        if (record.openDesignRunId === runId) sessions.add(session); else sessions.delete(session);
-      }
-      return record.openDesignRunId === runId || (session !== '' && sessions.has(session));
-    });
-  };
-}
-
-async function buildAmrRuntimeLogSources(
-  amrHome: string | null,
-  incident: { runId?: string; agentId?: string },
-  agentLogCount: number,
-): Promise<AutomaticDiagnosticSource[]> {
-  const name = 'agent-cli-logs/amr/agent-runtime.jsonl';
-  const absolutePath = join(amrHome ?? join(homedir(), '.amr'), 'logs', 'agent-runtime.jsonl');
-  const exists = await access(absolutePath).then(() => true, () => false);
-  // The consent baseline needs the shared file itself; incidents only take their run's records.
-  if (incident.agentId === '*') return exists ? [{ name, absolutePath, kind: 'text' }] : [];
-  const sources: AutomaticDiagnosticSource[] = [];
-  if (!exists) sources.push({ name, absolutePath, kind: 'text', omitReason: 'source_not_found' });
-  else if (!incident.runId) sources.push({ name, absolutePath, kind: 'text', omitReason: 'run_id_unavailable' });
-  else sources.push({ name, absolutePath, kind: 'text', tailBytes: TAIL_BYTES_PER_LOG,
-    selectLines: selectAmrRuntimeRunLines(incident.runId) });
-  // AMR keeps OpenCode session logs under per-conversation homes that are not located yet.
-  if (agentLogCount === 0) sources.push({ name: 'agent-cli-logs/amr/opencode', absolutePath: '', kind: 'text',
-    omitReason: 'source_not_located' });
-  return sources;
-}
-
 /** Automatic uploads select the failing run and its runtime; manual exports remain broader. */
 export async function buildAutomaticDiagnosticSources(
   options: DiagnosticsHandlerOptions,
@@ -324,14 +272,10 @@ export async function buildAutomaticDiagnosticSources(
   if (incident.agentId) {
     const environment = await resolveDiagnosticsAgentEnvironment(options.dataDir);
     const agentSources = await buildAgentCliLogSources({ homeDir: homedir(), dataDir: options.dataDir ?? null,
-      amrOpenCodeHome: environment.amrOpenCodeHome, claudeConfigDir: environment.claudeConfigDir,
+      claudeConfigDir: environment.claudeConfigDir,
       codexHome: environment.codexHome, xdgDataHome: environment.openCodeXdgDataHome ?? null });
     const selected = agentSources.filter((source) => incident.agentId === '*' || source.name.startsWith(`agent-cli-logs/${incident.agentId}/`));
     sources.push(...selected);
-    if (incident.agentId === 'amr' || incident.agentId === '*') {
-      const amrLogs = selected.filter((source) => source.name.startsWith('agent-cli-logs/amr/')).length;
-      sources.push(...await buildAmrRuntimeLogSources(environment.amrHome, incident, amrLogs));
-    }
   }
   return sources;
 }
@@ -351,7 +295,6 @@ export function createDiagnosticsExportHandler(options: DiagnosticsHandlerOption
         ...(await buildAgentCliLogSources({
           homeDir: home,
           dataDir: options.dataDir ?? null,
-          amrOpenCodeHome: agentEnvironment.amrOpenCodeHome,
           claudeConfigDir: agentEnvironment.claudeConfigDir,
           codexHome: agentEnvironment.codexHome,
           xdgDataHome: agentEnvironment.openCodeXdgDataHome ?? process.env.XDG_DATA_HOME ?? null,
@@ -438,26 +381,6 @@ export function createDiagnosticsExportHandler(options: DiagnosticsHandlerOption
           },
           'runtime-health.json': {
             daemon: { reachable: true },
-            amr: (() => {
-              try {
-                const status = readVelaLoginStatus(
-                  process.env,
-                  agentEnvironment.amrConfiguredEnv,
-                );
-                return {
-                  profile: status.profile,
-                  userId: diagnosticId(status.user?.id),
-                  loggedIn: status.loggedIn,
-                  sessionState: status.sessionState,
-                  credentialRevision: status.credentialRevision,
-                  loginInFlight: status.loginInFlight,
-                };
-              } catch (error) {
-                return {
-                  error: error instanceof Error ? error.message : String(error),
-                };
-              }
-            })(),
             coverage: {
               runEventsPresent: runEventSources.length > 0,
               note: runEventSources.length > 0

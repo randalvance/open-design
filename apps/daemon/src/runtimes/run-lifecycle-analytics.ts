@@ -206,7 +206,7 @@ function foldEventIntoRunAdmissionEvidence(
     return;
   }
   if (event === 'start') {
-    const acp = data?.agentId === 'amr' || data?.streamFormat === 'acp-json-rpc';
+    const acp = data?.streamFormat === 'acp-json-rpc';
     ledger.admissionEvidence = {
       attemptStarted: true,
       acp,

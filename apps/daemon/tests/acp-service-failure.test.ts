@@ -76,7 +76,6 @@ const ROWS: Row[] = [
   { id: 'A3 Authentication required', text: 'json-rpc id 2: Authentication required', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'AGENT_AUTH_REQUIRED', category: 'auth', detail: 'auth_required', retryable: false, userAction: 'login' },
   { id: 'A4 HTTP 401 Unauthorized id1', text: 'json-rpc id 1: HTTP 401 Unauthorized', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'AGENT_AUTH_REQUIRED', category: 'auth', detail: 'auth_required', retryable: false, userAction: 'login' },
   { id: 'A5 rate limit exceeded', text: 'json-rpc id 2: rate limit exceeded', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'RATE_LIMITED', category: 'rate_limit', detail: 'rate_limit_429', retryable: false, userAction: 'none' },
-  { id: 'A6 insufficient balance', text: 'json-rpc id 2: insufficient balance', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'RATE_LIMITED', category: 'insufficient_balance', detail: 'amr_insufficient_balance', retryable: false, userAction: 'recharge' },
   { id: 'A7 HTTP 503 Service Unavailable', text: 'json-rpc id 2: HTTP 503 Service Unavailable', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'UPSTREAM_UNAVAILABLE', category: 'upstream_unavailable', detail: 'upstream_5xx', retryable: false, userAction: 'none' },
   { id: 'A8 Internal error: 401 Unauthorized', text: 'json-rpc id 2: Internal error: 401 Unauthorized', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'AGENT_AUTH_REQUIRED', category: 'auth', detail: 'auth_required', retryable: false, userAction: 'login' },
   { id: 'A9 Internal error: 429 rate limit', text: 'json-rpc id 2: Internal error: 429 rate limit exceeded', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'RATE_LIMITED', category: 'rate_limit', detail: 'rate_limit_429', retryable: false, userAction: 'none' },
@@ -154,7 +153,6 @@ const ROWS: Row[] = [
   { id: 'D4 exit code 401 noise', text: 'json-rpc id 2: start opencode server: opencode exited before readiness: exit code 401', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'AGENT_EXECUTION_FAILED', category: 'process_exit', detail: 'fatal_rpc_error', retryable: false, userAction: 'none' },
   { id: 'D5 line 502 noise', text: 'json-rpc id 4: opencode event stream: parse error at line 502', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'AGENT_EXECUTION_FAILED', category: 'process_exit', detail: 'fatal_rpc_error', retryable: false, userAction: 'none' },
   { id: 'D6 session limit reached', text: 'json-rpc id 4: session limit reached for this workspace', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'RATE_LIMITED', category: 'rate_limit', detail: 'hard_quota', retryable: false, userAction: 'none' },
-  { id: 'D7 amr insufficient wallet balance', text: 'json-rpc id 4: opencode event stream: insufficient wallet balance', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'AGENT_EXECUTION_FAILED', category: 'insufficient_balance', detail: 'amr_insufficient_balance', retryable: false, userAction: 'recharge' },
   { id: 'D8 provider overloaded 529', text: 'json-rpc id 4: opencode event stream: {"properties":{"error":{"data":{"message":"[code=upstream_error] 529 overloaded_error: Overloaded"}}}}', shape: 'structured', payloadRetryable: true, codeBefore: 'AGENT_EXECUTION_FAILED', code: 'UPSTREAM_UNAVAILABLE', category: 'upstream_unavailable', detail: 'upstream_5xx', retryable: true, userAction: 'retry' },
 
   // ---- R-053: the platform's own provider credentials, not the user's ----
@@ -166,13 +164,11 @@ const ROWS: Row[] = [
   // `unauthenticated`, `classifyAgentServiceFailure` and `isAuthDetailText`
   // off "credentials are missing". The user was shown "Sign-in required" for a
   // credential they do not hold and cannot fix.
-  { id: 'E1 upstream_provider_unauthenticated (R-053)', text: 'json-rpc id 4: opencode event stream: {"properties":{"error":{"data":{"message":"\\"[code=upstream_provider_unauthenticated] Upstream provider credentials are missing or invalid.\\""}}}}', shape: 'structured', payloadRetryable: false, codeBefore: 'AGENT_EXECUTION_FAILED', code: 'UPSTREAM_UNAVAILABLE', category: 'upstream_unavailable', detail: 'upstream_5xx', retryable: false, userAction: 'none' },
   { id: 'E2 upstream_provider_unauthenticated bare', text: 'API request failed with status 500: upstream_provider_unauthenticated', shape: 'structured', payloadRetryable: false, codeBefore: 'AGENT_EXECUTION_FAILED', code: 'UPSTREAM_UNAVAILABLE', category: 'upstream_unavailable', detail: 'upstream_5xx', retryable: false, userAction: 'none' },
   // The sibling code from the same vela switch (upstream 403). It never
   // reached the auth branch — it landed `process_exit / fatal_rpc_error`, an
   // opaque "Task failed" — so naming it here moves it onto the same service
   // card rather than un-mislabelling it.
-  { id: 'E3 upstream_provider_forbidden', text: 'json-rpc id 4: opencode event stream: [code=upstream_provider_forbidden] Upstream provider rejected access for the configured credentials.', shape: 'structured', payloadRetryable: false, codeBefore: 'AGENT_EXECUTION_FAILED', code: 'UPSTREAM_UNAVAILABLE', category: 'upstream_unavailable', detail: 'upstream_5xx', retryable: false, userAction: 'none' },
 ];
 
 /** The ACP `send('error', …)` bridge in server.ts, as one function. */
@@ -300,7 +296,6 @@ describe('ACP failure landing table', () => {
       'A3 Authentication required',
       'A4 HTTP 401 Unauthorized id1',
       'A5 rate limit exceeded',
-      'A6 insufficient balance',
       'A7 HTTP 503 Service Unavailable',
       'A8 Internal error: 401 Unauthorized',
       'A9 Internal error: 429 rate limit',
@@ -319,9 +314,7 @@ describe('ACP failure landing table', () => {
       // — the gateway's own credentials — instead of letting the sentence they
       // travel with ("credentials are missing or invalid") be read as the
       // caller's.
-      'E1 upstream_provider_unauthenticated (R-053)',
       'E2 upstream_provider_unauthenticated bare',
-      'E3 upstream_provider_forbidden',
     ]);
   });
 

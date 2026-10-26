@@ -96,7 +96,6 @@ import {
   resolveHyperFramesNodeBin,
 } from './hyperframes-runtime.js';
 import { prepareHyperFramesAudio, hyperFramesAudioEncodingArgs, type HyperFramesAudioTrack } from './hyperframes-audio.js';
-import { renderVelaImage, renderVelaVideo } from './vela.js';
 import {
   ensureProject,
   kindFor,
@@ -152,12 +151,12 @@ type MediaContext = {
   aspect: string | undefined;
   /**
    * Published quality tier the caller asked for, passed through verbatim and
-   * left undefined when they asked for nothing. Only the Vela renderer reads
-   * it today; the OpenAI branches keep deriving their own `body.quality` from
-   * the model id, which is a different vocabulary ('hd' / 'standard').
+   * left undefined when they asked for nothing. The OpenAI branches derive
+   * their own `body.quality` from the model id, which is a different
+   * vocabulary ('hd' / 'standard').
    */
   quality: string | undefined;
-  /** Published output resolution the caller asked for. Vela renderer only. */
+  /** Published output resolution the caller asked for. */
   resolution: string | undefined;
   length: number | undefined;
   duration: number | undefined;
@@ -172,7 +171,6 @@ type MediaContext = {
   /** Additional reference images for multi-image i2v / style reference flows. */
   imageRefs: ImageRef[];
   projectRoot: string;
-  workspaceId: string | undefined;
   onProviderRequestSettled:
     | ((summary: ImageGenerationRequestSummary & { providerId: string }) => void)
     | undefined;
@@ -355,7 +353,6 @@ export async function generateMedia(args: {
   audioKind?: AudioKind; language?: string; loop?: boolean; promptInfluence?: number;
   compositionDir?: string; image?: string; images?: string[]; onProgress?: ProgressFn; requestInit?: MediaRequestInit;
   desktopFrameRenderer?: DesktopFrameRenderer | null;
-  workspaceId?: string;
   onProviderRequestSettled?: (summary: ImageGenerationRequestSummary & { providerId: string }) => void;
   /**
    * Called once with the EXACT provider bytes that were just written, while
@@ -399,7 +396,6 @@ export async function generateMedia(args: {
     compositionDir,
     image,
     requestInit,
-    workspaceId,
     onProviderRequestSettled,
   } = args;
 
@@ -484,15 +480,7 @@ export async function generateMedia(args: {
   // when stubs are swapped for paid integrations.
   const lengthClamp =
     surface === 'video'
-      ? def.provider === 'vela'
-        ? {
-            value:
-              typeof length === 'number' && Number.isFinite(length)
-                ? length
-                : undefined,
-            warning: null,
-          }
-        : clampWithWarning(length, VIDEO_LENGTHS_SEC, 'length')
+      ? clampWithWarning(length, VIDEO_LENGTHS_SEC, 'length')
       : { value: undefined, warning: null };
   const usesProviderSpecificAudioDuration =
     def.provider === 'elevenlabs'
@@ -538,7 +526,7 @@ export async function generateMedia(args: {
   // Resolve any user-configured model alias BEFORE we hand the id to a
   // dispatcher (issue #1277). Catalog lookup + surface validation above
   // resolved product shorthands to `def.id`, so use that canonical id here:
-  // e.g. `nano-banana` must reach Vela as `nano-banana-2`, never as an
+  // e.g. `nano-banana` must reach the provider as its registry id, never as an
   // unregistered wire model. The alias only changes what the provider
   // receives on the wire. lefarcen + codex P2 on PR #1309: keep BOTH values on ctx so
   // capability branches (DALL-E sizing, gpt-image quality, gpt-4o-mini-tts
@@ -578,7 +566,6 @@ export async function generateMedia(args: {
     requestInit: requestInit || {},
     imageRefs,
     projectRoot,
-    workspaceId,
     onProviderRequestSettled,
   };
 
@@ -615,19 +602,6 @@ export async function generateMedia(args: {
     ) {
       providerId = 'custom-image';
       const result = await renderCustomOpenAIImage(ctx, customImageCredentials!);
-      bytes = result.bytes;
-      providerNote = result.providerNote;
-      suggestedExt = result.suggestedExt;
-    } else if (def.provider === 'vela' && surface === 'image') {
-      const result = await renderVelaImage(ctx);
-      bytes = result.bytes;
-      providerNote = result.providerNote;
-      suggestedExt = result.suggestedExt;
-    } else if (def.provider === 'vela' && surface === 'video') {
-      const result = await renderVelaVideo({
-        ...ctx,
-        onProgress: args.onProgress,
-      });
       bytes = result.bytes;
       providerNote = result.providerNote;
       suggestedExt = result.suggestedExt;
@@ -825,7 +799,7 @@ export async function generateMedia(args: {
     // HyperFrames is a local render, not a remote provider. Falling back
     // to a stub here hides actionable composition/preflight failures and
     // can make the agent retry or narrate a fake MP4 as success.
-    if (def.provider === 'hyperframes' || def.provider === 'vela') {
+    if (def.provider === 'hyperframes') {
       throw err;
     }
     // A real provider failed (network blip, 4xx, missing key, …). We

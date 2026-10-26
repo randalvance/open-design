@@ -12,7 +12,7 @@ import {
   revokeProjectSurface,
 } from '../genui/index.js';
 import { resolveProjectDir } from '../projects.js';
-import type { AuthorizeProjectRequest } from '../collab/project-request-authority.js';
+import type { AuthorizeProjectRequest } from '../project-authority.js';
 
 export interface RegisterGenuiRoutesDeps {
   db: Database.Database;

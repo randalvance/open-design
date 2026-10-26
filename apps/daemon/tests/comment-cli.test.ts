@@ -141,7 +141,7 @@ describe('od comment CLI', () => {
 
   it('uses the existing comment HTTP API for list, create, update, status, and delete', async () => {
     stub = await startStubServer();
-    const common = ['--workspace', 'ws-1', '--workspace-member', 'member-1', '--daemon-url', stub.baseUrl, '--json'];
+    const common = ['--daemon-url', stub.baseUrl, '--json'];
     const targetJson = JSON.stringify(target);
     const calls = [
       ['list', 'project-1', 'conversation-1', ...common],
@@ -165,12 +165,6 @@ describe('od comment CLI', () => {
       '/api/projects/project-1/conversations/conversation-1/comments/c1',
       '/api/projects/project-1/conversations/conversation-1/comments/c1',
     ]);
-    for (const request of stub.requests) {
-      expect(request.headers).toMatchObject({
-        'x-od-workspace-id': 'ws-1',
-        'x-od-workspace-member-id': 'member-1',
-      });
-    }
     expect(JSON.parse(stub.requests[1]!.body)).toEqual({ target, note: 'created' });
     expect(JSON.parse(stub.requests[2]!.body)).toEqual({ id: 'c1', target, note: 'updated' });
     expect(JSON.parse(stub.requests[3]!.body)).toEqual({ status: 'resolved' });

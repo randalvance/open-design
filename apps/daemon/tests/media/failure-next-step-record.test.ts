@@ -8,7 +8,6 @@ import {
   updateMediaTask,
 } from '../../src/media/tasks.js';
 import { mediaTaskErrorFromFailure } from '../../src/routes/media.js';
-import { VelaMediaError } from '../../src/media/vela.js';
 
 /** Shape of `StubProviderDisabledError` (apps/daemon/src/media/index.ts), which is module-private. */
 function stubProviderDisabled(model: string): Error {
@@ -59,19 +58,6 @@ function roundTrip(error: unknown): ReturnType<typeof mediaTaskErrorFromFailure>
 }
 
 describe('recorded media failures carry a next step', () => {
-  it('classifies a content refusal as something the user can fix', () => {
-    const error = mediaTaskErrorFromFailure(
-      new VelaMediaError('the request was refused', {
-        code: 'safety_rejection',
-        subject: 'prompt',
-        retryable: false,
-      }),
-    );
-
-    expect(error.nextStep).toBe('revise-request');
-    expect(error.subject).toBe('prompt');
-    expect(error.retryable).toBe(false);
-  });
 
   it('classifies an upstream wobble as retryable rather than the user’s fault', () => {
     expect(mediaTaskErrorFromFailure(new Error('openai image 503: upstream busy')).nextStep)
@@ -91,33 +77,6 @@ describe('recorded media failures carry a next step', () => {
   it('sends a model with no configured renderer to Settings', () => {
     expect(mediaTaskErrorFromFailure(stubProviderDisabled('some-model')).nextStep)
       .toBe('open-settings');
-  });
-
-  it('reads an OD-owned credential failure as a sign-in, not a BYOK key', () => {
-    expect(
-      mediaTaskErrorFromFailure(new Error('vela image 401: unauthorized'), {
-        model: 'vela/gpt-image-2',
-      }).nextStep,
-    ).toBe('sign-in');
-    expect(
-      mediaTaskErrorFromFailure(new Error('senseaudio image 401: unauthorized'), {
-        model: 'senseaudio-image',
-      }).nextStep,
-    ).toBe('open-settings');
-  });
-
-  it('survives the SQLite round-trip the way code and retryable do', () => {
-    const restored = roundTrip(
-      new VelaMediaError('the reference image was refused', {
-        code: 'safety_rejection',
-        subject: 'input_image',
-        retryable: false,
-      }),
-    );
-
-    expect(restored.nextStep).toBe('revise-request');
-    expect(restored.subject).toBe('input_image');
-    expect(restored.code).toBe('safety_rejection');
   });
 
   it('never persists an unknown value smuggled through the JSON column', () => {

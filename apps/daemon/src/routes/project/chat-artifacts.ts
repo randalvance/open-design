@@ -1,8 +1,7 @@
 // Read endpoints for immutable chat artifact snapshots.
 //
 // AUTHORITY: every route runs the SAME gate as `/raw` — project lookup, then
-// `authorizeProjectRequest({ mode: 'read' })`, then the Team-mirror revocation
-// check — and only then compares the snapshot's own `project_id` against the
+// `authorizeProjectRequest({ mode: 'read' })` — and only then compares the snapshot's own `project_id` against the
 // route's project. An unguessable UUID is not an authorization mechanism, so
 // knowing a snapshot id gets a caller nothing without project read authority.
 //
@@ -16,7 +15,7 @@
 
 import type { Express, Request, Response } from 'express';
 
-import type { AuthorizeProjectRequest } from '../../collab/project-request-authority.js';
+import type { AuthorizeProjectRequest } from '../../project-authority.js';
 import type { RouteDeps } from '../../server-context.js';
 import { createChatArtifactBlobStore } from '../../chat-artifacts/blob-store.js';
 import {
@@ -69,10 +68,6 @@ export function registerProjectChatArtifactRoutes(
       mode: 'read',
       allowNavigationQuery: true,
     })) return false;
-    if (project?.metadata?.teamMirrorRevokedAt) {
-      sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
-      return false;
-    }
     return true;
   }
 

@@ -1,4 +1,3 @@
-import { pendingCommentFileRetirements } from './collab/comment-file-retirements.js';
 // SQLite-backed persistence for projects, conversations, messages, and the
 // per-project set of open workspace tabs. The on-disk project folder under
 // .od/projects/<id>/ is still the single owner of the user's actual files
@@ -11,7 +10,6 @@ import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type {
   ChatMessage,
-  CollabCloudComment,
   OdNextDevicePlatformV1,
   PreviewComment,
   PreviewCommentAttachment,
@@ -27,17 +25,10 @@ import {
   stripNextStepMarkers,
   asPreviewCommentAnchorState,
 } from '@open-design/contracts';
-import { parseCommentFileState } from './collab/comment-file-facts.js';
-import { migrateCollabSyncSnapshots } from './collab/sync-snapshot-store.js';
-import { migrateCommentRelayOutbox } from './collab/comment-relay-outbox.js';
-import { migratePublicFilePublications } from './collab/public-file-publication-store.js';
-import { migrateCommentInboundStore } from './collab/comment-inbound-store.js';
-import { migrateOwnedContentSync } from './collab/owned-content-store.js';
-import { migrateAmrTerminalReportOutbox } from './storage/amr-terminal-report-outbox.js';
 import {
   collapseWorkspaceProjectHomes,
   type WorkspaceProjectHomeRow,
-} from './collab/workspace-project-home.js';
+} from './storage/workspace-project-home.js';
 import { scrubDsmlToolProtocolTail } from './artifacts/text-suppression.js';
 import {
   listMessageArtifactRows,
@@ -116,7 +107,7 @@ function migrate(db: SqliteDb): void {
     );
 
     -- A project belongs to exactly ONE workspace, so project_id is the key.
-    -- See collab/workspace-project-home.ts for the ruling and the repair path.
+    -- See storage/workspace-project-home.ts for the ruling and the repair path.
     CREATE TABLE IF NOT EXISTS workspace_projects (
       project_id TEXT PRIMARY KEY,
       workspace_id TEXT NOT NULL,
@@ -682,12 +673,6 @@ function migrate(db: SqliteDb): void {
   migrateProjectScenarioBindings(db);
   migrateStrategyTaskStore(db);
   migrateChatArtifacts(db);
-  migrateCollabSyncSnapshots(db);
-  migrateCommentRelayOutbox(db);
-  migrateAmrTerminalReportOutbox(db);
-  migratePublicFilePublications(db);
-  migrateCommentInboundStore(db);
-  migrateOwnedContentSync(db);
 }
 
 /**
@@ -696,7 +681,7 @@ function migrate(db: SqliteDb): void {
  *
  * Product ruling (2026-07-21): a project is created in a workspace and lives
  * there; sharing flips `visibility` within that workspace rather than projecting
- * the project into a second one. See collab/workspace-project-home.ts for the
+ * the project into a second one. See storage/workspace-project-home.ts for the
  * full statement and for the rule that picks the surviving row.
  *
  * Two steps, in this order, inside one transaction:
@@ -1277,7 +1262,7 @@ export function setWorkspaceProjectMetadataRefreshPending(
 /**
  * The workspace a project belongs to, looked up by project alone.
  *
- * A project has exactly one workspace (see collab/workspace-project-home.ts), so
+ * A project has exactly one workspace (see storage/workspace-project-home.ts), so
  * this — not `getWorkspaceProject(db, workspaceId, projectId)` — is the question
  * to ask before binding a project anywhere. Asking the two-key form and getting
  * nothing back means "not in THIS workspace", which an older build mistook for
@@ -3779,18 +3764,13 @@ interface PreviewCommentReadOptions {
 }
 
 function currentPreviewCommentFilter(db: SqliteDb, projectId: string): (comment: PreviewComment) => boolean {
-  const state = parseCommentFileState(getProject(db, projectId)?.metadata?._commentFiles);
-  const pending = new Set(pendingCommentFileRetirements(db, projectId).map(row => row.fact.sourceFileId));
-  const facts = new Map(state?.files.map(fact => [fact.sourceFileId, fact]));
-  // A creator may comment before any receipt/share exists. The existing
-  // workspace pointer proves only that local lifetime, never remote admission.
+  // A comment bound to a source file stays visible while the live artifact
+  // pointer for that file still names the same path.
   const pointers = new Map((db.prepare('SELECT id, current_path AS path FROM workspace_artifacts WHERE project_id = ? AND deleted_at IS NULL')
     .all(projectId) as Array<{ id: string; path: string }>).map(row => [row.id, row.path]));
   return comment => {
     if (!comment.sourceFileId) return true; // Historical rows are never assigned a guessed identity.
-    if (pending.has(comment.sourceFileId)) return false;
-    const fact = facts.get(comment.sourceFileId);
-    return fact ? !fact.retired && fact.sourceFilePath === comment.filePath : pointers.get(comment.sourceFileId) === comment.filePath;
+    return pointers.get(comment.sourceFileId) === comment.filePath;
   };
 }
 
@@ -3853,24 +3833,11 @@ export function listProjectPreviewComments(db: SqliteDb, projectId: string) {
     .filter(currentPreviewCommentFilter(db, projectId));
 }
 
-export interface UpsertPreviewCommentOptions {
-  /**
-   * True when this project currently syncs comments to the collab cloud (see
-   * `shouldSyncProjectComments`), so a genuinely NEW comment's `pin_seq`
-   * starts unconfirmed (0) instead of final (1). Ignored on the edit branch —
-   * `pin_seq`/`pin_seq_confirmed`/`sort_key` are assigned exactly once, at
-   * creation, and never revisited by an edit. Only meaningful together with a
-   * later `confirmPreviewCommentPinSeq` call once the cloud push resolves.
-   */
-  pinPendingCloudConfirm?: boolean;
-}
-
 export function upsertPreviewComment(
   db: SqliteDb,
   projectId: string,
   conversationId: string,
   input: DbRow,
-  options: UpsertPreviewCommentOptions = {},
 ) {
   const target = input?.target ?? {};
   const note = typeof input?.note === 'string' ? input.note.trim() : '';
@@ -3926,16 +3893,10 @@ export function upsertPreviewComment(
   if (!note && attachments.length === 0) throw new Error('comment note required');
   // pin_seq / pin_seq_confirmed / sort_key are assigned exactly once, on the
   // INSERT branch, and are absent from the ON CONFLICT SET clause below so an
-  // edit (existing !== undefined) never rewrites them — see
-  // recvq5BVsolIxi / UpsertPreviewCommentOptions above. Computed against THIS
-  // db file only: safe as the initial guess even when a sibling device
-  // concurrently computes the same number for its own new comment, because a
-  // team-shared project's pin_seq_confirmed=0 row gets reconciled to the
-  // collab-cloud's globally-serialized seq by confirmPreviewCommentPinSeq
-  // once its push resolves (never by recomputing locally again).
+  // edit (existing !== undefined) never rewrites them (recvq5BVsolIxi).
   let pinSeq: number | null = null;
   let sortKey: number | null = null;
-  let pinSeqConfirmed = 1;
+  const pinSeqConfirmed = 1;
   if (!existing) {
     const pinScope = db
       .prepare(
@@ -3953,7 +3914,6 @@ export function upsertPreviewComment(
       )
       .get(projectId, filePath) as DbRow;
     sortKey = Number(sortScope?.maxSortKey ?? 0) + 1;
-    pinSeqConfirmed = options.pinPendingCloudConfirm ? 0 : 1;
   }
   db.prepare(
     `INSERT INTO preview_comments
@@ -4031,82 +3991,6 @@ export function confirmPreviewCommentAuthorKey(
         AND (author_kind = 'member' OR author_kind IS NULL)`,
   ).run(authorKey.trim(), id, projectId, memberId);
   return result.changes > 0;
-}
-
-/**
- * Reconcile a comment's provisional `pin_seq` to the collab-cloud's
- * confirmed, globally-serialized push `seq` — the step that closes the
- * cross-device race: two daemons that each computed the same local
- * `MAX(pin_seq)+1` for a comment created in the same ~5s poll window
- * converge to distinct numbers once their own push resolves, because the
- * guard below only ever applies ONCE per comment (idempotent — a later edit's
- * push resolving after the create's is a harmless no-op here). Returns false
- * when the row was already confirmed (nothing to do) or does not exist.
- */
-export function confirmPreviewCommentPinSeq(
-  db: SqliteDb,
-  projectId: string,
-  id: string,
-  seq: number,
-): boolean {
-  if (!Number.isFinite(seq)) return false;
-  return db.transaction(() => {
-    const row = db
-      .prepare(
-        `SELECT file_path AS filePath FROM preview_comments
-          WHERE id = ? AND project_id = ? AND pin_seq_confirmed = 0`,
-      )
-      .get(id, projectId) as { filePath?: unknown } | undefined;
-    if (!row || typeof row.filePath !== 'string') return false;
-    const pinSeq = distinctConfirmedPinSeq(db, projectId, row.filePath, id, Math.round(seq));
-    return db
-      .prepare(
-        `UPDATE preview_comments
-            SET pin_seq = ?, pin_seq_confirmed = 1
-          WHERE id = ? AND project_id = ? AND pin_seq_confirmed = 0`,
-      )
-      .run(pinSeq, id, projectId).changes > 0;
-  })();
-}
-
-function nextPinSeq(db: SqliteDb, projectId: string, filePath: string, excludeId: string): number {
-  const pinScope = db
-    .prepare(
-      `SELECT COALESCE(MAX(pin_seq), 0) AS maxPinSeq
-         FROM preview_comments
-        WHERE project_id = ? AND file_path = ? AND id <> ?`,
-    )
-    .get(projectId, filePath, excludeId) as DbRow;
-  return Number(pinScope?.maxPinSeq ?? 0) + 1;
-}
-
-/**
- * Invariant: no two SETTLED pins of one file share a number. The cloud `seq`
- * is the preferred number, but it can only be adopted when no other confirmed
- * row of the file already holds it. Confirmed rows the cloud never numbered —
- * comments written while a project was private and relayed later by the
- * publish backfill, or never relayed at all — keep their local numbers, and a
- * cloud seq landing on one of them would show two pins labelled the same
- * (share P0 integration: two "1."). In that case take the next free number.
- * Provisional (unconfirmed) rows are not blockers: they move to their own
- * cloud seq when their push resolves, which is how two devices converge.
- */
-function distinctConfirmedPinSeq(
-  db: SqliteDb,
-  projectId: string,
-  filePath: string,
-  id: string,
-  preferred: number,
-): number {
-  const taken = db
-    .prepare(
-      `SELECT 1 FROM preview_comments
-        WHERE project_id = ? AND file_path = ? AND id <> ?
-          AND pin_seq = ? AND pin_seq_confirmed = 1
-        LIMIT 1`,
-    )
-    .get(projectId, filePath, id, preferred);
-  return taken ? nextPinSeq(db, projectId, filePath, id) : preferred;
 }
 
 /**
@@ -4419,355 +4303,6 @@ export function deleteConversationAndRepairTeamCommentAnchor(
   });
   remove();
   return { anchorCreated };
-}
-
-/**
- * Delete a synced comment by its global id (the author daemon's own id). Used to
- * apply an inbound tombstone. Scoped by project so a stray id can't reach across
- * projects. Returns true when a row was removed.
- */
-export function deleteSyncedPreviewComment(
-  db: SqliteDb,
-  projectId: string,
-  id: string,
-): boolean {
-  const result = db
-    .prepare(`DELETE FROM preview_comments WHERE id = ? AND project_id = ?`)
-    .run(id, projectId);
-  return result.changes > 0;
-}
-
-export type SyncedCommentMergeResult = 'changed' | 'unchanged';
-
-function syncedCommentLabel(incoming: unknown, stored: unknown, elementId: unknown): string {
-  const nonBlank = (value: unknown): string | undefined =>
-    typeof value === 'string' && value.trim() ? value.trim() : undefined;
-  const element = nonBlank(elementId);
-  // A label describes the target for display, not identity. Losing a real
-  // comment for a missing display string is worse than using a generic name.
-  return nonBlank(incoming) ?? nonBlank(stored)
-    ?? (element && !/^path-\d+(?:-\d+)*$/.test(element) ? element : 'Annotation');
-}
-
-function validSyncedCreationTime(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 && value <= Number.MAX_SAFE_INTEGER;
-}
-
-/** Preserve comments from legacy transports without inventing creation dates.
- * Zero is the explicit unknown sentinel; updates may reuse a persisted date. */
-function syncedCommentCreationTime(incoming: unknown, stored: unknown): number {
-  if (validSyncedCreationTime(incoming)) return incoming;
-  if (validSyncedCreationTime(stored)) return stored;
-  return 0;
-}
-
-/** Immutable creation metadata can be recovered from an earlier, correlated
- * cloud timestamp even when its content revision is stale. Never make a note
- * younger, renumber pins, or override a user-dragged sidebar position. */
-function repairSyncedCommentCreationTime(
-  db: SqliteDb, projectId: string, comment: CollabCloudComment, existing: DbRow,
-): boolean {
-  if (!validSyncedCreationTime(comment.createdAt)
-    || (existing.createdAt !== 0 && (!validSyncedCreationTime(existing.createdAt) || comment.createdAt >= existing.createdAt))
-    || comment.filePath !== existing.filePath) return false;
-  const sameAuthor = comment.authorKind === 'user'
-    ? existing.authorKind === 'user' && typeof comment.authorAppUserId === 'string'
-      && Boolean(comment.authorAppUserId.trim()) && comment.authorAppUserId === existing.authorAppUserId
-    : (comment.authorKind === undefined || comment.authorKind === 'member')
-      && (existing.authorKind === null || existing.authorKind === 'member')
-      && typeof comment.memberId === 'string' && Boolean(comment.memberId.trim())
-      && comment.memberId.trim() === existing.authorMemberId;
-  if (!sameAuthor) return false;
-  const result = db.prepare(`UPDATE preview_comments SET
-    sort_key = CASE WHEN sort_key = created_at THEN ? ELSE sort_key END,
-    created_at = ? WHERE id = ? AND project_id = ? AND created_at = ?`)
-    .run(comment.createdAt, comment.createdAt, comment.id, projectId, existing.createdAt);
-  if (result.changes !== 1) throw new Error('Synced comment creation time was not persisted');
-  return true;
-}
-
-type SyncedRevision = { seq: number | null; updatedAt: number | null };
-
-/**
- * Ordering rule for an inbound collab-cloud revision against a stored row.
- *
- * - The cloud `seq` is the sole sync cursor. When both sides know one in the
- *   same stream (the caller passes stored seq only for a matching stream), an
- *   incoming `seq` at or below the row's `cloud_revision_seq` is a replay (a
- *   restarted daemon re-pulling from 0, a member snapshot, a relay echo) and
- *   never overwrites the row: `same-revision` at equality (metadata hydration
- *   only), `stale` below it.
- * - A revision the row has not seen yet — a higher `seq`, or any `seq` for a
- *   row that has none recorded — still honours the business last-writer-wins
- *   rule on `updatedAt` when the incoming record carries one, so a local edit
- *   not yet relayed is not clobbered by an older cloud edit. A record with no
- *   `updatedAt` cannot contest the row on time and is applied in `seq` order.
- * - Without an incoming `seq` (an older relay build) only `updatedAt` orders,
- *   and a record with no `updatedAt` is never assumed to be newest.
- */
-export function syncedCommentRevisionIsNewer(
-  incoming: SyncedRevision,
-  stored: { seq: number | null; updatedAt: number },
-): 'apply' | 'same-revision' | 'stale' {
-  if (incoming.seq !== null && stored.seq !== null && incoming.seq <= stored.seq) {
-    return incoming.seq === stored.seq ? 'same-revision' : 'stale';
-  }
-  if (incoming.updatedAt === null) return incoming.seq !== null ? 'apply' : 'stale';
-  if (incoming.updatedAt > stored.updatedAt) return 'apply';
-  return incoming.updatedAt === stored.updatedAt ? 'same-revision' : 'stale';
-}
-
-/**
- * Merge one collab-cloud comment into local `preview_comments`. The cloud
- * comment's id is used verbatim as the local id (it is the author daemon's own
- * id — a global dedup key), so a comment's whole lifecycle keys off that id:
- *
- * - Tombstone (`deleted: true`): delete the local row by id. Delete wins
- *   unconditionally (it does not compare `updatedAt`).
- * - Create/edit: UPSERT by id. A brand-new id inserts; an existing id updates
- *   IN PLACE only when {@link syncedCommentRevisionIsNewer} says so. Comments
- *   are keyed by id, so multiple notes on the same element coexist, including
- *   from the same member.
- *
- * `conversationId` is the LOCAL project comment anchor (see
- * getProjectCommentAnchorConversationId);
- * the cloud comment's own conversationId is not a valid FK here. It is only used
- * when inserting a new row — an in-place update keeps the row's existing
- * conversation. Returns an explicit changed/unchanged acknowledgement. Failures
- * throw so the caller cannot acknowledge a batch it did not persist.
- */
-export function mergeSyncedPreviewComment(
-  db: SqliteDb,
-  projectId: string,
-  conversationId: string,
-  comment: CollabCloudComment,
-  options: { stream?: string | undefined } = {},
-): SyncedCommentMergeResult {
-  if (comment.deleted) {
-    return deleteSyncedPreviewComment(db, projectId, comment.id) ? 'changed' : 'unchanged';
-  }
-  const slideIndex = Number.isFinite(comment.slideIndex)
-    ? Math.max(0, Math.round(comment.slideIndex as number))
-    : null;
-  const slideKey = slideIndex ?? -1;
-  const selectionKind = comment.selectionKind === 'pod' ? 'pod' : 'element';
-  const podMembers = selectionKind === 'pod' && Array.isArray(comment.podMembers)
-    ? comment.podMembers
-    : null;
-  const memberCount = selectionKind === 'pod'
-    ? (podMembers?.length ?? (Number.isFinite(comment.memberCount) ? comment.memberCount : 0))
-    : null;
-  const status = PREVIEW_COMMENT_STATUSES.has(comment.status) ? comment.status : 'open';
-  const attachments = Array.isArray(comment.attachments) && comment.attachments.length > 0
-    ? comment.attachments
-    : null;
-  const anchorState = typeof comment.anchorState === 'string' ? comment.anchorState : null;
-  const anchoredVersion = Number.isFinite(comment.anchoredVersion)
-    ? Math.max(0, Math.round(comment.anchoredVersion as number))
-    : null;
-  // A missing `updatedAt` (share-page creates carry none) is NOT "now": that
-  // made a replayed create look newer than every later revision. The best
-  // business timestamp such a record has is its creation time.
-  const incomingUpdatedAt = Number.isFinite(comment.updatedAt) ? (comment.updatedAt as number) : null;
-  const revisionSeq = Number.isFinite(comment.seq) && comment.seq > 0 ? Math.round(comment.seq) : null;
-  const revisionStream = typeof options.stream === 'string' && options.stream ? options.stream : null;
-  const authorKind = comment.authorKind === 'member' || comment.authorKind === 'user'
-    ? comment.authorKind
-    : undefined;
-  const authorMemberId = authorKind === 'user'
-    ? null
-    : typeof comment.memberId === 'string' && comment.memberId.trim()
-      ? comment.memberId.trim()
-      : null;
-  const authorAppUserId = typeof comment.authorAppUserId === 'string'
-    ? comment.authorAppUserId
-    : undefined;
-  const authorDisplayName = typeof comment.authorDisplayName === 'string'
-    ? comment.authorDisplayName
-    : undefined;
-  const authorKey = typeof comment.authorKey === 'string' ? comment.authorKey : undefined;
-  const existing = db
-    .prepare(`SELECT created_at AS createdAt, updated_at AS updatedAt, file_path AS filePath,
-                     label, author_key AS authorKey,
-                     author_kind AS authorKind, author_member_id AS authorMemberId,
-                     author_app_user_id AS authorAppUserId,
-                     source_file_id AS sourceFileId,
-                     cloud_revision_seq AS cloudRevisionSeq,
-                     cloud_revision_stream AS cloudRevisionStream
-                FROM preview_comments WHERE id = ? AND project_id = ?`)
-    .get(comment.id, projectId) as DbRow | undefined;
-  if (existing && existing.sourceFileId !== (comment.sourceFileId ?? null)) {
-    throw new Error('COMMENT_FILE_LIFETIME_CONFLICT');
-  }
-  const createdAt = syncedCommentCreationTime(comment.createdAt, existing?.createdAt);
-  const label = syncedCommentLabel(comment.label, existing?.label, comment.elementId);
-  if (existing) {
-    const creationTimeChanged = repairSyncedCommentCreationTime(db, projectId, comment, existing);
-    // Keeps the existing conversation and repairs only correlated creation metadata; refreshes mutable
-    // content/status/anchor state, and updates author fields only when the
-    // incoming wire payload explicitly carries each trusted field. Legacy
-    // payloads cannot erase them.
-    // A seq recorded under another stream (a renumbered member stream, the
-    // other relay scope) says nothing about this one: order by updatedAt.
-    const sameStream = (existing.cloudRevisionStream ?? null) === revisionStream;
-    const storedSeq = sameStream && Number.isFinite(existing.cloudRevisionSeq)
-      && Number(existing.cloudRevisionSeq) > 0
-      ? Number(existing.cloudRevisionSeq)
-      : null;
-    const storedUpdatedAt = Number(existing.updatedAt ?? 0);
-    const verdict = syncedCommentRevisionIsNewer(
-      { seq: revisionSeq, updatedAt: incomingUpdatedAt },
-      { seq: storedSeq, updatedAt: storedUpdatedAt },
-    );
-    if (verdict !== 'apply') {
-      // The row already reflects this revision or a later one. Still record
-      // the cloud position it has been proven to dominate, so a later replay
-      // of the same range short-circuits on seq alone.
-      if (revisionSeq !== null && (storedSeq === null || revisionSeq > storedSeq)) {
-        db.prepare(`UPDATE preview_comments SET cloud_revision_seq = ?, cloud_revision_stream = ?
-          WHERE id = ? AND project_id = ?`).run(revisionSeq, revisionStream, comment.id, projectId);
-      }
-      // A server version may begin supplying its account-level avatar key
-      // after an older daemon already stored this exact event. A replay is
-      // metadata hydration, not a newer edit: never replace a known key or
-      // update any comment content, timestamp, or author identity.
-      const sameAuthor = authorKind === existing.authorKind
-        && (authorKind === 'user'
-          ? authorAppUserId === existing.authorAppUserId
-          : authorMemberId === existing.authorMemberId);
-      if (verdict === 'same-revision' && sameAuthor && authorKey && !existing.authorKey) {
-        const hydrated = db.prepare(`UPDATE preview_comments SET author_key = ?
-          WHERE id = ? AND project_id = ? AND author_key IS NULL`)
-          .run(authorKey, comment.id, projectId);
-        return creationTimeChanged || hydrated.changes === 1 ? 'changed' : 'unchanged';
-      }
-      return creationTimeChanged ? 'changed' : 'unchanged';
-    }
-    // An incoming revision without its own `updatedAt` takes its creation
-    // time, never the local clock (see incomingUpdatedAt above).
-    const updatedAt = incomingUpdatedAt ?? createdAt;
-    const result = db.prepare(
-      `UPDATE preview_comments SET
-         selector = ?, label = ?, text = ?, position_json = ?, html_hint = ?,
-         selection_kind = ?, member_count = ?, pod_members_json = ?, style_json = ?,
-         attachments_json = ?, slide_index = ?, slide_key = ?, note = ?, status = ?,
-         anchor_state = ?, anchored_version = ?, last_good_position_json = ?,
-         author_member_id = CASE WHEN ? THEN ? ELSE author_member_id END,
-         author_kind = CASE WHEN ? THEN ? ELSE author_kind END,
-         author_app_user_id = CASE WHEN ? THEN ? ELSE author_app_user_id END,
-         author_display_name = CASE WHEN ? THEN ? ELSE author_display_name END,
-         author_key = CASE WHEN ? THEN ? ELSE author_key END,
-         updated_at = ?,
-         cloud_revision_seq = CASE WHEN ? THEN ? ELSE cloud_revision_seq END,
-         cloud_revision_stream = CASE WHEN ? THEN ? ELSE cloud_revision_stream END
-       WHERE id = ? AND project_id = ?`,
-    ).run(
-      comment.selector,
-      label,
-      typeof comment.text === 'string' ? comment.text : '',
-      JSON.stringify(comment.position ?? { x: 0, y: 0, width: 0, height: 0 }),
-      typeof comment.htmlHint === 'string' ? comment.htmlHint : '',
-      selectionKind,
-      memberCount,
-      podMembers ? JSON.stringify(podMembers) : null,
-      comment.style ? JSON.stringify(comment.style) : null,
-      attachments ? JSON.stringify(attachments) : null,
-      slideIndex,
-      slideKey,
-      typeof comment.note === 'string' ? comment.note : '',
-      status,
-      anchorState,
-      anchoredVersion,
-      comment.lastGoodPosition ? JSON.stringify(comment.lastGoodPosition) : null,
-      authorKind !== undefined ? 1 : 0,
-      authorMemberId,
-      authorKind !== undefined ? 1 : 0,
-      authorKind ?? null,
-      authorAppUserId !== undefined ? 1 : 0,
-      authorAppUserId ?? null,
-      authorDisplayName !== undefined ? 1 : 0,
-      authorDisplayName ?? null,
-      authorKey !== undefined ? 1 : 0,
-      authorKey ?? null,
-      updatedAt,
-      revisionSeq !== null ? 1 : 0,
-      revisionSeq,
-      revisionSeq !== null ? 1 : 0,
-      revisionStream,
-      comment.id,
-      projectId,
-    );
-    if (result.changes !== 1) throw new Error('Synced comment update was not persisted');
-    return 'changed';
-  }
-  // Same-project replay is handled above. All other insert failures, including
-  // an id owned by another project, must throw instead of acknowledging loss.
-  //
-  // pin_seq is taken straight from the wire's `seq` — the collab-cloud's own
-  // globally-serialized push sequence for this project (see
-  // CollabCloudComment.seq) — rather than recomputed as a local MAX+1. That
-  // is what makes a comment PULLED from a peer land on the exact same number
-  // the peer's own device converged to via confirmPreviewCommentPinSeq: both
-  // sides end up keyed off the one authoritative cloud value, never off a
-  // second independent local count. Already confirmed (pin_seq_confirmed=1)
-  // since the cloud is the source of truth here, not a local guess awaiting
-  // reconciliation. Falls back to a local MAX+1 only for a comment that
-  // somehow carries no real seq (e.g. an older relay build) so the row still
-  // gets a usable number instead of a permanent NULL.
-  const hasWireSeq = Number.isFinite(comment.seq) && comment.seq > 0;
-  const pinSeq = hasWireSeq
-    ? distinctConfirmedPinSeq(db, projectId, comment.filePath, comment.id, Math.round(comment.seq))
-    : nextPinSeq(db, projectId, comment.filePath, comment.id);
-  const result = db
-    .prepare(
-      `INSERT INTO preview_comments
-         (id, project_id, conversation_id, file_path, source_file_id, element_id, selector, label,
-          text, position_json, html_hint, selection_kind, member_count, pod_members_json,
-          style_json, attachments_json, slide_index, slide_key, note, status, created_at, updated_at,
-          anchor_state, anchored_version, author_member_id, author_kind, author_app_user_id,
-          author_display_name, author_key, last_good_position_json, pin_seq, pin_seq_confirmed, sort_key,
-          cloud_revision_seq, cloud_revision_stream)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      comment.id,
-      projectId,
-      conversationId,
-      comment.filePath,
-      comment.sourceFileId ?? null,
-      comment.elementId,
-      comment.selector,
-      label,
-      typeof comment.text === 'string' ? comment.text : '',
-      JSON.stringify(comment.position ?? { x: 0, y: 0, width: 0, height: 0 }),
-      typeof comment.htmlHint === 'string' ? comment.htmlHint : '',
-      selectionKind,
-      memberCount,
-      podMembers ? JSON.stringify(podMembers) : null,
-      comment.style ? JSON.stringify(comment.style) : null,
-      attachments ? JSON.stringify(attachments) : null,
-      slideIndex,
-      slideKey,
-      typeof comment.note === 'string' ? comment.note : '',
-      status,
-      createdAt,
-      incomingUpdatedAt ?? createdAt,
-      anchorState,
-      anchoredVersion,
-      authorMemberId,
-      authorKind ?? null,
-      authorAppUserId ?? null,
-      authorDisplayName ?? null,
-      authorKey ?? null,
-      comment.lastGoodPosition ? JSON.stringify(comment.lastGoodPosition) : null,
-      pinSeq,
-      1,
-      createdAt,
-      revisionSeq,
-      revisionSeq !== null ? revisionStream : null,
-    );
-  if (result.changes !== 1) throw new Error('Synced comment insert was not persisted');
-  return 'changed';
 }
 
 export function getProjectCommentReadState(

@@ -25,7 +25,7 @@ import type {
   OpenProjectInEditorResponse,
 } from '@open-design/contracts';
 import type { RouteDeps } from '../server-context.js';
-import type { AuthorizeProjectRequest } from '../collab/project-request-authority.js';
+import type { AuthorizeProjectRequest } from '../project-authority.js';
 
 export interface RegisterHostToolsRoutesDeps
   extends RouteDeps<'db' | 'http' | 'paths' | 'projectStore' | 'projectFiles'> {

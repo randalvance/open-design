@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { handleMcpToolCall } from '../src/mcp.js';
-import { _resetMcpWorkspaceContextCacheForTests } from '../src/mcp-workspace-context.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -19,7 +18,6 @@ function firstJson<T>(result: { content: Array<{ text: string }> }): T {
 
 describe('public MCP get_project', () => {
   afterEach(() => {
-    _resetMcpWorkspaceContextCacheForTests();
     vi.unstubAllGlobals();
     globalThis.fetch = originalFetch;
   });
@@ -52,7 +50,7 @@ describe('public MCP get_project', () => {
       project: projectId,
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(firstJson(result)).toMatchObject({
       id: projectId,
       name: 'Demo',

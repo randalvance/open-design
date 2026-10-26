@@ -12,17 +12,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import Database from 'better-sqlite3';
 import express from 'express';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { createAuthorizeProjectRequest } from '../src/collab/project-request-authority.js';
-import {
-  ensureWorkspaceProject,
-  getWorkspaceProject,
-  getWorkspaceProjectByProjectId,
-} from '../src/db.js';
+import { authorizeLocalProjectRequest } from '../src/project-authority.js';
 import { registerGenuiRoutes } from '../src/routes/genui.js';
 import { startServer } from '../src/server.js';
 
@@ -40,39 +34,6 @@ let pluginRoot: string;
 const cleanupRows: string[] = [];
 
 const PLUGIN_ID = `phase2a5-form-${Date.now()}`;
-const WORKSPACE_ID = 'workspace-genui-spec';
-const WORKSPACE_MEMBER_ID = 'member-genui-spec';
-
-function workspaceContext(): WorkspaceCollabContext {
-  return {
-    workspaceId: WORKSPACE_ID,
-    workspaceName: 'GenUI spec fixture',
-    workspaceType: 'team',
-    workspaceMemberId: WORKSPACE_MEMBER_ID,
-    role: 'owner',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: 'team_plus',
-    providerMode: 'platform_credits',
-    seatSummary: {
-      seatLimit: 3,
-      usedSeats: 1,
-      availableSeats: 2,
-      isSeatFull: false,
-    },
-    permissions: {
-      canManageMembers: true,
-      canManageBilling: true,
-      canInviteMembers: true,
-      canManageAutoRecharge: true,
-      canShareProjects: true,
-      canWriteSyncedFiles: true,
-      canViewWorkspaceSettings: true,
-      canManageSharedResources: true,
-    },
-  } as WorkspaceCollabContext;
-}
 
 async function listen(app: express.Express): Promise<StartedServer> {
   const routeServer = http.createServer(app);
@@ -225,13 +186,6 @@ describe('GET /api/runs/:runId/genui/:surfaceId enriches with snapshot spec', ()
     const db = new Database(dbPath);
     const runId = `run-phase2a5-${Date.now()}`;
     const surfaceRowId = `srf-phase2a5-${Date.now()}`;
-    ensureWorkspaceProject(db, {
-      projectId,
-      workspaceId: WORKSPACE_ID,
-      visibility: 'team',
-      resourceState: 'active',
-      createdByWorkspaceMemberId: WORKSPACE_MEMBER_ID,
-    });
     db.prepare(
       `INSERT INTO genui_surfaces (
          id, project_id, conversation_id, run_id, plugin_snapshot_id,
@@ -250,31 +204,6 @@ describe('GET /api/runs/:runId/genui/:surfaceId enriches with snapshot spec', ()
 
     const routeApp = express();
     routeApp.use(express.json());
-    const authorizeProjectRequest = createAuthorizeProjectRequest({
-      db,
-      getWorkspaceProject: (_db, workspaceId, candidateProjectId) =>
-        getWorkspaceProject(db, workspaceId, candidateProjectId),
-      getWorkspaceProjectByProjectId: (_db, candidateProjectId) =>
-        getWorkspaceProjectByProjectId(db, candidateProjectId),
-      verifyWorkspaceRequestAuthority: async (req: any) => {
-        const workspaceId = req.get('x-od-workspace-id')?.trim();
-        const workspaceMemberId = req.get('x-od-workspace-member-id')?.trim();
-        if (
-          workspaceId !== WORKSPACE_ID
-          || workspaceMemberId !== WORKSPACE_MEMBER_ID
-        ) {
-          return {
-            ok: false,
-            status: 403,
-            code: 'WORKSPACE_ACCESS_DENIED',
-            message: 'workspace identity does not match the GenUI fixture',
-          };
-        }
-        return { ok: true, context: workspaceContext() };
-      },
-      sendApiError: (res, status, code, message, details) =>
-        res.status(status).json({ error: { code, message, ...details } }),
-    });
     registerGenuiRoutes(routeApp, {
       db,
       design: {
@@ -284,7 +213,7 @@ describe('GET /api/runs/:runId/genui/:surfaceId enriches with snapshot spec', ()
         },
       },
       paths: { PROJECTS_DIR: path.join(serverRuntimeDataRoot, 'projects') },
-      authorizeProjectRequest,
+      authorizeProjectRequest: authorizeLocalProjectRequest,
     });
 
     let routeServer: http.Server | undefined;
@@ -293,12 +222,6 @@ describe('GET /api/runs/:runId/genui/:surfaceId enriches with snapshot spec', ()
       routeServer = startedRouteServer.server;
       const resp = await fetch(
         `${startedRouteServer.url}/api/runs/${encodeURIComponent(runId)}/genui/discovery`,
-        {
-          headers: {
-            'x-od-workspace-id': WORKSPACE_ID,
-            'x-od-workspace-member-id': WORKSPACE_MEMBER_ID,
-          },
-        },
       );
       expect(resp.status).toBe(200);
       const body = await resp.json() as {

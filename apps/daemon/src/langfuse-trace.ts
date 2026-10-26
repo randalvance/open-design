@@ -33,7 +33,6 @@ import {
 
 import type { TelemetryPrefs } from './app-config.js';
 import { normalizeOpenDesignTelemetryRelayUrl } from './integrations/telemetry-relay.js';
-import { readVelaControlApiContext } from './integrations/vela.js';
 import {
   deriveRunTelemetryExportExpectation,
   exportRunObservation,
@@ -106,12 +105,6 @@ export type LangfuseDropReason =
   | 'relay_5xx'
   | 'langfuse_4xx'
   | 'langfuse_5xx'
-  | 'vela_400'
-  | 'vela_401'
-  | 'vela_403'
-  | 'vela_413'
-  | 'vela_429'
-  | 'vela_5xx'
   | 'network_error';
 
 export interface LangfuseDeliveryState {
@@ -125,7 +118,7 @@ export interface LangfuseDeliveryState {
   /** Identity actually accepted by the selected transport, never guessed from config. */
   traceReceipt?: {
     traceId: string;
-    transport: 'vela' | 'relay' | 'langfuse';
+    transport: 'relay' | 'langfuse';
   };
 }
 
@@ -140,17 +133,7 @@ export type TelemetrySinkConfig =
       kind: 'langfuse';
     } & LangfuseConfig);
 
-export interface VelaTelemetrySinkConfig {
-  kind: 'vela';
-  apiUrl: string;
-  controlKey: string;
-  timeoutMs: number;
-  retries: number;
-}
-
-export type RunTelemetrySinkConfig =
-  | TelemetrySinkConfig
-  | VelaTelemetrySinkConfig;
+export type RunTelemetrySinkConfig = TelemetrySinkConfig;
 
 export interface RunSummary {
   runId: string;
@@ -397,8 +380,6 @@ export interface ReportContext {
 export interface ReportRunOpts {
   config?: RunTelemetrySinkConfig | LangfuseConfig | null;
   fetchImpl?: typeof fetch;
-  /** App-config AMR env used only when resolving the completed-run Vela sink. */
-  configuredEnv?: Record<string, string>;
   /** Emit only the content-free object-authority trace projection. */
   deliveryPurpose?: 'final' | 'object-registration';
   /** Stable identity persisted before crossing the final delivery boundary. */
@@ -410,7 +391,6 @@ export interface ReportRunOpts {
 export interface ReportFeedbackOpts {
   config?: RunTelemetrySinkConfig | LangfuseConfig | null;
   fetchImpl?: typeof fetch;
-  configuredEnv?: Record<string, string>;
 }
 
 /**
@@ -489,67 +469,28 @@ export function readTelemetrySinkConfig(
   return config == null ? null : { kind: 'langfuse', ...config };
 }
 
-/**
- * Task hierarchies use the same authenticated identity as completed runs.
- * Older Vela servers may reject the versioned schema; delivery handles that
- * explicit compatibility rejection without changing the execution strategy.
- */
+/** Task hierarchies use the same sink selection as completed runs. */
 export function readTaskTelemetrySinkConfig(
   env: NodeJS.ProcessEnv = process.env,
-  configuredEnv: Record<string, string> = {},
 ): RunTelemetrySinkConfig | null {
-  return readRunTelemetrySinkConfig(env, configuredEnv);
-}
-
-function isVelaTelemetryEnabled(env: NodeJS.ProcessEnv): boolean {
-  const raw = env.OPEN_DESIGN_VELA_TELEMETRY?.trim().toLowerCase();
-  return raw !== '0' && raw !== 'false' && raw !== 'off' && raw !== 'no';
+  return readRunTelemetrySinkConfig(env);
 }
 
 /**
- * Completed-run and feedback telemetry share the same sink selection: Vela when
- * a Control Key is present, otherwise the anonymous relay / direct Langfuse.
- * Feedback score-only batches keep the client run id as `data.traceId`; Vela
- * re-scopes it with the same account hash as the original run batch.
+ * Completed-run and feedback telemetry share the same sink selection: the
+ * anonymous relay or direct Langfuse, whichever the environment configures.
  */
 export function readRunTelemetrySinkConfig(
   env: NodeJS.ProcessEnv = process.env,
-  configuredEnv: Record<string, string> = {},
 ): RunTelemetrySinkConfig | null {
-  if (isVelaTelemetryEnabled(env)) {
-    const context = readVelaControlApiContext(env, configuredEnv);
-    const controlKey = context?.controlKey?.trim() ?? '';
-    if (context && controlKey) {
-      return {
-        kind: 'vela',
-        apiUrl: (context.apiUrl.trim() || 'https://amr-api.open-design.ai').replace(
-          /\/+$/,
-          '',
-        ),
-        controlKey,
-        timeoutMs: parsePositiveInt(
-          env.OPEN_DESIGN_TELEMETRY_TIMEOUT_MS ?? env.LANGFUSE_TIMEOUT_MS,
-          DEFAULT_FETCH_TIMEOUT_MS,
-        ),
-        retries: parseNonNegativeInt(
-          env.OPEN_DESIGN_TELEMETRY_RETRIES ?? env.LANGFUSE_RETRIES,
-          DEFAULT_FETCH_RETRIES,
-        ),
-      };
-    }
-  }
   return readTelemetrySinkConfig(env);
 }
 
-/**
- * Feedback uses the same sink as completed-run telemetry. Vela accepts
- * score-only batches on the same endpoint and binds them via client run id.
- */
+/** Feedback uses the same sink as completed-run telemetry. */
 export function readFeedbackTelemetrySinkConfig(
   env: NodeJS.ProcessEnv = process.env,
-  configuredEnv: Record<string, string> = {},
 ): RunTelemetrySinkConfig | null {
-  return readRunTelemetrySinkConfig(env, configuredEnv);
+  return readRunTelemetrySinkConfig(env);
 }
 
 export interface EffectiveRunTelemetrySinkDiagnostic {
@@ -567,11 +508,7 @@ export function describeRunTelemetrySink(
   sink: RunTelemetrySinkConfig | null,
 ): EffectiveRunTelemetrySinkDiagnostic {
   if (!sink) return { kind: 'none', host: null, protocol: null };
-  const rawUrl = sink.kind === 'vela'
-    ? sink.apiUrl
-    : sink.kind === 'relay'
-      ? sink.relayUrl
-      : sink.baseUrl;
+  const rawUrl = sink.kind === 'relay' ? sink.relayUrl : sink.baseUrl;
   try {
     const url = new URL(rawUrl);
     const protocol = url.protocol === 'https:'
@@ -2623,221 +2560,33 @@ async function postRelayBatch(
   };
 }
 
-const LANGFUSE_TYPE_TO_VELA_KIND = {
-  'trace-create': 'trace',
-  'span-create': 'span',
-  'generation-create': 'generation',
-  'event-create': 'event',
-  'score-create': 'score',
-} as const;
+const LANGFUSE_INGESTION_EVENT_TYPES = new Set([
+  'trace-create',
+  'span-create',
+  'generation-create',
+  'event-create',
+  'score-create',
+]);
 
-type VelaSourceEventType = keyof typeof LANGFUSE_TYPE_TO_VELA_KIND;
-
-interface VelaSourceEvent {
-  type: VelaSourceEventType;
+interface IngestionSourceEvent {
+  type: string;
   timestamp: string;
   body: Record<string, unknown>;
 }
 
-interface VelaTelemetryEnvelope {
-  version: 1;
-  installationId: string;
-  events: Array<{
-    id: string;
-    kind: (typeof LANGFUSE_TYPE_TO_VELA_KIND)[VelaSourceEventType];
-    timestamp: string;
-    data: Record<string, unknown>;
-  }>;
-}
-
-function asVelaSourceEvents(batch: unknown[]): VelaSourceEvent[] {
-  return batch.filter((item): item is VelaSourceEvent => {
+function asIngestionSourceEvents(batch: unknown[]): IngestionSourceEvent[] {
+  return batch.filter((item): item is IngestionSourceEvent => {
     if (!item || typeof item !== 'object' || Array.isArray(item)) return false;
-    const event = item as Partial<VelaSourceEvent>;
+    const event = item as Partial<IngestionSourceEvent>;
     return (
       typeof event.type === 'string' &&
-      event.type in LANGFUSE_TYPE_TO_VELA_KIND &&
+      LANGFUSE_INGESTION_EVENT_TYPES.has(event.type) &&
       typeof event.timestamp === 'string' &&
       !!event.body &&
       typeof event.body === 'object' &&
       !Array.isArray(event.body)
     );
   });
-}
-
-function stableVelaEventId(event: VelaSourceEvent): string {
-  // Retries and deterministic rebuilds of the same event keep one id, while
-  // a later upsert of the same trace/observation with richer data gets a new
-  // ingestion id and cannot be mistaken for the earlier registration event.
-  const canonicalBody = JSON.stringify(event.body);
-  return `od-${createHash('sha256')
-    .update(`${event.type}\n${canonicalBody}`, 'utf8')
-    .digest('hex')}`;
-}
-
-function buildVelaEnvelope(
-  batch: unknown[],
-  installationId: string,
-): VelaTelemetryEnvelope {
-  return {
-    version: 1,
-    installationId,
-    events: asVelaSourceEvents(batch).map((event) => ({
-      id: stableVelaEventId(event),
-      kind: LANGFUSE_TYPE_TO_VELA_KIND[event.type],
-      timestamp: event.timestamp,
-      data: event.body,
-    })),
-  };
-}
-
-function velaIdempotencyKey(envelope: VelaTelemetryEnvelope): string {
-  // Wrapper timestamps are excluded: rebuilding an otherwise identical run
-  // should retain its key, while any changed trace/observation body gets a new
-  // key. Retries of this request reuse the same serialized envelope and key.
-  const canonical = {
-    version: envelope.version,
-    installationId: envelope.installationId,
-    events: envelope.events.map(({ id, kind, data }) => ({ id, kind, data })),
-  };
-  return createHash('sha256').update(JSON.stringify(canonical), 'utf8').digest('hex');
-}
-
-function telemetryResponseRecord(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown> : {};
-}
-
-async function postVelaBatch(
-  config: VelaTelemetrySinkConfig,
-  batch: unknown[],
-  installationId: string,
-  fetchImpl: typeof fetch,
-  opts: {
-    allowAnonymousAuthFallback?: boolean;
-    allowTaskSchemaFallback?: boolean;
-    deliveryIdempotencyKey?: string;
-    fallbackConfig?: TelemetrySinkConfig | null;
-    maxTotalAttempts?: number;
-    onAttempt?: TransportAttemptObserver;
-  } = {},
-): Promise<LangfuseDeliveryState> {
-  // Completed-run batches may fall back to the anonymous relay when Vela
-  // rejects auth (expired Control Key, etc.). Score-only feedback must not:
-  // the matching trace is account-scoped on Vela, so anonymous delivery would
-  // orphan the scores while the feedback route has already reported accepted.
-  const allowAnonymousAuthFallback = opts.allowAnonymousAuthFallback !== false;
-  const envelope = buildVelaEnvelope(batch, installationId);
-  const body = JSON.stringify(envelope);
-  const idempotencyKey = opts.deliveryIdempotencyKey ?? velaIdempotencyKey(envelope);
-  const maxTotalAttempts = Math.max(
-    1,
-    opts.maxTotalAttempts ?? Number.MAX_SAFE_INTEGER,
-  );
-  const attempts = Math.min(config.retries + 1, maxTotalAttempts);
-  let attemptCount = 0;
-
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      attemptCount += 1;
-      opts.onAttempt?.();
-      const response = await fetchImpl(
-        `${config.apiUrl}/api/v1/open-design/telemetry`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${config.controlKey}`,
-            'Content-Type': 'application/json',
-            'Idempotency-Key': idempotencyKey,
-          },
-          signal: AbortSignal.timeout(config.timeoutMs),
-          body,
-        },
-      );
-      if (response.status === 202) {
-        const accepted = telemetryResponseRecord(await response.json().catch(() => null));
-        const clientTraceId = envelope.events.find(event => event.kind === 'trace')?.data.id;
-        const receipt = telemetryResponseRecord(accepted.receipt);
-        return {
-          langfuse_expected: true,
-          langfuse_delivery_status: 'accepted',
-          ...(typeof clientTraceId === 'string'
-            && receipt?.clientTraceId === clientTraceId
-            && typeof receipt.scopedTraceId === 'string'
-            && /^[a-f0-9]{64}$/.test(receipt.scopedTraceId)
-            ? { traceReceipt: { traceId: receipt.scopedTraceId, transport: 'vela' as const } }
-            : {}),
-        };
-      }
-
-      const rejection = telemetryResponseRecord(await response.json().catch(() => null));
-      const issues = Array.isArray(rejection.issues) ? rejection.issues : [];
-      const issue = telemetryResponseRecord(issues[0]);
-      const unsupportedTask = opts.allowTaskSchemaFallback !== false
-        && response.status === 400
-        && envelope.events.some(event => event.kind === 'trace'
-          && event.data.name === 'open-design-strategy-task')
-        && rejection?.error === 'invalid_open_design_telemetry_payload'
-        && issues.length === 1
-        && issue.path === 'events.0.data.name'
-        && issue.message === 'trace name must be open-design-turn';
-      if (
-        unsupportedTask || (allowAnonymousAuthFallback &&
-        (response.status === 401 || response.status === 403))
-      ) {
-        const fallback = opts.fallbackConfig === undefined
-          ? readTelemetrySinkConfig()
-          : opts.fallbackConfig;
-        const fallbackAttempts = maxTotalAttempts - attemptCount;
-        if (fallback && fallbackAttempts > 0) {
-          const cappedFallback = {
-            ...fallback,
-            retries: Math.min(fallback.retries, fallbackAttempts - 1),
-          };
-          return postLegacyTelemetryBatch(cappedFallback, batch, {
-            fetchImpl,
-            ...(opts.onAttempt ? { onAttempt: opts.onAttempt } : {}),
-            ...(opts.deliveryIdempotencyKey ? { deliveryIdempotencyKey: opts.deliveryIdempotencyKey } : {}),
-          });
-        }
-      }
-      if (
-        attempt < attempts &&
-        (response.status === 429 || response.status >= 500)
-      ) {
-        await waitBeforeRetry(attempt);
-        continue;
-      }
-      console.warn(
-        `[langfuse-trace] Vela telemetry failed status=${response.status}`,
-      );
-      return {
-        langfuse_expected: true,
-        langfuse_delivery_status: 'failed',
-        langfuse_drop_reason: ingestionDropReasonFromStatus(
-          response.status,
-          'vela',
-        ),
-      };
-    } catch (error) {
-      if (attempt < attempts) {
-        await waitBeforeRetry(attempt);
-        continue;
-      }
-      console.warn(`[langfuse-trace] Vela telemetry fetch error: ${String(error)}`);
-      return {
-        langfuse_expected: true,
-        langfuse_delivery_status: 'failed',
-        langfuse_drop_reason: 'network_error',
-      };
-    }
-  }
-
-  return {
-    langfuse_expected: true,
-    langfuse_delivery_status: 'failed',
-    langfuse_drop_reason: 'network_error',
-  };
 }
 
 export interface PostLegacyTelemetryBatchOptions {
@@ -2857,7 +2606,7 @@ export interface PostLegacyTelemetryBatchOptions {
  * effective sink priority as the single-Run compatibility exporter.
  *
  * Task-level observability owns payload assembly and durable delivery state;
- * this helper owns only the existing Vela/Relay/direct wire behavior. Keeping
+ * this helper owns only the existing Relay/direct wire behavior. Keeping
  * the sink routing here prevents the rollout service from learning credentials
  * or reimplementing fallback semantics.
  */
@@ -2867,53 +2616,17 @@ export async function postLegacyTelemetryBatch(
   options: PostLegacyTelemetryBatchOptions = {},
 ): Promise<LangfuseDeliveryState> {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
-  if (config.kind !== 'vela') {
-    const result = config.kind === 'langfuse'
-      ? await postLangfuseBatch(config, batch, fetchImpl, options.onAttempt)
-      : await postRelayBatch(config, JSON.stringify({ batch }), fetchImpl,
-        options.onAttempt, options.deliveryIdempotencyKey);
-    const trace = asVelaSourceEvents(batch).find(event => event.type === 'trace-create');
-    return {
-      ...result,
-      ...(result.langfuse_delivery_status === 'accepted' && typeof trace?.body.id === 'string'
-        ? { traceReceipt: { traceId: trace.body.id, transport: config.kind } }
-        : {}),
-    };
-  }
-  const installationId = options.installationId?.trim() ?? '';
-  if (installationId) {
-    return postVelaBatch(config, batch, installationId, fetchImpl, {
-      allowAnonymousAuthFallback: options.allowAnonymousAuthFallback !== false,
-      allowTaskSchemaFallback: options.allowTaskSchemaFallback !== false,
-      ...(options.deliveryIdempotencyKey
-        ? { deliveryIdempotencyKey: options.deliveryIdempotencyKey }
-        : {}),
-      ...(options.onAttempt ? { onAttempt: options.onAttempt } : {}),
-      ...(options.fallbackConfig !== undefined
-        ? { fallbackConfig: options.fallbackConfig }
-        : {}),
-      ...(options.maxTotalAttempts !== undefined
-        ? { maxTotalAttempts: options.maxTotalAttempts }
-        : {}),
-    });
-  }
-  const fallback = options.allowAnonymousAuthFallback === false ? null
-    : options.fallbackConfig === undefined
-    ? readTelemetrySinkConfig()
-    : options.fallbackConfig;
-  if (!fallback) {
-    return {
-      langfuse_expected: false,
-      langfuse_delivery_status: 'not_expected',
-      langfuse_drop_reason: 'missing_sink_config',
-    };
-  }
-  const fallbackAttempts = Math.max(1, options.maxTotalAttempts ?? fallback.retries + 1);
-  const cappedFallback = {
-    ...fallback,
-    retries: Math.min(fallback.retries, fallbackAttempts - 1),
+  const result = config.kind === 'langfuse'
+    ? await postLangfuseBatch(config, batch, fetchImpl, options.onAttempt)
+    : await postRelayBatch(config, JSON.stringify({ batch }), fetchImpl,
+      options.onAttempt, options.deliveryIdempotencyKey);
+  const trace = asIngestionSourceEvents(batch).find(event => event.type === 'trace-create');
+  return {
+    ...result,
+    ...(result.langfuse_delivery_status === 'accepted' && typeof trace?.body.id === 'string'
+      ? { traceReceipt: { traceId: trace.body.id, transport: config.kind } }
+      : {}),
   };
-  return postLegacyTelemetryBatch(cappedFallback, batch, { ...options, fetchImpl });
 }
 
 function waitBeforeRetry(attempt: number): Promise<void> {
@@ -2933,7 +2646,7 @@ function resolveRunReportConfig(
   opts: ReportRunOpts,
 ): RunTelemetrySinkConfig | null {
   if (opts.config === undefined) {
-    return readRunTelemetrySinkConfig(process.env, opts.configuredEnv ?? {});
+    return readRunTelemetrySinkConfig(process.env);
   }
   if (opts.config == null) return null;
   return normalizeRunTelemetrySinkConfig(opts.config);
@@ -2943,10 +2656,7 @@ function resolveFeedbackReportConfig(
   opts: ReportFeedbackOpts,
 ): RunTelemetrySinkConfig | null {
   if (opts.config === undefined) {
-    return readFeedbackTelemetrySinkConfig(
-      process.env,
-      opts.configuredEnv ?? {},
-    );
+    return readFeedbackTelemetrySinkConfig(process.env);
   }
   if (opts.config == null) return null;
   return normalizeRunTelemetrySinkConfig(opts.config);
@@ -2956,14 +2666,6 @@ function ingestionDropReasonFromStatus(
   status: number,
   sinkKind: RunTelemetrySinkConfig['kind'],
 ): LangfuseDropReason {
-  if (sinkKind === 'vela') {
-    if (status === 401) return 'vela_401';
-    if (status === 403) return 'vela_403';
-    if (status === 413) return 'vela_413';
-    if (status === 429) return 'vela_429';
-    if (status >= 500) return 'vela_5xx';
-    return 'vela_400';
-  }
   if (sinkKind === 'relay') {
     if (status === 429) return 'relay_429';
     if (status === 413) return 'relay_413';
@@ -3137,41 +2839,7 @@ async function exportLegacyLangfuseRun(
     opts.onDeliveryAttempt?.();
   };
   let delivery: LangfuseDeliveryState;
-  if (config.kind === 'vela') {
-    const installationId = ctx.installationId?.trim() ?? '';
-    if (!installationId) {
-      if (opts.deliveryPurpose === 'object-registration') {
-        return {
-          langfuse_expected: true,
-          langfuse_delivery_status: 'failed',
-          langfuse_drop_reason: 'missing_sink_config',
-        };
-      }
-      const fallback = readTelemetrySinkConfig();
-      if (!fallback) {
-        return withDeliveryDiagnostics({
-          langfuse_expected: false,
-          langfuse_delivery_status: 'not_expected',
-          langfuse_drop_reason: 'missing_sink_config',
-        }, 0, deliveryIdempotencyKey);
-      }
-      delivery = fallback.kind === 'relay'
-        ? await postRelayBatch(
-            fallback,
-            serialized,
-            fetchImpl,
-            onAttempt,
-            deliveryIdempotencyKey,
-          )
-        : await postLangfuseBatch(fallback, batch, fetchImpl, onAttempt);
-    } else {
-      delivery = await postVelaBatch(config, batch, installationId, fetchImpl, {
-        allowAnonymousAuthFallback: opts.deliveryPurpose !== 'object-registration',
-        ...(deliveryIdempotencyKey ? { deliveryIdempotencyKey } : {}),
-        onAttempt,
-      });
-    }
-  } else if (config.kind === 'relay') {
+  if (config.kind === 'relay') {
     delivery = await postRelayBatch(
       config,
       serialized,
@@ -3306,25 +2974,6 @@ export async function reportRunFeedback(
   }
 
   const fetchImpl = opts.fetchImpl ?? globalThis.fetch;
-  if (config.kind === 'vela') {
-    const installationId = ctx.installationId?.trim() ?? '';
-    if (!installationId) {
-      const fallback = readTelemetrySinkConfig();
-      if (!fallback) return;
-      if (fallback.kind === 'relay') {
-        await postRelayBatch(fallback, serialized, fetchImpl);
-        return;
-      }
-      await postLangfuseBatch(fallback, batch, fetchImpl);
-      return;
-    }
-    // Never fall back to anonymous sinks for feedback: scores need the
-    // account-scoped Vela trace from the completed run.
-    await postVelaBatch(config, batch, installationId, fetchImpl, {
-      allowAnonymousAuthFallback: false,
-    });
-    return;
-  }
   if (config.kind === 'relay') {
     await postRelayBatch(config, serialized, fetchImpl);
     return;

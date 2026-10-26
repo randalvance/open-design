@@ -6,8 +6,43 @@ import { randomUUID } from 'node:crypto';
 import { javascriptImageReferences } from './artifacts/javascript-image-references.js';
 import { hash as blake3Hash } from 'blake3-wasm';
 import { listFiles, readProjectFile, resolveProjectFilePath, validateProjectPath } from './projects.js';
-import type { EntryIndexConflict, EntryIndexConflictDetails, EntryIndexConflictReferrer } from '@open-design/contracts';
 import { findRealTagOffset, HTML_TAG_PATTERNS } from '@open-design/contracts/runtime/html-injection-points';
+
+/** A reference to the root `index.html` found while walking a deploy entry, with where it sits. */
+export interface EntryIndexConflictReferrer {
+  file: string;
+  reference: string;
+  /** Where the reference sits, e.g. `<iframe src>` or `@import`. */
+  attribute: string;
+  line?: number;
+  replacement: string;
+}
+
+/**
+ * Deploying a page publishes it as the site's root `index.html`. When that page
+ * (or anything it pulls in) also loads the project's own root `index.html`,
+ * both would need the same published address. The daemon refuses instead of
+ * silently renaming either file.
+ */
+export interface EntryIndexConflict {
+  path: 'index.html';
+  /** The page being deployed. */
+  entryPath: string;
+  /** First file that references the root `index.html`. */
+  referencedFrom: string;
+  referrers: EntryIndexConflictReferrer[];
+  /** A root-level file name that is free in the project, e.g. `home.html`. */
+  suggestedName: string;
+}
+
+/**
+ * {@link EntryIndexConflict} plus `agentPrompt`: a self-contained instruction
+ * the user can paste to a coding agent to fix the project. Carried as
+ * `error.details` of a deploy 409 `ENTRY_INDEX_CONFLICT`.
+ */
+export interface EntryIndexConflictDetails extends EntryIndexConflict {
+  agentPrompt: string;
+}
 
 export const VERCEL_PROVIDER_ID = 'vercel-self';
 export const CLOUDFLARE_PAGES_PROVIDER_ID = 'cloudflare-pages';
