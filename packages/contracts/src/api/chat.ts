@@ -1037,26 +1037,6 @@ export type PersistedAgentEvent =
        * Absent when the run wrote no stderr.
        */
       stderrTail?: string;
-      /**
-       * `code: 'AMR_INSUFFICIENT_BALANCE'` only. The USD wallet balance read
-       * for the turn this error ended — **the reading, archived**, not a live
-       * quote.
-       *
-       * The upgrade card under a turn that died on money is that turn's
-       * evidence, not a balance widget (T61, product 2026-09-07: 「它就好像
-       * 历史记录一样,存档在当时状态了」). The failure itself carries no
-       * balance — the daemon's `classifyAmrAccountFailure` yields only an error
-       * code — so the client reads the wallet once when the turn stops and
-       * writes the number down HERE. Without that, every reload re-quotes the
-       * wallet and the card ends up pairing today's number with the sentence
-       * that explained a failure days ago: after a top-up the turn that ran out
-       * of credit reads 「剩余额度 $20.00」, which is worse than showing nothing.
-       *
-       * Stamped once and never re-read; a turn recorded before this field
-       * existed simply has none, and its card falls back to a live read.
-       * Absent on every other failure — no other card names a balance.
-       */
-      amrBalanceUsd?: number;
     }
   | { kind: 'text'; text: string }
   /**
