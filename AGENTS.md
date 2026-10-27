@@ -28,7 +28,7 @@ This file is the single source of truth for agents entering this repository. Rea
 - `packages/standalone` owns the shell-neutral exact metadata, verification, materialization, generation, and launcher contract.
 - `shells/terminal` owns the official Node carrier and terminal-facing lifecycle commands. Shells consume standalone contracts and must not import Closure app source.
 - `tools/dev` is the local development lifecycle control plane.
-- `tools/pack` is the local packaged build/start/stop/logs control plane, packaged updater harness, installer identity/registry validation surface, and mac beta release artifact preparation surface.
+- `tools/pack` is the local packaged build/start/stop/logs control plane, packaged updater harness, installer identity/registry validation surface, mac beta release artifact preparation surface, and the npm package lane (`pnpm tools-pack npm build|smoke`, published by `.github/workflows/npm-publish.yml`; read `tools/pack/AGENTS.md` section "npm package lane" before changing what the package ships).
 - `tools/serve` is the local fixture-service control plane; first service is `tools-serve start updater` for deterministic updater metadata and artifacts.
 - `tools/release` owns release metadata, storage publishing, release reports, and notification-facing data contracts; packaged artifact construction and smoke testing remain in `tools/pack`.
 - `e2e` owns user-level end-to-end smoke tests and Playwright UI automation; read `e2e/AGENTS.md` before editing its tests or commands.
@@ -467,6 +467,8 @@ pnpm tools-pack win cleanup
 pnpm tools-pack linux build --to appimage
 pnpm tools-pack linux install
 pnpm tools-pack linux build --containerized
+pnpm tools-pack npm build
+pnpm tools-pack npm smoke
 ```
 
 # FAQ

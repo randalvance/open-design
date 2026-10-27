@@ -14,6 +14,7 @@ Read `tools/pack/CACHE.md` before changing any build-cache node key, adding a ca
 - Linux AppImage build/install/start/stop/logs/uninstall/cleanup smoke commands.
 - Linux headless (no-Electron) install/start/stop via `--headless` flag on `install`, `start`, and `stop`.
 - Linux containerized builds via `electronuserland/builder` Docker image for distro-agnostic glibc compat.
+- npm package build/smoke commands (`tools-pack npm build|smoke`): the single-package npm distribution of the `od` CLI, daemon, web UI, and bundled resources. See "npm package lane" below.
 - Consuming sidecar/process/path primitives from `@open-design/sidecar-proto`, `@open-design/sidecar`, and `@open-design/platform`.
 
 ## Does not own
@@ -35,6 +36,19 @@ Read `tools/pack/CACHE.md` before changing any build-cache node key, adding a ca
 - Use `--portable` for public/release artifacts so packaged config does not bake local tools-pack runtime roots from the build machine.
 - Pack resource files used by electron-builder belong under `tools/pack/resources/`; do not point pack logic at Downloads, web public assets, docs assets, or other app-owned resource paths.
 - For ordinary Windows NSIS smoke tests, use short namespaces such as `rg`, `smoke`, or `nsis-a`. NSIS extracts deeply nested Next.js standalone files under the namespace-scoped install directory; long namespaces can push installed paths past the traditional Windows 260-character limit even when builder `win-unpacked` output is correct. During merge regression, namespace `regression-merge-nsis` produced an installed path length of 264 characters and missed `next/dist/server/route-matcher-providers/helpers/cached-route-matcher-provider.js` in the installed directory, while the same NSIS smoke passed with namespace `rg`. Use long namespaces only when intentionally testing installer path-length behavior.
+
+## npm package lane
+
+`pnpm tools-pack npm build` stages and packs the npm distribution under `.tmp/tools-pack/out/npm/` (`package/` is the staged tree, the `.tgz` beside it is what `npm publish` takes). `pnpm tools-pack npm smoke` installs the newest tarball into an empty prefix with `npm install`, boots the installed `od` headless on a free port, and checks `/api/health`, the web UI at `/`, and that daemon data lands in `OD_DATA_DIR` rather than inside the package. `.github/workflows/npm-publish.yml` runs both and then `npm publish`; it is dispatch-only and dry-runs by default.
+
+Layout and the invariants it rests on (`src/npm/`):
+
+- The package is its own daemon resource root. The bin shim sets `OD_RESOURCE_ROOT` to the package root and `OD_DATA_DIR` to a per-user directory (`$XDG_DATA_HOME/open-design/cli`, `%LOCALAPPDATA%\open-design\cli`) unless the environment already sets them. Resource trees are copied with the same `copyBundledResourceTrees` list as the desktop builds, the DSH companion tarball with `packBundledDshRuntime`, and the web static export (`apps/web/out`, sourcemaps stripped) as `web/`, which the daemon reads through `resolveDaemonWebStaticDir`.
+- The daemon ships as one esbuild bundle at `lib/daemon/daemon-cli.mjs`, produced with the mac `daemonCli` prebundle policy (same externals, banner, target, and forbidden-input assertion). `lib/daemon` is two directories below the package root on purpose: the daemon's `resolveProjectRoot` then resolves the package root, so every project-root fallback also points inside the package.
+- Runtime dependencies are exactly the third-party externals of that policy, each pinned to the version `apps/daemon/package.json` declares (`createNpmPackageManifest` fails closed on a missing pin). `fsevents` is optional. Native modules (`better-sqlite3`, `node-pty`) install per platform through npm as usual, which is why the tarball itself stays platform-neutral.
+- `@open-design/sidecar` and `@open-design/platform` are the bundle's internal externals; they ship inside `node_modules/` as `bundleDependencies` with `workspace:*` rewritten to the sibling's exact version (`rewriteBundledInternalManifest`), so npm resolves them against the bundled copies.
+- The package name defaults to the root `package.json` name; `--package-name` overrides it (scoped names are accepted and published with `access: public`). `--app-version` overrides the version, which otherwise follows the root `package.json`.
+- The lane does not use the build-graph cache; `--skip-build` reuses whatever `apps/daemon/dist` and `apps/web/out` already hold.
 
 ## Packaged auto-update architecture and harness
 

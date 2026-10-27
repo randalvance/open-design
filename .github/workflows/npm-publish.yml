@@ -1,0 +1,91 @@
+name: npm-publish
+
+# Builds the single-package npm distribution of OpenDesign (`od` CLI + daemon +
+# web UI + bundled resources) with `tools-pack npm build`, installs the tarball
+# into an empty prefix and boots it (`tools-pack npm smoke`), then publishes.
+#
+# Standalone and outside the merge gate, like docker-image.yml. Dispatch only:
+# publishing is an explicit operator decision. `dry_run` defaults to true so a
+# first run validates the whole chain without touching the registry.
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_name:
+        description: "npm package name (default: the root package.json name)"
+        required: false
+        default: ""
+      dist_tag:
+        description: "npm dist-tag to publish under"
+        required: false
+        default: "latest"
+      dry_run:
+        description: "Run `npm publish --dry-run` instead of publishing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build, smoke, and publish the npm package
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.33.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the npm package
+        id: build
+        env:
+          PACKAGE_NAME: ${{ inputs.package_name }}
+        run: |
+          set -euo pipefail
+          args=(npm build --json)
+          if [ -n "$PACKAGE_NAME" ]; then args+=(--package-name "$PACKAGE_NAME"); fi
+          pnpm tools-pack "${args[@]}" | tee npm-build.json
+          tarball="$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("npm-build.json","utf8")).tarballPath)')"
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke the installed package
+        run: pnpm tools-pack npm smoke --tarball "${{ steps.build.outputs.tarball }}" --json
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v7
+        with:
+          name: npm-package
+          path: ${{ steps.build.outputs.tarball }}
+          if-no-files-found: error
+
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          DIST_TAG: ${{ inputs.dist_tag }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          TARBALL: ${{ steps.build.outputs.tarball }}
+        run: |
+          set -euo pipefail
+          args=(publish "$TARBALL" --access public --provenance --tag "$DIST_TAG")
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          npm "${args[@]}"
