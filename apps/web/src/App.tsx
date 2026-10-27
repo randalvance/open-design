@@ -21,6 +21,7 @@ import {
 import {
   deriveConfigureGlobals,
   projectKindFromMetadataToTracking,
+  projectIntentFromMetadataToTracking,
   fidelityToTracking,
 } from '@open-design/contracts/analytics';
 import type {
@@ -1974,6 +1975,7 @@ function AppInner() {
             project_source: 'create_button',
             project_id: null,
             project_kind: projectKindFromMetadataToTracking(metadata),
+            project_intent: projectIntentFromMetadataToTracking(metadata),
             fidelity,
             result: 'failed',
             error_code: errorCode,
@@ -1999,6 +2001,7 @@ function AppInner() {
             project_source: 'create_button',
             project_id: null,
             project_kind: projectKindFromMetadataToTracking(metadata),
+            project_intent: projectIntentFromMetadataToTracking(metadata),
             fidelity,
             ...(input.pluginId ? { plugin_id: input.pluginId } : {}),
             ...(input.pluginType ? { plugin_type: input.pluginType } : {}),
@@ -2140,6 +2143,7 @@ function AppInner() {
             project_source: 'create_button',
             project_id: result.project.id,
             project_kind: projectKindFromMetadataToTracking(metadata),
+            project_intent: projectIntentFromMetadataToTracking(metadata),
             fidelity,
             ...(input.pluginId ? { plugin_id: input.pluginId } : {}),
             ...(input.pluginType ? { plugin_type: input.pluginType } : {}),
