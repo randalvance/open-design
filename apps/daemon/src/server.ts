@@ -1,12 +1,11 @@
 // @ts-nocheck
 import { observeDiscoveryEvent } from './strategies/od-next/discovery-observation.js';
-import { assertCommentFileNotPending } from './collab/comment-file-retirements.js';
+import { authorizeLocalProjectRequest, authorizeLocalProjectToolRequest } from './project-authority.js';
 import { captureJsonBodySize } from './http/json-body-size.js';
 
 import { usesProductionMarker, composeResumedRequest } from './strategies/od-next/request-resume.js';
 import { todoSnapshotHasUnfinishedWork } from '@open-design/contracts';
 import { createUserDesignSystem } from './design-systems/index.js';
-import { resolveWorkspaceScope } from './collab/workspace-scope.js';
 import { startEvidenceDelivery } from './services/evidence-delivery.js';
 import type {
   DesktopExportArtifactInput,
@@ -40,11 +39,6 @@ import {
   resolveOdNextDeckFrameworkMode,
 } from '@open-design/contracts';
 
-import type {
-  CollabCloudMemberDirectoryEntry,
-  TeamProject,
-  WorkspaceCollabContext,
-} from '@open-design/contracts';
 
 import {
   loadOdNextTaskResourcesForSnapshot,
@@ -131,7 +125,6 @@ import {
   resolveSafePromptImagePaths,
   resolveOdNextRequestUserPrompt,
   excludeAcpImagePathsAlreadyDeliveredAsResources,
-  selectPromptImagePaths,
 } from './runtimes/chat-prompt-inputs.js';
 import {
   agentStdinPromptPayload,
@@ -196,7 +189,6 @@ export {
   resolveSafeProjectAttachments,
   resolveSafePromptImagePaths,
   excludeAcpImagePathsAlreadyDeliveredAsResources,
-  selectPromptImagePaths,
 } from './runtimes/chat-prompt-inputs.js';
 export {
   applyClaudeStreamJsonRunBookkeeping,
@@ -239,8 +231,6 @@ import {
   isKnownModel,
   isKnownReasoningEffort,
   isKnownServiceTier,
-  openDesignAmrRunAttempt,
-  openDesignAmrTraceEnv,
   applyAgentLaunchEnv,
   resolveAgentLaunch,
   sanitizeCustomModel,
@@ -269,36 +259,7 @@ import {
   persistPlainStreamArtifactList,
   plainStdoutFromRunEvents,
 } from './runtimes/plain-stream.js';
-import {
-  readVelaLoginStatus,
-  resolveAmrProfile,
-} from './integrations/vela.js';
 import { isAbortedOperationError } from './integrations/aborted-error.js';
-import { projectResourceIdFor } from './integrations/vela-team-projects.js';
-import { normalizeCurrentFileComment, parseCommentFileState } from './collab/comment-file-facts.js';
-import { createLocalCommentFiles } from './collab/local-comment-files.js';
-import { createCommentFileDeletion } from './collab/comment-file-deletion.js';
-import { createCommentFilePublisher } from './collab/comment-file-publisher.js';
-import { createCommentFilePublicationCoordination } from './collab/comment-file-publication-coordination.js';
-import { runVelaCommand, velaWorkspaceCommandOptions } from './integrations/vela-command.js';
-import {
-  getTeamProjectMaterialization,
-  latestTeamProjectMaterializationVersion,
-  materializePulledTeamMirror,
-  teamProjectMaterializationMatches,
-  teamProjectMaterializationSupersedes,
-} from './collab/team-mirror-materializer.js';
-import { recoverAuthorizedTeamProjectPromotions } from './collab/team-mirror-promotion.js';
-import {
-  amrAccountFailureDetails,
-  classifyAmrAccountFailureSignal,
-} from './integrations/vela-errors.js';
-import { AMR_DEFAULT_MODEL_CATALOG_WAIT_MS, amrModelLoadingCache, amrRunModels } from './runtimes/amr-model-cache.js';
-import {
-  fetchVelaPresetModels,
-  fetchVelaRemoteModelsWithRetry,
-  isVelaChatCapableModelId,
-} from './runtimes/defs/amr.js';
 import { migrateLegacyDataDirSync } from './migration/index.js';
 import {
   consumedImportNonces,
@@ -331,14 +292,6 @@ import {
   resolveSkillId,
   splitDerivedSkillId,
 } from './skills.js';
-import { resolveSkillCatalogScope } from './skill-catalog-scope.js';
-import {
-  activateWorkspaceTeamSkillIfStillShared,
-  resolveAndActivateWorkspaceTeamSkill,
-  skillIdFromWorkspaceTeamBinding,
-  workspaceTeamSkillBindingActivationFence,
-  workspaceTeamSkillBindingResourceId,
-} from './skills/workspace-team-binding.js';
 import { validateLinkedDirs } from './linked-dirs.js';
 import { installFromTarget, uninstallById, sanitizeRepoName } from './library-install.js';
 import {
@@ -360,11 +313,9 @@ import {
   resolveSandboxRuntimeConfig,
 } from './sandbox-mode.js';
 import {
-  backfillDesignSystemWorkspaceResources,
   buildUserDesignSystemArchive,
   deleteUserDesignSystem,
   digestDesignSystemContext,
-  isTeamSyncedUserDesignSystem,
   LEGACY_DESIGN_SYSTEM_ARTIFACTS,
   linkUserDesignSystemProject,
   listDesignSystems,
@@ -382,27 +333,10 @@ import {
   updateUserDesignSystemRevisionStatus,
   type UserDesignSystemInput,
 } from './design-systems/index.js';
-import {
-  createWorkspaceOwnedDesignSystem as persistWorkspaceOwnedDesignSystem,
-  deleteWorkspaceOwnedDesignSystem as removeWorkspaceOwnedDesignSystem,
-} from './design-systems/workspace-owned-create.js';
 import { createDesignSystemGenerationJobStore } from './design-systems/generation-jobs.js';
 import { createDesignSystemServerServices } from './design-systems/server-services.js';
-import {
-  designSystemIdFromWorkspaceTeamBinding,
-  designSystemLogicalResourceId,
-  workspaceTeamDesignSystemBindingResourceId,
-} from './design-systems/workspace-team-binding.js';
-import { ownedDesignSystemSourceIsReady } from './design-systems/team-owner-materialization.js';
-import { createLinkedProjectTeamResourceShareService } from './design-systems/team-project-share.js';
 import { prepareDesignTokenContractRebuild } from './design-systems/token-contract-rebuild.js';
 import { registerBrandRoutes } from './brand-routes.js';
-import {
-  authorizeCreatedProjectWorkspace,
-  bindCreatedProjectToWorkspace,
-  createCreatedProjectWorkspaceResolver,
-  sendCreatedProjectWorkspaceError,
-} from './collab/created-project-workspace.js';
 import {
   applyDiffReviewDecisionToCwd,
   applyPlugin,
@@ -438,14 +372,7 @@ import {
   uninstallPlugin,
 } from './plugins/index.js';
 import {
-  activateWorkspaceTeamPluginIfStillShared,
-  pluginIdFromWorkspaceTeamPluginBinding,
-  resolveAndActivateWorkspaceTeamPlugin,
   resolvePluginFolder,
-  resolveWorkspaceTeamPluginWithBindingGate,
-  workspaceTeamPluginBindingActivationFence,
-  workspaceTeamPluginBindingAllowsRead,
-  workspaceTeamPluginBindingResourceId,
 } from './plugins/registry.js';
 import {
   marketplaceManifestUrlForRegistry,
@@ -460,7 +387,6 @@ import {
 import { runAutoExtractionCleanup } from './memory-cleanup.js';
 import { attachAcpSession } from './agent-protocol/index.js';
 
-import { stageAmrImagePaths } from './media/amr-image-staging.js';
 import { ingestRoutineConnectorEvolution } from './automation-routine-evolution.js';
 import { createClaudeStreamHandler } from './runtimes/claude-stream.js';
 import { createAgentTitleMarkerStripper } from './title-marker.js';
@@ -510,7 +436,6 @@ import {
 } from './runtimes/auth.js';
 import { readOpenCodeServiceFailure } from './runtimes/opencode-log.js';
 import { applyOpenCodeEventPlugin } from './runtimes/opencode-event-plugin.js';
-import { createAgentStderrVisibilityFilter } from './amr-stderr-filter.js';
 import { createQoderStreamHandler } from './runtimes/qoder-stream.js';
 import { subscribe as subscribeFileEvents } from './project-watchers.js';
 import { importFigmaFromBytes } from './figma/figma-import.js';
@@ -518,12 +443,6 @@ import { renderDesignSystemPreview } from './design-systems/preview.js';
 import { renderDesignSystemShowcase } from './design-systems/showcase.js';
 import { createChatRunService } from './runtimes/runs.js';
 import { reapLeftoverAgentProcesses, spawnAgentProcess } from './runtimes/agent-process.js';
-import {
-  createAmrTerminalReportDeliveryService,
-  createAmrTerminalReportFinalizer,
-  createAmrTerminalReportOutboxStore,
-  type AmrTerminalReportDeliveryService,
-} from './storage/amr-terminal-report-outbox.js';
 import { createInternalRunCreationService } from './services/internal-run-service.js';
 import {
   createRunAnalyticsLifecycle,
@@ -582,7 +501,6 @@ import {
   decideSafeRunRetry,
 } from './run-retry-policy.js';
 import {
-  amrUserIdForRunAnalytics,
   createRunPerRequestUsageLedger,
   foldEventIntoPerRequestUsageLedger,
   scanRunEventsForUsageAnalytics,
@@ -753,13 +671,11 @@ import { validateArtifactManifestInput } from './artifacts/manifest.js';
 import { ArtifactPublicationBlockedError } from './artifacts/publication-guard.js';
 import {
   appendMessageStatusEvent,
-  confirmPreviewCommentPinSeq,
   confirmPreviewCommentAuthorKey,
   deleteConversation,
   deletePreviewComment,
   deleteProject as dbDeleteProject,
   deleteWorkspaceProject,
-  deleteWorkspaceResourceByResourceId,
   deleteTemplate,
   getConversation,
   getDeployment,
@@ -778,9 +694,6 @@ import {
   getTemplate,
   ensureWorkspaceProject,
   ensureTeamProjectCommentConversations,
-  ensureWorkspaceResource,
-  getWorkspaceResource,
-  getWorkspaceResourceByResourceId,
   insertConversation,
   insertProject,
   insertRoutine,
@@ -801,10 +714,7 @@ import {
   listProjectPreviewComments,
   listProjects,
   listUnboundProjects,
-  listTeamWorkspaceProjectShares,
-  listTeamWorkspaceResourceWorkspaceIds,
   listWorkspaceProjects,
-  listWorkspaceResources,
   listRoutines,
   listRoutineRuns,
   listTabs,
@@ -825,7 +735,6 @@ import {
   updateProject,
   updateWorkspaceProject,
   setWorkspaceProjectMetadataRefreshPending,
-  updateWorkspaceResource,
   rebindWorkspaceProject,
   updateRoutine,
   updateRoutineRun,
@@ -886,7 +795,7 @@ import { registerDeliverableSyntaxToolRoutes } from './routes/deliverable-syntax
 import { registerDesignSystemToolRoutes } from './routes/design-system-tool.js';
 import { registerDeployRoutes, registerDeploymentCheckRoutes } from './routes/deploy.js';
 import { registerMediaRoutes } from './routes/media.js';
-import { registerProjectRoutes, registerProjectArtifactRoutes, registerProjectFileRoutes, registerProjectUploadRoutes, createEnforceWorkspaceProjectMutation } from './routes/project/index.js';
+import { registerProjectRoutes, registerProjectArtifactRoutes, registerProjectFileRoutes, registerProjectUploadRoutes } from './routes/project/index.js';
 import { registerProjectChatArtifactRoutes } from './routes/project/chat-artifacts.js';
 import { createChatArtifactBlobStore } from './chat-artifacts/blob-store.js';
 import { resolveChatArtifactQuota } from './chat-artifacts/quota.js';
@@ -902,7 +811,6 @@ import { associateRunProducedFiles } from './runtimes/run-produced-files.js';
 import { chatArtifactCaptureResultProps } from './chat-artifacts/telemetry.js';
 import { freezeAndRenderChatArtifactCovers } from './chat-artifacts/cover.js';
 import { setMessageArtifactHtmlVersionIds } from './chat-artifacts/store.js';
-import { registerVelaRoutes } from './routes/vela.js';
 import { registerFinalizeRoutes, registerImportRoutes, registerProjectExportRoutes } from './import-export-routes.js';
 import { registerHandoffRoutes } from './routes/handoff.js';
 
@@ -918,224 +826,7 @@ import { registerSocialShareRoutes } from './routes/social-share.js';
 import { registerOpenDesignPublicMetadataRoutes } from './routes/open-design-public-metadata.js';
 import { registerWhatsNewRoutes } from './routes/whats-new.js';
 import { registerMemoryRoutes } from './routes/memory.js';
-import {
-  createCollabPresenceCloudClient,
-  registerCollabPresenceRoutes,
-} from './routes/collab-presence.js';
-import {
-  registerCollabSyncRoutes,
-  type TeamMirrorPullScope,
-} from './routes/collab-sync.js';
-import {
-  emitWorkspaceEventToAllScopes,
-  emitWorkspaceEventToScope,
-  registerCollabContextRoutes,
-} from './routes/collab-context.js';
-import { registerTeamResourceRoutes } from './routes/team-resources.js';
-import { registerTeamResourceShareRoutes } from './routes/team-resource-share.js';
-import { createCollabRuntime } from './collab/runtime.js';
-import { createPublicFileStopStartup, createSqlitePublicFilePublicationStore } from './collab/public-file-publication-store.js';
-import { sourcePathForCurrentPublication } from './collab/comment-relay-publication-mapping.js';
-import { recordPersonalPublishedCommentMutation } from './collab/published-comment-mutation.js';
-import { createPublicFilePublicationRecorder } from './collab/public-file-publication-recording.js';
-import { enqueuePublishedFileComments } from './collab/published-file-comment-backfill.js';
-import { createVelaPublicFileStop } from './collab/vela-public-file-stop.js';
-import { createShareContentFingerprints } from './collab/share-content-fingerprint.js';
-import { createShareBindingOutbox } from './collab/share-binding-outbox.js';
-import { createShareBindingStartup } from './collab/share-binding-startup.js';
-import { createVelaShareBindingPrepare } from './collab/vela-share-binding-prepare.js';
-import { cleanupAbandonedPinnedVelaSessions } from './collab/vela-pinned-command.js';
-import { createProjectPublicFileStop } from './collab/project-public-file-stop.js';
-import { createPublicFileMutations } from './collab/public-file-mutations.js';
-import { resolveLocalProjectCommentWorkspaceContext } from './collab/project-comment-workspace-context.js';
-import { commentRelayScope, personalCommentRelayFilePaths } from './collab/comment-relay-scope.js';
-import {
-  createActiveWorkspaceSelectionStore,
-} from './collab/active-workspace-selection.js';
-import {
-  headerValue,
-  resolveOptionalLocalWorkspaceRequestAuthority,
-  workspaceResourceContext,
-  workspaceResourceContextFromRequest,
-} from './collab/workspace-resource-mutation.js';
-import {
-  createAuthorizeProjectRequest,
-} from './collab/project-request-authority.js';
-import { withLastKnownWorkspaceContext } from './collab/workspace-context.js';
-import {
-  createWorkspaceTypeRegistry,
-  impossibleTeamShareRows,
-  projectCollabScope,
-} from './collab/team-share-scope.js';
 
-import {
-  AmrWorkspaceScopeRequiredError,
-  openDesignAmrTraceEnvForRun,
-  pinRunWorkspaceScopeForProject,
-  type RunWorkspaceScope,
-} from './runtimes/project-amr-trace-env.js';
-import {
-  createWorkspaceDirectoryAuthorityBroker,
-  createWorkspaceContextProviderFromEnv,
-  fetchVelaWorkspaceDirectory,
-  resolveVelaWorkspaceHubEventsEndpoint,
-  velaWorkspaceDirectoryIdentity,
-  workspaceContextFromDirectoryItem,
-} from './collab/vela-workspace-context.js';
-import { verifyWorkspaceRequestContext } from './collab/request-workspace-context.js';
-import {
-  createWorkspaceBillingRuntimeCoordinator,
-  shouldEmitWorkspaceBillingRuntimeNudge,
-  WorkspaceBillingAccessRevokedError,
-} from './collab/workspace-billing-runtime.js';
-import {
-  AUTHORITATIVE_PROJECT_PRESENCE_CAPABILITY,
-  CODING_PLAN_USAGE_EVENTS_CAPABILITY,
-  startHubEventsSubscriber,
-  WORKSPACE_DIRECTORY_EVENTS_CAPABILITY,
-} from './collab/hub-events-subscriber.js';
-import {
-  createWorkspaceAuthorityHealthCoordinator,
-  resolveWorkspaceAuthorityCacheMode,
-} from './collab/workspace-authority-health.js';
-import {
-  recordWorkspaceAuthorityDecision,
-  recordWorkspaceAuthorityInvalidation,
-  recordWorkspaceAuthorityRealtimeTransition,
-  recordWorkspaceAuthorityRevocationClear,
-  recordWorkspaceAuthoritySuppressedRequest,
-} from './metrics/workspace-authority.js';
-import {
-  createWorkspaceHubSubscriptionManager,
-  type WorkspaceHubSubscriptionManager,
-} from './collab/workspace-hub-subscriptions.js';
-import {
-  activeTeamWorkspaceIdentity,
-  createProactiveContentPull,
-  type ProactiveContentPullTarget,
-} from './collab/proactive-content-pull.js';
-import {
-  backgroundPullMaxEntriesFromEnv,
-  backgroundPullMaxCumulativeEntriesFromEnv,
-  createBackgroundPullSizeGuard,
-} from './collab/background-pull-size-guard.js';
-import {
-  inspectAuthorizedTeamProjectPull,
-} from './collab/authorized-team-project-pull.js';
-import { createProjectContentTransferStateStore } from './collab/project-content-transfer-state.js';
-import {
-  emitSharedProjectPullTiming,
-  sharedProjectPullProfileEnabled,
-} from './collab/pull-profile.js';
-import { createSyncDigestReader } from './collab/sync-digest.js';
-import {
-  createCollabSyncSnapshotStore,
-  parseMemberDirectorySnapshot,
-  parseTeamProjectSnapshot,
-} from './collab/sync-snapshot-store.js';
-import { createPersistentSyncCache } from './collab/persistent-sync-cache.js';
-import { createSwrCache } from './collab/swr-cache.js';
-import {
-  COLLAB_VELA_FANOUT_CONCURRENCY,
-  ConcurrencyGate,
-} from './collab/concurrency-gate.js';
-import {
-  createTeamResourceListCache,
-  invalidateTeamResourceListingCaches,
-} from './collab/team-resource-list-cache.js';
-import { createVelaResourcePullBatcher } from './collab/vela-cli-resource-pull-batcher.js';
-import {
-  createRememberedTeamResourceScopes,
-  type RememberedTeamResourceScopeLease,
-} from './collab/remembered-team-resource-scopes.js';
-import { createCommentSyncStateService } from './collab/comment-sync-state.js';
-import { registerCommentSyncStateRoutes } from './routes/project/comments.js';
-import { createCommentAlignmentService, runVelaCommentAlignment } from './collab/comment-alignment.js';
-import { registerCommentAlignmentRoutes } from './routes/project/comments.js';
-import { createShareAliasReservations } from './collab/share-alias-reservation.js';
-import { createSharePublicationCompletion } from './collab/share-publication-completion.js';
-import { resolvePublicShareLink } from './collab/public-share-viewer-url.js';
-import { ensurePublicShareProject } from './collab/public-share-project-bootstrap.js';
-import { createVelaProjectShareState } from './collab/vela-project-share-state.js';
-import { registerPublicFileStopRetryRoutes } from './routes/public-file-stop-retry.js';
-import { runPinnedVelaCommand } from './collab/vela-pinned-command.js';
-import {
-  fetchBillingCheckoutUrl,
-  fetchVelaBillingCatalog,
-  fetchVelaBillingSummary,
-  fetchVelaWorkspaceBillingProjection,
-  isVelaWorkspaceAuthorizationError,
-} from './integrations/vela-billing.js';
-import { createAccountBillingSummaryCache } from './collab/account-billing-summary-cache.js';
-import { createEventRefreshCoordinator } from './collab/event-refresh-coordinator.js';
-import { createWorkspaceExactAuthorityCache } from './collab/workspace-exact-authority-cache.js';
-import { createCollabPublishWatcher } from './collab/collab-publish-watcher.js';
-import { createOwnedContentSync, type OwnedContentSync } from './collab/owned-content-sync.js';
-import { createSqliteOwnedContentStore, type OwnedContentScope } from './collab/owned-content-store.js';
-import { applyOwnedProjectContent, contentFiles, ownedContentFingerprint } from './collab/owned-content-files.js';
-import {
-  isUnmaterializedSharedPlaceholder,
-  SHARED_PROJECT_PLACEHOLDER_METADATA_KEY,
-} from './collab/shared-project-placeholder.js';
-import { recoverPersistedTeamShareOwnership } from './collab/persisted-team-share.js';
-import { resolveProjectShareDir } from './collab/project-share-dir.js';
-import { createTeamProjectsLister } from './collab/team-projects.js';
-import {
-  createTeamResourceShareService,
-  teamResourceRequestScopeFromContext,
-  teamResourceRequestScopeForWorkspaceId,
-  unshareIfCurrentlyShared,
-  type TeamResourceRequestScope,
-  type TeamResourceShareRecord,
-  type TeamResourceSharedReadOptions,
-  type TeamResourceShareService,
-} from './collab/team-resource-share.js';
-import {
-  materializeWorkspaceScopedTeamResource,
-  readTeamResourceMaterialization,
-  teamResourceMaterializationDir,
-  teamResourceSourceKey,
-  teamResourceWorkspaceRoot,
-} from './collab/team-resource-materialization.js';
-import { createTeamResourceVersionStore } from './collab/team-resource-version-store.js';
-import {
-  contextToResourceHubPrincipal,
-  type ResourceHubPrincipal,
-} from './collab/resource-principal.js';
-import { createCollabCloudClientFromEnv } from './integrations/collab-cloud.js';
-import { createCollabCloudService } from './collab/collab-cloud-service.js';
-import { createCommentInboundStore } from './collab/comment-inbound-store.js';
-import {
-  commentRelayLocalBindingMatches,
-  commentRelayRecordPromotedToTeam,
-  createCommentRelayOutboxStore,
-} from './collab/comment-relay-outbox.js';
-import { createWorkspaceInvalidationPoller } from './collab/workspace-invalidation-poller.js';
-import { createWorkspaceExactContextCache } from './collab/workspace-exact-context-cache.js';
-import {
-  handleHubProjectMetadataChanged,
-  handleHubTeamProjectsChanged,
-  handlePolledWorkspaceInvalidation,
-  reconcileWorkspaceProjectMetadataWithRemote,
-  reconcileWorkspaceProjectsWithRemote,
-  reconcilerRemoteTeamProjects,
-  type LocalTeamProjectBinding,
-  type WorkspaceProjectsReconcilerDeps,
-} from './collab/workspace-projects-reconciler.js';
-import {
-  createWorkspaceTeamResourceEventCoordinator,
-  reconcileWorkspaceResourcesWithRemote,
-  type LocalTeamResourceBinding,
-  type MaterializedTeamResourceRef,
-  type WorkspaceTeamResourceRefreshReason,
-} from './collab/workspace-resources-reconciler.js';
-import { createVelaCliCollabClientFromEnv } from './collab/vela-cli-collab-client.js';
-import {
-  createScopedVelaTeamProjectCatalogClientCache,
-  createVelaCliTeamProjectCatalogClientFromEnv,
-  createVelaCliTeamProjectCatalogFromEnv,
-} from './collab/vela-cli-team-projects.js';
-import { createTeamProjectsChangeEmitter } from './collab/team-projects-change-emitter.js';
 import { registerTelemetryRoutes } from './routes/telemetry.js';
 import {
   assembleExample,
@@ -1145,11 +836,6 @@ import {
 } from './routes/static-resource.js';
 export { rewriteSkillAssetUrls } from './routes/static-resource.js';
 import { registerRoutineRoutes, routineDbRowToContract } from './routes/routine.js';
-import {
-  bindProjectToPersistedAutomationWorkspace,
-  normalizePersistedAutomationWorkspaceScope,
-} from './automations/workspace-scope.js';
-import { resolveAmrModelProbe } from './runtimes/amr-model-probe.js';
 import { createPluginInstallationHelpers, normalizeProjectPluginFolderPath, resolveProjectChildDirectory } from './services/plugin-installation.js';
 import { createPluginShareTaskStore } from './services/plugin-share-tasks.js';
 import { getRouteRegistrationInventory, installRouteRegistrationGuard } from './route-registration-guard.js';
@@ -1267,7 +953,6 @@ import {
 } from './design/index.js';
 import { openBrowser } from './browser/index.js';
 import { EmptyTranscriptError, synthesizeHandoffPrompt } from './design/index.js';
-import { readVelaControlApiContext } from './integrations/vela.js';
 
 /**
  * `OD_PROJECT_CREATE_PREPARATION_TIMEOUT_MS` shortens the POST /api/projects
@@ -1575,14 +1260,6 @@ async function refreshAndPersistToken(dataDir, serverId, current) {
 
 const activeChatAgentEventSinks = new Map();
 const activeProjectEventSinks = new Map();
-// Collab realtime hop-2: subscribers to the WORKSPACE-scoped invalidation SSE
-// (`GET /api/workspace/events`). Every connection is freshly verified for an
-// exact Workspace/member pair; sinks are partitioned by Workspace so one
-// daemon can safely serve tabs viewing A and B concurrently. Delivery is
-// workspace-wide within a partition because roster/catalog/context/team
-// billing invalidations legitimately affect every member of that Workspace.
-const workspaceEventSinks =
-  new Map<string, Set<(payload: unknown) => void>>();
 // Per-chat-run handles, keyed by runId. Lets non-stream side effects
 // (live-artifact create, project events) reach back into the chat
 // run's local state — currently used by the artifact quiet-period
@@ -1666,142 +1343,6 @@ function emitProjectEvent(projectId, payload) {
   }
   if (sinks.size === 0) activeProjectEventSinks.delete(projectId);
   return true;
-}
-
-// Broadcast a thin WORKSPACE-scoped invalidation only to the verified sink
-// partition for `workspaceId`. There is deliberately no account-wide fallback:
-// every producer below is attached to an explicit hub/poller/billing/project
-// scope, and broad delivery would reveal cross-workspace activity timing.
-function emitWorkspaceEvent(
-  workspaceId: string,
-  payload: { type: string; at?: number },
-): boolean {
-  return emitWorkspaceEventToScope(
-    workspaceEventSinks,
-    workspaceId,
-    payload,
-  );
-}
-
-function emitWorkspaceDirectoryChanged(): boolean {
-  return emitWorkspaceEventToAllScopes(workspaceEventSinks, {
-    type: 'workspace-directory-changed',
-    at: Date.now(),
-  });
-}
-
-function hubEventRefreshToken(event: {
-  type?: string;
-  revision?: string;
-  revisionClock?: { epoch: string; counter: string };
-  workspaceMemberId?: string;
-  memberId?: string;
-  projectId?: string;
-  resourceId?: string;
-  seq?: number;
-  version?: number;
-  at?: string;
-}): string | undefined {
-  const scope = [
-    event.type ?? '',
-    event.workspaceMemberId ?? '',
-    event.memberId ?? '',
-    event.projectId ?? '',
-    event.resourceId ?? '',
-  ].join(':');
-  if (event.revisionClock) {
-    return `${scope}:clock:${event.revisionClock.epoch}:${event.revisionClock.counter}`;
-  }
-  if (event.revision) return `${scope}:revision:${event.revision}`;
-  if (event.seq != null) return `${scope}:seq:${event.seq}`;
-  if (event.version != null) return `${scope}:version:${event.version}`;
-  if (event.at) return `${scope}:at:${event.at}`;
-  return undefined;
-}
-
-function accountBillingInvalidationToken(event: {
-  type: 'billing-changed' | 'billing-subscription-changed' | 'wallet-balance-changed';
-  revision?: string;
-  revisionClock?: { epoch: string; counter: string };
-  at?: string;
-}): string | undefined {
-  let revision: string | undefined;
-  if (event.revisionClock) {
-    revision = `clock:${event.revisionClock.epoch}:${event.revisionClock.counter}`;
-  } else if (event.revision) {
-    revision = `revision:${event.revision}`;
-  } else if (event.at) {
-    revision = `at:${event.at}`;
-  }
-  if (!revision) return undefined;
-  // Current Vela producers emit a subscription mutation under both names.
-  // Wallet clocks are independent and therefore need a separate domain.
-  const domain = event.type === 'wallet-balance-changed' ? 'wallet' : 'billing';
-  return `${domain}:${revision}`;
-}
-
-/**
- * Hub → daemon handling for the `workspace-context-changed` event (see
- * `startHubEventsSubscriber`'s `onEvent` below). Vela sends this same event
- * both for directory changes and membership changes (e.g. removal from a
- * team). Besides forwarding the thin signal to the web, this kicks one
- * immediate background reconciliation cycle. Request mutations independently
- * perform fresh exact-scope authority checks and do not depend on this poll.
- *
- * Extracted as its own named, exported step (rather than inlined in the
- * switch) so this invariant is directly unit-testable without standing up a
- * real hub connection.
- */
-export function handleHubWorkspaceContextChanged(
-  workspaceId: string,
-  pollWorkspaceInvalidation: () => Promise<void>,
-  invalidateWorkspaceDirectory: () => void = () => undefined,
-): Promise<void> {
-  // Retire the settled authority generation before either the web or the
-  // daemon can start a refresh. A directory request that began before this
-  // event is allowed to finish for its original caller, but the broker will
-  // not let it repopulate the post-event generation.
-  invalidateWorkspaceDirectory();
-  emitWorkspaceEvent(
-    workspaceId,
-    { type: 'workspace-context-changed', at: Date.now() },
-  );
-  return pollWorkspaceInvalidation().catch(() => undefined);
-}
-
-/** Terminal counterpart to workspace-context-changed. Vela has already
- * re-derived the stream principal and is closing the connection, so local
- * directory and billing projections must be retired synchronously before any
- * reconciliation I/O starts. */
-export function handleHubWorkspaceAccessRevoked(
-  workspaceId: string,
-  pollWorkspaceInvalidation: () => Promise<void>,
-  invalidateWorkspaceDirectory: () => void,
-  revokeWorkspaceBilling: (workspaceId: string) => void,
-): void {
-  invalidateWorkspaceDirectory();
-  revokeWorkspaceBilling(workspaceId);
-  emitWorkspaceEvent(
-    workspaceId,
-    { type: 'workspace-context-changed', at: Date.now() },
-  );
-  void pollWorkspaceInvalidation().catch(() => undefined);
-}
-
-/**
- * A verified hub connection is itself a freshness boundary, including the
- * daemon's very first connection. Published content and billing may already
- * have changed before the subscriber came online, so both scopes catch up
- * immediately instead of waiting for a later reconnect or poll tick.
- */
-export function handleHubVerifiedConnection(
-  workspaceId: string | undefined,
-  catchUpPublishedHeads: (workspaceId: string) => Promise<void>,
-  catchUpWorkspaceBilling: (workspaceId: string) => void,
-): void {
-  if (!workspaceId) return;
-  void catchUpPublishedHeads(workspaceId).catch(() => undefined);
-  catchUpWorkspaceBilling(workspaceId);
 }
 
 // Windows ENAMETOOLONG mitigation constants
@@ -1945,38 +1486,18 @@ export function createOpenDesignToolEnv({
   hyperFramesBin = resolveHyperFramesCliPath(),
   projectDir,
   projectId,
-  workspaceScope,
-  runId,
-  conversationId,
-  analyticsContext,
 }: {
   daemonUrl: string;
   hyperFramesBin?: string;
   projectDir?: string | null;
   projectId?: string | null;
-  workspaceScope?: RunWorkspaceScope | null;
-  runId?: string | null;
-  conversationId?: string | null;
-  analyticsContext?: AnalyticsContext | null;
 }): NodeJS.ProcessEnv {
-  const scope = workspaceScope?.projectId === projectId ? workspaceScope : null;
   return {
     OD_BIN,
     OD_DATA_DIR: RUNTIME_DATA_DIR,
     OD_HYPERFRAMES_BIN: hyperFramesBin,
     OD_NODE_BIN,
     OD_DAEMON_URL: daemonUrl,
-    OD_STOCK_RUN_ID: runId ?? '',
-    OD_STOCK_SESSION_ID: conversationId ?? '',
-    OD_STOCK_ANALYTICS_DEVICE_ID: analyticsContext?.deviceId ?? '',
-    OD_STOCK_ANALYTICS_SESSION_ID: analyticsContext?.sessionId ?? '',
-    OD_STOCK_ANALYTICS_CLIENT_TYPE: analyticsContext?.clientType ?? '',
-    OD_STOCK_ANALYTICS_LOCALE: analyticsContext?.locale ?? '',
-    // Always overwrite ambient/configured identities, including unbound runs.
-    // An older bound Run without a member keeps its Workspace id so the CLI
-    // rejects the incomplete pair rather than silently reading another library.
-    OD_WORKSPACE_ID: scope?.workspaceId ?? '',
-    OD_WORKSPACE_MEMBER_ID: scope?.workspaceId ? scope.workspaceMemberId ?? '' : '',
     ...(typeof projectId === 'string' && projectId && projectDir
       ? {
           OD_PROJECT_ID: projectId,
@@ -2662,18 +2183,11 @@ function createProjectPreviewScopeRegistry() {
     acquire(projectId, workspace = null, options = {}) {
       pruneExpired();
       const wantedProject = String(projectId);
-      const wantedWorkspace = workspace
-        ? `${workspace.workspaceId}\u0000${workspace.workspaceMemberId}`
-        : '';
       for (const [scope, entry] of scopes) {
         // A one-shot scope's owner will revoke it; adopting it here would let
         // that teardown blank a preview that is still using it.
         if (entry.reusable !== true) continue;
         if (entry.projectId !== wantedProject) continue;
-        const entryWorkspace = entry.workspace
-          ? `${entry.workspace.workspaceId}\u0000${entry.workspace.workspaceMemberId}`
-          : '';
-        if (entryWorkspace !== wantedWorkspace) continue;
         // Deliberately does NOT renew `expiresAt`. The expiry is serialized
         // into the bridge script of the document this scope is about to be
         // injected into, so bumping it here changes the served bytes on every
@@ -2826,7 +2340,7 @@ function rewriteKnownAgentStreamError(agentId, message, failureText = '') {
   if (
     /bufio\.scanner:\s*token too long/i.test(combined) &&
     /opencode/i.test(combined) &&
-    (agentId === 'opencode' || agentId === 'mimo' || agentId === 'amr' || /json-rpc id \d+/i.test(combined))
+    (agentId === 'opencode' || agentId === 'mimo' || /json-rpc id \d+/i.test(combined))
   ) {
     return 'The run failed due to an unknown upstream streaming error. Please retry.';
   }
@@ -2860,25 +2374,6 @@ function rewriteKnownAgentStreamError(agentId, message, failureText = '') {
  */
 function agentFailureIdentity(def) {
   return { agentName: def?.name ?? null };
-}
-
-function createAmrModelUnavailablePayload(model, init = {}) {
-  const modelText = typeof model === 'string' && model.trim()
-    ? `"${model.trim()}"`
-    : 'the selected model';
-  return createSseErrorPayload(
-    'AMR_MODEL_UNAVAILABLE',
-    `AMR model ${modelText} is not available from Vela. Refresh the AMR model list, choose a supported model, and retry this run.`,
-    {
-      retryable: false,
-      details: {
-        kind: 'amr_model',
-        action: 'choose_model',
-        ...(typeof model === 'string' && model.trim() ? { model: model.trim() } : {}),
-        ...init,
-      },
-    },
-  );
 }
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -3169,26 +2664,11 @@ export interface StartServerOptions {
 
 }
 
-export function startAmrTerminalReportDeliveryAfterBind(
-  delivery: Pick<AmrTerminalReportDeliveryService, 'start'>,
-  boundPort: number | null,
-): boolean {
-  if (!Number.isInteger(boundPort) || Number(boundPort) <= 0) return false;
-  delivery.start();
-  return true;
-}
-
 export interface StartServerResult {
   url: string;
   server: import('node:http').Server;
   shutdown: () => Promise<void> | void;
   routeInventory: import('./route-registration-guard.js').RouteRegistration[];
-}
-
-/** Production callback shared by the registered comment routes and HTTP regression tests. */
-export function createPersonalPublishedCommentMutationHandler(db: Database.Database) {
-  return (comment: PreviewComment, context: WorkspaceCollabContext | null, deleted: boolean) =>
-    recordPersonalPublishedCommentMutation(db, comment, context, deleted);
 }
 
 export async function startServer({
@@ -3207,9 +2687,6 @@ export async function startServer({
   let resolvedPort = port;
   let daemonShuttingDown = false;
   const extraAllowedOrigins = configuredAllowedOrigins();
-  const workspaceAuthorityCacheMode = resolveWorkspaceAuthorityCacheMode(
-    process.env.OD_WORKSPACE_AUTHORITY_CACHE_MODE,
-  );
 
   // Plan §3.K1 / spec §15.7 — bound-API-token guard.
   //
@@ -3389,33 +2866,6 @@ export async function startServer({
       resolveProjectDir,
       isSafeId,
     },
-    bindProjectToWorkspace: (projectId, createdAt, designSystem) => {
-      const workspaceId = designSystem.workspaceId?.trim();
-      if (!workspaceId) return;
-      const binding = getWorkspaceResource(
-        db,
-        'design_system',
-        workspaceId,
-        designSystem.teamSynced === true
-          ? workspaceTeamDesignSystemBindingResourceId(workspaceId, designSystem.id)
-          : designSystem.id,
-      );
-      const memberId = binding?.createdByWorkspaceMemberId?.trim();
-      if (!memberId) return;
-      ensureWorkspaceProject(db, {
-        projectId,
-        workspaceId,
-        visibility: designSystem.teamSynced === true ? 'team' : 'personal',
-        resourceState: 'active',
-        createdByWorkspaceMemberId: memberId,
-        updatedByWorkspaceMemberId: memberId,
-        syncState: 'local_only',
-        resourceHubResourceId: null,
-        cloudTombstonedAt: null,
-        createdAt,
-        updatedAt: createdAt,
-      });
-    },
   });
   const {
     ensureUserDesignSystemWorkspaceProject,
@@ -3428,7 +2878,6 @@ export async function startServer({
     readAvailableDesignSystemPackageInfo,
     readAvailableDesignSystemStaticFile,
     readDesignSystemWorkspaceTextFile,
-    resolveUserDesignSystemShareDirectory,
     syncUserDesignSystemAssetsFromWorkspace,
     validateProjectDesignSystemId,
     validateProjectSkillId,
@@ -3563,17 +3012,6 @@ export async function startServer({
   });
   const db = openDatabase(PROJECT_ROOT, { dataDir: RUNTIME_DATA_DIR });
   daemonHealth?.setStorageProbe(() => readSqlitePageStats({ db, file: db.name }));
-  const amrTerminalReportOutbox = createAmrTerminalReportOutboxStore(db);
-  const amrTerminalReportDelivery = createAmrTerminalReportDeliveryService({
-    store: amrTerminalReportOutbox,
-    env: { ...process.env, OD_DATA_DIR: RUNTIME_DATA_DIR },
-  });
-  const commentAnchorRepair = repairTeamProjectCommentAnchorConversations(db);
-  if (commentAnchorRepair.created > 0) {
-    console.warn(
-      `[comments] repaired ${commentAnchorRepair.created} historical Team project comment anchor(s)`,
-    );
-  }
   // Restore paired browser-extension origins into the in-memory allowlist the
   // /api origin middleware above consults, so a paired clipper survives daemon
   // restarts without re-pairing.
@@ -3817,4435 +3255,6 @@ export async function startServer({
 
   // ---- Projects (DB-backed) -------------------------------------------------
 
-  // Team collaboration subsystem: presence + author-side publish scheduler.
-  // Product team workspaces publish and pull through the login-backed Vela CLI;
-  // non-Vela local modes retain the in-memory adapter for isolated development.
-  const describeCollabProject = (projectId: string) => {
-    const project = getProject(db, projectId);
-    if (!project) return null;
-    return {
-      name: project.name,
-      skillId: project.skillId ?? null,
-      designSystemId: project.designSystemId ?? null,
-      createdAt: project.createdAt,
-      updatedAt: project.updatedAt,
-      ...(project.metadata ? { metadata: project.metadata } : {}),
-    };
-  };
-  const activeWorkspace = createActiveWorkspaceSelectionStore(RUNTIME_DATA_DIR);
-  const teamMirrorPromotionJournalDir = path.join(
-    RUNTIME_DATA_DIR,
-    'team-mirror-promotions',
-  );
-  await recoverAuthorizedTeamProjectPromotions({
-    journalDir: teamMirrorPromotionJournalDir,
-    allowedProjectsRoot: PROJECTS_DIR,
-    isCommitted: (entry) => {
-      const stored = getTeamProjectMaterialization(
-        db,
-        entry.receipt.workspaceId,
-        entry.receipt.projectId,
-      );
-      return teamProjectMaterializationMatches(stored, entry.receipt);
-    },
-    isSuperseded: (entry) => {
-      const stored = getTeamProjectMaterialization(
-        db,
-        entry.receipt.workspaceId,
-        entry.receipt.projectId,
-      );
-      return teamProjectMaterializationSupersedes(stored, entry.receipt);
-    },
-    onError: (error) => {
-      console.warn('[od] failed to recover authorized team mirror promotion:', error);
-    },
-  });
-  // What this daemon has learned about each workspace's type, memoized from
-  // exact directory/context reads it already performs. It is the
-  // second witness behind the team-share invariant: a team share may only be
-  // recorded in — and a project-scoped collab call may only be pinned to — a
-  // workspace that can actually host a team plane. See collab/team-share-scope.ts.
-  const workspaceTypes = createWorkspaceTypeRegistry();
-  const configuredAmrEnv = () =>
-    agentCliEnvForAgent(readAppConfigSync(RUNTIME_DATA_DIR).agentCliEnv, 'amr');
-  const workspaceExactAuthorityCache = createWorkspaceExactAuthorityCache({
-    identity: () => velaWorkspaceDirectoryIdentity(
-      readVelaControlApiContext,
-      configuredAmrEnv(),
-    ),
-  });
-  const workspaceDirectoryAuthority = createWorkspaceDirectoryAuthorityBroker({
-    fetchDirectory: async () => {
-      const result = await fetchVelaWorkspaceDirectory({
-        configuredEnv: configuredAmrEnv(),
-      });
-      if (result.ok) workspaceTypes.learn(result.items);
-      return result;
-    },
-    identityKey: () => velaWorkspaceDirectoryIdentity(
-      readVelaControlApiContext,
-      configuredAmrEnv(),
-    ),
-    onDecision: (input) => recordWorkspaceAuthorityDecision({
-      mode: workspaceAuthorityCacheMode,
-      ...input,
-    }),
-    onSuppressedRequest: (input) => recordWorkspaceAuthoritySuppressedRequest({
-      mode: workspaceAuthorityCacheMode,
-      ...input,
-    }),
-    onInvalidation: (input) => recordWorkspaceAuthorityInvalidation({
-      mode: workspaceAuthorityCacheMode,
-      ...input,
-    }),
-    onAcceptedResult: (result, identity) =>
-      workspaceExactAuthorityCache.observe(identity, result.items),
-  });
-  const fetchWorkspaceDirectory = workspaceDirectoryAuthority.read;
-  const fetchFreshMutationWorkspaceDirectory =
-    workspaceDirectoryAuthority.fresh;
-  const fetchFreshBackgroundWorkspaceDirectory =
-    workspaceDirectoryAuthority.backgroundFresh;
-  let workspaceHubSubscriptions: WorkspaceHubSubscriptionManager | null = null;
-  const quotaHealthyConnections = new Set<string>();
-  const verifyExplicitWorkspaceRequestContext = async (input: {
-    req: any;
-    requireTeam?: boolean;
-  }, options: { fresh?: boolean; backgroundFresh?: boolean } = {}) => {
-    if (process.env.OD_WORKSPACE_CONTEXT_SOURCE?.trim() === 'vela') {
-      let fetchDirectory = fetchFreshMutationWorkspaceDirectory;
-      if (options.fresh === false) {
-        fetchDirectory = fetchWorkspaceDirectory;
-      } else if (options.backgroundFresh) {
-        fetchDirectory = fetchFreshBackgroundWorkspaceDirectory;
-      }
-      return verifyWorkspaceRequestContext({
-        ...input,
-        fetchWorkspaceDirectory: fetchDirectory,
-        configuredEnv: configuredAmrEnv(),
-      });
-    }
-    // Local/dev has no signed membership directory. Its explicit request
-    // headers are the complete, static authority; still never consult the
-    // daemon's mutable active-workspace context.
-    const claimed = workspaceResourceContextFromRequest(input.req);
-    if (claimed === null) {
-      return {
-        ok: false as const,
-        status: 400 as const,
-        code: 'WORKSPACE_CONTEXT_REQUIRED' as const,
-        message: 'an explicit workspace context is required',
-      };
-    }
-    if (claimed === 'missing') {
-      return {
-        ok: false as const,
-        status: 400 as const,
-        code: 'WORKSPACE_CONTEXT_INCOMPLETE' as const,
-        message: 'both workspace and member identity are required',
-      };
-    }
-    if (
-      claimed.memberStatus !== 'active'
-      || claimed.lifecycleState === 'deleted'
-      || (input.requireTeam && claimed.workspaceType !== 'team')
-    ) {
-      return {
-        ok: false as const,
-        status: 403 as const,
-        code: 'WORKSPACE_ACCESS_DENIED' as const,
-        message: 'the requested workspace is not available to this member',
-      };
-    }
-    return {
-      ok: true as const,
-      context: workspaceContextFromDirectoryItem({
-        workspaceId: claimed.workspaceId,
-        workspaceName: claimed.workspaceId,
-        workspaceType: claimed.workspaceType,
-        workspaceMemberId: claimed.workspaceMemberId,
-        role: claimed.role,
-        memberStatus: claimed.memberStatus,
-        lifecycleState: claimed.lifecycleState,
-      }, configuredAmrEnv()),
-    };
-  };
-  const verifyWorkspaceReadAuthority = (req: unknown) =>
-    verifyExplicitWorkspaceRequestContext({ req }, { fresh: false });
-  const verifyWorkspaceRequestAuthority = (req: unknown) =>
-    verifyExplicitWorkspaceRequestContext({ req });
-  const verifyPersonalProjectDeleteLeaseAuthority =
-    process.env.OD_WORKSPACE_CONTEXT_SOURCE?.trim() === 'vela'
-      ? (req: unknown) => verifyWorkspaceRequestContext({
-          req,
-          // A miss is intentionally returned as unavailable. The project gate
-          // then falls through to the existing fresh authority verifier.
-          fetchWorkspaceDirectory: workspaceDirectoryAuthority.cached,
-          configuredEnv: configuredAmrEnv(),
-        })
-      : undefined;
-  // Project-creation writes must be authorized by AMR in production, while
-  // local/dev and explicitly anonymous clients keep their legacy behavior.
-  // Keep this separate from read-side directory fetches so an unconfigured
-  // daemon never turns ordinary local creation into a network-dependent path.
-  const fetchProjectCreationWorkspaceDirectory =
-    process.env.OD_WORKSPACE_CONTEXT_SOURCE?.trim() === 'vela'
-      ? fetchFreshMutationWorkspaceDirectory
-      : undefined;
-  const listWorkspaceDirectory = async () => {
-    const result = await fetchWorkspaceDirectory();
-    return result.items;
-  };
-  const resolveAuthoritativeTeamWorkspaceContext = async (
-    workspaceId: string | null | undefined,
-    options: { fresh?: boolean; backgroundFresh?: boolean } = {},
-  ): Promise<WorkspaceCollabContext | null> => {
-    const requestedWorkspaceId = workspaceId?.trim() ?? '';
-    if (!requestedWorkspaceId) return null;
-    let fetchDirectory = fetchWorkspaceDirectory;
-    if (options.fresh) {
-      fetchDirectory = options.backgroundFresh
-        ? fetchFreshBackgroundWorkspaceDirectory
-        : fetchFreshMutationWorkspaceDirectory;
-    }
-    const directory = await fetchDirectory().catch(() => ({
-      ok: false as const,
-      items: [],
-    }));
-    if (!directory.ok) return null;
-    const membership = directory.items.find(
-      (item) =>
-        item.workspaceId === requestedWorkspaceId
-        && item.workspaceType === 'team'
-        && item.memberStatus === 'active'
-        && item.lifecycleState === 'active',
-    );
-    return membership
-      ? workspaceContextFromDirectoryItem(membership, configuredAmrEnv())
-      : null;
-  };
-  const teamResourceVersions = createTeamResourceVersionStore(RUNTIME_DATA_DIR);
-  const teamProjectContentResourceId = (
-    projectId: string,
-    scope: { resourceTeamId: string; ownerMemberId: string; resourceId?: string },
-  ) =>
-    scope.resourceId ?? projectResourceIdFor(projectId, {
-      teamId: scope.resourceTeamId,
-      memberId: scope.ownerMemberId,
-      role: 'member',
-      lifecycleState: 'active',
-      workspaceType: 'team',
-    });
-  /**
-   * Resolve design-system ownership/filtering from this exact request.
-   *
-   * Catalog and create are data-plane operations. Daemon-global active/current
-   * state can change between two tabs, so it is not authority for deciding
-   * which Workspace a request reads or writes.
-   */
-  async function resolveDesignSystemWorkspaceContext(
-    req: any,
-  ): Promise<import('./collab/workspace-resource-mutation.js').WorkspaceResourceContext | null> {
-    const claimed = workspaceResourceContextFromRequest(req);
-    // A completely headerless local/signed-out request is the explicit legacy
-    // lane: built-ins plus unclaimed local resources, and new resources remain
-    // unbound. A half-specified identity is never that lane and is rejected by
-    // the verifier below.
-    if (claimed === null) return null;
-    const verified = await verifyExplicitWorkspaceRequestContext({ req });
-    if (!verified.ok) {
-      throw Object.assign(new Error(verified.message), {
-        status: verified.status,
-        code: verified.code,
-        ...(verified.retryable ? { retryable: true } : {}),
-      });
-    }
-    return verified.context;
-  }
-
-  async function resolveDesignSystemWorkspaceScope(req: any): Promise<string | null> {
-    const context = await resolveDesignSystemWorkspaceContext(req);
-    return context?.workspaceId.trim() || null;
-  }
-
-  /**
-   * Create a user design system CLAIMED by the workspace it was authored in.
-   *
-   * User design systems share one flat directory, so the claim written here is
-   * the only thing that lets `GET /api/design-systems` keep one workspace's
-   * library out of another's (#145). Stamping at creation is deliberate: it is
-   * the one moment the authoring workspace is unambiguous, whereas deciding
-   * ownership later (at read time, from whatever workspace happens to be
-   * active) would re-home a system every time the user switched.
-   *
-   * Envelope double-write (spec 9.2): `metadata.json` stays the only thing
-   * `listDesignSystems`'s filter reads, but a claimed system also gets a row
-   * in the generic `workspace_resources` table — the same table plugin/skill
-   * already bind into — so design systems stop being the one resource type
-   * with zero rows there. Both writes happen from this single call site, so
-   * they can never drift apart.
-   */
-  const reservedDesignSystemResourceIds = (): Set<string> => {
-    const rows = db.prepare(
-      `SELECT resource_id AS resourceId
-         FROM workspace_resources
-        WHERE resource_type = 'design_system'`,
-    ).all() as Array<{ resourceId?: string }>;
-    return new Set(rows.flatMap((row) => {
-      const resourceId = row.resourceId?.trim();
-      return resourceId ? [designSystemLogicalResourceId(resourceId)] : [];
-    }));
-  };
-  const createWorkspaceOwnedDesignSystemForContext = (
-    root: string,
-    input: UserDesignSystemInput,
-    context: import('./collab/workspace-resource-mutation.js').WorkspaceResourceContext | null,
-  ) => persistWorkspaceOwnedDesignSystem(root, input, context, {
-    listReservedResourceIds: reservedDesignSystemResourceIds,
-    ensureWorkspaceResource: (resourceType, workspaceId, resourceId, envelope) => {
-      // The filesystem allocation awaited above, so another request could
-      // have claimed this logical id in the meantime. Fail before reusing its
-      // envelope; the wrapper removes only the directory it just allocated.
-      if (reservedDesignSystemResourceIds().has(resourceId)) {
-        throw new Error('DESIGN_SYSTEM_ID_CONFLICT');
-      }
-      return ensureWorkspaceResource(db, resourceType, workspaceId, resourceId, envelope);
-    },
-  });
-  const createWorkspaceOwnedDesignSystem = async (
-    root: string,
-    input: UserDesignSystemInput,
-    req: any,
-  ) => {
-    const context = await resolveDesignSystemWorkspaceContext(req);
-    return createWorkspaceOwnedDesignSystemForContext(root, input, context);
-  };
-  // Persistent half of the sync design: a cheap digest GET decides whether the
-  // catalog / member payload this daemon already has on disk is still current,
-  // so a cold start (or a workspace not touched in a while) can skip the real
-  // round-trip entirely. Snapshots live in the daemon database, which was
-  // opened from the resolved runtime data root. See collab/persistent-sync-cache.ts.
-  const collabSyncSnapshots = createCollabSyncSnapshotStore(db);
-  const velaCliCollabClient = createVelaCliCollabClientFromEnv(process.env);
-  const velaCliTeamProjectCatalog = createVelaCliTeamProjectCatalogFromEnv();
-  const velaCliWorkspaceTeamProjectCatalog =
-    createVelaCliTeamProjectCatalogClientFromEnv();
-  // Generic stale-while-revalidate cache (with an `invalidate()` escape hatch)
-  // — see collab/swr-cache.ts.
-  // Cache the workspace-scoped team catalog behind /api/workspaces/:id/projects
-  // ?view=… (the "All projects"/"Recent" pages) the same way. The wrapper keeps
-  // the verified request principal in both its key and its upstream call, so
-  // navigation stays instant without letting an active-workspace switch retarget
-  // an in-flight read.
-  const workspaceTeamProjectCatalog = velaCliWorkspaceTeamProjectCatalog
-    ? createScopedVelaTeamProjectCatalogClientCache(
-        velaCliWorkspaceTeamProjectCatalog,
-      )
-    : velaCliWorkspaceTeamProjectCatalog;
-  // Preserve the legacy observation API for compatibility tests and dev
-  // tooling. Production data-plane routes never read current/lastKnown; they
-  // verify the exact Workspace/member carried by each request.
-  const workspaceContext = withLastKnownWorkspaceContext(
-    createWorkspaceContextProviderFromEnv(process.env, {
-      configuredEnv: configuredAmrEnv,
-      fetchWorkspaceDirectory,
-      getActiveWorkspaceId: () => activeWorkspace.get(),
-      // The expected value keeps a directory-derived bootstrap/recovery write
-      // from overwriting a newer user switch queued by another tab.
-      replaceLocalSelection: (expectedWorkspaceId, workspaceId) =>
-        activeWorkspace.replaceIf(expectedWorkspaceId, workspaceId),
-    }),
-  );
-  const workspaceExactContextCache = createWorkspaceExactContextCache({
-    provider: workspaceContext,
-    identity: () => velaWorkspaceDirectoryIdentity(
-      readVelaControlApiContext,
-      configuredAmrEnv(),
-    ),
-    onDecision: (input) => recordWorkspaceAuthorityDecision({
-      mode: workspaceAuthorityCacheMode,
-      ...input,
-    }),
-    onSuppressedRequest: (input) => recordWorkspaceAuthoritySuppressedRequest({
-      mode: workspaceAuthorityCacheMode,
-      ...input,
-    }),
-    onInvalidation: (input) => recordWorkspaceAuthorityInvalidation({
-      mode: workspaceAuthorityCacheMode,
-      ...input,
-    }),
-  });
-  let workspaceHubAccountIdentity = velaWorkspaceDirectoryIdentity(
-    readVelaControlApiContext,
-    configuredAmrEnv(),
-  );
-  let workspaceHubAmrProfile = resolveAmrProfile({
-    ...process.env,
-    ...configuredAmrEnv(),
-  });
-  const resetWorkspaceIdentityCaches = (): void => {
-    quotaHealthyConnections.clear();
-    workspaceDirectoryAuthority.resetIdentity();
-    workspaceExactAuthorityCache.resetIdentity();
-    workspaceExactContextCache.resetIdentity();
-  };
-  const refreshWorkspaceHubAccountIdentity = (): void => {
-    const currentAmrProfile = resolveAmrProfile({
-      ...process.env,
-      ...configuredAmrEnv(),
-    });
-    const currentIdentity = velaWorkspaceDirectoryIdentity(
-      readVelaControlApiContext,
-      configuredAmrEnv(),
-    );
-    if (currentIdentity === workspaceHubAccountIdentity) return;
-    const environmentChanged = currentAmrProfile !== workspaceHubAmrProfile;
-    workspaceHubAccountIdentity = currentIdentity;
-    workspaceHubAmrProfile = currentAmrProfile;
-    resetWorkspaceIdentityCaches();
-    if (environmentChanged) {
-      workspaceHubSubscriptions?.resetForEnvironmentChange();
-      workspaceBillingRuntime.resetIdentity();
-    } else {
-      workspaceHubSubscriptions?.refreshEndpoints();
-    }
-  };
-  const fetchWorkspaceDirectoryForAccountSurface = () => {
-    refreshWorkspaceHubAccountIdentity();
-    return fetchWorkspaceDirectory();
-  };
-  const workspaceContextProvider = workspaceExactContextCache.provider;
-  const cachedWorkspaceContextForRequest = (
-    req: unknown,
-    requestedWorkspaceId?: string,
-  ): WorkspaceCollabContext | null => {
-    refreshWorkspaceHubAccountIdentity();
-    const claimed = workspaceResourceContextFromRequest(req);
-    if (!claimed || claimed === 'missing') return null;
-    if (
-      requestedWorkspaceId &&
-      claimed.workspaceId !== requestedWorkspaceId.trim()
-    ) {
-      return null;
-    }
-    const cached = workspaceExactContextCache.cached(claimed.workspaceId);
-    return cached &&
-      cached.workspaceMemberId === claimed.workspaceMemberId &&
-      cached.memberStatus === 'active' &&
-      cached.lifecycleState !== 'deleted'
-      ? cached
-      : null;
-  };
-  const verifyWorkspaceContextReadAuthority = async (req: unknown) => {
-    refreshWorkspaceHubAccountIdentity();
-    const claimed = workspaceResourceContextFromRequest(req);
-    if (claimed && claimed !== 'missing') {
-      const cached = workspaceExactAuthorityCache.cached(
-        claimed.workspaceId,
-        claimed.workspaceMemberId,
-      );
-      if (cached) {
-        return {
-          ok: true as const,
-          context: workspaceContextFromDirectoryItem(cached, configuredAmrEnv()),
-        };
-      }
-    }
-    // The exact cache is directory-sourced and usable only under strict SSE
-    // health. Every miss preserves the legacy directory verification.
-    return verifyWorkspaceReadAuthority(req);
-  };
-  /**
-   * Where a created project belongs for the surfaces with no authorization gate
-   * of their own. An explicit pair is verified through the same fresh directory
-   * authority as `POST /api/projects`; a headerless legacy/local request remains
-   * unbound. No active/current/last-known Workspace is consulted.
-   */
-  const resolveCreatedProjectHome = createCreatedProjectWorkspaceResolver({
-    ...(fetchProjectCreationWorkspaceDirectory
-      ? { fetchWorkspaceDirectory: fetchProjectCreationWorkspaceDirectory }
-      : {}),
-    configuredEnv: configuredAmrEnv,
-  });
-  function persistWorkspaceProjectSyncState(
-    projectId: string,
-    workspaceId: string | null | undefined,
-    syncState: 'synced' | 'sync_failed',
-  ) {
-    if (!workspaceId) return;
-    // Where a background upload got to is sync bookkeeping, not a change to the
-    // project — see SYNC_KEEPS_UPDATED_AT.
-    updateWorkspaceProject(db, workspaceId, projectId, {
-      syncState,
-      updatedAt: SYNC_KEEPS_UPDATED_AT,
-    });
-  }
-  function persistWorkspaceProjectVisibility(
-    input: {
-      projectId: string;
-      principal?: ResourceHubPrincipal | null;
-      visibility: 'personal' | 'team';
-      ownerMemberId?: string | null;
-      updatedByMemberId?: string | null;
-    },
-  ) {
-    const workspaceId = input.principal?.teamId;
-    if (!workspaceId) return;
-    const project = getProject(db, input.projectId);
-    // Keyed on the PROJECT, not on (workspace, project): a project belongs to
-    // exactly one workspace (collab/workspace-project-home.ts), so a project
-    // already bound elsewhere must not gain a second row here.
-    if (project && !getWorkspaceProjectByProjectId(db, input.projectId)) {
-      ensureWorkspaceProject(db, {
-        projectId: input.projectId,
-        workspaceId,
-        visibility: 'personal',
-        resourceState: 'active',
-        createdByWorkspaceMemberId: input.ownerMemberId ?? input.updatedByMemberId ?? null,
-        updatedByWorkspaceMemberId: input.updatedByMemberId ?? input.ownerMemberId ?? null,
-        resourceHubResourceId: null,
-        cloudTombstonedAt: null,
-        syncState: 'local_only',
-        createdAt: project.createdAt,
-        updatedAt: project.updatedAt,
-      });
-    }
-    const patch = input.visibility === 'team'
-      ? {
-          visibility: 'team',
-          createdByWorkspaceMemberId: input.ownerMemberId ?? input.updatedByMemberId ?? null,
-          updatedByWorkspaceMemberId: input.updatedByMemberId ?? input.ownerMemberId ?? null,
-          resourceHubResourceId: getWorkspaceProjectByProjectId(db, input.projectId)?.resourceHubResourceId ?? null,
-          cloudTombstonedAt: null,
-          syncState: 'synced',
-        }
-      : {
-          visibility: 'personal',
-          updatedByWorkspaceMemberId: input.updatedByMemberId ?? input.ownerMemberId ?? null,
-          resourceHubResourceId: getWorkspaceProjectByProjectId(db, input.projectId)?.resourceHubResourceId ?? null,
-          cloudTombstonedAt: null,
-          syncState: 'local_only',
-        };
-    const persist = db.transaction(() => {
-      // `rebindWorkspaceProject`, not `updateWorkspaceProject`: the row this
-      // event is about can predate the share — a personal draft the user made
-      // before ever joining the team it just got shared into — so it sits under
-      // an unrelated, stale workspace_id. Asking for an update scoped to the
-      // NEW workspaceId would find nothing and silently never migrate it.
-      rebindWorkspaceProject(db, input.projectId, { ...patch, workspaceId });
-      if (input.visibility === 'team') {
-        ensureTeamProjectCommentConversations(db, input.projectId);
-      }
-    });
-    persist();
-  }
-  /**
-   * The recvqzaDvUU6B3 fresh-install wipe guard's one db-backed predicate:
-   * is this project's local record still an unmaterialized shared-project
-   * placeholder (see collab/shared-project-placeholder.ts)? Consulted by the
-   * publish watcher's shouldPublish AND the runtime's scheduler publish gate,
-   * so neither a new watch nor an already-scheduled flush can push a
-   * placeholder's empty directory over the team's real hub content.
-   */
-  const projectIsUnmaterializedSharedPlaceholder = (projectId: string): boolean =>
-    isUnmaterializedSharedPlaceholder(getProject(db, projectId));
-  let invalidatePresenceReadCache = (
-    _projectId: string,
-    _workspaceId?: string,
-  ): void => {};
-  let markPresenceReadCacheStale = (
-    _projectId: string,
-    _workspaceId?: string,
-  ): void => {};
-  let ownedContentSync: OwnedContentSync | null = null;
-  let ownerProjectHasActiveRun = (_projectId: string): boolean => true;
-  const publicFileMutations = createPublicFileMutations();
-  const localCommentFiles = createLocalCommentFiles(db);
-  const commentFileRun = (workspaceId: string) => (args: string[]) =>
-    runVelaCommand(args, velaWorkspaceCommandOptions(workspaceId));
-  const commentFilePublications = createCommentFilePublicationCoordination({
-    isBusy: projectId => ownerProjectHasActiveRun(projectId),
-    wake: (projectId, principal) => {
-      collab.scheduler.notifyChanged(projectId, 'run-settled', principal);
-      collab.scheduler.runBoundary(projectId, principal);
-    },
-  });
-  const publishWithCommentFiles = createCommentFilePublisher({
-    db, localFiles: localCommentFiles, runForWorkspace: commentFileRun,
-    resolveRoot: projectId => resolveProjectShareDir(PROJECTS_DIR, projectId, getProject(db, projectId), resolveProjectDir),
-    listFiles: contentFiles,
-  });
-  const collab = createCollabRuntime({
-    coordinatePublication: (projectId, principal, publish) => {
-      const operation = () => velaCliTeamProjectCatalog
-        ? publishWithCommentFiles(projectId, principal, publish) : publish();
-      const coordinated = () => ownedContentSync ? ownedContentSync.withPublication(projectId, principal, operation) : operation();
-      return principal && velaCliTeamProjectCatalog
-        ? publicFileMutations.run(projectId, () => commentFilePublications.run(projectId, principal, coordinated), { joinCurrent: true }) : coordinated();
-    },
-    workspaceContext: workspaceContextProvider,
-    ...(velaCliTeamProjectCatalog ? {
-      resolveResourceId: async (projectId: string, principal?: ResourceHubPrincipal | null) => {
-        if (!principal) throw new Error('TEAM_PROJECT_ROOT_UNAVAILABLE');
-        const row = getWorkspaceProjectByProjectId(db, projectId);
-        if (row && (row.workspaceId !== principal.teamId || row.resourceState !== 'active'
-          || row.cloudTombstonedAt != null)) throw new Error('TEAM_PROJECT_ROOT_UNAVAILABLE');
-        if (row?.resourceHubResourceId?.trim()) return row.resourceHubResourceId;
-        // Rootless old local data is resolved from the existing catalog identity,
-        // not migrated to a generated alias. Native Vela enforces viewer access.
-        const registration = await velaCliTeamProjectCatalog.getRegistration(projectId, principal);
-        if (!registration || registration.visibility !== 'team' || !registration.resourceId?.trim()) {
-          throw new Error('TEAM_PROJECT_ROOT_UNAVAILABLE');
-        }
-        return registration.resourceId;
-      },
-      retainRegistration: (registration: import('@open-design/contracts').PublicShareProjectRegistration, principal: ResourceHubPrincipal) => {
-        const row = getWorkspaceProjectByProjectId(db, registration.projectId);
-        if (row?.workspaceId !== principal.teamId || row.resourceState !== 'active'
-          || row.createdByWorkspaceMemberId !== principal.memberId || row.cloudTombstonedAt != null
-          || registration.workspaceId !== principal.teamId || registration.ownerMemberId !== principal.memberId) {
-          throw new Error('TEAM_PROJECT_REGISTRATION_SCOPE_MISMATCH');
-        }
-        updateWorkspaceProject(db, principal.teamId, registration.projectId, {
-          resourceHubResourceId: registration.resourceId,
-          updatedAt: SYNC_KEEPS_UPDATED_AT,
-        });
-      },
-    } : {}),
-    canPublishProjectContent: (projectId) =>
-      !projectIsUnmaterializedSharedPlaceholder(projectId) && !ownedContentSync?.isApplying(projectId),
-    resolveProjectDir: async (projectId) => {
-      const project = getProject(db, projectId);
-      if (project) await ensureProject(PROJECTS_DIR, projectId, project.metadata);
-      return resolveProjectShareDir(PROJECTS_DIR, projectId, project, resolveProjectDir);
-    },
-    resolvePullDir: (projectId) => resolveProjectDir(PROJECTS_DIR, projectId),
-    describeProject: describeCollabProject,
-    ...(velaCliTeamProjectCatalog ? { teamProjectCatalog: velaCliTeamProjectCatalog } : {}),
-    onPublished: ({ projectId, principal }) => {
-      persistWorkspaceProjectSyncState(projectId, principal?.teamId, 'synced');
-    },
-    onError: ({ projectId, principal }) => {
-      persistWorkspaceProjectSyncState(projectId, principal?.teamId, 'sync_failed');
-    },
-    onMetadataRefreshError: ({ projectId, principal, error }) => {
-      console.warn(
-        `[od] team project metadata refresh will retry (${principal.teamId}/${projectId}):`,
-        error,
-      );
-    },
-    onMetadataRefreshPending: ({ projectId, principal }) => {
-      setWorkspaceProjectMetadataRefreshPending(db, principal.teamId, projectId, true);
-    },
-    onMetadataRefreshComplete: ({ projectId, principal }) => {
-      setWorkspaceProjectMetadataRefreshPending(db, principal.teamId, projectId, false);
-    },
-    // Collab realtime hop-2: a member joined/left this project's presence set
-    // (fires only on explicit join/leave, not on every heartbeat). Push a thin
-    // `presence-changed` onto the project's existing events SSE so the open
-    // project view re-fetches presence instead of waiting for its poll tick.
-    onPresenceChange: ({ projectId }) => {
-      markPresenceReadCacheStale(projectId);
-      emitProjectEvent(projectId, { type: 'presence-changed', projectId, at: Date.now() });
-    },
-  });
-  for (const share of listTeamWorkspaceProjectShares(db)) {
-    const restored = recoverPersistedTeamShareOwnership(share);
-    if (!restored) continue;
-    collab.rememberTeamShare(
-      restored.projectId,
-      restored.principal,
-      share.syncState === 'synced' || share.syncState === 'sync_failed' || share.syncState === 'pending_upload'
-        ? share.syncState
-        : 'pending_upload',
-      { metadataRefreshPending: Boolean(share.metadataRefreshPending) },
-    );
-  }
-  /**
-   * Heal `workspace_projects` rows that already violate the team-share
-   * invariant: `visibility: 'team'` pinned to a PERSONAL workspace (see
-   * collab/team-share-scope.ts). Older builds let a share taken while the client
-   * sat on its personal workspace persist such a row, and the code guards alone
-   * leave an affected user permanently stuck — the row 403s every collab call it
-   * scopes and nothing ever rewrites it.
-   *
-   * Reconciliation at startup rather than a schema migration: the contradiction
-   * is only decidable against the workspace DIRECTORY (which ids are teams),
-   * which is a signed-in network fact a migration cannot see. Demotion is
-   * therefore evidence-gated — a workspace the directory does not name is left
-   * exactly as-is, and `visibility: 'personal'` rows are never candidates.
-   *
-   * A demoted row goes back to a local draft rather than being re-pointed at
-   * some team: which team was intended is not recoverable, and the user can
-   * simply re-share from the team workspace, which now writes a valid row. This
-   * touches local state only — no hub resource is deleted — and deliberately
-   * leaves `cloudTombstonedAt` null, so a copy that genuinely exists in the team
-   * catalog keeps showing up instead of being suppressed as "unshared here".
-   */
-  const reconcileImpossibleTeamShares = async (): Promise<number> => {
-    await listWorkspaceDirectory();
-    const broken = impossibleTeamShareRows(listTeamWorkspaceProjectShares(db), workspaceTypes);
-    for (const row of broken) {
-      console.warn(
-        `[od] healing project ${row.projectId}: its team share pointed at personal workspace ` +
-          `${row.workspaceId}, which has no team plane. Re-share it from a team workspace.`,
-      );
-      updateWorkspaceProject(db, row.workspaceId, row.projectId, {
-        visibility: 'personal',
-        resourceHubResourceId: null,
-        cloudTombstonedAt: null,
-        syncState: 'local_only',
-        // A startup heal of a row that was never valid; nobody changed the
-        // project — see SYNC_KEEPS_UPDATED_AT.
-        updatedAt: SYNC_KEEPS_UPDATED_AT,
-      });
-    }
-    return broken.length;
-  };
-  void reconcileImpossibleTeamShares().catch((error) => {
-    console.warn('[od] team-share scope reconciliation failed:', error);
-  });
-  // Spec 9.2 one-time backfill: claim every pre-existing user design system
-  // whose metadata.json already names a workspace into the generic
-  // `workspace_resources` table too. Idempotent (see
-  // `backfillDesignSystemWorkspaceResources`'s own doc comment), so running
-  // it unconditionally on every startup is deliberate, same as
-  // `reconcileImpossibleTeamShares` just above.
-  void backfillDesignSystemWorkspaceResources(db, USER_DESIGN_SYSTEMS_DIR).catch((error) => {
-    console.warn('[od] design-system workspace-resource backfill failed:', error);
-  });
-  const publicFilePublicationStore = createSqlitePublicFilePublicationStore(db);
-  const collabCloudClient = velaCliCollabClient ?? createCollabCloudClientFromEnv();
-  const resolveBoundProjectWorkspaceContext = async (
-    projectId: string,
-    options: { fresh?: boolean } = {},
-  ): Promise<WorkspaceCollabContext | null> => {
-    const binding = getWorkspaceProjectByProjectId(db, projectId);
-    const workspaceId = binding?.workspaceId?.trim();
-    if (!workspaceId) return null;
-    const directory = await (
-      options.fresh
-        // `fresh` is requested only by the durable comment-outbox recovery
-        // service. It must bypass a settled success lease but share the daemon's
-        // account-wide outage circuit with other background recovery work.
-        ? fetchFreshBackgroundWorkspaceDirectory()
-        : fetchWorkspaceDirectory()
-    ).catch(() => ({
-      ok: false as const,
-      items: [],
-    }));
-    if (!directory.ok) return null;
-    const membership = directory.items.find(
-      (item) =>
-        item.workspaceId === workspaceId
-        && item.memberStatus === 'active'
-        && item.lifecycleState !== 'deleted',
-    );
-    return membership
-      ? workspaceContextFromDirectoryItem(membership, configuredAmrEnv())
-      : null;
-  };
-
-  // Uncached remote catalog authority for both comment relay delivery and the
-  // later project-sharing routes. A missing row is authoritative unshare;
-  // transport failure throws so the durable outbox keeps the delivery pending.
-  const teamProjectsLister = createTeamProjectsLister({
-    ...(velaCliTeamProjectCatalog ? { teamProjectCatalog: velaCliTeamProjectCatalog } : {}),
-  });
-
-
-  // Collab cloud (C-lane §D2.5/§D4): cross-daemon comment sync + member
-  // directory. The client is null (all calls degrade to no-op) unless
-  // OD_COLLAB_CLOUD_URL is set. The service ties it to the one workspace context
-  // so a single identity drives member registration, comment push, and the
-  // pull+merge poller. Kept out of collab/runtime.ts to avoid colliding with the
-  // team-project-catalog work also editing that file.
-  const collabCloud = collabCloudClient
-    ? createCollabCloudService({
-        client: collabCloudClient,
-        commentOutbox: createCommentRelayOutboxStore(db),
-        // C3-LITE member comment pages (BO1), served by the AMR API through the
-        // Vela CLI. The HTTP relay (OD_COLLAB_CLOUD_URL) has no paged route, so
-        // it keeps the legacy pull. An unusable cursor is rebuilt from a fresh
-        // snapshot in the same drain (BO2).
-        ...(velaCliCollabClient ? { memberCommentStore: createCommentInboundStore(db) } : {}),
-        isMemberSyncProjectShared: (projectId) => {
-          const binding = getWorkspaceProjectByProjectId(db, projectId);
-          return binding?.visibility === 'team' && binding.resourceState !== 'deleted';
-        },
-        onMemberSyncRebuildRequired: ({ projectId, code }) =>
-          console.warn(`[od] collab member comment cursor rebuilding (${code}) for project ${projectId}`),
-        commentRelayScope: (projectId, filePath, context) => commentRelayScope({
-          binding: getWorkspaceProjectByProjectId(db, projectId),
-          context,
-          projectId,
-          filePath,
-          publications: publicFilePublicationStore,
-        }),
-        listPersonalCommentRelayFilePaths: (projectId, context) =>
-          personalCommentRelayFilePaths({
-            binding: getWorkspaceProjectByProjectId(db, projectId),
-            context,
-            projectId,
-            publications: publicFilePublicationStore,
-          }),
-        // Deliberately unguarded: if the query throws, the batch must fail and
-        // keep its cursor. Swallowing the error here would report "no such
-        // comment" and acknowledge a deletion we never applied.
-        // The server asserted which publication a comment belongs to; this turns
-        // that into the local file it was written against. Everything here is a
-        // gate, and each one is load-bearing:
-        //
-        // - the binding must be this workspace's, active, and created by the
-        //   member we are resolving for — a publication slug alone says which
-        //   share, not that this daemon's user may read into it;
-        // - a comment with no slug (written before the field existed) resolves
-        //   to null rather than to whatever is published now. That fallback is
-        //   exactly how a stopped share's late comment lands on a live one.
-        //
-        // Ambiguity throws out of `sourcePathForCurrentPublication`, which keeps
-        // the batch cursor so the batch can be retried rather than acknowledged.
-        resolvePublishedCommentSourcePath: ({ projectId, publicationSlug, publishedPath, context }) => {
-          if (!publicationSlug) return null;
-          const binding = getWorkspaceProjectByProjectId(db, projectId);
-          const ownerMemberId = binding?.createdByWorkspaceMemberId?.trim() || '';
-          if (
-            !binding
-            || !ownerMemberId
-            || binding.resourceState === 'deleted'
-            || binding.workspaceId?.trim() !== context.workspaceId?.trim()
-          ) return null;
-          return sourcePathForCurrentPublication(db, {
-            resourceTeamId: context.workspaceId,
-            ownerMemberId,
-            projectId,
-            slug: publicationSlug,
-            publishedPath,
-          });
-        },
-        resolveStoredCommentLocation: (projectId, commentId) => {
-          const stored = getProjectPreviewComment(db, projectId, commentId);
-          if (!stored) return { found: false };
-          return { found: true, filePath: stored.filePath?.trim() || null };
-        },
-        resolveLocalProjectRelayBinding: (projectId) => {
-          const binding = getWorkspaceProjectByProjectId(db, projectId);
-          const workspaceId = binding?.workspaceId?.trim() ?? '';
-          const ownerMemberId = binding?.createdByWorkspaceMemberId?.trim() || null;
-          if (
-            !workspaceId
-            || (binding?.visibility !== 'team' && binding?.visibility !== 'personal')
-            || binding?.resourceState === 'deleted'
-          ) return null;
-          return { workspaceId, ownerMemberId };
-        },
-        captureCommentRelayProjectBinding: publicFileMutations.captureReconciliation,
-        validateCommentRelayFile: (record) => {
-          assertCommentFileNotPending(db, record.projectId, { sourceFileId: record.comment.sourceFileId });
-          const state = parseCommentFileState(getProject(db, record.projectId)?.metadata?._commentFiles);
-          const fact = state?.files.find(item => item.sourceFileId === record.comment.sourceFileId);
-          if (!fact || fact.sourceFilePath !== (record.comment.sourceFilePath ?? record.comment.filePath)) {
-            throw new Error('COMMENT_FILE_AUTHORITY_UNAVAILABLE');
-          }
-          return fact.retired ? 'retired' : 'current';
-        },
-        validateCommentRelayProjectBinding: (record) =>
-          commentRelayLocalBindingMatches(
-            record,
-            getWorkspaceProjectByProjectId(db, record.projectId),
-          ),
-        isCommentRelayRecordPromotedToTeam: (record) =>
-          commentRelayRecordPromotedToTeam(
-            record,
-            getWorkspaceProjectByProjectId(db, record.projectId),
-          ),
-        resolveCommentRelayWorkspaceContext: async (queuedIdentity) => {
-          const context = await resolveBoundProjectWorkspaceContext(
-            queuedIdentity.projectId,
-            { fresh: true },
-          );
-          if (
-            !context
-            || context.workspaceMemberId !== queuedIdentity.workspaceMemberId
-            // Public-file publication scopes use the persisted workspace id as
-            // their resource-team id; relay scope independently proves it.
-            || context.workspaceId !== queuedIdentity.workspaceId
-          ) return null;
-          return context;
-        },
-        listRemoteProjectRelayBindings: async (context) =>
-          (await teamProjectsLister(context.workspaceId)).map((project) => ({
-            projectId: project.projectId,
-            ownerMemberId: project.ownerMemberId,
-          })),
-        resolveRemoteProjectOwnerMemberId: async (projectId, context) =>
-          (await teamProjectsLister(context.workspaceId))
-            .find((project) => project.projectId === projectId)
-            ?.ownerMemberId ?? null,
-        workspaceContext: collab.workspaceContext,
-        // Only poll comments for projects the UI is actively viewing — those
-        // have a live `/api/projects/:id/events` SSE subscriber, so their id is
-        // a key in activeProjectEventSinks. Polling every local project each 5s
-        // cycle spawned one `vela collab comment pull` subprocess per project
-        // and did not scale: a workspace with many shared projects turned every
-        // tick into a spawn storm that starved the pull the open project was
-        // waiting on. A member picks up a project's comments when they open it
-        // (a fresh sink) and stops polling it once they navigate away.
-        listProjectIds: () => [...activeProjectEventSinks.keys()],
-        resolveProjectWorkspaceContext: resolveBoundProjectWorkspaceContext,
-        resolveLocalConversationId: (projectId) =>
-          getProjectCommentAnchorConversationId(db, projectId),
-        mergeComment: ({ projectId, conversationId, comment, stream }) => {
-          if (!comment.deleted) assertCommentFileNotPending(db, projectId, { sourceFileId: comment.sourceFileId });
-          const normalized = normalizeCurrentFileComment(
-            parseCommentFileState(getProject(db, projectId)?.metadata?._commentFiles), comment,
-          );
-          return normalized ? mergeSyncedPreviewComment(db, projectId, conversationId, normalized, { stream }) : 'unchanged';
-        },
-        onError: (error) => console.warn('[od] collab cloud sync error:', error),
-        onCommentPushed: ({ projectId, commentId, seq, memberId, authorKey }) => {
-          confirmPreviewCommentPinSeq(db, projectId, commentId, seq);
-          if (authorKey) confirmPreviewCommentAuthorKey(db, projectId, commentId, memberId, authorKey);
-        },
-        // Collab realtime hop-2 (reference path): when the ~5s comment self-poll
-        // merges any teammate change into local storage (a new comment, a
-        // strictly-newer edit/status change, or a delete tombstone all count),
-        // push a thin `comment-changed` onto the project's existing events SSE.
-        // The service calls this at most once per pull round (a multi-page
-        // drain plus its legacy pull is one signal), so a burst of merged rows
-        // costs the web one list read, not one per page or row.
-        // The open project view re-fetches the comment list on receipt, so the
-        // owner sees a member's freshly-synced comment without waiting for the
-        // web poll tick.
-        onMerged: ({ projectId }) =>
-          emitProjectEvent(projectId, {
-            type: 'comment-changed',
-            projectId,
-            at: Date.now(),
-          }),
-      })
-    : null;
-  // The poller registers each open project's exact bound membership before it
-  // pulls. There is deliberately no ambient startup registration: no project
-  // scope exists yet, so active-workspace state is not data-plane authority.
-  collabCloud?.start();
-  // Server-authoritative owner lookup for register-on-pull: read the shared
-  // project's owner from the team hub (the same list the discovery endpoint
-  // serves) rather than trusting a client-supplied id, so a pulled project is
-  // recorded read-only under its true single writer.
-  type TeamProjectsDisplayScope = {
-    workspaceId: string;
-    workspaceMemberId: string;
-  };
-  const teamProjectsDisplayScopeFromContext = (
-    context: WorkspaceCollabContext | null,
-  ): TeamProjectsDisplayScope | null => {
-    if (
-      !context
-      || context.workspaceType !== 'team'
-      || context.memberStatus !== 'active'
-      || context.lifecycleState === 'deleted'
-    ) {
-      return null;
-    }
-    const workspaceId = context.workspaceId.trim();
-    const workspaceMemberId = context.workspaceMemberId.trim();
-    return workspaceId && workspaceMemberId
-      ? { workspaceId, workspaceMemberId }
-      : null;
-  };
-  const teamProjectsDisplayScopeKey = (
-    scope: TeamProjectsDisplayScope,
-  ): string => JSON.stringify([scope.workspaceId, scope.workspaceMemberId]);
-  // Persistent snapshot layer for the display catalog. Each fetcher and digest
-  // reader closes over one immutable Workspace scope; no await can retarget it
-  // through a later active-workspace switch.
-  const teamProjectsCatalogSnapshots = new Map<
-    string,
-    ReturnType<typeof createPersistentSyncCache<TeamProject[]>>
-  >();
-  const teamProjectsCatalogSnapshotFor = (
-    scope: TeamProjectsDisplayScope,
-  ) => {
-    const key = teamProjectsDisplayScopeKey(scope);
-    let snapshot = teamProjectsCatalogSnapshots.get(key);
-    if (!snapshot) {
-      const capturedScope = { ...scope };
-      snapshot = createPersistentSyncCache({
-        face: 'catalog',
-        fetch: () => teamProjectsLister(capturedScope.workspaceId),
-        readDigest: createSyncDigestReader({
-          env: process.env,
-          getWorkspaceId: () => capturedScope.workspaceId,
-          onError: (error) =>
-            console.warn('[od] team projects digest error:', error),
-        }),
-        store: collabSyncSnapshots,
-        parseSnapshot: parseTeamProjectSnapshot,
-        onError: (error) =>
-          console.warn('[od] team projects snapshot cache error:', error),
-      });
-      teamProjectsCatalogSnapshots.set(key, snapshot);
-    }
-    return snapshot;
-  };
-  // Short-TTL, single-flight cache for the read-only DISPLAY path
-  // (GET /api/workspace/projects/team). Each entry is keyed by the explicit,
-  // immutable workspace + member scope captured for that request, so a later
-  // active-workspace switch cannot retarget an in-flight read or its cache
-  // write. Deliberately NOT used by resolveSharedProject below: the pull gate
-  // and comment/presence relays must observe an unshare immediately, so those
-  // use the uncached exact lookup. A just-shared/unshared project shows up in
-  // this list within the TTL.
-  const teamProjectsDisplayCache = (() => {
-    const freshMs = 3000;
-    const lists = new Map<
-      string,
-      ReturnType<typeof createSwrCache<TeamProject[]>>
-    >();
-    const workspaceIds = new Map<string, string>();
-    const read = (scope: TeamProjectsDisplayScope) => {
-      const key = teamProjectsDisplayScopeKey(scope);
-      let list = lists.get(key);
-      if (!list) {
-        const snapshot = teamProjectsCatalogSnapshotFor(scope);
-        list = createSwrCache(
-          () => snapshot(),
-          () => key,
-          freshMs,
-        );
-        lists.set(key, list);
-        workspaceIds.set(key, scope.workspaceId);
-      }
-      return list();
-    };
-    return Object.assign(read, {
-      invalidate(scope?: TeamProjectsDisplayScope) {
-        if (scope) {
-          const key = teamProjectsDisplayScopeKey(scope);
-          lists.get(key)?.invalidate();
-          lists.delete(key);
-          workspaceIds.delete(key);
-          teamProjectsCatalogSnapshots.get(key)?.invalidate();
-          teamProjectsCatalogSnapshots.delete(key);
-          return;
-        }
-        for (const list of lists.values()) list.invalidate();
-        for (const snapshot of teamProjectsCatalogSnapshots.values()) {
-          snapshot.invalidate();
-        }
-        lists.clear();
-        teamProjectsCatalogSnapshots.clear();
-        workspaceIds.clear();
-      },
-      invalidateWorkspace(workspaceIdInput: string) {
-        const workspaceId = workspaceIdInput.trim();
-        if (!workspaceId) return;
-        for (const [key, cachedWorkspaceId] of workspaceIds) {
-          if (cachedWorkspaceId !== workspaceId) continue;
-          lists.get(key)?.invalidate();
-          lists.delete(key);
-          teamProjectsCatalogSnapshots.get(key)?.invalidate();
-          teamProjectsCatalogSnapshots.delete(key);
-          workspaceIds.delete(key);
-        }
-      },
-    });
-  })();
-  /**
-   * Drop catalog rows this member has already moved back to "personal".
-   *
-   * A move to personal changes the hub policy in the same request, but
-   * display reads use stale-while-revalidate caches, so for up to one TTL
-   * the list can still carry the pre-transition team row.
-   * That is long enough to paint the "shared" badge back onto a project the
-   * user just made private — the unshare looks like it silently reverted. It
-   * would also let the publish watcher re-adopt the project as owned-and-
-   * shared and republish it.
-   *
-   * The runtime's explicit-private suppression is immediate without deleting
-   * the retained root. Persisted legacy tombstones are still respected. On a
-   * fresh daemon these caches are cold and the team-only server list is policy
-   * authority. The filter runs on cache OUTPUT, not inside it, so
-   * a value cached before the unshare is still gated. Owner scoping keeps a
-   * teammate's own share of the same project id visible.
-   */
-  const withoutLocallyUnsharedProjects = async <
-    T extends { projectId: string; ownerMemberId: string },
-  >(
-    projects: T[],
-    explicitScope?: { workspaceId: string; workspaceMemberId: string },
-  ): Promise<T[]> => {
-    if (!explicitScope || projects.length === 0) return projects;
-    const { workspaceId, workspaceMemberId: memberId } = explicitScope;
-    const tombstoned = new Set(
-      listWorkspaceProjects(db, workspaceId)
-        .filter((row: any) => row.workspaceVisibility === 'personal' && row.cloudTombstonedAt != null)
-        .map((row: any) => row.id),
-    );
-    return projects.filter(
-      (entry) => !(entry.ownerMemberId === memberId && (tombstoned.has(entry.projectId)
-        || collab.isTeamShareSuppressed(entry.projectId, { teamId: workspaceId, memberId }))),
-    );
-  };
-  const teamProjectsForDisplay = async (
-    context: WorkspaceCollabContext | null,
-  ): Promise<TeamProject[]> => {
-    const scope = teamProjectsDisplayScopeFromContext(context);
-    if (!scope) return [];
-    return withoutLocallyUnsharedProjects(
-      await teamProjectsDisplayCache(scope),
-      scope,
-    );
-  };
-  /**
-   * Non-destructive quarantine marker for a pulled Team mirror. The binding
-   * state is the central data-plane gate; the project metadata marker also
-   * protects legacy/raw read surfaces and records why the bytes remain on
-   * disk. Only a later authorized materialization clears it.
-   */
-  const revokedTeamProjectMirrors = new Set(
-    listProjects(db)
-      .filter((project: any) => project?.metadata?.teamMirrorRevokedAt)
-      .map((project: any) => project.id as string),
-  );
-  const setTeamProjectMirrorRevoked = (
-    projectId: string,
-    revoked: boolean,
-  ): void => {
-    const project = getProject(db, projectId);
-    if (!project) return;
-    const metadata: Record<string, unknown> = {
-      ...((project.metadata as Record<string, unknown> | null) ?? {}),
-    };
-    if (revoked) {
-      revokedTeamProjectMirrors.add(projectId);
-      if (metadata.teamMirrorRevokedAt) return;
-      metadata.teamMirrorRevokedAt = Date.now();
-    } else {
-      revokedTeamProjectMirrors.delete(projectId);
-      if (!metadata.teamMirrorRevokedAt) return;
-      delete metadata.teamMirrorRevokedAt;
-    }
-    updateProject(db, projectId, {
-      metadata,
-      updatedAt: SYNC_KEEPS_UPDATED_AT,
-    });
-  };
-  // Collab realtime reconciliation: react to a `team-projects-changed` signal
-  // (hub push OR the 15s poller's own diff, wired below) by actually
-  // re-checking this daemon's `workspace_projects` rows against the remote
-  // catalog, not just refreshing the display cache. See
-  // `collab/workspace-projects-reconciler.ts` for the full design and its
-  // relationship to `reconcileUnboundProjectBeforeMove` /
-  // `reconcileLocalRowWithRemoteTeamAccess` (routes/project/index.ts), which
-  // this does NOT replace.
-  const workspaceProjectsReconcilerDeps = (
-    requestedWorkspaceId: string,
-  ): WorkspaceProjectsReconcilerDeps => {
-    // Capture the trigger's Workspace before the first await. Hub events pass
-    // their subscribed/event Workspace and pollers pass their persisted exact
-    // subscription scope. The directory then verifies that identity once, and
-    // the result is carried through every catalog/list/tombstone step below.
-    const capturedWorkspaceId = requestedWorkspaceId.trim();
-    return {
-      captureReconciliation: publicFileMutations.captureReconciliation,
-      getWorkspaceIdentity: async () => {
-        if (!capturedWorkspaceId) return null;
-        const directory = await fetchWorkspaceDirectory().catch(() => ({
-          ok: false,
-          items: [],
-        }));
-        if (!directory.ok) return null;
-        const scope = teamResourceRequestScopeForWorkspaceId(
-          directory.items,
-          capturedWorkspaceId,
-        );
-        if (!scope) return null;
-        return {
-          workspaceId: capturedWorkspaceId,
-          workspaceMemberId: scope.principal.memberId,
-          principal: scope.principal,
-        };
-      },
-      // Membership, not display: a catalog row whose latest publish failed is
-      // still registered to its owner, so it must keep counting as "remote
-      // lists it" here even though the display list hides it. Judging this
-      // dep by the display read demoted a teammate's sync-failed mirror into
-      // a self-attributed personal draft (recvqzjnshIlOe) — see
-      // `reconcilerRemoteTeamProjects`'s invariant comment. Both sources run
-      // through `withoutLocallyUnsharedProjects` so a row this member just
-      // moved back to personal cannot be re-bound out from under the move
-      // while the hub deletion is still propagating.
-      // The membership read is deliberately UNCACHED (the raw catalog client,
-      // not the SWR-wrapped display caches): reconciliation only runs on
-      // team-projects-changed signals, and a ≤TTL-stale list here is exactly
-      // the shape that misreads a just-shared row as absent.
-      listRemoteTeamProjects: async (identity) => {
-        // An absent row is destructive evidence only when the complete,
-        // unfiltered catalog was read successfully. The display list hides
-        // failed/pending publishes, so falling back to it could mistake a
-        // partial view for a real unshare and revoke a valid mirror. Throwing
-        // here makes the reconciler fail closed and leave every local binding
-        // untouched until the authoritative transport is available again.
-        if (!velaCliWorkspaceTeamProjectCatalog) {
-          throw new Error('complete team project catalog unavailable');
-        }
-        return reconcilerRemoteTeamProjects({
-          listCatalogMembership: async () =>
-            (await withoutLocallyUnsharedProjects(
-              await velaCliWorkspaceTeamProjectCatalog.list(identity.principal),
-              {
-                workspaceId: identity.workspaceId,
-                workspaceMemberId: identity.workspaceMemberId,
-              },
-            )).map((record) => ({
-              projectId: record.projectId,
-              visibility: record.visibility,
-              ownerMemberId: record.ownerMemberId,
-              displayName: record.displayName,
-              catalogRevisionAt: Number.isFinite(Date.parse(record.updatedAt))
-                ? Date.parse(record.updatedAt)
-                : null,
-              originProjectUpdatedAt: record.originProjectUpdatedAt,
-            })),
-          listDisplayTeamProjects: async () => {
-            throw new Error('display team project catalog is not authoritative');
-          },
-        });
-      },
-      // Materialization gate for the bind direction — see the dep's doc
-      // comment in workspace-projects-reconciler.ts. `getProject` is the same
-      // `projects`-table read `workspace_projects`' FOREIGN KEY points at.
-      hasLocalProject: (projectId) => getProject(db, projectId) != null,
-      listLocalTeamRows: (workspaceId): LocalTeamProjectBinding[] =>
-        listWorkspaceProjects(db, workspaceId)
-          .filter((row: any) => row.workspaceVisibility === 'team')
-          .map((row: any) => ({
-            projectId: row.id,
-            workspaceId: row.workspaceId,
-            visibility: row.workspaceVisibility,
-            resourceState: row.resourceState ?? null,
-            createdByWorkspaceMemberId: row.createdByWorkspaceMemberId ?? null,
-            resourceHubResourceId: row.resourceHubResourceId ?? null,
-            materializationPending:
-              projectIsUnmaterializedSharedPlaceholder(row.id),
-          })),
-      getLocalBinding: (projectId): LocalTeamProjectBinding | null => {
-        const row = getWorkspaceProjectByProjectId(db, projectId) as any;
-        if (!row) return null;
-        return {
-          projectId,
-          workspaceId: row.workspaceId,
-          visibility: row.visibility,
-          resourceState: row.resourceState ?? null,
-          createdByWorkspaceMemberId: row.createdByWorkspaceMemberId ?? null,
-          resourceHubResourceId: row.resourceHubResourceId ?? null,
-          materializationPending:
-            projectIsUnmaterializedSharedPlaceholder(projectId),
-        };
-      },
-      getLocalProjectMetadata: (projectId) => {
-        const project = getProject(db, projectId);
-        return project
-          ? { name: project.name, updatedAt: project.updatedAt }
-          : null;
-      },
-      applyMetadataRefresh: (projectId, patch) => {
-        // `patch.updatedAt` is the owner's origin project time carried in the
-        // catalog metadata, never the catalog row's retry/observation time.
-        updateProject(db, projectId, patch);
-      },
-      applyBind: (projectId, patch) => {
-        // `rebindWorkspaceProject` only corrects an EXISTING row (it never
-        // inserts — see its own doc comment in db.ts); a project this daemon
-        // has never locally bound at all needs `ensureWorkspaceProject`
-        // instead, seeded with the same patch so the fresh row is correct on
-        // arrival.
-        //
-        // Reconciling a binding against B's catalog changes no project content,
-        // so it must not restamp "last changed" — see SYNC_KEEPS_UPDATED_AT.
-        const synced = { ...patch, updatedAt: SYNC_KEEPS_UPDATED_AT };
-        if (rebindWorkspaceProject(db, projectId, synced)) return;
-        ensureWorkspaceProject(db, { projectId, ...synced });
-      },
-      applyDemote: (workspaceId, projectId, patch) => updateWorkspaceProject(db, workspaceId, projectId, {
-        ...patch,
-        updatedAt: SYNC_KEEPS_UPDATED_AT,
-      }),
-      applyRevoke: (workspaceId, projectId, patch) => {
-        // Write the binding denial before the metadata marker. A crash between
-        // the two operations therefore fails closed, never open. The
-        // transaction keeps the auditable marker and authority state aligned.
-        db.transaction(() => {
-          updateWorkspaceProject(db, workspaceId, projectId, {
-            ...patch,
-            updatedAt: SYNC_KEEPS_UPDATED_AT,
-          });
-          setTeamProjectMirrorRevoked(projectId, true);
-        })();
-      },
-      onError: (error) => console.warn('[od] workspace-projects reconciliation error:', error),
-    };
-  };
-  const reconcileWorkspaceProjectsFromRemote = (
-    requestedWorkspaceId: string,
-  ) => reconcileWorkspaceProjectsWithRemote(
-    workspaceProjectsReconcilerDeps(requestedWorkspaceId),
-  );
-  const reconcileWorkspaceProjectMetadataFromRemote = (
-    requestedWorkspaceId: string,
-    projectId: string,
-  ) => reconcileWorkspaceProjectMetadataWithRemote(
-    workspaceProjectsReconcilerDeps(requestedWorkspaceId),
-    projectId,
-  );
-  const resolveSharedProject = async (
-    projectId: string,
-    scope?: TeamMirrorPullScope | null,
-  ) => {
-    // Catalog reads are data-plane operations: never let the Vela adapter
-    // substitute the daemon's mutable active Workspace.
-    if (!scope?.workspaceId || !scope.viewerMemberId) return null;
-    const project = velaCliTeamProjectCatalog
-      ? await velaCliTeamProjectCatalog.get(projectId, scope.workspaceId)
-      : (await teamProjectsLister(scope.workspaceId))
-          .find((entry) => entry.projectId === projectId) ?? null;
-    if (!project) return null;
-    return (await withoutLocallyUnsharedProjects(
-      [project],
-      {
-        workspaceId: scope.workspaceId,
-        workspaceMemberId: scope.viewerMemberId,
-      },
-    ))[0] ?? null;
-  };
-  // Security-sensitive ownership decisions stay fresh. Pull, publish,
-  // presence, and mutation paths all use this exact lookup so an unshare or
-  // member revocation is observed immediately.
-  const resolveSharedProjectOwner = async (
-    projectId: string,
-    explicitScope: { workspaceId: string; workspaceMemberId: string },
-  ): Promise<string | null> => {
-    const list = await withoutLocallyUnsharedProjects(
-      await teamProjectsLister(explicitScope.workspaceId),
-      explicitScope,
-    );
-    return list.find((entry) => entry.projectId === projectId)?.ownerMemberId ?? null;
-  };
-  // GET /collab/status is a display read whose request authority has already
-  // been verified. Reuse the explicit workspace+member catalog cache here so
-  // repeated project-open polls do not each wait on another Vela list process.
-  // No security-sensitive caller receives this resolver.
-  const resolveSharedProjectOwnerForStatus = async (
-    projectId: string,
-    explicitScope: { workspaceId: string; workspaceMemberId: string },
-  ): Promise<string | null> => {
-    const list = await withoutLocallyUnsharedProjects(
-      await teamProjectsDisplayCache(explicitScope),
-      explicitScope,
-    );
-    return list.find((entry) => entry.projectId === projectId)?.ownerMemberId ?? null;
-  };
-  // Presence is project-bound data. Its relay scope comes only from the
-  // persisted project binding; an ambient active workspace is never a fallback.
-  const authoritativePresenceWorkspaces = new Set<string>();
-  const presenceScopeFor = (projectId: string): string | undefined =>
-    findTeamWorkspaceIdForProject(db, projectId)?.trim() || undefined;
-  const verifyPresenceWorkspaceRequest = async (
-    req: any,
-    projectId: string,
-    options: { fresh?: boolean; backgroundFresh?: boolean } = {},
-  ) => {
-    const verified = await verifyExplicitWorkspaceRequestContext(
-      { req },
-      options,
-    );
-    if (!verified.ok) return verified;
-    const binding = getWorkspaceProjectByProjectId(db, projectId);
-    if (
-      binding?.workspaceId
-      && binding.workspaceId !== verified.context.workspaceId
-    ) {
-      return {
-        ok: false as const,
-        status: 403 as const,
-        code: 'WORKSPACE_ACCESS_DENIED' as const,
-        message: 'the requested workspace does not own this project',
-      };
-    }
-    return verified;
-  };
-  const presenceRoutes = registerCollabPresenceRoutes(app, {
-    collab,
-    // Null when this run has no vela-cli collab transport, which is what keeps
-    // the process-local presence fallback reachable. See
-    // `createCollabPresenceCloudClient` for the invariant.
-    cloud: createCollabPresenceCloudClient(velaCliCollabClient, presenceScopeFor),
-    verifyWorkspaceRequest: (req, projectId) =>
-      verifyPresenceWorkspaceRequest(req, projectId, { fresh: false }),
-    verifyWorkspaceLeaveRequest: (req, projectId) =>
-      verifyPresenceWorkspaceRequest(req, projectId, { fresh: true }),
-    verifyWorkspaceReadRequest: (req, projectId) =>
-      verifyPresenceWorkspaceRequest(req, projectId, { fresh: false }),
-    isProjectShared: async (projectId, context) => {
-      const projectContext =
-        context ?? await resolveBoundProjectWorkspaceContext(projectId);
-      if (!projectContext || projectContext.workspaceType !== 'team') return false;
-      return Boolean(
-        await resolveSharedProjectOwner(projectId, {
-          workspaceId: projectContext.workspaceId,
-          workspaceMemberId: projectContext.workspaceMemberId,
-        }),
-      );
-    },
-    cloudAuthorizesProjectPresence: (projectId) => {
-      const workspaceId = findTeamWorkspaceIdForProject(db, projectId)?.trim();
-      return Boolean(
-        workspaceId && authoritativePresenceWorkspaces.has(workspaceId),
-      );
-    },
-  });
-  invalidatePresenceReadCache = presenceRoutes.invalidatePresence;
-  markPresenceReadCacheStale = presenceRoutes.markPresenceStale;
-  // Author-side publish TRIGGER (C spec §D1): watch the projects THIS daemon's
-  // member owns + has shared, and coalesce every file edit into a debounced
-  // publish. The read-only gate (team-shared AND owner === me) means a member's
-  // pulled copy is never watched, so an inbound pull can't loop into a publish and
-  // a member can't publish edits to someone else's project.
-  const collabPublishWatcher = createCollabPublishWatcher({
-    publishInitialContent: false,
-    notifyChanged: (projectId, principal) => {
-      if (!ownedContentSync) return;
-      void ownedContentSync.shouldPublish(projectId, principal).then((changed) => {
-        if (changed) collab.scheduler.notifyChanged(projectId, 'file-change', principal);
-      }).catch(() => console.warn('[od] could not check local project changes'));
-    },
-    listProjectIds: () => listProjects(db).map((project: { id: string }) => project.id),
-    shouldPublish: async (projectId) => {
-      if (projectIsUnmaterializedSharedPlaceholder(projectId)) return false;
-      const workspaceId = findTeamWorkspaceIdForProject(db, projectId)?.trim();
-      if (!workspaceId) return false;
-      const directory = await fetchWorkspaceDirectory().catch(() => ({
-        ok: false as const,
-        items: [],
-      }));
-      if (!directory.ok) return false;
-      const scope = teamResourceRequestScopeForWorkspaceId(
-        directory.items,
-        workspaceId,
-      );
-      if (!scope?.canShare) return false;
-      const ownerMemberId = await resolveSharedProjectOwner(projectId, {
-        workspaceId,
-        workspaceMemberId: scope.principal.memberId,
-      });
-      if (ownerMemberId !== scope.principal.memberId) return false;
-      collab.rememberTeamShare(projectId, scope.principal);
-      return scope.principal;
-    },
-    subscribeFiles: (projectId, onChange) => {
-      const watchProject = getProject(db, projectId);
-      const sub = subscribeFileEvents(PROJECTS_DIR, projectId, (evt) => {
-        if (evt.type === 'file-changed') onChange();
-      }, { metadata: watchProject?.metadata });
-      return { unsubscribe: () => sub.unsubscribe() };
-    },
-    onError: (error) => console.warn('[od] collab publish watcher error:', error),
-  });
-  collabPublishWatcher.start();
-  const sharedProjectPullProfiling =
-    sharedProjectPullProfileEnabled(process.env);
-  const verifyProjectWorkspaceContextForRequest = async (
-    req: any,
-    projectId?: string,
-    options: { fresh?: boolean } = {},
-  ) => {
-    const verified = await verifyExplicitWorkspaceRequestContext(
-      { req },
-      options,
-    );
-    if (!verified.ok) return verified;
-    if (projectId) {
-      const binding = getWorkspaceProjectByProjectId(db, projectId);
-      if (
-        binding?.workspaceId
-        && binding.workspaceId !== verified.context.workspaceId
-      ) {
-        return {
-          ok: false as const,
-          status: 403 as const,
-          code: 'WORKSPACE_ACCESS_DENIED' as const,
-          message: 'the requested workspace does not own this project',
-        };
-      }
-    }
-    return verified;
-  };
-  const verifiedWorkspaceContextForRequest = (
-    req: any,
-    projectId?: string,
-  ) => verifyProjectWorkspaceContextForRequest(req, projectId);
-  const verifiedWorkspaceReadContextForRequest = (
-    req: any,
-    projectId?: string,
-  ) => verifyProjectWorkspaceContextForRequest(
-    req,
-    projectId,
-    { fresh: false },
-  );
-  const resolveProjectLocalCommentWorkspaceContext = async (
-    req: any,
-    projectId: string,
-  ) => {
-    const binding = getWorkspaceProjectByProjectId(db, projectId);
-    const persistedMemberId = binding?.createdByWorkspaceMemberId?.trim() || 'local-user';
-    return resolveLocalProjectCommentWorkspaceContext({
-      binding,
-      revoked: revokedTeamProjectMirrors.has(projectId),
-      local: resolveOptionalLocalWorkspaceRequestAuthority(req),
-      fallbackContext: () => workspaceContextFromDirectoryItem({
-        workspaceId: binding?.workspaceId ?? '',
-        workspaceName: binding?.workspaceId ?? '',
-        workspaceType: binding?.visibility === 'team' ? 'team' : 'personal',
-        workspaceMemberId: persistedMemberId,
-        role: 'member',
-        memberStatus: 'active',
-        lifecycleState: 'active',
-      }, configuredAmrEnv()),
-    });
-  };
-  const resolveProjectCommentWorkspaceContext = (
-    req: any,
-    projectId: string,
-  ) => resolveProjectLocalCommentWorkspaceContext(req, projectId);
-  const resolveProjectCommentReadWorkspaceContext = (
-    req: any,
-    projectId: string,
-  ) => resolveProjectLocalCommentWorkspaceContext(req, projectId);
-  // Align is a read: it never resumes a share, re-enqueues an outbox, advances a
-  // cursor or writes a tombstone. The session is re-read after the comparison and
-  // a change between the two reads yields `unknown` rather than a result attributed
-  // to a session that is no longer the one that ran it.
-  const commentAlignment = createCommentAlignmentService({
-    db,
-    readCursor: (projectId, context) => collabCloud?.readMergedCommentCursor(projectId, context) ?? null,
-    compare: async (projectId, context, request) => {
-      const session = readVelaControlApiContext(process.env, configuredAmrEnv());
-      if (!session?.controlKey || !session.apiUrl) return { state: 'unknown', reason: 'unavailable' };
-      const result = await runVelaCommentAlignment({
-        projectId, workspaceId: context.workspaceId, request, session, dataRoot: RUNTIME_DATA_DIR,
-      });
-      const current = readVelaControlApiContext(process.env, configuredAmrEnv());
-      if (current?.controlKey !== session.controlKey || current?.apiUrl !== session.apiUrl) {
-        return { state: 'unknown', reason: 'unavailable' };
-      }
-      return result;
-    },
-  });
-
-  registerCommentSyncStateRoutes(app, {
-    db,
-    authorize: resolveProjectCommentReadWorkspaceContext,
-    service: createCommentSyncStateService(db, async scope => {
-      const session = readVelaControlApiContext(process.env, configuredAmrEnv());
-      if (!session?.controlKey) return false;
-      if (!session.apiUrl) return null;
-      const directory = await fetchVelaWorkspaceDirectory({ readSession: () => session });
-      const current = readVelaControlApiContext(process.env, configuredAmrEnv());
-      if (current?.controlKey !== session.controlKey || current?.apiUrl !== session.apiUrl) return null;
-      if (!directory.ok) return null;
-      return directory.items.some(item => item.workspaceId === scope.workspaceId
-        && item.workspaceMemberId === scope.workspaceMemberId
-        && item.memberStatus === 'active'
-        && item.lifecycleState !== 'deleted' && item.lifecycleState !== 'deleting');
-    }, { readAlign: scope => commentAlignment.read(scope),
-      readProjectShareState: createVelaProjectShareState({
-        dataRoot: RUNTIME_DATA_DIR, configuredEnv: configuredAmrEnv, registerLocallyOwnedProject: false,
-      }),
-      readCredential: () => {
-        const current = readVelaControlApiContext(process.env, configuredAmrEnv());
-        return current?.apiUrl && current.controlKey
-          ? { apiUrl: current.apiUrl, controlKey: current.controlKey } : null;
-      },
-    }),
-  });
-  const resolveFreshProjectCommentWorkspaceContext = async (
-    req: any,
-    projectId: string,
-  ) => {
-    const binding = getWorkspaceProjectByProjectId(db, projectId);
-    if (
-      revokedTeamProjectMirrors.has(projectId)
-      || binding?.resourceState === 'deleted'
-    ) {
-      return {
-        ok: false as const,
-        status: 403 as const,
-        code: 'WORKSPACE_PROJECT_PERMISSION_DENIED',
-        message: 'workspace project read is not allowed',
-      };
-    }
-    if (!binding?.workspaceId) {
-      return { ok: true as const, context: null };
-    }
-    return verifiedWorkspaceContextForRequest(req, projectId);
-  };
-  // Registered after the fresh-context resolver it depends on: a route wired
-  // before its authorizer exists captures `undefined` and authorizes nothing.
-  registerCommentAlignmentRoutes(app, {
-    db, alignment: commentAlignment,
-    authorize: resolveFreshProjectCommentWorkspaceContext,
-  });
-  const verifiedTeamMirrorScope = async (
-    scope: TeamMirrorPullScope,
-  ): Promise<boolean> => {
-    const directory = await fetchWorkspaceDirectory().catch(() => ({
-      ok: false as const,
-      items: [],
-    }));
-    if (!directory.ok) return false;
-    return directory.items.some(
-      (item) =>
-        item.workspaceId === scope.workspaceId
-        && item.workspaceMemberId === scope.viewerMemberId
-        && item.workspaceType === 'team'
-        && item.memberStatus === 'active'
-        && item.lifecycleState === 'active'
-        && item.workspaceId === scope.resourceTeamId,
-    );
-  };
-  const resolveTeamProjectResourceId = async (projectId: string, scope: TeamMirrorPullScope): Promise<string> => {
-    if (!velaCliTeamProjectCatalog || !(await verifiedTeamMirrorScope(scope))) {
-      throw new Error('TEAM_PROJECT_ROOT_UNAVAILABLE');
-    }
-    const registration = await velaCliTeamProjectCatalog.getRegistration(projectId, {
-      teamId: scope.resourceTeamId, memberId: scope.ownerMemberId,
-      role: 'member', lifecycleState: 'active', workspaceType: 'team',
-    });
-    const binding = getWorkspaceProjectByProjectId(db, projectId);
-    if (!registration || registration.workspaceId !== scope.workspaceId
-      || registration.visibility !== 'team' || !registration.resourceId?.trim()
-      || (binding && (binding.workspaceId !== scope.workspaceId
-        || binding.cloudTombstonedAt != null
-        || (binding.resourceHubResourceId != null && binding.resourceHubResourceId !== registration.resourceId)))) {
-      throw new Error('TEAM_PROJECT_ROOT_BINDING_MISMATCH');
-    }
-    return registration.resourceId;
-  };
-  const ownedContentStore = createSqliteOwnedContentStore(db);
-  const ownedProjectDirectory = (scope: OwnedContentScope): string => resolveProjectDir(PROJECTS_DIR, scope.projectId);
-  ownedContentSync = createOwnedContentSync({
-    store: ownedContentStore,
-    head: (scope) => collab.publishedHead(scope.projectId, {
-      teamId: scope.resourceTeamId, memberId: scope.ownerMemberId,
-      role: 'member', lifecycleState: 'active', workspaceType: 'team',
-    }),
-    hasContent: async (scope) => {
-      const project = getProject(db, scope.projectId);
-      if (!project || isUnmaterializedSharedPlaceholder(project)) return false;
-      const entry = await fs.promises.lstat(ownedProjectDirectory(scope)).catch(() => null);
-      return Boolean(entry?.isDirectory() && !entry.isSymbolicLink());
-    },
-    isSupported: (scope) => !getProject(db, scope.projectId)?.metadata?.baseDir,
-    isBusy: (projectId) => ownerProjectHasActiveRun(projectId),
-    fingerprint: (scope) => ownedContentFingerprint(ownedProjectDirectory(scope)),
-    publicationScope: (projectId, principal) => {
-      const binding = getWorkspaceProjectByProjectId(db, projectId);
-      if (!binding?.workspaceId || !binding.createdByWorkspaceMemberId) return null;
-      const memberId = principal?.memberId ?? binding.createdByWorkspaceMemberId;
-      const teamId = principal?.teamId ?? binding.workspaceId;
-      if (memberId !== binding.createdByWorkspaceMemberId || teamId !== binding.workspaceId) return null;
-      return { projectId, workspaceId: binding.workspaceId, resourceTeamId: teamId,
-        viewerMemberId: memberId, ownerMemberId: memberId };
-    },
-    apply: async (capturedScope, expectedVersion) => {
-      const scope = velaCliTeamProjectCatalog
-        ? { ...capturedScope, resourceId: await resolveTeamProjectResourceId(capturedScope.projectId, capturedScope) }
-        : capturedScope;
-      let remoteProject: Awaited<ReturnType<typeof resolveSharedProject>> = null;
-      const authorize = async () => {
-        if (!(await verifiedTeamMirrorScope(scope))) throw new Error('owner workspace is unavailable');
-        remoteProject = await resolveSharedProject(scope.projectId, scope);
-        if (!remoteProject || remoteProject.ownerMemberId !== scope.viewerMemberId) throw new Error('owner project is no longer shared');
-        if (velaCliTeamProjectCatalog
-          && await resolveTeamProjectResourceId(scope.projectId, scope) !== scope.resourceId) throw new Error('owner project root changed');
-        if (remoteProject.metadata?.baseDir) throw Object.assign(new Error('imported project content is not supported'), { code: 'PROJECT_DIRECTORY_UNSUPPORTED' });
-        const binding = getWorkspaceProjectByProjectId(db, scope.projectId);
-        if (binding && (binding.workspaceId !== scope.workspaceId || binding.visibility !== 'team'
-          || (binding.createdByWorkspaceMemberId != null && binding.createdByWorkspaceMemberId !== scope.ownerMemberId))) {
-          throw new Error('owner project binding does not match');
-        }
-      };
-      return applyOwnedProjectContent({
-        projectsRoot: PROJECTS_DIR, scope, expectedVersion, authorize,
-        isBusy: () => ownerProjectHasActiveRun(scope.projectId),
-        commit: () => {
-          if (!remoteProject) throw new Error('owner project authority is unavailable');
-          materializePulledTeamMirror(db, {
-            id: scope.projectId, name: remoteProject.name ?? scope.projectId,
-            skillId: remoteProject.skillId ?? null, designSystemId: remoteProject.designSystemId ?? null,
-            metadata: remoteProject.metadata ?? undefined,
-            createdAt: remoteProject.createdAt ?? Date.now(), updatedAt: remoteProject.updatedAt ?? Date.now(),
-          }, scope);
-          const project = getProject(db, scope.projectId);
-          if (project?.metadata?.sharedProjectPlaceholderAt) {
-            const metadata = { ...project.metadata };
-            delete metadata.sharedProjectPlaceholderAt;
-            updateProject(db, scope.projectId, { metadata, updatedAt: SYNC_KEEPS_UPDATED_AT });
-          }
-        },
-      });
-    },
-    onChange: (scope) => emitProjectEvent(scope.projectId, {
-      type: 'project-content-transfer-state', projectId: scope.projectId, at: Date.now(),
-    }),
-    onApplied: async (scope) => {
-      await collabPublishWatcher.refresh(scope.projectId);
-      emitProjectEvent(scope.projectId, { type: 'file-changed', path: '', kind: 'change' });
-      emitProjectEvent(scope.projectId, { type: 'project-metadata-changed', projectId: scope.projectId, at: Date.now() });
-      emitWorkspaceEvent(scope.workspaceId, { type: 'team-project-content-ready', projectId: scope.projectId, workspaceId: scope.workspaceId, at: Date.now() });
-    },
-  });
-  const projectContentTransferStates =
-    createProjectContentTransferStateStore({
-      onChange: (scope, state) => {
-        emitProjectEvent(scope.projectId, {
-          type: 'project-content-transfer-state',
-          projectId: scope.projectId,
-          at: state.updatedAt,
-        });
-      },
-    });
-  let observeLegacyTeamProjectPull = async (
-    _projectId: string,
-    _scope: TeamMirrorPullScope,
-    _version: number,
-  ): Promise<void> => {};
-  // The store is already bound earlier in this same scope (see the
-  // `createSqlitePublicFilePublicationStore` call above, next to the
-  // design-system backfill). Re-declaring it here is what a merge produced when
-  // two lanes each added their own binding in different hunks: git saw no
-  // conflict, and `tsc` did not object — only esbuild did, at transform time.
-  const shareBindingOutbox = createShareBindingOutbox(db);
-  const retryShareBindingsAtStartup = createShareBindingStartup(shareBindingOutbox, {
-    publications: publicFilePublicationStore,
-    mutations: publicFileMutations,
-    prepare: createVelaShareBindingPrepare({ configuredEnv: configuredAmrEnv, dataRoot: RUNTIME_DATA_DIR }),
-    // An outstanding stop intent wins over completion of the same publication.
-    isCurrent: task => !publicFilePublicationStore.listStops().some(stop =>
-      stop.resourceTeamId === task.resourceTeamId && stop.ownerMemberId === task.ownerMemberId
-      && stop.projectId === task.projectId && stop.filePath === task.receipt.filePath
-      && stop.slug === task.receipt.slug
-      && (!stop.publicationRevision || stop.publicationRevision === task.publicationRevision)),
-  });
-  registerPublicFileStopRetryRoutes(app, {
-    // No projectId: the original project may have been deleted already.
-    verify: req => verifiedWorkspaceContextForRequest(req),
-    store: publicFilePublicationStore,
-    prepare: createVelaPublicFileStop({ configuredEnv: configuredAmrEnv, dataRoot: RUNTIME_DATA_DIR }),
-    mutations: publicFileMutations,
-  });
-  const retryPublicFileStopsAtStartup = createPublicFileStopStartup(
-    publicFilePublicationStore,
-    createVelaPublicFileStop({ configuredEnv: configuredAmrEnv, dataRoot: RUNTIME_DATA_DIR }),
-    publicFileMutations,
-  );
-  const recordPublicFilePublication = createPublicFilePublicationRecorder(
-    db, publicFilePublicationStore, enqueuePublishedFileComments,
-  );
-  const resolveLocalProjectOwner = (projectId: string, workspaceId: string): string | null => {
-    const binding = getWorkspaceProjectByProjectId(db, projectId);
-    if (!binding || binding.workspaceId !== workspaceId || binding.resourceState !== 'active'
-      || binding.cloudTombstonedAt != null || !getProject(db, projectId)
-      || projectIsUnmaterializedSharedPlaceholder(projectId)) return null;
-    return typeof binding.createdByWorkspaceMemberId === 'string' ? binding.createdByWorkspaceMemberId : null;
-  };
-  const collabSyncRoutes = registerCollabSyncRoutes(app, {
-    collab,
-    publicFilePublicationStore,
-    // Recording a publication and queueing its existing comments for backfill
-    // is ONE transaction. Without this the route falls back to a bare
-    // `publicationStore.set`, which records the share and silently drops the
-    // backfill intent — the publish succeeds, and the comments the person
-    // already wrote never reach the share page.
-    //
-    // The recorder also refuses to proceed without a publication witness
-    // (slug + revision token read back after the write), so a half-written
-    // publication cannot enqueue work that later resolves against nothing.
-    recordPublicFilePublication,
-    resolveLocalPublicShareOwner: resolveLocalProjectOwner,
-    resolvePublicShareLink: (projectId, slug, amr) => resolvePublicShareLink(projectId, slug, amr, process.env, configuredAmrEnv()),
-    sharePublishing: {
-      sourceFileId: (scope, project) => localCommentFiles.identity(scope.projectId, scope.filePath, project?.metadata?._commentFiles),
-      admitFileReceipt: (scope, resourceId, versionId, entryPath, run) => localCommentFiles.admit({
-        projectId: scope.projectId, workspaceId: scope.resourceTeamId, creatorMemberId: scope.ownerMemberId,
-        resourceId, versionId, paths: [{ sourceFilePath: scope.filePath, entryPath, sourceFileId: scope.sourceFileId }], run,
-      }),
-      ensureProject: (scope, principal, run) => ensurePublicShareProject({
-        projectId: scope.projectId, principal, run, describeProject: describeCollabProject,
-        retainRoot: registration => {
-          const binding = getWorkspaceProjectByProjectId(db, registration.projectId);
-          if (!binding || binding.workspaceId !== registration.workspaceId
-            || binding.createdByWorkspaceMemberId !== registration.ownerMemberId
-            || binding.resourceState !== 'active' || binding.cloudTombstonedAt != null) {
-            throw new Error('PUBLIC_SHARE_PROJECT_BINDING_UNAVAILABLE');
-          }
-          updateWorkspaceProject(db, registration.workspaceId, registration.projectId, {
-            resourceHubResourceId: registration.resourceId,
-          });
-        },
-      }),
-      reservations: createShareAliasReservations(db),
-      outbox: shareBindingOutbox,
-      complete: createSharePublicationCompletion(db, recordPublicFilePublication, shareBindingOutbox, true),
-      prepare: async scope => {
-        const identity = Object.freeze({ ...scope });
-        const configuredEnv = { ...configuredAmrEnv() };
-        const currentSession = readVelaControlApiContext(process.env, configuredEnv);
-        if (!currentSession?.controlKey || !currentSession.apiUrl) throw new Error('PUBLIC_SHARE_SESSION_UNAVAILABLE');
-        const session = Object.freeze({ ...currentSession });
-        const directory = await fetchVelaWorkspaceDirectory({ readSession: () => session });
-        if (!directory.ok || !directory.items.some(item => item.workspaceId === identity.resourceTeamId
-          && item.workspaceMemberId === identity.ownerMemberId && item.memberStatus === 'active'
-          && item.lifecycleState !== 'deleted' && item.lifecycleState !== 'deleting')) {
-          throw new Error('PUBLIC_SHARE_IDENTITY_UNAVAILABLE');
-        }
-        return { run: args => runPinnedVelaCommand({ args, session,
-          workspaceId: identity.resourceTeamId, dataRoot: RUNTIME_DATA_DIR, configuredEnv }) };
-      },
-      retry: () => {
-        // A fresh bounded pass can see tasks created after the startup pass.
-        void createShareBindingStartup(shareBindingOutbox, {
-          publications: publicFilePublicationStore, mutations: publicFileMutations,
-          prepare: createVelaShareBindingPrepare({ configuredEnv: configuredAmrEnv, dataRoot: RUNTIME_DATA_DIR }),
-          isCurrent: task => !publicFilePublicationStore.listStops().some(stop =>
-            stop.resourceTeamId === task.resourceTeamId && stop.ownerMemberId === task.ownerMemberId
-            && stop.projectId === task.projectId && stop.filePath === task.receipt.filePath
-            && stop.slug === task.receipt.slug),
-        })().catch(() => { console.warn('[od] share binding retry unavailable'); });
-      },
-    },
-    readProjectShareState: createVelaProjectShareState({ dataRoot: RUNTIME_DATA_DIR, configuredEnv: configuredAmrEnv, resolveLocalProjectOwner }),
-    shareContentFingerprints: createShareContentFingerprints(db, publicFilePublicationStore),
-    publicFileMutations,
-    ownedContentSync,
-    verifyWorkspaceRequest: verifiedWorkspaceContextForRequest,
-    verifyWorkspaceReadRequest: verifiedWorkspaceReadContextForRequest,
-    verifyWorkspaceScope: verifiedTeamMirrorScope,
-    ...(velaCliTeamProjectCatalog ? { resolveTeamProjectResourceId } : {}),
-    readContentTransferState: (projectId, scope) =>
-      projectContentTransferStates.read({ projectId, ...scope }),
-    beginContentTransfer: (projectId, scope, version) =>
-      projectContentTransferStates.begin(
-        { projectId, ...scope },
-        version,
-      ).token,
-    finishContentTransfer: (projectId, scope, token, version) => {
-      projectContentTransferStates.finish(
-        { projectId, ...scope },
-        token,
-        version,
-      );
-    },
-    // Register-on-pull: after a member pulls a shared project, insert a local
-    // project record so it appears in /api/projects and opens read-only (the
-    // member is not the owner). Idempotent — an already-local project is a no-op.
-    projectStore: {
-      get: (projectId) => getProject(db, projectId),
-      has: (projectId) => getProject(db, projectId) != null,
-      register: (input) => {
-        insertProject(db, {
-          id: input.id,
-          name: input.name,
-          skillId: input.skillId,
-          designSystemId: input.designSystemId,
-          metadata: input.metadata,
-          createdAt: input.createdAt,
-          updatedAt: input.updatedAt,
-        });
-      },
-      update: (input) => {
-        updateProject(db, input.id, {
-          name: input.name,
-          skillId: input.skillId,
-          designSystemId: input.designSystemId,
-          metadata: input.metadata,
-          updatedAt: input.updatedAt,
-        });
-      },
-      materializeTeamMirror: (input, scope, fileReceipt) =>
-        materializePulledTeamMirror(db, input, scope, undefined, { fileReceipt }),
-      materializeTeamPlaceholder: (input, scope) =>
-        materializePulledTeamMirror(db, input, scope, undefined, { placeholder: true }),
-      materializeAuthorizedTeamMirror: (input, scope, receipt) =>
-        materializePulledTeamMirror(db, input, scope, receipt),
-    },
-    resolveProjectDir: async (projectId) => {
-      const project = getProject(db, projectId);
-      if (project) await ensureProject(PROJECTS_DIR, projectId, project.metadata);
-      return resolveProjectShareDir(PROJECTS_DIR, projectId, project, resolveProjectDir);
-    },
-    resolvePullDir: (projectId) => resolveProjectDir(PROJECTS_DIR, projectId),
-    readMaterializedVersion: (projectId, scope) => {
-      const authorized = getTeamProjectMaterialization(
-        db,
-        scope.workspaceId,
-        projectId,
-      );
-      return latestTeamProjectMaterializationVersion(
-        authorized,
-        teamResourceVersions.get(
-          scope.workspaceId,
-          'project-content',
-          teamProjectContentResourceId(projectId, scope),
-        ),
-        projectId,
-        scope,
-      );
-    },
-    authorizedTeamProjectPull: {
-      journalDir: teamMirrorPromotionJournalDir,
-    },
-    writeMaterializedVersion: (projectId, scope, version) =>
-      teamResourceVersions.set(
-        scope.workspaceId,
-        'project-content',
-        teamProjectContentResourceId(projectId, scope),
-        String(version),
-      ),
-    onLegacyPullMaterialized: (projectId, scope, version) =>
-      observeLegacyTeamProjectPull(projectId, scope, version),
-    resolveSharedProject,
-    resolveSharedProjectOwner,
-    resolveSharedProjectOwnerForStatus,
-    isTeamProjectRevoked: (projectId) =>
-      revokedTeamProjectMirrors.has(projectId),
-    // Non-destructive revocation flag for a pulled team mirror: the pull gate
-    // sets it when a project has left the team (files stay on disk but stop
-    // being served) and clears it on a successful re-pull. Read routes refuse to
-    // serve a project once this is set.
-    markTeamProjectRevoked: setTeamProjectMirrorRevoked,
-    // Set/clear the unmaterialized shared-project placeholder stamp (the
-    // recvqzaDvUU6B3 fresh-install wipe guard) — same non-destructive
-    // metadata-flag pattern as markTeamProjectRevoked above.
-    markSharedProjectPlaceholder: (projectId: string, placeholder: boolean) => {
-      const project = getProject(db, projectId);
-      if (!project) return;
-      const metadata: Record<string, unknown> = { ...((project.metadata as Record<string, unknown> | null) ?? {}) };
-      if (placeholder) {
-        if (metadata[SHARED_PROJECT_PLACEHOLDER_METADATA_KEY]) return;
-        metadata[SHARED_PROJECT_PLACEHOLDER_METADATA_KEY] = Date.now();
-      } else {
-        if (!metadata[SHARED_PROJECT_PLACEHOLDER_METADATA_KEY]) return;
-        delete metadata[SHARED_PROJECT_PLACEHOLDER_METADATA_KEY];
-      }
-      // Raised on placeholder registration and lowered the moment a pull
-      // materializes real content. Both are sync steps on someone else's
-      // project — see SYNC_KEEPS_UPDATED_AT. This is the flag that made a
-      // member's very first open of a shared project read 「刚刚更新」.
-      updateProject(db, projectId, { metadata, updatedAt: SYNC_KEEPS_UPDATED_AT });
-    },
-    // Retracted-share heal (飞书 recvqA6qhV7St1): delete a placeholder record
-    // whose backing hub resource turned out to be tombstoned. Re-checks the
-    // placeholder stamp HERE — deletion is only ever legal for a record the
-    // stamp proves contentless, so a pull that materialized real content
-    // between the heal's decision and this call is never destroyed. The
-    // `workspace_projects` binding (if any) goes with it via ON DELETE
-    // CASCADE, and the empty content directory is removed best-effort.
-    retireUnmaterializedSharedPlaceholder: (projectId: string) => {
-      const project = getProject(db, projectId);
-      if (!isUnmaterializedSharedPlaceholder(project)) return;
-      dbDeleteProject(db, projectId);
-      void removeProjectDir(PROJECTS_DIR, projectId).catch(() => {});
-    },
-    invalidateTeamProjectCatalog: () => {
-      teamProjectsDisplayCache.invalidate();
-      workspaceTeamProjectCatalog?.invalidate();
-    },
-    onTeamShareStateChanged: persistWorkspaceProjectVisibility,
-    // See `notifyFilesChanged`'s doc comment on RegisterCollabSyncRoutesDeps
-    // (recvq6CIesNvWZ): a pull's directory-replace can silently orphan the
-    // project's chokidar watcher, so a successful pull notifies any open
-    // FileViewer directly over the existing `file-changed` SSE channel
-    // instead of depending on the watcher having survived the swap.
-    notifyFilesChanged: (projectId: string) =>
-      emitProjectEvent(projectId, { type: 'file-changed', path: '', kind: 'change' }),
-    // A pull that replaces the "共享项目" placeholder record with the real
-    // project name (registerPulledProject) changed metadata the web renders
-    // from its `projects` state; push the existing `project-metadata-changed`
-    // thin signal so the open view re-fetches the record instead of keeping
-    // the placeholder title until a page reload (recvqhwv6RPU1j).
-    notifyProjectMetadataChanged: (projectId: string) =>
-      emitProjectEvent(projectId, {
-        type: 'project-metadata-changed',
-        projectId,
-        at: Date.now(),
-      }),
-    ...(sharedProjectPullProfiling
-      ? {
-          onPullTiming: emitSharedProjectPullTiming,
-        }
-      : {}),
-    // Resolve the owner's display name + role from the collab-cloud directory so
-    // /collab/status can hand the client a named "shared project" banner.
-    ...(collabCloud
-      ? {
-          resolveOwnerDisplayName: async (
-            memberId: string,
-            context: WorkspaceCollabContext,
-          ) => {
-            const entry = await collabCloud.resolveMember(memberId, context);
-            return entry ? { displayName: entry.displayName, role: entry.role } : null;
-          },
-        }
-      : {}),
-  });
-  // Hub push-channel consumer for 'project-content-changed' (recvqmKQRiIlYf):
-  // when a teammate publishes new content for a shared project, pull it NOW —
-  // daemon-side, no open tab required — through the SAME flow the member
-  // web's POST /collab/pull runs (collabSyncRoutes.pullSharedProject, which
-  // also coalesces the two when they race). Every guard is fail-closed and
-  // every failure degrades silently to the web's ~5s status polling, which
-  // stays running untouched as the fallback; see
-  // collab/proactive-content-pull.ts for the guard boundary (never pull a
-  // project this member owns; an unbound first share requires an exact
-  // event-workspace/active-workspace match; dedupe by hub version).
-  const proactiveTeamProjectMaterializedVersion = (
-    target: ProactiveContentPullTarget,
-  ) => {
-    const binding = getWorkspaceProjectByProjectId(db, target.projectId);
-    const boundTarget = binding?.workspaceId === target.workspaceId && binding.resourceHubResourceId
-      ? { ...target, resourceId: binding.resourceHubResourceId }
-      : target;
-    const authorized = getTeamProjectMaterialization(
-      db,
-      target.workspaceId,
-      target.projectId,
-    );
-    const version = latestTeamProjectMaterializationVersion(
-      authorized,
-      teamResourceVersions.get(
-        target.workspaceId,
-        'project-content',
-        teamProjectContentResourceId(target.projectId, boundTarget),
-      ),
-      target.projectId,
-      boundTarget,
-    );
-    return version == null ? null : String(version);
-  };
-  // Background pull size guard (issue #6518, incident #6512): before any
-  // background lane downloads a published version, an authorize-only Vela
-  // probe reads the manifest entry count; oversized versions are deferred to
-  // the foreground open-project pull. Fail-closed here means PULL AS BEFORE —
-  // an old CLI, a countless output, or a probe failure keeps today's
-  // behavior. See collab/background-pull-size-guard.ts.
-  const backgroundPullSizeGuard = createBackgroundPullSizeGuard({
-    maxEntries: backgroundPullMaxEntriesFromEnv(),
-    maxCumulativeEntries: backgroundPullMaxCumulativeEntriesFromEnv(),
-    inspect: async (scope, version) =>
-      inspectAuthorizedTeamProjectPull({
-        projectId: scope.projectId,
-        scope: {
-          workspaceId: scope.workspaceId,
-          resourceTeamId: scope.resourceTeamId,
-          viewerMemberId: scope.viewerMemberId,
-          ownerMemberId: scope.ownerMemberId,
-          ...(velaCliTeamProjectCatalog ? { resourceId: await resolveTeamProjectResourceId(scope.projectId, scope) } : {}),
-        },
-        expectedVersion: version,
-      }),
-    onDeferred: (info) => {
-      console.info(
-        `[od] background shared-project pull deferred (${info.reason}): ` +
-          `projectId=${info.projectId} workspaceId=${info.workspaceId} ` +
-          `version=${info.version} entries=${info.entryCount} ` +
-          `maxEntries=${info.maxEntries}; opening the project pulls it on demand`,
-      );
-    },
-    onError: (error) =>
-      console.warn(
-        '[od] background pull size probe failed open (pulling as before):',
-        String(error),
-      ),
-  });
-  const proactiveContentPull = createProactiveContentPull({
-    observeOwnedContent: async (scope, version) => {
-      await ownedContentSync!.request(scope, { action: 'check' }, version);
-    },
-    assessBackgroundContentPull: (target, version) =>
-      backgroundPullSizeGuard.assess(target, version),
-    getLocalBinding: (projectId) => {
-      const row = getWorkspaceProjectByProjectId(db, projectId) as
-        | { workspaceId: string; visibility: 'personal' | 'team' }
-        | null;
-      if (!row) return null;
-      return { workspaceId: row.workspaceId, visibility: row.visibility };
-    },
-    // Resolve the event/binding Workspace itself. Global active Workspace is
-    // control-plane selection only and cannot retarget or cancel this pull.
-    getWorkspaceIdentity: async (workspaceId) =>
-      activeTeamWorkspaceIdentity(
-        await resolveAuthoritativeTeamWorkspaceContext(workspaceId),
-      ),
-    // A witness may skip the route's pre-transport catalog gate, so only this
-    // uncached authoritative lookup is allowed to mint one. The display SWR
-    // owner cache remains wired everywhere else.
-    resolveSharedProjectOwner: async (projectId, workspaceId) => {
-      const context =
-        await resolveAuthoritativeTeamWorkspaceContext(workspaceId);
-      const identity = activeTeamWorkspaceIdentity(context);
-      if (!context || !identity) return null;
-      return resolveSharedProjectOwner(projectId, {
-        workspaceId: identity.workspaceId,
-        workspaceMemberId: identity.workspaceMemberId,
-      });
-    },
-    // Catch-up reads the rich catalog exactly once per verified connection
-    // (or missing-project floor). Re-check the same exact directory scope
-    // after the CLI await; changing global active Workspace is irrelevant.
-    listSharedProjects: async (workspaceId) => {
-      if (!velaCliWorkspaceTeamProjectCatalog) return [];
-      const beforeContext =
-        await resolveAuthoritativeTeamWorkspaceContext(workspaceId);
-      if (!beforeContext) return [];
-      const principal = contextToResourceHubPrincipal(beforeContext);
-      if (!principal || principal.teamId !== workspaceId) return [];
-      const projects = await velaCliWorkspaceTeamProjectCatalog.list(principal);
-      const afterContext =
-        await resolveAuthoritativeTeamWorkspaceContext(workspaceId);
-      if (!afterContext) return [];
-      const afterPrincipal = contextToResourceHubPrincipal(afterContext);
-      if (
-        !afterPrincipal
-        || afterPrincipal.teamId !== principal.teamId
-        || afterPrincipal.memberId !== principal.memberId
-      ) {
-        return [];
-      }
-      return projects
-        .filter((project) => project.workspaceId === workspaceId && project.access.canView)
-        .map((project) => ({
-          projectId: project.projectId,
-          ownerMemberId: project.ownerMemberId,
-        }));
-    },
-    hasMaterializedProject: async (projectId, target) => {
-      const project = getProject(db, projectId);
-      if (!project) return false;
-      // Authorized Vela mirrors contain the shared project files, not the
-      // local-only `.open-design/project.json`. Their exact-scope receipt is
-      // the durable version proof; the live directory proves the promoted
-      // namespace still exists. Both are required so a deleted tree heals,
-      // while another workspace/owner's receipt can never satisfy this pull.
-      if (proactiveTeamProjectMaterializedVersion(target) == null) {
-        return false;
-      }
-      const projectDir = resolveProjectShareDir(
-        PROJECTS_DIR,
-        projectId,
-        project,
-        resolveProjectDir,
-      );
-      const entry = await fs.promises.lstat(projectDir).catch(() => null);
-      return Boolean(
-        entry &&
-        entry.isDirectory() &&
-        !entry.isSymbolicLink(),
-      );
-    },
-    materializedVersion: proactiveTeamProjectMaterializedVersion,
-    // The resource is owner-scoped; the same captured team/owner principal is
-    // used by the shared pull below. The member session remains the transport
-    // credential, while Vela authorizes this explicit target principal.
-    publishedHead: (target) =>
-      collab.publishedHead(target.projectId, {
-        teamId: target.resourceTeamId,
-        memberId: target.ownerMemberId,
-        role: 'member',
-        lifecycleState: 'active',
-        workspaceType: 'team',
-      }),
-    pullSharedProject: (target, expectedVersion) =>
-      collabSyncRoutes.pullSharedProject(target.projectId, {
-        workspaceId: target.workspaceId,
-        resourceTeamId: target.resourceTeamId,
-        viewerMemberId: target.viewerMemberId,
-        ownerMemberId: target.ownerMemberId,
-      }, target.authorizationWitness, expectedVersion, target.authorizedStageInvocation),
-    // All Projects is a list-level surface and does not subscribe to every
-    // project-scoped SSE. Once an inbound pull has actually materialized the
-    // tree, nudge that surface so its failed pre-pull cover scan runs again
-    // immediately instead of waiting for the 15s refresh floor.
-    onPulled: async (target, version) => {
-      emitWorkspaceEvent(target.workspaceId, {
-        type: 'team-project-content-ready',
-        projectId: target.projectId,
-        workspaceId: target.workspaceId,
-        at: Date.now(),
-      });
-    },
-    ...(sharedProjectPullProfiling
-      ? {
-          onTiming: emitSharedProjectPullTiming,
-        }
-      : {}),
-    // A cancelled `vela` child is this scheduler's own doing, not a fault: it
-    // aborts the in-flight pull when a higher published version supersedes it
-    // (`mergeIntentUpdate`) or when the intent is cleared (`clearIntent`).
-    // Reporting those as failures put a fault-shaped warning in the log on
-    // ordinary version churn. `proactive-content-pull.ts` stays dependency-free
-    // by design, so the distinction is drawn here, at its only error sink.
-    onError: (error) => {
-      if (isAbortedOperationError(error)) return;
-      console.warn('[od] proactive shared-project pull failed (web polling remains the fallback):', String(error));
-    },
-    onCatchUp: (event) => {
-      if (
-        event.phase === 'retry-scheduled' ||
-        event.phase === 'retry-exhausted'
-      ) {
-        console.info(
-          `[od] shared-project content catch-up ${event.phase} mode=${event.mode} lane=${event.lane} ` +
-            `workspaceId=${event.workspaceId ?? 'unknown'} ` +
-            `projectId=${event.projectId ?? 'all'} attempt=${event.attempt ?? event.failures ?? 0} ` +
-            `delayMs=${event.delayMs ?? 0}`,
-        );
-        return;
-      }
-      if (event.phase === 'skipped') {
-        console.info(
-          `[od] shared-project content catch-up skipped mode=${event.mode} lane=${event.lane} reason=${event.reason ?? 'unknown'}`,
-        );
-        return;
-      }
-      if (event.phase === 'started') {
-        console.info(
-          `[od] shared-project content catch-up started mode=${event.mode} lane=${event.lane} workspaceId=${event.workspaceId ?? 'unknown'}`,
-        );
-        return;
-      }
-      // `candidates` counts projects CONSIDERED, which is not what the
-      // background lanes cost a member: a sweep with candidates=25 says
-      // nothing about whether 25 files or 25,000 landed on their disk. The
-      // `process*` fields below are this daemon process's running totals (not
-      // this sweep's), and they are the reading that makes
-      // OD_COLLAB_BACKGROUND_PULL_MAX_CUMULATIVE_ENTRIES choosable from a
-      // diagnostics bundle instead of from a synthetic workspace.
-      const backgroundVolume = backgroundPullSizeGuard.volume();
-      console.info(
-        `[od] shared-project content catch-up completed mode=${event.mode} lane=${event.lane} ` +
-          `workspaceId=${event.workspaceId ?? 'unknown'} scanned=${event.scanned ?? 0} ` +
-          `candidates=${event.candidates ?? 0} headChecks=${event.headChecks ?? 0} ` +
-          `heads=${event.heads ?? 0} ` +
-          `suppressed=${event.suppressed ?? 0} complete=${event.complete === true} ` +
-          `processEntries=${backgroundVolume.entries} ` +
-          `processProjects=${backgroundVolume.countedProjects} ` +
-          `processUncounted=${backgroundVolume.uncountedProjects}`,
-      );
-    },
-  });
-  observeLegacyTeamProjectPull = (projectId, scope, version) =>
-    proactiveContentPull.observeMaterialized(
-      { projectId, ...scope },
-      version,
-    );
-  // Stale-while-revalidate the member directory by explicit Workspace scope.
-  // The web shell re-reads members on every navigation (and several mounted
-  // consumers fetch it at once); the underlying collab-cloud read is ~1.5s, so
-  // without this a home/drafts load serialized 5-7 slow member reads behind the
-  // 6-connection cap. SWR serves the roster instantly after the first load and
-  // refreshes in the background, so a member who joins still resolves within a
-  // poll tick.
-  // Same two-layer split as the catalog above: the persistent snapshot answers
-  // the cold read (digest token unchanged -> serve the roster off disk), the SWR
-  // above it answers the burst of consumers one navigation mounts at once.
-  const teamMembersCache = collabCloud
-    ? (() => {
-        const snapshots = new Map<
-          string,
-          ReturnType<typeof createPersistentSyncCache<CollabCloudMemberDirectoryEntry[]>>
-        >();
-        const lists = new Map<
-          string,
-          ReturnType<typeof createSwrCache<CollabCloudMemberDirectoryEntry[]>>
-        >();
-        const read = (
-          context: WorkspaceCollabContext,
-        ): Promise<CollabCloudMemberDirectoryEntry[]> => {
-          const scope = teamProjectsDisplayScopeFromContext(context);
-          if (!scope) return Promise.resolve([]);
-          const key = teamProjectsDisplayScopeKey(scope);
-          let snapshot = snapshots.get(key);
-          if (!snapshot) {
-            const capturedContext = { ...context };
-            snapshot = createPersistentSyncCache({
-              face: 'members',
-              fetch: () => collabCloud.listMembers(capturedContext),
-              readDigest: createSyncDigestReader({
-                env: process.env,
-                getWorkspaceId: () => scope.workspaceId,
-                onError: (error) =>
-                  console.warn('[od] team members digest error:', error),
-              }),
-              store: collabSyncSnapshots,
-              parseSnapshot: parseMemberDirectorySnapshot,
-              onError: (error) =>
-                console.warn('[od] team members snapshot cache error:', error),
-            });
-            snapshots.set(key, snapshot);
-          }
-          let list = lists.get(key);
-          if (!list) {
-            const capturedSnapshot = snapshot;
-            list = createSwrCache(
-              () => capturedSnapshot(),
-              () => key,
-              3000,
-            );
-            lists.set(key, list);
-          }
-          return list();
-        };
-        return Object.assign(read, {
-          invalidate(context?: WorkspaceCollabContext) {
-            const scope = context
-              ? teamProjectsDisplayScopeFromContext(context)
-              : null;
-            if (scope) {
-              const key = teamProjectsDisplayScopeKey(scope);
-              lists.get(key)?.invalidate();
-              lists.delete(key);
-              snapshots.get(key)?.invalidate();
-              snapshots.delete(key);
-              return;
-            }
-            for (const list of lists.values()) list.invalidate();
-            for (const snapshot of snapshots.values()) snapshot.invalidate();
-            lists.clear();
-            snapshots.clear();
-          },
-        });
-      })()
-    : null;
-  const teamMembersForDisplay = async (
-    context: WorkspaceCollabContext | null,
-  ): Promise<CollabCloudMemberDirectoryEntry[]> => {
-    if (!teamMembersCache) return [];
-    return context ? teamMembersCache(context) : [];
-  };
-  const accountBillingSummary = createAccountBillingSummaryCache({
-    identity: () => velaWorkspaceDirectoryIdentity(
-      readVelaControlApiContext,
-      configuredAmrEnv(),
-    ),
-    fetch: () => fetchVelaBillingSummary({ configuredEnv: configuredAmrEnv() }),
-  });
-  const workspaceBillingRuntime = createWorkspaceBillingRuntimeCoordinator({
-    fetchProjection: async ({ workspaceId }) => {
-      try {
-        // The Vela CLI sends only the Bearer credential plus workspace-id
-        // candidate. Vela re-derives the member principal server-side, and
-        // the runtime validates the returned member id before accepting it.
-        return await fetchVelaWorkspaceBillingProjection(workspaceId, {
-          configuredEnv: configuredAmrEnv(),
-        });
-      } catch (error) {
-        if (isVelaWorkspaceAuthorizationError(error)) {
-          throw new WorkspaceBillingAccessRevokedError();
-        }
-        throw error;
-      }
-    },
-    // No onAccessRevoked hook on purpose (OPEND-3553): billing is
-    // display-only, and Vela also answers internal billing failures with 403.
-    // A rejected billing projection only marks this runtime entry; membership
-    // revocation is owned by the workspace directory and the hub
-    // `workspace-access-revoked` event, never by a billing response.
-    onStateChange: (state) => {
-      // The request that created a runtime already receives this state in its
-      // response. Background catch-up/retry/poll completion needs a thin nudge
-      // so old and new web clients re-read the same explicit route.
-      if (!shouldEmitWorkspaceBillingRuntimeNudge(state)) return;
-      emitWorkspaceEvent(state.workspaceId, {
-        type: 'billing-changed',
-        workspaceId: state.workspaceId,
-        revision: `runtime:${state.revision}`,
-        at: Date.now(),
-      });
-    },
-    onInterestSetChange: (interests) => {
-      workspaceHubSubscriptions?.setBillingInterests(
-        interests.map((interest) => interest.workspaceId),
-      );
-    },
-    onPollSuppressed: () => recordWorkspaceAuthoritySuppressedRequest({
-      mode: workspaceAuthorityCacheMode,
-      source: 'billing',
-      reason: 'safety_floor',
-    }),
-  });
-  /**
-   * Warm or revalidate both digest faces for one exact directory-verified
-   * Workspace/member identity. A UI switch uses the lightweight warm path;
-   * reconnect/source-gap recovery invalidates only that scope first so a
-   * still-fresh SWR entry cannot hide changes that happened while disconnected.
-   */
-  const refreshWorkspaceDigestFaces = async (
-    workspaceId: string,
-    options: { revalidate?: boolean; freshAuthority?: boolean } = {},
-  ): Promise<void> => {
-    if (!workspaceId) return;
-    const context =
-      await resolveAuthoritativeTeamWorkspaceContext(workspaceId, {
-        fresh: options.freshAuthority,
-      });
-    if (options.revalidate) {
-      const scope = teamProjectsDisplayScopeFromContext(context);
-      if (scope) teamProjectsDisplayCache.invalidate(scope);
-      teamMembersCache?.invalidate(context ?? undefined);
-    }
-    await Promise.all([
-      teamProjectsForDisplay(context),
-      teamMembersForDisplay(context),
-    ]);
-  };
-  const warmWorkspaceDigestFaces = (workspaceId: string) => {
-    if (!workspaceId) return;
-    void refreshWorkspaceDigestFaces(workspaceId, {
-      freshAuthority: true,
-    }).catch(() => undefined);
-  };
-  let workspaceAnalyticsService: AnalyticsService | null = null;
-  registerCollabContextRoutes(app, {
-    workspaceContext: collab.workspaceContext,
-    configuredEnv: configuredAmrEnv,
-    verifyWorkspaceReadAuthority: verifyWorkspaceContextReadAuthority,
-    readCachedWorkspaceAuthority: cachedWorkspaceContextForRequest,
-    activeWorkspace,
-    // A tab-local selection leaves this exact Workspace's scoped caches cold.
-    // Warm only the directory-verified id announced by that request; the
-    // daemon-global legacy pin is neither read nor updated.
-    onWorkspaceSwitched: (workspaceId) => warmWorkspaceDigestFaces(workspaceId),
-    fetchBilling: accountBillingSummary.read,
-    billingRuntime: workspaceBillingRuntime,
-    quotaRealtimeHealthy: (workspaceId) => quotaHealthyConnections.has(
-      directoryConnectionKey(workspaceId, currentWorkspaceDirectoryIdentity()),
-    ),
-    fetchBillingCatalog: (workspaceId) => fetchVelaBillingCatalog(workspaceId, {
-      configuredEnv: configuredAmrEnv(),
-    }),
-    startCheckout: (input) => fetchBillingCheckoutUrl({
-      ...input,
-      configuredEnv: configuredAmrEnv(),
-    }),
-    // Same directory read the route would have made on its own, wrapped so every
-    // workspace type it carries is memoized for the team-share invariant.
-    listWorkspaceDirectory,
-    fetchWorkspaceDirectory: fetchWorkspaceDirectoryForAccountSurface,
-    refreshWorkspaceDirectoryAfterMutation:
-      workspaceDirectoryAuthority.refreshAfterMutation,
-    // Reuse the shared team-projects lister (which holds the shared vela-cli
-    // catalog adapter). Without this the endpoint built a fresh adapter per
-    // request and re-ran the one-off `vela team-projects --help` capability
-    // probe — an extra CLI spawn (and, on the current CLI, a blocking analytics
-    // POST) on every workspace projects load.
-    //
-    // Use the DISPLAY cache, not the uncached exact lookup. This is the read
-    // behind the Home team-project grid and the deep-link "is this shared to my
-    // team?" check, and `teamProjectsDisplayCache` was built for exactly this
-    // route — see its doc comment, which names it. Wired to the uncached lister
-    // instead, every call spawned `vela team-projects list`: measured at ~1.1s
-    // per request against a live workspace, cold and warm alike, on a path the
-    // UI hits on every launch and every deep link.
-    //
-    // These routes are display reads: the Home team-project grid and the
-    // deep-link "is this shared to my team?" check. Nothing here gates data
-    // access — the pull gate and the comment/presence relays reach
-    // `teamProjectsLister` on their own and still observe an unshare
-    // immediately.
-    //
-    // Display freshness does not rest on the 3s TTL alone: share, unshare and
-    // workspace-change invalidate this cache explicitly, via
-    // `invalidateTeamProjectCatalog` (collab-sync and the project routes) and
-    // the per-scope invalidations beside the cache itself.
-    //
-    // This was the last caller of the uncached `teamProjectsForRequest`
-    // wrapper, so that helper is removed with it rather than left orphaned.
-    listTeamProjects: teamProjectsForDisplay,
-    // Expose the collab-cloud member directory so the web client can resolve
-    // comment authors + owner names to a name + role.
-    ...(teamMembersCache ? { listMembers: teamMembersForDisplay } : {}),
-    // Collab realtime hop-2: the workspace-scoped invalidation SSE. The route
-    // registers/deregisters its sink here; the poller below feeds them.
-    createSseResponse,
-    workspaceEventSinks,
-    retainWorkspaceEventInterest: (workspaceId) =>
-      workspaceHubSubscriptions?.retainEventInterest(workspaceId)
-      ?? (() => undefined),
-    observeWorkspace: async (req, context, properties) => {
-      const service = workspaceAnalyticsService;
-      const analyticsContext = readAnalyticsContext(req);
-      if (!service || !analyticsContext) return;
-      await service.identifyGroup({
-        context: analyticsContext,
-        groupType: 'workspace',
-        groupKey: context.workspaceId,
-        properties: properties ?? {},
-      });
-    },
-  });
-  // Reconnect/source-gap recovery belongs to the Workspace whose upstream
-  // subscription observed the gap. Keep one signature state per Workspace so
-  // recovering subscribed A while B is the UI selection neither compares A
-  // against B's digest nor drops A's refresh.
-  const scopedWorkspaceInvalidationPollers = new Map<
-    string,
-    ReturnType<typeof createWorkspaceInvalidationPoller>
-  >();
-  const workspaceInvalidationPollerFor = (workspaceIdInput: string) => {
-    const workspaceId = workspaceIdInput.trim();
-    let poller = scopedWorkspaceInvalidationPollers.get(workspaceId);
-    if (!poller) {
-      poller = createWorkspaceInvalidationPoller({
-        getWorkspaceContext: async () => {
-          const context =
-            await resolveAuthoritativeTeamWorkspaceContext(workspaceId);
-          workspaceTypes.learn(context);
-          return context;
-        },
-        listTeamProjects: (context) => teamProjectsForDisplay(context),
-        listMembers: (context) => teamMembersForDisplay(context),
-        emit: (payload, context) => {
-          handlePolledWorkspaceInvalidation(
-            payload,
-            (scopedPayload) =>
-              emitWorkspaceEvent(workspaceId, scopedPayload),
-            () => reconcileWorkspaceProjectsFromRemote(
-              activeTeamWorkspaceIdentity(context)?.workspaceId ?? workspaceId,
-            ),
-          );
-        },
-        onTeamProjectsObserved: ({ workspaceId: observedWorkspaceId }) =>
-          proactiveContentPull.advanceRecoveryFloor(observedWorkspaceId),
-        onPollSuppressed: () => recordWorkspaceAuthoritySuppressedRequest({
-          mode: workspaceAuthorityCacheMode,
-          source: 'directory',
-          reason: 'safety_floor',
-        }),
-        onError: (error) =>
-          console.warn(
-            `[od] workspace ${workspaceId} invalidation recovery error:`,
-            error,
-          ),
-      });
-      scopedWorkspaceInvalidationPollers.set(workspaceId, poller);
-    }
-    return poller;
-  };
-  const pollWorkspaceInvalidationForWorkspace = (
-    workspaceIdInput: string,
-  ): Promise<void> => {
-    const workspaceId = workspaceIdInput.trim();
-    if (!workspaceId) return Promise.resolve();
-    return workspaceInvalidationPollerFor(workspaceId).pollOnce();
-  };
-  const workspaceAuthorityHealth = createWorkspaceAuthorityHealthCoordinator({
-    mode: workspaceAuthorityCacheMode,
-    catchUp: async (workspaceId) => {
-      // A healthy transport is not enough to suppress legacy polling. First
-      // cross a fresh directory boundary and close the exact Workspace gap.
-      workspaceDirectoryAuthority.invalidate('catch_up');
-      workspaceExactAuthorityCache.invalidate(workspaceId);
-      workspaceExactContextCache.invalidate(workspaceId, 'catch_up');
-      const directory = await fetchFreshBackgroundWorkspaceDirectory();
-      const membership = directory.ok
-        ? directory.items.find((item) =>
-            item.workspaceId === workspaceId
-            && item.memberStatus === 'active'
-            && item.lifecycleState !== 'deleted')
-        : undefined;
-      if (!membership) {
-        throw new Error('exact workspace directory catch-up was unavailable');
-      }
-      const exactContext = await workspaceExactContextCache.refresh(
-        { workspaceId },
-        'catch_up',
-      );
-      if (!exactContext || exactContext.workspaceId !== workspaceId) {
-        throw new Error('exact workspace catch-up was unavailable');
-      }
-      await refreshWorkspaceDigestFaces(workspaceId, {
-        revalidate: true,
-      });
-      await pollWorkspaceInvalidationForWorkspace(workspaceId);
-      workspaceBillingRuntime.reconnect(workspaceId);
-    },
-    setDirectoryPollingHealthy: (workspaceId, healthy) =>
-      workspaceInvalidationPollerFor(workspaceId).setRealtimeHealthy(healthy),
-    setBillingPollingHealthy: (workspaceId, healthy) =>
-      workspaceBillingRuntime.setRealtimeHealthy(workspaceId, healthy),
-    setContextCachingHealthy: (workspaceId, healthy) => {
-      workspaceExactAuthorityCache.setRealtimeHealthy(workspaceId, healthy);
-      workspaceExactContextCache.setRealtimeHealthy(workspaceId, healthy);
-    },
-    onDecision: (input) => recordWorkspaceAuthorityDecision({
-      mode: workspaceAuthorityCacheMode,
-      ...input,
-    }),
-    onError: (error) => {
-      console.warn(
-        '[od] workspace authority catch-up failed; retaining legacy polling:',
-        String(error),
-      );
-    },
-  });
-  // Collab realtime hop-1: cloud hub → daemon push channel. The hub emits the
-  // same thin invalidation signals the web would otherwise discover by
-  // polling. Every upstream stream comes from an explicit leased Workspace
-  // interest; reconnect/source-gap handlers run one exact-scope poller cycle
-  // to close the disconnect gap.
-  const dirtyCommentProjects = new Set<string>();
-  // Thin events are invalidation hints, so repeated events for one resource
-  // may share refresh work. Authorization revocation and project content stay
-  // outside this coordinator: both have immediate, domain-specific handling.
-  const hubEventRefreshes = createEventRefreshCoordinator({
-    onError: (error, key) => {
-      console.warn(`[od] hub event refresh failed key=${key}:`, String(error));
-    },
-  });
-  const workspaceDirectoryRefreshes = createEventRefreshCoordinator({
-    // Directory events are account-wide and can be duplicated over several
-    // Workspace streams. Preserve an immediate leading refresh plus the final
-    // state while bounding a sustained storm to one upstream read per second.
-    minIntervalMs: 1_000,
-    onError: (error) => {
-      console.warn('[od] workspace directory event refresh failed:', String(error));
-    },
-  });
-  const directoryConnectionIdentities = new Map<string, string>();
-  const directoryHealthyConnections = new Set<string>();
-  const directoryConnectionKey = (
-    workspaceId: string,
-    identityKey: string,
-  ) => `${identityKey}\0${workspaceId}`;
-  const currentWorkspaceDirectoryIdentity = () =>
-    velaWorkspaceDirectoryIdentity(
-      readVelaControlApiContext,
-      configuredAmrEnv(),
-    );
-  const setQuotaRealtimeHealthy = (workspaceId: string, identityKey: string, healthy: boolean) => {
-    const key = directoryConnectionKey(workspaceId, identityKey);
-    const previous = quotaHealthyConnections.has(key);
-    if (healthy) quotaHealthyConnections.add(key);
-    else quotaHealthyConnections.delete(key);
-    if (previous !== healthy && identityKey === currentWorkspaceDirectoryIdentity()) {
-      emitWorkspaceEvent(workspaceId, {
-        type: 'billing-changed',
-        at: Date.now(),
-      });
-    }
-  };
-  const syncWorkspaceDirectoryRealtimeHealth = (): void => {
-    const currentIdentity = currentWorkspaceDirectoryIdentity();
-    workspaceDirectoryAuthority.setRealtimeHealthy(
-      [...directoryHealthyConnections].some((key) =>
-        key.startsWith(`${currentIdentity}\0`)),
-    );
-  };
-  const requestWorkspaceDirectoryRefresh = (
-    reason: 'event_dirty' | 'auth_reject' | 'catch_up',
-    token?: string,
-    expectedIdentity = currentWorkspaceDirectoryIdentity(),
-  ): void => {
-    workspaceDirectoryRefreshes.request(
-      'workspace-directory',
-      async () => {
-        if (currentWorkspaceDirectoryIdentity() !== expectedIdentity) return;
-        workspaceDirectoryAuthority.invalidate(reason);
-        const directory = await fetchFreshBackgroundWorkspaceDirectory();
-        if (currentWorkspaceDirectoryIdentity() !== expectedIdentity) return;
-        if (!directory.ok) return;
-        emitWorkspaceDirectoryChanged();
-      },
-      token,
-    );
-  };
-  const restoreDirtyCommentProject = (projectId: string) => {
-    dirtyCommentProjects.add(projectId);
-    // The upstream hub event has already proved that this project changed.
-    // If the daemon's eager pull lost a transient race (for example a failed
-    // Vela CLI/TLS attempt), wake the open view once so its exact-scoped list
-    // read can redeem the retained dirty mark immediately. That read awaits
-    // its pull before serializing comments; a failed read deliberately does
-    // not signal again, avoiding a retry storm while the 30s poll remains the
-    // recovery floor.
-    if (activeProjectEventSinks.has(projectId)) {
-      emitProjectEvent(projectId, {
-        type: 'comment-changed',
-        projectId,
-        at: Date.now(),
-      });
-    }
-  };
-  const emitTeamProjectsChanged = createTeamProjectsChangeEmitter({
-    invalidateWorkspace: (workspaceId) => {
-      teamProjectsDisplayCache.invalidateWorkspace(workspaceId);
-      workspaceTeamProjectCatalog?.invalidateWorkspace(workspaceId);
-    },
-    emit: emitWorkspaceEvent,
-    warmWorkspace: async (workspaceId) => {
-      const context = await resolveAuthoritativeTeamWorkspaceContext(workspaceId);
-      await teamProjectsForDisplay(context);
-    },
-  });
-  const startWorkspaceHubSubscriber = (subscribedWorkspaceId: string) =>
-    startHubEventsSubscriber({
-    resolveEndpoint: async () => {
-      // Same gating as the workspace-context provider: only the vela source
-      // has a hub to subscribe to (dev daemons must not dial production).
-      if (process.env.OD_WORKSPACE_CONTEXT_SOURCE?.trim() !== 'vela') return null;
-      return resolveVelaWorkspaceHubEventsEndpoint(
-        subscribedWorkspaceId,
-        process.env,
-        configuredAmrEnv(),
-      );
-    },
-    onStateChange: (state, connection) => {
-      if (state === 'disconnected') {
-        authoritativePresenceWorkspaces.delete(subscribedWorkspaceId);
-        const identityKey =
-          connection.identityKey
-          ?? directoryConnectionIdentities.get(subscribedWorkspaceId);
-        if (
-          !identityKey
-          || directoryConnectionIdentities.get(subscribedWorkspaceId)
-            === identityKey
-        ) {
-          directoryConnectionIdentities.delete(subscribedWorkspaceId);
-        }
-        if (identityKey) {
-          setQuotaRealtimeHealthy(subscribedWorkspaceId, identityKey, false);
-          directoryHealthyConnections.delete(
-            directoryConnectionKey(subscribedWorkspaceId, identityKey),
-          );
-        }
-        syncWorkspaceDirectoryRealtimeHealth();
-      }
-      console.info(`[od] hub events channel ${state}`);
-    },
-    onAuthorityHealthChange: ({
-      workspaceId,
-      identityKey,
-      healthy,
-      capabilities,
-      listenerStatus,
-    }) => {
-      if (
-        identityKey
-        && identityKey !== currentWorkspaceDirectoryIdentity()
-      ) {
-        return;
-      }
-      const exactWorkspaceId = workspaceId ?? subscribedWorkspaceId;
-      const exactIdentityKey =
-        identityKey
-        ?? directoryConnectionIdentities.get(exactWorkspaceId)
-        ?? currentWorkspaceDirectoryIdentity();
-      if (capabilities.includes(WORKSPACE_DIRECTORY_EVENTS_CAPABILITY)) {
-        directoryConnectionIdentities.set(exactWorkspaceId, exactIdentityKey);
-      } else {
-        directoryConnectionIdentities.delete(exactWorkspaceId);
-      }
-      const connectionKey = directoryConnectionKey(
-        exactWorkspaceId,
-        exactIdentityKey,
-      );
-      setQuotaRealtimeHealthy(
-        exactWorkspaceId,
-        exactIdentityKey,
-        healthy && capabilities.includes(CODING_PLAN_USAGE_EVENTS_CAPABILITY),
-      );
-      if (
-        healthy
-        && capabilities.includes(WORKSPACE_DIRECTORY_EVENTS_CAPABILITY)
-      ) {
-        directoryHealthyConnections.add(connectionKey);
-      } else {
-        directoryHealthyConnections.delete(connectionKey);
-      }
-      syncWorkspaceDirectoryRealtimeHealth();
-      recordWorkspaceAuthorityRealtimeTransition({
-        mode: workspaceAuthorityCacheMode,
-        healthy,
-        memberEvents: capabilities.includes('workspace-member-events-v1'),
-        listenerStatus: capabilities.includes(
-          'workspace-event-listener-status-v1',
-        ),
-        sourceGap: listenerStatus?.sourceGap === true,
-      });
-      void workspaceAuthorityHealth.update({
-        workspaceId: exactWorkspaceId,
-        healthy,
-      });
-    },
-    onConnect: ({ reconnect, workspaceId, identityKey, capabilities }) => {
-      if (
-        identityKey
-        && identityKey !== currentWorkspaceDirectoryIdentity()
-      ) {
-        return;
-      }
-      const verifiedWorkspaceId = workspaceId ?? subscribedWorkspaceId;
-      const verifiedIdentityKey =
-        identityKey ?? currentWorkspaceDirectoryIdentity();
-      if (capabilities.includes(AUTHORITATIVE_PROJECT_PRESENCE_CAPABILITY)) {
-        authoritativePresenceWorkspaces.add(verifiedWorkspaceId);
-      } else {
-        authoritativePresenceWorkspaces.delete(verifiedWorkspaceId);
-      }
-      if (capabilities.includes(WORKSPACE_DIRECTORY_EVENTS_CAPABILITY)) {
-        const hadDirectoryCarrier = [
-          ...directoryConnectionIdentities.values(),
-        ].includes(verifiedIdentityKey);
-        directoryConnectionIdentities.set(
-          verifiedWorkspaceId,
-          verifiedIdentityKey,
-        );
-        // One account signal is fanned to every capable stream. Only the first
-        // live carrier needs a snapshot boundary; additional Workspace streams
-        // would produce the same GET and are intentionally free.
-        if (!hadDirectoryCarrier) {
-          requestWorkspaceDirectoryRefresh(
-            'catch_up',
-            undefined,
-            verifiedIdentityKey,
-          );
-        }
-      }
-      console.info(
-        `[od] hub events workspace verified workspaceId=${workspaceId ?? 'unknown'} reconnect=${reconnect}`,
-      );
-      handleHubVerifiedConnection(
-        verifiedWorkspaceId,
-        (exactWorkspaceId) =>
-          proactiveContentPull.catchUpPublishedHeads(exactWorkspaceId),
-        (exactWorkspaceId) => {
-          // A reconnect is closed exactly once by onReconnect below. Keep
-          // this initial-connect hook from scheduling a duplicate catch-up.
-          if (!reconnect) workspaceBillingRuntime.reconnect(exactWorkspaceId);
-        },
-      );
-    },
-    onDrop: ({ reason, eventName, expectedWorkspaceId, actualWorkspaceId }) => {
-      console.warn(
-        `[od] hub event dropped reason=${reason} event=${eventName} ` +
-          `expectedWorkspaceId=${expectedWorkspaceId ?? 'unknown'} ` +
-          `actualWorkspaceId=${actualWorkspaceId ?? 'unknown'}`,
-      );
-    },
-    onAccessRevoked: ({ workspaceId, identityKey, reason }) => {
-      if (
-        identityKey
-        && identityKey !== currentWorkspaceDirectoryIdentity()
-      ) {
-        return;
-      }
-      const revocationReceivedAt = performance.now();
-      const exactWorkspaceId = workspaceId ?? subscribedWorkspaceId;
-      console.info(
-        `[od] hub workspace access revoked workspaceId=${exactWorkspaceId} reason=${reason ?? 'unknown'}`,
-      );
-      handleHubWorkspaceAccessRevoked(
-        exactWorkspaceId,
-        () => pollWorkspaceInvalidationForWorkspace(exactWorkspaceId),
-        () => {
-          workspaceDirectoryAuthority.invalidate('auth_reject');
-          workspaceExactAuthorityCache.invalidate(exactWorkspaceId);
-          workspaceExactContextCache.invalidate(
-            exactWorkspaceId,
-            'auth_reject',
-          );
-        },
-        (revokedWorkspaceId) =>
-          workspaceBillingRuntime.revokeWorkspace(
-            revokedWorkspaceId,
-            'vela-access-revoked',
-          ),
-      );
-      recordWorkspaceAuthorityRevocationClear(
-        workspaceAuthorityCacheMode,
-        performance.now() - revocationReceivedAt,
-      );
-      requestWorkspaceDirectoryRefresh(
-        'auth_reject',
-        `revoked:${exactWorkspaceId}`,
-      );
-    },
-    onDirectoryEvent: (event, connection) => {
-      if (
-        connection.identityKey
-        && connection.identityKey !== currentWorkspaceDirectoryIdentity()
-      ) {
-        return;
-      }
-      requestWorkspaceDirectoryRefresh(
-        'event_dirty',
-        event.at
-          ? [event.type, event.workspaceId, event.change, event.at].join(':')
-          : undefined,
-        connection.identityKey ?? currentWorkspaceDirectoryIdentity(),
-      );
-    },
-    onEvent: (event, connection) => {
-      if (
-        connection.identityKey
-        && connection.identityKey !== currentWorkspaceDirectoryIdentity()
-      ) {
-        return;
-      }
-      const eventWorkspaceId =
-        event.workspaceId ?? subscribedWorkspaceId;
-      console.info(
-        `[od] hub workspace event received type=${event.type} ` +
-          `workspaceId=${eventWorkspaceId} ` +
-          `projectId=${event.projectId ?? 'unknown'} version=${event.version ?? 'unknown'}`,
-      );
-      switch (event.type) {
-        case 'team-projects-changed': {
-          // Catalog changed (share/unshare). Refresh the display cache and
-          // signal the web, AND run a real `workspace_projects`
-          // reconciliation pass — see `collab/workspace-projects-reconciler.ts`.
-          hubEventRefreshes.request(
-            `team-projects:${eventWorkspaceId}`,
-            () => handleHubTeamProjectsChanged(
-              () => emitTeamProjectsChanged(
-                eventWorkspaceId,
-                {
-                  ...(event.projectId ? { projectId: event.projectId } : {}),
-                  kind: 'catalog',
-                },
-              ),
-              () => reconcileWorkspaceProjectsFromRemote(
-                eventWorkspaceId,
-              ),
-            ),
-            hubEventRefreshToken(event),
-          );
-          // Hub catalog writes carry the affected project id on current Vela
-          // deployments, so keep the latency-sensitive recovery targeted. An
-          // older/unscoped event still refreshes and reconciles the catalog;
-          // the poller's throttled 30s bounded full recovery remains its
-          // safety floor.
-          if (event.workspaceId && event.projectId) {
-            void proactiveContentPull.materializeMissingProjects(
-              event.workspaceId,
-              event.projectId,
-            );
-          }
-          break;
-        }
-        case 'project-metadata-changed': {
-          const targetProjectId = event.projectId?.trim() ?? '';
-          const emitMetadataChanged = () => {
-            emitTeamProjectsChanged(
-              eventWorkspaceId,
-              {
-                ...(event.projectId ? { projectId: event.projectId } : {}),
-                kind: 'metadata',
-              },
-            );
-            if (event.projectId) {
-              emitProjectEvent(event.projectId, {
-                type: 'project-metadata-changed',
-                projectId: event.projectId,
-                at: Date.now(),
-              });
-            }
-          };
-          hubEventRefreshes.request(
-            `project-metadata:${eventWorkspaceId}:${targetProjectId || '*'}`,
-            () => handleHubProjectMetadataChanged(
-              emitMetadataChanged,
-              targetProjectId
-                ? () => reconcileWorkspaceProjectMetadataFromRemote(
-                    eventWorkspaceId,
-                    targetProjectId,
-                  )
-                : async () => false,
-            ),
-            hubEventRefreshToken(event),
-          );
-          break;
-        }
-        case 'comment-changed': {
-          const projectId = event.projectId;
-          if (!projectId) break;
-          if (activeProjectEventSinks.has(projectId)) {
-            // Project is open here — pull IT now instead of waiting for the
-            // next poll tick; the merge emits `comment-changed` to the web.
-            // A consumed dirty mark is only redeemed by a pull that actually
-            // ran; on a no-op/failed pull restore it so the next comment read
-            // retries instead of losing the event outright.
-            dirtyCommentProjects.delete(projectId);
-            void resolveBoundProjectWorkspaceContext(projectId)
-              .then((context) =>
-                context?.workspaceId === eventWorkspaceId
-                  ? collabCloud?.pullProject(projectId, context) ?? false
-                  : false,
-              )
-              .then((pulled) => {
-                if (!pulled) restoreDirtyCommentProject(projectId);
-              })
-              .catch(() => restoreDirtyCommentProject(projectId));
-          } else {
-            // Closed project: just mark dirty. The open-project path pulls
-            // immediately, and an unopened project costs zero requests.
-            dirtyCommentProjects.add(projectId);
-          }
-          break;
-        }
-        case 'presence-changed': {
-          if (event.projectId) {
-            const projectId = event.projectId;
-            markPresenceReadCacheStale(projectId, eventWorkspaceId);
-            void resolveBoundProjectWorkspaceContext(projectId)
-              .then((context) => {
-                if (context?.workspaceId !== eventWorkspaceId) return;
-                emitProjectEvent(projectId, {
-                  type: 'presence-changed',
-                  projectId,
-                  at: Date.now(),
-                });
-              })
-              .catch(() => undefined);
-          }
-          break;
-        }
-        case 'project-content-changed': {
-          // A teammate published a new version. Pull it daemon-side NOW so
-          // the local mirror stays fresh even with no tab open; after the
-          // pull lands, the existing post-pull signals (`file-changed` +
-          // `project-metadata-changed`) reach any open view over the same
-          // SSE path a web-triggered pull uses. All ownership/binding guards
-          // live in collab/proactive-content-pull.ts — an owner daemon
-          // receiving its own publish echo never pulls over its working
-          // tree, and failures degrade silently to the web's status polling.
-          if (sharedProjectPullProfiling) {
-            const profileReceivedAtMs = Date.now();
-            emitSharedProjectPullTiming({
-              phase: 'event-received',
-              projectId: event.projectId ?? 'unknown',
-              ...(event.version != null ? { version: event.version } : {}),
-              receivedAtMs: profileReceivedAtMs,
-              atMs: profileReceivedAtMs,
-            });
-            void proactiveContentPull.handleContentChanged({
-              ...event,
-              workspaceId: eventWorkspaceId,
-              profileReceivedAtMs,
-            });
-          } else {
-            void proactiveContentPull.handleContentChanged({
-              ...event,
-              workspaceId: eventWorkspaceId,
-            });
-          }
-          // Keep the thin nudge for an OPEN project view so its status/banner
-          // refreshes immediately rather than on the next ~5s poll tick.
-          if (event.projectId && activeProjectEventSinks.has(event.projectId)) {
-            emitProjectEvent(event.projectId, {
-              type: 'project-metadata-changed',
-              projectId: event.projectId,
-              at: Date.now(),
-            });
-          }
-          break;
-        }
-        case 'workspace-context-changed':
-          // Cache invalidation is an authorization boundary and must happen for
-          // every event in the caller's turn. Only the downstream snapshot work
-          // is coalesced below.
-          workspaceDirectoryAuthority.invalidate('event_dirty');
-          workspaceExactAuthorityCache.invalidate(eventWorkspaceId);
-          workspaceExactContextCache.invalidate(
-            eventWorkspaceId,
-            'event_dirty',
-          );
-          hubEventRefreshes.request(
-            `workspace-context:${eventWorkspaceId}`,
-            () => handleHubWorkspaceContextChanged(
-              eventWorkspaceId,
-              () => pollWorkspaceInvalidationForWorkspace(eventWorkspaceId),
-            ),
-            hubEventRefreshToken(event),
-          );
-          // Revalidate exact membership before the next billing projection.
-          // A removed/rebound member must clear money and entitlement state,
-          // even when no billing-specific event accompanies the roster change.
-          workspaceBillingRuntime.reconnect(subscribedWorkspaceId);
-          break;
-        case 'workspace-members-changed':
-          workspaceDirectoryAuthority.invalidate('event_dirty');
-          workspaceExactAuthorityCache.invalidate(eventWorkspaceId);
-          workspaceExactContextCache.invalidate(
-            eventWorkspaceId,
-            'event_dirty',
-          );
-          hubEventRefreshes.request(
-            `workspace-context:${eventWorkspaceId}`,
-            () => handleHubWorkspaceContextChanged(
-              eventWorkspaceId,
-              () => pollWorkspaceInvalidationForWorkspace(eventWorkspaceId),
-            ),
-            hubEventRefreshToken(event),
-          );
-          // A role update or removal changes both authorization and the
-          // billing member projection even when no billing event accompanies
-          // the roster mutation.
-          workspaceBillingRuntime.reconnect(subscribedWorkspaceId);
-          break;
-        case 'coding-plan-usage-changed':
-          if (!event.workspaceId || !event.workspaceMemberId || !event.eventId) break;
-          emitWorkspaceEvent(event.workspaceId, {
-            type: 'coding-plan-usage-changed',
-            workspaceId: event.workspaceId,
-            workspaceMemberId: event.workspaceMemberId,
-            eventId: event.eventId,
-            at: Date.now(),
-          });
-          break;
-        case 'billing-changed':
-          accountBillingSummary.invalidate(accountBillingInvalidationToken(event));
-          workspaceBillingRuntime.invalidate({
-            domain: 'legacy',
-            ...(event.workspaceId ? { workspaceId: event.workspaceId } : {}),
-            ...(event.revision ? { revision: event.revision } : {}),
-            ...(event.revisionClock ? { revisionClock: event.revisionClock } : {}),
-            reason: 'vela-billing-changed',
-          });
-          hubEventRefreshes.request(
-            `billing-signal:${eventWorkspaceId}`,
-            () => {
-              emitWorkspaceEvent(eventWorkspaceId, {
-                type: 'billing-changed',
-                workspaceId: eventWorkspaceId,
-                ...(event.revision ? { revision: event.revision } : {}),
-                at: Date.now(),
-              });
-            },
-            hubEventRefreshToken(event),
-          );
-          break;
-        case 'billing-subscription-changed':
-          if (!event.workspaceId) break;
-          accountBillingSummary.invalidate(accountBillingInvalidationToken(event));
-          workspaceBillingRuntime.invalidate({
-            domain: 'subscription',
-            workspaceId: event.workspaceId,
-            ...(event.revision ? { revision: event.revision } : {}),
-            ...(event.revisionClock ? { revisionClock: event.revisionClock } : {}),
-            reason: 'vela-billing-subscription-changed',
-          });
-          hubEventRefreshes.request(
-            `billing-signal:${event.workspaceId}`,
-            () => {
-              emitWorkspaceEvent(event.workspaceId!, {
-                type: 'billing-subscription-changed',
-                workspaceId: event.workspaceId!,
-                ...(event.revision ? { revision: event.revision } : {}),
-                at: Date.now(),
-              });
-            },
-            hubEventRefreshToken(event),
-          );
-          break;
-        case 'wallet-balance-changed':
-          if (!event.workspaceId || !event.workspaceMemberId) break;
-          accountBillingSummary.invalidate(accountBillingInvalidationToken(event));
-          workspaceBillingRuntime.invalidate({
-            domain: 'wallet',
-            workspaceId: event.workspaceId,
-            workspaceMemberId: event.workspaceMemberId,
-            ...(event.revision ? { revision: event.revision } : {}),
-            ...(event.revisionClock ? { revisionClock: event.revisionClock } : {}),
-            reason: 'vela-wallet-balance-changed',
-          });
-          hubEventRefreshes.request(
-            `billing-signal:${event.workspaceId}:${event.workspaceMemberId}`,
-            () => {
-              emitWorkspaceEvent(event.workspaceId!, {
-                type: 'wallet-balance-changed',
-                workspaceId: event.workspaceId!,
-                workspaceMemberId: event.workspaceMemberId!,
-                ...(event.revision ? { revision: event.revision } : {}),
-                at: Date.now(),
-              });
-            },
-            hubEventRefreshToken(event),
-          );
-          break;
-        case 'team-resources-changed': {
-          // Project publish/retract operations are Resource Hub mutations and
-          // therefore arrive on this generic event family. Projects have their
-          // own binding model and non-destructive mirror quarantine; the
-          // generic resource coordinator intentionally handles only design
-          // systems, plugins, and skills.
-          if (event.resourceKind === 'project') {
-            hubEventRefreshes.request(
-              `team-projects:${eventWorkspaceId}`,
-              () => handleHubTeamProjectsChanged(
-                () => emitTeamProjectsChanged(
-                  eventWorkspaceId,
-                  {
-                    ...(event.projectId ? { projectId: event.projectId } : {}),
-                    kind: 'catalog',
-                  },
-                ),
-                () => reconcileWorkspaceProjectsFromRemote(eventWorkspaceId),
-              ),
-              hubEventRefreshToken(event),
-            );
-            break;
-          }
-          // A design-system/plugin/skill resource was shared (moved the
-          // 'published' ref) or retracted (removed) on the resource hub.
-          // `resourceKind` routes to just that kind's reconciler instead of
-          // re-checking all of them on every event — see
-          // `reconcileTeamResourcesFromRemote` below (declared
-          // later in this function; referencing it here is safe because this
-          // callback only ever RUNS once an actual SSE event arrives, well
-          // after the rest of `startServer`'s synchronous setup — including
-          // that declaration — has completed).
-          hubEventRefreshes.request(
-            `team-resources:${eventWorkspaceId}:${event.resourceKind ?? '*'}`,
-            () => reconcileTeamResourcesFromRemote(
-              event.resourceKind,
-              eventWorkspaceId,
-              'push',
-              event.resourceId,
-            ),
-            hubEventRefreshToken(event),
-          );
-          break;
-        }
-      }
-    },
-    onReconnect: (connection) => {
-      if (
-        connection.identityKey
-        && connection.identityKey !== currentWorkspaceDirectoryIdentity()
-      ) {
-        return;
-      }
-      // Close the disconnect gap: one catch-up cycle over the same reads the
-      // pollers watch, plus a comment pull for open projects.
-      void refreshWorkspaceDigestFaces(
-        subscribedWorkspaceId,
-        { revalidate: true },
-      )
-        .then(() =>
-          pollWorkspaceInvalidationForWorkspace(subscribedWorkspaceId),
-        )
-        .catch(() => undefined);
-      void reconcileWorkspaceProjectsFromRemote(subscribedWorkspaceId)
-        .catch(() => undefined);
-      void proactiveContentPull.catchUpPublishedHeads(subscribedWorkspaceId)
-        .catch(() => undefined);
-      void collabCloud?.pollOnce().catch(() => undefined);
-      workspaceBillingRuntime.reconnect(subscribedWorkspaceId);
-      // Same catch-up principle for the design-system/plugin/skill resource
-      // reconciler: a missed 'team-resources-changed' push during the
-      // disconnect window is closed by one full re-check across every kind
-      // this daemon drives it for (no resourceKind => reconcile all).
-      void reconcileTeamResourcesFromRemote(undefined, subscribedWorkspaceId, 'catch-up')
-        .catch(() => undefined);
-    },
-    onSourceGap: ({ workspaceId, identityKey, listenerEpoch }) => {
-      if (
-        identityKey
-        && identityKey !== currentWorkspaceDirectoryIdentity()
-      ) {
-        return;
-      }
-      console.warn(
-        `[od] hub source gap detected listenerEpoch=${listenerEpoch} ` +
-          `workspaceId=${workspaceId ?? 'unknown'}`,
-      );
-      const exactWorkspaceId = workspaceId ?? subscribedWorkspaceId;
-      requestWorkspaceDirectoryRefresh(
-        'catch_up',
-        `source-gap:${listenerEpoch}`,
-        identityKey ?? currentWorkspaceDirectoryIdentity(),
-      );
-      void refreshWorkspaceDigestFaces(exactWorkspaceId, { revalidate: true })
-        .then(() => pollWorkspaceInvalidationForWorkspace(exactWorkspaceId))
-        .catch(() => undefined);
-      void reconcileWorkspaceProjectsFromRemote(exactWorkspaceId)
-        .catch(() => undefined);
-      void proactiveContentPull.catchUpPublishedHeads(exactWorkspaceId)
-        .catch(() => undefined);
-      workspaceBillingRuntime.reconnect(exactWorkspaceId);
-      void collabCloud?.pollOnce().catch(() => undefined);
-      void reconcileTeamResourcesFromRemote(undefined, exactWorkspaceId, 'catch-up')
-        .catch(() => undefined);
-    },
-    onError: (error) => {
-      console.warn('[od] hub events channel error (will reconnect):', String(error));
-    },
-  });
-  workspaceHubSubscriptions = createWorkspaceHubSubscriptionManager({
-    start: startWorkspaceHubSubscriber,
-  });
-  workspaceHubSubscriptions.setBillingInterests(
-    workspaceBillingRuntime.interestedKeys().map((interest) => interest.workspaceId),
-  );
-
-  registerTeamResourceRoutes(app, { teamResources: collab.teamResources });
-
-  // Team resource sharing is request-scoped. The browser's explicit Workspace
-  // headers choose a membership, then the signed-in account's authoritative
-  // directory supplies the principal and permissions. Never consult the
-  // daemon-wide active Workspace here: another tab may switch it while this
-  // request is awaiting the hub.
-  const rememberedTeamResourceScopes = createRememberedTeamResourceScopes();
-  const rememberTeamResourceScope = (
-    scope: TeamResourceRequestScope,
-  ): TeamResourceRequestScope => {
-    return rememberedTeamResourceScopes.remember(scope);
-  };
-  const resolveTeamResourceScope = async (req: any) => {
-    const verified = await verifyExplicitWorkspaceRequestContext({
-      req,
-      requireTeam: true,
-    });
-    if (!verified.ok) return verified;
-    const scope = teamResourceRequestScopeFromContext(verified.context);
-    if (!scope) {
-      return {
-        ok: false as const,
-        status: 403 as const,
-        code: 'WORKSPACE_ACCESS_DENIED',
-        message: 'the requested workspace is not available to this member',
-      };
-    }
-    return {
-      ok: true as const,
-      scope: rememberTeamResourceScope(scope),
-    };
-  };
-  const resolveTeamResourceScopeForWorkspaceId = async (
-    workspaceId: string,
-  ): Promise<TeamResourceRequestScope | null> => {
-    const requestedWorkspaceId = workspaceId.trim();
-    if (!requestedWorkspaceId) return null;
-    const directory = await fetchWorkspaceDirectory().catch(() => ({
-      ok: false,
-      items: [],
-    }));
-    if (!directory.ok) return null;
-    const scope = teamResourceRequestScopeForWorkspaceId(
-      directory.items,
-      requestedWorkspaceId,
-    );
-    return scope;
-  };
-  const teamResourceScopeStillAuthorized = async (
-    scope: TeamResourceRequestScope,
-  ): Promise<boolean> => {
-    const refreshed = await resolveTeamResourceScopeForWorkspaceId(
-      scope.principal.teamId,
-    );
-    return Boolean(
-      refreshed &&
-      refreshed.principal.teamId === scope.principal.teamId &&
-      refreshed.principal.memberId === scope.principal.memberId &&
-      refreshed.principal.lifecycleState === 'active',
-    );
-  };
-  const teamResourceStillShared = async (
-    kind: 'design_system' | 'plugin' | 'skill',
-    resource: TeamResourceShareRecord,
-    scope: TeamResourceRequestScope,
-  ): Promise<boolean> => {
-    const { runVelaResourceCommand } = await import(
-      './collab/vela-cli-resource-adapter.js'
-    );
-    const stdout = await runVelaResourceCommand(
-      ['shared', '--json'],
-      scope.principal.teamId,
-    );
-    const idPrefix = kind === 'design_system' ? 'ds' : kind;
-    const sanitizeResourceSegment = (value: string) =>
-      value.replace(/[^a-zA-Z0-9_-]/g, '-');
-    const expectedHubId =
-      resource.hubResourceId ??
-      `${idPrefix}-${sanitizeResourceSegment(scope.principal.teamId)}-${sanitizeResourceSegment(resource.id)}`;
-    const parsed = JSON.parse(stdout) as {
-      resources?: Array<{
-        id?: unknown;
-        kind?: unknown;
-        deletedAt?: unknown;
-        metadata?: unknown;
-      }>;
-    };
-    return (parsed.resources ?? []).some((candidate) => {
-      if (candidate.kind !== kind || candidate.deletedAt != null) return false;
-      return candidate.id === expectedHubId;
-    });
-  };
-  async function syncSharedTeamPlugin(
-    resource: TeamResourceShareRecord,
-    scope: TeamResourceRequestScope,
-  ): Promise<void> {
-    const workspaceId = scope.principal.teamId;
-    const isOwnedByCurrentMember =
-      typeof resource.ownerMemberId === 'string' &&
-      resource.ownerMemberId === scope.principal.memberId;
-    if (isOwnedByCurrentMember) return;
-    const hubResourceId =
-      resource.hubResourceId ??
-      `plugin-${workspaceId.replace(/[^a-zA-Z0-9_-]/g, '-')}-${resource.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
-    const targetDir = teamResourceMaterializationDir(
-      PLUGIN_REGISTRY_ROOTS.userPluginsRoot,
-      workspaceId,
-      resource.id,
-      resource.id,
-    );
-    const bindingResourceId = workspaceTeamPluginBindingResourceId(
-      workspaceId,
-      resource.id,
-    );
-    const captureActivationFence = (): string | null =>
-      workspaceTeamPluginBindingActivationFence(db, workspaceId, resource.id);
-    const markTeamSynced = (): boolean => {
-      const existingBinding = getWorkspaceResourceByResourceId(
-        db,
-        'plugin',
-        bindingResourceId,
-      );
-      if (
-        existingBinding &&
-        (existingBinding.workspaceId !== workspaceId ||
-          existingBinding.visibility !== 'team')
-      ) {
-        return false;
-      }
-      ensureWorkspaceResource(db, 'plugin', workspaceId, bindingResourceId, {
-        visibility: 'team',
-        resourceState: 'active',
-        createdByWorkspaceMemberId: scope.principal.memberId,
-        updatedByWorkspaceMemberId: scope.principal.memberId,
-        resourceHubResourceId: hubResourceId,
-      });
-      updateWorkspaceResource(db, 'plugin', workspaceId, bindingResourceId, {
-        visibility: 'team',
-        resourceState: 'active',
-        updatedByWorkspaceMemberId: scope.principal.memberId,
-        resourceHubResourceId: hubResourceId,
-      });
-      return true;
-    };
-    if (
-      fs.existsSync(targetDir) &&
-      resource.versionId &&
-      teamResourceVersions.get(workspaceId, 'plugin', resource.id) === resource.versionId
-    ) {
-      await activateWorkspaceTeamPluginIfStillShared({
-        captureActivationFence,
-        stillShared: () => teamResourceStillShared('plugin', resource, scope),
-        activationFenceIsCurrent: (fence) => captureActivationFence() === fence,
-        activate: markTeamSynced,
-      });
-      return;
-    }
-    const existing = getInstalledPlugin(db, resource.id);
-    const remoteDescription = typeof resource.description === 'string' ? resource.description.trim() : '';
-    const localDescription = typeof existing?.manifest?.description === 'string'
-      ? existing.manifest.description.trim()
-      : '';
-    if (fs.existsSync(targetDir) && !resource.versionId && (!remoteDescription || localDescription === remoteDescription)) {
-      await activateWorkspaceTeamPluginIfStillShared({
-        captureActivationFence,
-        stillShared: () => teamResourceStillShared('plugin', resource, scope),
-        activationFenceIsCurrent: (fence) => captureActivationFence() === fence,
-        activate: markTeamSynced,
-      });
-      return;
-    }
-
-    try {
-      const materialized = await materializeWorkspaceScopedTeamResource({
-        kindRoot: PLUGIN_REGISTRY_ROOTS.userPluginsRoot,
-        storageName: resource.id,
-        identity: {
-          kind: 'plugin',
-          workspaceId,
-          resourceId: resource.id,
-          hubResourceId,
-        },
-        pullInto: (stagedFolder) =>
-          teamResourcePullBatcher.pull({
-            workspaceId,
-            kind: 'plugin',
-            resourceId: hubResourceId,
-            dir: stagedFolder,
-            ref: 'published',
-          }),
-        verifyWorkspaceScope: () => teamResourceScopeStillAuthorized(scope),
-        verifyStillShared: () => teamResourceStillShared('plugin', resource, scope),
-      });
-      if (materialized.status !== 'committed') return;
-      const activated = await resolveAndActivateWorkspaceTeamPlugin({
-        resolve: async () => {
-          const resolved = await resolvePluginFolder({
-            folder: materialized.targetDir,
-            folderId: resource.id,
-            sourceKind: 'user',
-            source: teamResourceSourceKey({
-              kind: 'plugin',
-              workspaceId,
-              resourceId: resource.id,
-            }),
-          });
-          if (!resolved.ok) {
-            console.warn(
-              `[team-resources] failed to register shared plugin ${resource.id}: ${resolved.errors.join('; ')}`,
-            );
-            return null;
-          }
-          return resolved.record;
-        },
-        captureActivationFence,
-        stillShared: () => teamResourceStillShared('plugin', resource, scope),
-        activationFenceIsCurrent: (fence) => captureActivationFence() === fence,
-        activate: markTeamSynced,
-      });
-      if (!activated) return;
-      if (resource.versionId) {
-        await teamResourceVersions.set(
-          workspaceId,
-          'plugin',
-          resource.id,
-          resource.versionId,
-        );
-      }
-    } catch (error) {
-      console.warn(
-        `[team-resources] failed to pull shared plugin ${resource.id}:`,
-        error instanceof Error ? error.message : error,
-      );
-    }
-  }
-  async function syncSharedTeamDesignSystem(
-    resource: TeamResourceShareRecord,
-    scope: TeamResourceRequestScope,
-  ): Promise<void> {
-    const dirId = stripPrefixAndValidateId(resource.id, 'user:');
-    if (!dirId) return;
-    const targetDir = teamResourceMaterializationDir(
-      USER_DESIGN_SYSTEMS_DIR,
-      scope.principal.teamId,
-      resource.id,
-      dirId,
-    );
-    const workspaceId = scope.principal.teamId;
-    const ownerLocalSourceReady = ownedDesignSystemSourceIsReady({
-      ownerMemberId: resource.ownerMemberId,
-      currentMemberId: scope.principal.memberId,
-      workspaceId,
-      localSourceExists: fs.existsSync(path.join(USER_DESIGN_SYSTEMS_DIR, dirId)),
-      binding: getWorkspaceResourceByResourceId(db, 'design_system', resource.id),
-    });
-    const hubResourceId =
-      resource.hubResourceId ??
-      `ds-${workspaceId.replace(/[^a-zA-Z0-9_-]/g, '-')}-${resource.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
-    const bindingResourceId = workspaceTeamDesignSystemBindingResourceId(
-      workspaceId,
-      resource.id,
-    );
-    async function markTeamSynced(): Promise<void> {
-      const metadataPath = path.join(targetDir, 'metadata.json');
-      let metadata: Record<string, unknown> = {};
-      try {
-        const raw = await fs.promises.readFile(metadataPath, 'utf8');
-        const parsed = JSON.parse(raw) as unknown;
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          metadata = parsed as Record<string, unknown>;
-        }
-      } catch {
-        metadata = {};
-      }
-      await fs.promises.writeFile(
-        metadataPath,
-        // Claim the pulled copy for the workspace whose hub served it (#145).
-        // A team-shared system is workspace-owned by construction, so leaving
-        // it unclaimed would keep leaking one team's library into the next
-        // workspace the user switches to.
-        `${JSON.stringify(
-          { ...metadata, teamSynced: true, ...(workspaceId ? { workspaceId } : {}) },
-          null,
-          2,
-        )}\n`,
-        'utf8',
-      );
-      // Envelope double-write (spec 9.2): stamp the same claim into
-      // `workspace_resources` as `visibility: 'team'`, mirroring what
-      // syncSharedTeamSkill's own markTeamSynced already does for skill.
-      if (workspaceId) {
-        ensureWorkspaceResource(db, 'design_system', workspaceId, bindingResourceId, {
-          visibility: 'team',
-          resourceState: 'active',
-          createdByWorkspaceMemberId: resource.ownerMemberId ?? scope.principal.memberId,
-          updatedByWorkspaceMemberId: scope.principal.memberId,
-          resourceHubResourceId: hubResourceId,
-        });
-        updateWorkspaceResource(db, 'design_system', workspaceId, bindingResourceId, {
-          visibility: 'team',
-          resourceState: 'active',
-          updatedByWorkspaceMemberId: scope.principal.memberId,
-          resourceHubResourceId: hubResourceId,
-        });
-      }
-    }
-    // The hub naming this member as owner is not proof that this device still
-    // has the author's local source. A fresh data root (or a second device)
-    // must pull the published Team copy just like any teammate. Skip only when
-    // the exact Workspace's original Personal binding and directory are both
-    // present; the predicate rejects foreign, Team-mirror, and retired rows.
-    if (ownerLocalSourceReady) return;
-    if (
-      fs.existsSync(targetDir) &&
-      workspaceId &&
-      resource.versionId &&
-      teamResourceVersions.get(
-        workspaceId,
-        'design_system',
-        resource.id,
-      ) === resource.versionId
-    ) {
-      await markTeamSynced();
-      return;
-    }
-    if (fs.existsSync(targetDir) && !resource.versionId) {
-      await markTeamSynced();
-      return;
-    }
-    try {
-      const materialized = await materializeWorkspaceScopedTeamResource({
-        kindRoot: USER_DESIGN_SYSTEMS_DIR,
-        storageName: dirId,
-        identity: {
-          kind: 'design_system',
-          workspaceId,
-          resourceId: resource.id,
-          hubResourceId,
-        },
-        pullInto: (stagedFolder) =>
-          teamResourcePullBatcher.pull({
-            workspaceId,
-            kind: 'design_system',
-            resourceId: hubResourceId,
-            dir: stagedFolder,
-            ref: 'published',
-          }),
-        verifyWorkspaceScope: () => teamResourceScopeStillAuthorized(scope),
-        verifyStillShared: () =>
-          teamResourceStillShared('design_system', resource, scope),
-      });
-      if (materialized.status !== 'committed') return;
-      await markTeamSynced();
-      if (workspaceId && resource.versionId) {
-        await teamResourceVersions.set(
-          workspaceId,
-          'design_system',
-          resource.id,
-          resource.versionId,
-        );
-      }
-    } catch (error) {
-      console.warn(
-        `[team-resources] failed to pull shared design system ${resource.id}:`,
-        error instanceof Error ? error.message : error,
-      );
-    }
-  }
-  async function syncSharedTeamSkill(
-    resource: TeamResourceShareRecord,
-    scope: TeamResourceRequestScope,
-  ): Promise<void> {
-    const dirId = stripPrefixAndValidateId(
-      resource.id,
-      resource.id.startsWith('user:') ? 'user:' : '',
-    );
-    if (!dirId) return;
-    const targetDir = teamResourceMaterializationDir(
-      USER_SKILLS_DIR,
-      scope.principal.teamId,
-      resource.id,
-      dirId,
-    );
-    const workspaceId = scope.principal.teamId;
-    const hubResourceId =
-      resource.hubResourceId ??
-      `skill-${workspaceId.replace(/[^a-zA-Z0-9_-]/g, '-')}-${resource.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
-    const isOwnedByCurrentMember =
-      typeof resource.ownerMemberId === 'string' &&
-      resource.ownerMemberId === scope.principal.memberId;
-    const bindingResourceId = workspaceTeamSkillBindingResourceId(
-      workspaceId,
-      resource.id,
-    );
-    const captureActivationFence = (): string | null =>
-      workspaceTeamSkillBindingActivationFence(db, workspaceId, resource.id);
-    // Claim the pulled copy for the workspace whose hub served it — a
-    // team-shared skill is workspace-owned by construction, same rule
-    // syncSharedTeamDesignSystem's markTeamSynced already ships (#145).
-    // Fills the gap this resource type previously had no binding row at
-    // all: `enforceSkillWorkspaceMutation` (routes/static-resource.ts) and
-    // `listSkills`'s workspace filter (skills.ts) both read this row.
-    function markTeamSynced(): boolean {
-      if (isOwnedByCurrentMember || !workspaceId) return false;
-      const existingBinding = getWorkspaceResourceByResourceId(
-        db,
-        'skill',
-        bindingResourceId,
-      );
-      if (
-        existingBinding
-        && (
-          existingBinding.workspaceId !== workspaceId
-          || existingBinding.visibility !== 'team'
-        )
-      ) return false;
-      ensureWorkspaceResource(db, 'skill', workspaceId, bindingResourceId, {
-        visibility: 'team',
-        resourceState: 'active',
-        createdByWorkspaceMemberId: resource.ownerMemberId ?? scope.principal.memberId,
-        updatedByWorkspaceMemberId: scope.principal.memberId,
-        resourceHubResourceId: hubResourceId,
-      });
-      updateWorkspaceResource(db, 'skill', workspaceId, bindingResourceId, {
-        visibility: 'team',
-        resourceState: 'active',
-        updatedByWorkspaceMemberId: scope.principal.memberId,
-        resourceHubResourceId: hubResourceId,
-      });
-      return true;
-    }
-    if (isOwnedByCurrentMember) return;
-    if (
-      fs.existsSync(targetDir) &&
-      workspaceId &&
-      resource.versionId &&
-      teamResourceVersions.get(workspaceId, 'skill', resource.id) === resource.versionId
-    ) {
-      await activateWorkspaceTeamSkillIfStillShared({
-        captureActivationFence,
-        stillShared: () => teamResourceStillShared('skill', resource, scope),
-        activationFenceIsCurrent: (fence) => captureActivationFence() === fence,
-        activate: markTeamSynced,
-      });
-      return;
-    }
-    if (fs.existsSync(targetDir) && !resource.versionId) {
-      await activateWorkspaceTeamSkillIfStillShared({
-        captureActivationFence,
-        stillShared: () => teamResourceStillShared('skill', resource, scope),
-        activationFenceIsCurrent: (fence) => captureActivationFence() === fence,
-        activate: markTeamSynced,
-      });
-      return;
-    }
-
-    try {
-      const materialized = await materializeWorkspaceScopedTeamResource({
-        kindRoot: USER_SKILLS_DIR,
-        storageName: dirId,
-        identity: {
-          kind: 'skill',
-          workspaceId,
-          resourceId: resource.id,
-          hubResourceId,
-        },
-        pullInto: (stagedFolder) =>
-          teamResourcePullBatcher.pull({
-            workspaceId,
-            kind: 'skill',
-            resourceId: hubResourceId,
-            dir: stagedFolder,
-            ref: 'published',
-          }),
-        verifyWorkspaceScope: () => teamResourceScopeStillAuthorized(scope),
-        verifyStillShared: () => teamResourceStillShared('skill', resource, scope),
-      });
-      if (materialized.status !== 'committed') return;
-      const activated = await resolveAndActivateWorkspaceTeamSkill({
-        resolve: async () => {
-          const resolved = await listSkills([
-            teamResourceWorkspaceRoot(USER_SKILLS_DIR, workspaceId),
-          ]);
-          return resolved.find(
-            (skill) => skill.id === resource.id && skill.dir === materialized.targetDir,
-          ) ?? null;
-        },
-        captureActivationFence,
-        stillShared: () => teamResourceStillShared('skill', resource, scope),
-        activationFenceIsCurrent: (fence) => captureActivationFence() === fence,
-        activate: markTeamSynced,
-      });
-      if (!activated) return;
-      if (workspaceId && resource.versionId) {
-        await teamResourceVersions.set(
-          workspaceId,
-          'skill',
-          resource.id,
-          resource.versionId,
-        );
-      }
-    } catch (error) {
-      console.warn(
-        `[team-resources] failed to pull shared skill ${resource.id}:`,
-        error instanceof Error ? error.message : error,
-      );
-    }
-  }
-  // Stale-while-revalidate a kind's `/team` listing (hub read + resource
-  // materialization) keyed on the verified Workspace/member scope. The
-  // workspace shell reads all three kinds on navigation; without this each read
-  // re-hit the hub on the request path (~1.5-2.5s each) and serialized behind
-  // the browser's 6-connection cap. Materialization still runs, but on the
-  // background refresh rather than the hot read.
-  //
-  // `invalidate()` is consumed by registerTeamResourceShareRoutes' share/
-  // unshare handlers below (a local mutation this daemon just made). It has to
-  // drop TWO layers, not one: this cache's own parsed-and-materialized entry,
-  // AND `sharedTeamResourcesCommand` underneath it — `share.sharedResources()`
-  // reads the raw `vela shared --json` listing through that second SWR cache
-  // (shared by all three kinds), so a bare reset of this layer alone would
-  // still hand the immediate post-share/unshare refetch the pre-change hub
-  // listing for up to that cache's own freshMs.
-  const sharedTeamResourcesCommands = new Map<
-    string,
-    ReturnType<typeof createSwrCache<string>>
-  >();
-  const sharedTeamResourcesCommand = Object.assign(
-    async (workspaceId: string): Promise<string> => {
-      const key = workspaceId.trim();
-      if (!key) throw new Error('explicit workspace scope is required');
-      let command = sharedTeamResourcesCommands.get(key);
-      if (!command) {
-        command = createSwrCache(
-          async () => {
-            const { runVelaResourceCommand } = await import('./collab/vela-cli-resource-adapter.js');
-            return runVelaResourceCommand(['shared', '--json'], key);
-          },
-          () => key,
-          3000,
-        );
-        sharedTeamResourcesCommands.set(key, command);
-      }
-      return command();
-    },
-    {
-      invalidate(workspaceId: string) {
-        const key = workspaceId.trim();
-        sharedTeamResourcesCommands.get(key)?.invalidate();
-        sharedTeamResourcesCommands.delete(key);
-      },
-    },
-  );
-  // ONE materialization budget for the whole daemon, not one per resource kind.
-  // Design systems, plugins, and skills are three separate listing caches that
-  // a single client poll refreshes together, so a gate owned by each cache
-  // would bound each kind on its own and let the real peak reach the cap times
-  // three. The gate lives here, at the composition root, because here is the
-  // only place that can see all three.
-  const teamResourceMaterializationGate = new ConcurrencyGate(
-    COLLAB_VELA_FANOUT_CONCURRENCY,
-  );
-  const teamResourcePullBatcher = createVelaResourcePullBatcher();
-  const cachedTeamResourceList = (
-    share: TeamResourceShareService,
-    sync?: (
-      resource: TeamResourceShareRecord,
-      scope: TeamResourceRequestScope,
-    ) => Promise<void>,
-  ) =>
-    createTeamResourceListCache({
-      share,
-      ...(sync ? { sync } : {}),
-      gate: teamResourceMaterializationGate,
-      invalidateSharedCommand: (workspaceId) =>
-        sharedTeamResourcesCommand.invalidate(workspaceId),
-    });
-  const runTeamResourceCommand = async (
-    args: string[],
-    workspaceId?: string,
-    readOptions?: TeamResourceSharedReadOptions,
-  ) => {
-    if (args.length === 2 && args[0] === 'shared' && args[1] === '--json') {
-      if (!workspaceId?.trim()) throw new Error('explicit workspace scope is required');
-      if (readOptions?.authoritative) {
-        const { runVelaResourceCommand } = await import('./collab/vela-cli-resource-adapter.js');
-        return runVelaResourceCommand(args, workspaceId);
-      }
-      return sharedTeamResourcesCommand(workspaceId);
-    }
-    const { runVelaResourceCommand } = await import('./collab/vela-cli-resource-adapter.js');
-    return runVelaResourceCommand(args, workspaceId);
-  };
-  const designSystemsTeamResourceShare = createTeamResourceShareService({
-    kind: 'design_system',
-    idPrefix: 'ds',
-    resolveDir: (id) => resolveUserDesignSystemShareDirectory(db, id),
-    describeResource: async (id) => {
-      const system = (await listAllDesignSystems()).find((candidate) => candidate.id === id);
-      return {
-        localId: id,
-        ...(system?.title ? { title: system.title } : {}),
-        ...(system?.summary ? { description: system.summary } : {}),
-      };
-    },
-    run: runTeamResourceCommand,
-  });
-  const designSystemBackingProjects = new Map<string, string>();
-  const designSystemBackingProjectKey = (
-    workspaceId: string,
-    resourceId: string,
-  ) => JSON.stringify([workspaceId, resourceId]);
-  const designSystemsTeamShare = createLinkedProjectTeamResourceShareService({
-    resource: designSystemsTeamResourceShare,
-    prepare: async (resourceId, scope) => {
-      const projectId = (await listAllDesignSystems({
-        workspaceId: scope.principal.teamId,
-        workspaceMemberId: scope.principal.memberId,
-      })).find((candidate) => candidate.id === resourceId)?.projectId ?? '';
-      const key = designSystemBackingProjectKey(scope.principal.teamId, resourceId);
-      designSystemBackingProjects.delete(key);
-      return {
-        projectId,
-        transition: async (visibility) => {
-          // A design-system resource action is not a project policy action.
-          // Unshare/compensation cannot demote its independently shared project.
-          if (visibility !== 'team' || !projectId) return;
-          const binding = getWorkspaceProjectByProjectId(db, projectId);
-          if (binding?.workspaceId !== scope.principal.teamId || binding.visibility !== 'team'
-            || binding.resourceState !== 'active' || binding.cloudTombstonedAt != null
-            || binding.createdByWorkspaceMemberId !== scope.principal.memberId) return;
-          await collab.syncExistingTeamProject(projectId, scope.principal);
-          designSystemBackingProjects.set(key, projectId);
-        },
-      };
-    },
-  });
-  const designSystemsTeamList = cachedTeamResourceList(
-    designSystemsTeamShare,
-    syncSharedTeamDesignSystem,
-  );
-  const notifyDesignSystemLinkedMutation = (
-    resourceId: string,
-    scope: TeamResourceRequestScope,
-    visibility: 'personal' | 'team',
-  ) => {
-    const workspaceId = scope.principal.teamId;
-    const key = designSystemBackingProjectKey(workspaceId, resourceId);
-    const rememberedProjectId = designSystemBackingProjects.get(key);
-    const projectId = rememberedProjectId && getWorkspaceProjectByProjectId(db, rememberedProjectId)?.visibility === 'team'
-      ? rememberedProjectId : null;
-    // Only an independently team-visible backing project was synchronized. `emitTeamProjectsChanged` invalidates the exact Workspace's
-    // project catalogs before emitting; the resource route invalidates its
-    // own listing before it calls this helper.
-    emitTeamProjectsChanged(workspaceId, {
-      ...(projectId ? { projectId } : {}),
-      kind: 'catalog',
-    });
-    emitWorkspaceEvent(workspaceId, {
-      type: 'team-resources-changed',
-      resourceKind: 'design_system',
-      resourceId,
-      at: Date.now(),
-    });
-    if (visibility === 'personal') designSystemBackingProjects.delete(key);
-  };
-  registerTeamResourceShareRoutes(app, {
-    basePath: 'design-systems',
-    resolveScope: resolveTeamResourceScope,
-    authorizeShare: (resourceId, scope) => {
-      const binding = getWorkspaceResourceByResourceId(
-        db,
-        'design_system',
-        resourceId,
-      );
-      return binding?.workspaceId === scope.principal.teamId
-        && binding.visibility === 'personal'
-        && binding.resourceState !== 'deleted'
-        && binding.createdByWorkspaceMemberId === scope.principal.memberId;
-    },
-    syncSharedResource: syncSharedTeamDesignSystem,
-    share: designSystemsTeamShare,
-    listTeam: designSystemsTeamList,
-    onMutationCommitted: notifyDesignSystemLinkedMutation,
-  });
-  const pluginsTeamShare = createTeamResourceShareService({
-    kind: 'plugin',
-    idPrefix: 'plugin',
-    resolveDir: (id) => {
-      const plugin = getInstalledPlugin(db, id);
-      if (!plugin || typeof plugin.fsPath !== 'string') throw new Error('plugin not found');
-      return plugin.fsPath;
-    },
-    describeResource: (id) => {
-      const plugin = getInstalledPlugin(db, id);
-      if (!plugin) return null;
-      return {
-        localId: id,
-        title: plugin.manifest?.title ?? plugin.manifest?.name ?? plugin.title ?? id,
-        ...(plugin.manifest?.description ? { description: plugin.manifest.description } : {}),
-      };
-    },
-    run: runTeamResourceCommand,
-  });
-  const pluginsTeamList = cachedTeamResourceList(
-    pluginsTeamShare,
-    syncSharedTeamPlugin,
-  );
-  registerTeamResourceShareRoutes(app, {
-    basePath: 'plugins',
-    resolveScope: resolveTeamResourceScope,
-    authorizeShare: (id, scope) => {
-      const binding = getWorkspaceResourceByResourceId(db, 'plugin', id);
-      return Boolean(
-        binding
-        && binding.workspaceId === scope.principal.teamId
-        && binding.visibility === 'personal'
-        && binding.resourceState === 'active'
-        && binding.createdByWorkspaceMemberId === scope.principal.memberId
-      );
-    },
-    syncSharedResource: syncSharedTeamPlugin,
-    share: pluginsTeamShare,
-    listTeam: pluginsTeamList,
-  });
-  const skillsTeamShare = createTeamResourceShareService({
-    kind: 'skill',
-    idPrefix: 'skill',
-    resolveDir: async (id) => {
-      const skill = findSkillById(await listAllSkills(), id);
-      if (!skill || typeof skill.dir !== 'string') throw new Error('skill not found');
-      return skill.dir;
-    },
-    describeResource: async (id) => {
-      const skill = findSkillById(await listAllSkills(), id);
-      if (!skill) return null;
-      return {
-        localId: id,
-        title: skill.name || id,
-        ...(skill.description ? { description: skill.description } : {}),
-      };
-    },
-    run: runTeamResourceCommand,
-  });
-  const skillsTeamList = cachedTeamResourceList(
-    skillsTeamShare,
-    syncSharedTeamSkill,
-  );
-  registerTeamResourceShareRoutes(app, {
-    basePath: 'skills',
-    resolveScope: resolveTeamResourceScope,
-    authorizeShare: (id, scope) => {
-      const binding = getWorkspaceResourceByResourceId(db, 'skill', id);
-      return Boolean(
-        binding
-        && binding.workspaceId === scope.principal.teamId
-        && binding.visibility === 'personal'
-        && binding.resourceState === 'active'
-        && binding.createdByWorkspaceMemberId === scope.principal.memberId
-      );
-    },
-    syncSharedResource: syncSharedTeamSkill,
-    share: skillsTeamShare,
-    listTeam: skillsTeamList,
-  });
-  const teamResourceListByKind = {
-    design_system: designSystemsTeamList,
-    plugin: pluginsTeamList,
-    skill: skillsTeamList,
-  };
-
-  // Collab realtime for design-system/plugin/skill "team resource" sharing: react
-  // to a `team-resources-changed` signal (hub push, wired above, OR the
-  // dedicated poll fallback below) by reconciling this workspace's
-  // `workspace_resources` rows against each kind's live shared listing. See
-  // `collab/workspace-resources-reconciler.ts` for the full design —
-  // in particular why retraction marks `resourceState: 'deleted'` and leaves
-  // `visibility: 'team'` alone, instead of demoting to `visibility:
-  // 'personal'` the way `workspace-projects-reconciler.ts` does for
-  // `workspace_projects` (that would misattribute a teammate's pulled copy
-  // as caller-authored — the exact bug `SkillSummary.teamSynced` exists to
-  // prevent).
-  //
-  const RECONCILED_TEAM_RESOURCE_KINDS = ['design_system', 'plugin', 'skill'] as const;
-  type ReconciledTeamResourceKind = (typeof RECONCILED_TEAM_RESOURCE_KINDS)[number];
-  const adoptLegacyWorkspaceTeamPluginBindings = async (
-    scope: TeamResourceRequestScope,
-  ): Promise<void> => {
-    const workspaceId = scope.principal.teamId;
-    const workspaceRoot = teamResourceWorkspaceRoot(
-      PLUGIN_REGISTRY_ROOTS.userPluginsRoot,
-      workspaceId,
-    );
-    let entries: fs.Dirent[] = [];
-    try {
-      entries = await fs.promises.readdir(workspaceRoot, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    await Promise.all(
-      entries.filter((entry) => entry.isDirectory()).map(async (entry) => {
-        const marker = await readTeamResourceMaterialization(
-          PLUGIN_REGISTRY_ROOTS.userPluginsRoot,
-          workspaceId,
-          entry.name,
-          entry.name,
-        );
-        if (!marker || marker.kind !== 'plugin') return;
-        ensureWorkspaceResource(
-          db,
-          'plugin',
-          workspaceId,
-          workspaceTeamPluginBindingResourceId(workspaceId, marker.resourceId),
-          {
-            visibility: 'team',
-            resourceState: 'active',
-            createdByWorkspaceMemberId: scope.principal.memberId,
-            updatedByWorkspaceMemberId: scope.principal.memberId,
-            resourceHubResourceId: marker.hubResourceId,
-          },
-        );
-      }),
-    );
-  };
-  const adoptLegacyWorkspaceTeamDesignSystemBindings = async (
-    scope: TeamResourceRequestScope,
-  ): Promise<void> => {
-    const workspaceId = scope.principal.teamId;
-    const workspaceRoot = teamResourceWorkspaceRoot(
-      USER_DESIGN_SYSTEMS_DIR,
-      workspaceId,
-    );
-    let entries: fs.Dirent[] = [];
-    try {
-      entries = await fs.promises.readdir(workspaceRoot, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    await Promise.all(
-      entries.filter((entry) => entry.isDirectory()).map(async (entry) => {
-        const marker = await readTeamResourceMaterialization(
-          USER_DESIGN_SYSTEMS_DIR,
-          workspaceId,
-          `user:${entry.name}`,
-          entry.name,
-        );
-        if (!marker || marker.kind !== 'design_system') return;
-        ensureWorkspaceResource(
-          db,
-          'design_system',
-          workspaceId,
-          workspaceTeamDesignSystemBindingResourceId(workspaceId, marker.resourceId),
-          {
-            visibility: 'team',
-            resourceState: 'active',
-            createdByWorkspaceMemberId: scope.principal.memberId,
-            updatedByWorkspaceMemberId: scope.principal.memberId,
-            resourceHubResourceId: marker.hubResourceId,
-          },
-        );
-      }),
-    );
-  };
-  const adoptLegacyWorkspaceTeamSkillBindings = async (
-    scope: TeamResourceRequestScope,
-  ): Promise<void> => {
-    const workspaceId = scope.principal.teamId;
-    const workspaceRoot = teamResourceWorkspaceRoot(USER_SKILLS_DIR, workspaceId);
-    let entries: fs.Dirent[] = [];
-    try {
-      entries = await fs.promises.readdir(workspaceRoot, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    await Promise.all(
-      entries.filter((entry) => entry.isDirectory()).map(async (entry) => {
-        let marker = await readTeamResourceMaterialization(
-          USER_SKILLS_DIR,
-          workspaceId,
-          entry.name,
-          entry.name,
-        );
-        if (!marker) {
-          marker = await readTeamResourceMaterialization(
-            USER_SKILLS_DIR,
-            workspaceId,
-            `user:${entry.name}`,
-            entry.name,
-          );
-        }
-        if (!marker || marker.kind !== 'skill') return;
-        ensureWorkspaceResource(
-          db,
-          'skill',
-          workspaceId,
-          workspaceTeamSkillBindingResourceId(workspaceId, marker.resourceId),
-          {
-            visibility: 'team',
-            resourceState: 'active',
-            createdByWorkspaceMemberId: scope.principal.memberId,
-            updatedByWorkspaceMemberId: scope.principal.memberId,
-            resourceHubResourceId: marker.hubResourceId,
-          },
-        );
-      }),
-    );
-  };
-  const reconcileTeamResourceKind = async (
-    resourceType: ReconciledTeamResourceKind,
-    scope: TeamResourceRequestScope,
-    resources: readonly MaterializedTeamResourceRef[],
-  ) => {
-    if (resourceType === 'plugin') {
-      await adoptLegacyWorkspaceTeamPluginBindings(scope);
-    }
-    if (resourceType === 'design_system') {
-      await adoptLegacyWorkspaceTeamDesignSystemBindings(scope);
-    }
-    if (resourceType === 'skill') {
-      await adoptLegacyWorkspaceTeamSkillBindings(scope);
-    }
-    let reconciliationError: unknown;
-    const result = await reconcileWorkspaceResourcesWithRemote({
-      getWorkspaceIdentity: async () => ({ workspaceId: scope.principal.teamId }),
-      listRemoteTeamResources: async () => resources,
-      listLocalActiveTeamRows: (workspaceId): LocalTeamResourceBinding[] =>
-        listWorkspaceResources(db, resourceType, workspaceId)
-          .filter((row: any) => row.visibility === 'team' && row.resourceState !== 'deleted')
-          .flatMap((row: any) => {
-            const logicalResourceId = resourceType === 'plugin'
-              ? pluginIdFromWorkspaceTeamPluginBinding(workspaceId, row.resourceId)
-              : resourceType === 'design_system'
-                ? designSystemIdFromWorkspaceTeamBinding(workspaceId, row.resourceId)
-                  ?? (row.resourceId.startsWith('user:') ? row.resourceId : null)
-                : skillIdFromWorkspaceTeamBinding(workspaceId, row.resourceId)
-                  ?? (row.resourceId.startsWith('team-mirror:') ? null : row.resourceId);
-            if (!logicalResourceId) return [];
-            return [
-              {
-                resourceId: logicalResourceId,
-                workspaceId: row.workspaceId,
-                visibility: row.visibility,
-                resourceState: row.resourceState ?? null,
-              },
-            ];
-          }),
-      applyRetire: (workspaceId, resourceId) => {
-        const bindingResourceId = resourceType === 'plugin'
-          ? workspaceTeamPluginBindingResourceId(workspaceId, resourceId)
-          : resourceType === 'design_system'
-            ? workspaceTeamDesignSystemBindingResourceId(workspaceId, resourceId)
-            : workspaceTeamSkillBindingResourceId(workspaceId, resourceId);
-        updateWorkspaceResource(db, resourceType, workspaceId, bindingResourceId, {
-          resourceState: 'deleted',
-        });
-      },
-      onError: (error) => {
-        reconciliationError ??= error;
-        console.warn(`[od] workspace-resources (${resourceType}) reconciliation error:`, error);
-      },
-    });
-    if (reconciliationError) throw reconciliationError;
-    return result;
-  };
-  const teamResourceMaterializationIsReady = (
-    resourceType: ReconciledTeamResourceKind,
-    resource: TeamResourceShareRecord,
-    scope: TeamResourceRequestScope,
-  ): boolean => {
-    const workspaceId = scope.principal.teamId;
-    if (resourceType === 'design_system') {
-      const dirId = stripPrefixAndValidateId(resource.id, 'user:');
-      if (
-        dirId
-        && ownedDesignSystemSourceIsReady({
-          ownerMemberId: resource.ownerMemberId,
-          currentMemberId: scope.principal.memberId,
-          workspaceId,
-          localSourceExists: fs.existsSync(path.join(USER_DESIGN_SYSTEMS_DIR, dirId)),
-          binding: getWorkspaceResourceByResourceId(db, 'design_system', resource.id),
-        })
-      ) return true;
-    } else if (resource.ownerMemberId === scope.principal.memberId) {
-      return true;
-    }
-    const bindingResourceId = resourceType === 'plugin'
-      ? workspaceTeamPluginBindingResourceId(workspaceId, resource.id)
-      : resourceType === 'design_system'
-        ? workspaceTeamDesignSystemBindingResourceId(workspaceId, resource.id)
-        : workspaceTeamSkillBindingResourceId(workspaceId, resource.id);
-    const binding = getWorkspaceResourceByResourceId(
-      db,
-      resourceType,
-      bindingResourceId,
-    );
-    if (
-      binding?.workspaceId !== workspaceId
-      || binding.visibility !== 'team'
-      || binding.resourceState !== 'active'
-    ) return false;
-    return !resource.versionId
-      || teamResourceVersions.get(workspaceId, resourceType, resource.id) === resource.versionId;
-  };
-  const teamResourceEventCoordinator = createWorkspaceTeamResourceEventCoordinator({
-    materializeAndList: async ({ resourceKind, scope }) => {
-      const listing = await teamResourceListByKind[resourceKind].authoritative(scope);
-      const incomplete = listing.resources.find(
-        (resource) => !teamResourceMaterializationIsReady(resourceKind, resource, scope),
-      );
-      if (incomplete) {
-        throw new Error(
-          `team resource ${resourceKind}/${incomplete.id} was not materialized`,
-        );
-      }
-      return listing.resources.map((resource) => ({
-        resourceId: resource.id,
-        ...(resource.versionId ? { versionId: resource.versionId } : {}),
-      }));
-    },
-    reconcile: ({ resourceKind, scope, resources }) =>
-      reconcileTeamResourceKind(resourceKind, scope, resources),
-    emit: emitWorkspaceEvent,
-    onError: (error, resourceKind) =>
-      console.warn(`[od] workspace-resources (${resourceKind}) refresh error:`, error),
-  });
-  // `resourceKind` scopes the pass to just the kind the event was about;
-  // omitted (hub reconnect catch-up, the poll fallback) reconciles every
-  // kind this daemon drives it for.
-  const reconcileTeamResourcesFromRemote = async (
-    resourceKind?: string,
-    workspaceId?: string,
-    reason: WorkspaceTeamResourceRefreshReason = 'poll',
-    resourceId?: string,
-    rememberedLease?: RememberedTeamResourceScopeLease,
-  ): Promise<void> => {
-    const requestedWorkspaceId = workspaceId?.trim();
-    if (!requestedWorkspaceId) return;
-    // Background events carry only a Workspace id, not an HTTP request. Resolve
-    // that exact membership from the directory at execution time rather than
-    // relying on whichever resource request happened to run first in this
-    // process (or on the daemon's mutable active context).
-    const scope = await resolveTeamResourceScopeForWorkspaceId(requestedWorkspaceId);
-    if (!scope) return;
-    // The authority read above may finish after an offscreen compatibility
-    // lease expired or was LRU-evicted. Do not let that late completion keep
-    // prewarming the scope. Subscribed and persisted workspace polls do not
-    // carry this token and therefore retain their existing correctness floor.
-    if (
-      rememberedLease &&
-      !rememberedTeamResourceScopes.isLeaseCurrent(rememberedLease)
-    ) return;
-    const kinds = resourceKind
-      ? RECONCILED_TEAM_RESOURCE_KINDS.filter((kind) => kind === resourceKind)
-      : RECONCILED_TEAM_RESOURCE_KINDS;
-    if (kinds.length === 0) return;
-    // A Team listing has two SWR layers: the per-kind parsed/materialized
-    // response and the raw shared command underneath it. Drop both before the
-    // authoritative reconciliation pass so the next UI read cannot keep
-    // serving a pre-retraction outer response after the binding is tombstoned.
-    invalidateTeamResourceListingCaches({
-      ...(resourceKind ? { resourceKind } : {}),
-      scope,
-      providers: teamResourceListByKind,
-      invalidateSharedCommand: (exactWorkspaceId) =>
-        sharedTeamResourcesCommand.invalidate(exactWorkspaceId),
-    });
-    await teamResourceEventCoordinator.refresh({
-      workspaceId: requestedWorkspaceId,
-      scope,
-      ...(resourceKind ? { resourceKind } : {}),
-      ...(resourceId ? { resourceId } : {}),
-      reason,
-      ...(rememberedLease
-        ? {
-            isRefreshCurrent: () =>
-              rememberedTeamResourceScopes.isLeaseCurrent(rememberedLease),
-          }
-        : {}),
-    });
-  };
-  const persistentTeamResourceBackgroundWorkspaceIds = (): string[] => {
-    const ids = new Set<string>();
-    for (const workspaceId of workspaceHubSubscriptions?.activeWorkspaceIds() ?? []) {
-      if (workspaceId.trim()) ids.add(workspaceId.trim());
-    }
-    for (const share of listTeamWorkspaceProjectShares(db)) {
-      const workspaceId = String(share.workspaceId ?? '').trim();
-      if (workspaceId) ids.add(workspaceId);
-    }
-    for (const workspaceId of listTeamWorkspaceResourceWorkspaceIds(db)) {
-      if (workspaceId.trim()) ids.add(workspaceId.trim());
-    }
-    return [...ids];
-  };
-  const teamResourceBackgroundWorkspaceIds = (
-    rememberedLeases = rememberedTeamResourceScopes.activeWorkspaceLeases(),
-    persistentWorkspaceIds = persistentTeamResourceBackgroundWorkspaceIds(),
-  ): string[] => {
-    const ids = new Set(persistentWorkspaceIds);
-    for (const lease of rememberedLeases) ids.add(lease.workspaceId);
-    return [...ids];
-  };
-  // Dedicated ~15s poll fallback — the "poll-as-floor" half of the same
-  // architecture principle `workspaceInvalidationPoller` follows for
-  // project/member/context signals (push accelerates delivery; the poll
-  // remains a floor for subscribed, persisted, or briefly prewarmed scopes).
-  // Kept as its own timer rather than folded into that
-  // poller's deps: `workspaceInvalidationPoller` decides whether to emit by
-  // diffing a cheap SIGNATURE against the previous one (see its
-  // `emitIfChanged`), and there is no equivalent cheap "did the team-shared
-  // resource set change" digest in Vela's `/api/v1/collab/sync-digest`, so
-  // this re-reads on its own cadence. The coordinator derives a stable
-  // id+version signature after materialization and suppresses unchanged emits.
-  const teamResourcesPollTimer = setInterval(() => {
-    const rememberedLeases = rememberedTeamResourceScopes.activeWorkspaceLeases();
-    const rememberedLeasesByWorkspace = new Map(
-      rememberedLeases.map((lease) => [lease.workspaceId, lease]),
-    );
-    const persistentWorkspaceIds = persistentTeamResourceBackgroundWorkspaceIds();
-    const persistentWorkspaceIdSet = new Set(persistentWorkspaceIds);
-    for (const workspaceId of teamResourceBackgroundWorkspaceIds(
-      rememberedLeases,
-      persistentWorkspaceIds,
-    )) {
-      const rememberedLease = persistentWorkspaceIdSet.has(workspaceId)
-        ? undefined
-        : rememberedLeasesByWorkspace.get(workspaceId);
-      void reconcileTeamResourcesFromRemote(
-        undefined,
-        workspaceId,
-        'poll',
-        undefined,
-        rememberedLease,
-      ).catch((error) =>
-        console.warn(
-          `[od] workspace ${workspaceId} resources poll error:`,
-          error,
-        ),
-       );
-    }
-  }, 15_000);
-  teamResourcesPollTimer.unref?.();
-
   registerMemoryRoutes(app, {
     http: { createSseResponse, requireLocalDaemonRequest },
     paths: { RUNTIME_DATA_DIR, PROJECT_ROOT, PROJECTS_DIR },
@@ -8298,11 +3307,10 @@ export async function startServer({
     // an error when the config cannot be read, never `off` / `default`.
     readOdNextPreference: () => readAppConfig(RUNTIME_DATA_DIR),
   });
-  workspaceAnalyticsService = analyticsService;
   console.info(
     '[telemetry] effective run sink',
     describeRunTelemetrySink(
-      readRunTelemetrySinkConfig(process.env, configuredAmrEnv()),
+      readRunTelemetrySinkConfig(process.env),
     ),
   );
   try {
@@ -8361,18 +3369,6 @@ export async function startServer({
         }
         if (record.event === 'end') {
           automaticDiagnostics?.finishRun(run.id);
-          if (run.projectId) queueMicrotask(() => {
-            commentFilePublications.settled(run.projectId);
-            const binding = getWorkspaceProjectByProjectId(db, run.projectId);
-            if (!ownerProjectHasActiveRun(run.projectId) && binding?.visibility === 'team'
-              && binding.createdByWorkspaceMemberId && binding.resourceState === 'active'
-              && (getProject(db, run.projectId)?.metadata?._commentFiles || run.artifactPaths?.some(name => /\.html?$/i.test(name)))) {
-              const principal = { teamId: binding.workspaceId, memberId: binding.createdByWorkspaceMemberId,
-                role: 'member', lifecycleState: 'active', workspaceType: 'team' };
-              collab.scheduler.notifyChanged(run.projectId, 'run-settled', principal);
-              collab.scheduler.runBoundary(run.projectId, principal);
-            }
-          });
         }
         if (record.event === 'run_retry_finished' && record.data?.retry_result === 'success') {
           automaticDiagnostics?.recovered(run.id, record.timestamp);
@@ -8390,7 +3386,6 @@ export async function startServer({
           : null;
         if (promptBudget) run.promptBudgetDiagnostics = promptBudget;
       },
-      onTerminal: createAmrTerminalReportFinalizer(amrTerminalReportOutbox),
       beforeFinish: (run, status, _code, _signal, terminalAt) => {
         if (run.deliverableSyntaxValidation?.metrics) {
           run.deliverableSyntaxValidation = {
@@ -8519,17 +3514,6 @@ export async function startServer({
   // client, an OD Next automatic continuation, a scheduled Automation, or a
   // live-artifact refresh. Starting a Run any other way drops its analytics
   // silently, which is what OPEND-2365 was.
-  ownerProjectHasActiveRun = (projectId) => design.runs.list({ projectId, status: 'active' }).length > 0;
-  // Recover delayed root work without a UI subscriber. Existing persisted
-  // content checkpoints decide whether bytes changed; receipts/creator CAS,
-  // never snapshot equality, authorize the retirement before the next upload.
-  for (const share of listTeamWorkspaceProjectShares(db)) {
-    const restored = recoverPersistedTeamShareOwnership(share);
-    if (!restored || !getProject(db, restored.projectId)?.metadata?._commentFiles) continue;
-    void ownedContentSync?.shouldPublish(restored.projectId, restored.principal).then(changed => {
-      if (changed) collab.scheduler.notifyChanged(restored.projectId, 'comment-files-reopen', restored.principal);
-    }).catch(() => console.warn('[comments] startup content check deferred'));
-  }
   const runAnalyticsLifecycle = createRunAnalyticsLifecycle({
     db,
     design,
@@ -8547,7 +3531,6 @@ export async function startServer({
     claimAssistantMessage: (run, options) =>
       pinAssistantMessageOnRunCreate(db, run, options),
     analyticsLifecycle: runAnalyticsLifecycle,
-    coordinateStart: (run, starter) => commentFilePublications.start(run.projectId, starter),
   });
   // Runs are process-local, but their terminal obligations are durable. On a
   // fresh daemon boot, repair stale message rows and replay any PostHog or
@@ -8559,7 +3542,6 @@ export async function startServer({
     appVersionInfo: currentAppVersionInfo(),
     db,
     reportLangfuse: reportRunCompletedFromDaemon,
-    finalizeTerminalLocally: createAmrTerminalReportFinalizer(amrTerminalReportOutbox),
     taskObservationModeForRun: (runId) => taskObservationRollout.modeForRun(runId),
     taskObservationRepresentationForRun: (runId) =>
       taskObservationRollout.representationForRun(runId),
@@ -8653,25 +3635,10 @@ export async function startServer({
 
   app.get('/api/health', async (_req, res) => {
     const versionInfo = await readCurrentAppVersionInfo();
-    const {
-      pending,
-      delivered,
-      unsupported,
-      terminalFailed,
-      oldestPendingAgeMs,
-    } = amrTerminalReportOutbox.diagnostics();
     res.setHeader('Cache-Control', 'no-store');
     res.json({
       ok: true,
       version: versionInfo.version,
-      amrTerminalReporter: {
-        status: 'active',
-        pending,
-        delivered,
-        unsupported,
-        terminalFailed,
-        oldestPendingAgeMs,
-      },
     });
   });
 
@@ -8754,11 +3721,9 @@ export async function startServer({
 
   registerPluginEventRoutes(app, {
     http: { requireLocalDaemonRequest, sendApiError },
-    verifyWorkspaceRequestAuthority,
     plugins: {
-      listVisiblePluginIds: async (workspaceId, workspaceMemberId) => new Set(
-        (await listWorkspacePlugins(db, workspaceId, workspaceMemberId))
-          .map((plugin) => plugin.id),
+      listVisiblePluginIds: async () => new Set(
+        listInstalledPlugins(db).map((plugin) => plugin.id),
       ),
     },
   });
@@ -8770,13 +3735,6 @@ export async function startServer({
     requireLocalDaemonRequest,
     composio: composioConnectorProvider,
   });
-
-  // Detailed terminal-report activity is local diagnostics, not public health.
-  app.get(
-    '/api/diagnostics/amr-terminal-reports',
-    requireLocalDaemonRequest,
-    (_req, res) => res.json(amrTerminalReportOutbox.diagnostics()),
-  );
 
   // Gate the diagnostics export behind requireLocalDaemonRequest so it stays
   // unreachable when daemon binds to a non-loopback address (Tailscale,
@@ -8833,55 +3791,8 @@ export async function startServer({
     stageProjectDirsForDelete,
     validateLinkedDirs,
   };
-  const authorizeProjectRequest = createAuthorizeProjectRequest({
-    db,
-    getWorkspaceProject,
-    getWorkspaceProjectByProjectId,
-    isProjectRevoked: (_db, projectId) =>
-      revokedTeamProjectMirrors.has(projectId),
-    isProjectUnmaterializedPlaceholder: (_db, projectId) =>
-      projectIsUnmaterializedSharedPlaceholder(projectId),
-    isProjectReceivingContent: (projectId) => ownedContentSync?.isApplying(projectId) ?? false,
-    sendApiError,
-  });
-  // Legacy registrars still receive the historical bound mutation-gate shape,
-  // but production delegates it to the same central authorizer as newer route
-  // modules. This keeps placeholder stamps authoritative across Figma import,
-  // library/import helpers, runs/chat, and every project/file mutation route.
-  const enforceAuthoritativeProjectMutation = createEnforceWorkspaceProjectMutation(
-    verifyWorkspaceRequestAuthority,
-    undefined,
-    authorizeProjectRequest,
-  );
-  const authorizeProjectToolRequest = async (
-    res,
-    projectId,
-    options,
-  ) => {
-    const binding = getWorkspaceProjectByProjectId(db, projectId);
-    const localRequest = {
-      query: {},
-      get(name) {
-        const normalized = name.toLowerCase();
-        if (normalized === 'x-od-workspace-id') return binding?.workspaceId ?? undefined;
-        if (normalized === 'x-od-workspace-member-id') {
-          return binding?.workspaceId
-            ? binding.createdByWorkspaceMemberId ?? 'local-user'
-            : undefined;
-        }
-        return undefined;
-      },
-    };
-    if (!await authorizeProjectRequest(localRequest, res, projectId, options)) return null;
-    if (!binding?.workspaceId) return { workspace: null };
-    return {
-      workspace: {
-        workspaceId: binding.workspaceId,
-        workspaceMemberId:
-          binding.createdByWorkspaceMemberId ?? 'local-user',
-      },
-    };
-  };
+  const authorizeProjectRequest = authorizeLocalProjectRequest;
+  const authorizeProjectToolRequest = authorizeLocalProjectToolRequest;
   const projectFileDeps = {
     ensureProject,
     listFiles,
@@ -8999,10 +3910,6 @@ export async function startServer({
     readAppConfig,
     writeAppConfig,
     onAppConfigWritten: () => {
-      // AMR credentials may be overridden through Settings. Observe every
-      // completed write so even an A -> B -> A transition with no intervening
-      // directory/status read fences exact authority from the old A session.
-      refreshWorkspaceHubAccountIdentity();
       void attributionService.processPending().catch((err: unknown) => {
         console.warn('[attribution] pending claim failed', err);
       });
@@ -9103,8 +4010,6 @@ export async function startServer({
     projectFiles: projectFileDeps,
     conversations: conversationDeps,
     auth: authDeps,
-    fetchProjectCreationWorkspaceDirectory,
-    enforceWorkspaceProjectMutation: enforceAuthoritativeProjectMutation,
   });
   app.post('/api/projects/:id/figma/import', (req, res) => {
     figmaUpload.single('file')(req, res, async (err) => {
@@ -9112,16 +4017,7 @@ export async function startServer({
       try {
         const project = getProject(db, req.params.id);
         if (!project) return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
-        if (!await enforceAuthoritativeProjectMutation(
-          req,
-          res,
-          sendApiError,
-          getWorkspaceProject,
-          getWorkspaceProjectByProjectId,
-          db,
-          project.id,
-          'writeFiles',
-        )) return;
+        if (!await authorizeProjectRequest(req, res, project.id, { mode: 'write', capability: 'writeFiles' })) return;
 
         const body = req.body && typeof req.body === 'object' ? req.body : {};
         const figmaUrl = typeof body.figmaUrl === 'string' ? body.figmaUrl.trim() : '';
@@ -9158,29 +4054,8 @@ export async function startServer({
   });
   registerSocialShareRoutes(app, { http: httpDeps });
   const projectCreatePreparationTimeoutMs = projectCreatePreparationTimeoutMsFromEnv();
-  const stopProjectPublicFiles = createProjectPublicFileStop(
-    publicFilePublicationStore,
-    createVelaPublicFileStop({ configuredEnv: configuredAmrEnv, dataRoot: RUNTIME_DATA_DIR }),
-  );
-  const stopPublicFilesBeforeDelete = createCommentFileDeletion({
-    db, localFiles: localCommentFiles,
-    hasActiveRun: ownerProjectHasActiveRun, runForWorkspace: commentFileRun,
-    stopPublicFiles: stopProjectPublicFiles,
-    isPresent: async (projectId, filePath) => {
-      try {
-        const target = await resolveProjectFilePath(PROJECTS_DIR, projectId, filePath, getProject(db, projectId)?.metadata);
-        await fs.promises.lstat(target.filePath);
-        return true;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return false;
-        throw error;
-      }
-    },
-  });
   registerProjectRoutes(app, {
     db,
-    publicFileMutations,
-    stopPublicFilesBeforeDelete,
     design,
     // Test seam for the POST /api/projects preparation deadline; production
     // keeps the route's 15s default when the variable is unset or invalid.
@@ -9194,28 +4069,10 @@ export async function startServer({
     conversations: conversationDeps,
     templates: templateDeps,
     status: projectStatusDeps,
-    // Same provider `collab` was built with (collab.workspaceContext ===
-    // workspaceContext) — see the mutation-gate cross-check note above.
-    verifyWorkspaceReadAuthority,
-    verifyWorkspaceRequestAuthority,
-    verifyPersonalProjectDeleteLeaseAuthority,
     authorizeProjectRequest,
-    isProjectRevoked: (projectId) =>
-      revokedTeamProjectMirrors.has(projectId),
-    isProjectUnmaterializedPlaceholder: (projectId) =>
-      projectIsUnmaterializedSharedPlaceholder(projectId),
-    fetchWorkspaceDirectory,
-    configuredEnv: configuredAmrEnv,
-    fetchProjectCreationWorkspaceDirectory,
-    createWorkspaceOwnedDesignSystem: createWorkspaceOwnedDesignSystemForContext,
     pluginScope: {
       loadRegistry: loadPluginRegistryView,
-      getPlugin: (id, options) => getWorkspacePluginForRequest(
-        db,
-        id,
-        options.workspaceId,
-        options.workspaceMemberId,
-      ),
+      getPlugin: (id) => getInstalledPlugin(db, id),
       getLocalPluginBySource: (id, source) => getLocalPluginBySource(
         db,
         id,
@@ -9237,205 +4094,10 @@ export async function startServer({
           insertId: newInsertId(),
         });
       },
-      identifyWorkspaceGroup: async (req, workspaceId, properties) => {
-        const analyticsContext = readAnalyticsContext(req);
-        if (!analyticsContext) return;
-        await analyticsService.identifyGroup({
-          context: analyticsContext,
-          groupType: 'workspace',
-          groupKey: workspaceId,
-          properties,
-        });
-      },
     },
     appConfig: appConfigDeps,
     agents: agentDeps,
     validation: validationDeps,
-    // C-lane sync seam for D's project-visibility routes: a personal→team move
-    // calls requestTeamShare on success to publish the project for the team.
-    collabSync: {
-      requestTeamShare: async (projectId, ownerMemberId) => {
-        const result = await collab.requestTeamShare(projectId, ownerMemberId);
-        // The GET cache also contains the fallback "project is shared"
-        // verdict when this Workspace has no authoritative presence stream.
-        // A successful visibility mutation changes that verdict immediately.
-        invalidatePresenceReadCache(projectId);
-        return result;
-      },
-      requestTeamUnshare: async (projectId, ownerMemberId) => {
-        const result = await collab.requestTeamUnshare(projectId, ownerMemberId);
-        invalidatePresenceReadCache(projectId);
-        return result;
-      },
-      requestTeamDelete: async (projectId, principal) => {
-        await collab.requestTeamDelete(projectId, principal);
-        invalidatePresenceReadCache(projectId);
-      },
-      materializeTeamProject: async (projectId, principal) => {
-        const outcome = await collabSyncRoutes.pullSharedProject(projectId, {
-          workspaceId: principal.teamId,
-          resourceTeamId: principal.teamId,
-          viewerMemberId: principal.memberId,
-          ownerMemberId: principal.memberId,
-        });
-        if (outcome.status !== 'pulled') {
-          throw new Error(`team project materialization ${outcome.status}`);
-        }
-      },
-      refreshTeamProjectMetadata: (projectId) => collab.refreshTeamProjectMetadata(projectId),
-      invalidateTeamProjectCatalog: () => {
-        teamProjectsDisplayCache.invalidate();
-        workspaceTeamProjectCatalog?.invalidate();
-      },
-    },
-    ...(workspaceTeamProjectCatalog ? { teamProjectCatalog: {
-      ...workspaceTeamProjectCatalog,
-      // List reconciliation is a policy consumer too: a cached Team row must
-      // not resurrect a project whose creator explicitly made it private.
-      list: async (principal: ResourceHubPrincipal) => withoutLocallyUnsharedProjects(
-        await workspaceTeamProjectCatalog.list(principal),
-        { workspaceId: principal.teamId, workspaceMemberId: principal.memberId },
-      ),
-    } } : {}),
-    // Second witness for the team-share invariant: refuse a team share aimed at
-    // a workspace the directory says is personal, even if the caller's headers
-    // claim otherwise. See collab/team-share-scope.ts.
-    workspaceTypes,
-    // Collab-cloud comment seams (no-op off-team / when unconfigured): stamp the
-    // server-authoritative author, gate status/delete on the caller vs the
-    // comment author / project owner, and push the comment lifecycle (create/edit,
-    // status change, tombstone) to the cross-daemon relay.
-    prepareCommentFile: async (projectId, filePath, context) => {
-      if (!/\.html?$/i.test(filePath)) return undefined;
-      assertCommentFileNotPending(db, projectId, { filePath });
-      const state = parseCommentFileState(getProject(db, projectId)?.metadata?._commentFiles);
-      const current = state?.files.find(fact => !fact.retired && fact.sourceFilePath === filePath);
-      if (current) return current.sourceFileId;
-      if (!context || !velaCliTeamProjectCatalog) return localCommentFiles.identity(projectId, filePath);
-      const binding = getWorkspaceProjectByProjectId(db, projectId);
-      if (binding?.workspaceId !== context.workspaceId || binding.createdByWorkspaceMemberId !== context.workspaceMemberId) {
-        throw new Error('COMMENT_FILE_AUTHORITY_UNAVAILABLE');
-      }
-      // New private annotations are local-first. Their UUID is durable now;
-      // only explicit publication admits a receipt, never this save path.
-      return localCommentFiles.identity(projectId, filePath);
-    },
-    resolveWorkspaceContext: resolveProjectCommentWorkspaceContext,
-    resolveCurrentAuthorDisplayName: () => {
-      const user = readVelaControlApiContext(process.env, configuredAmrEnv())?.user;
-      return user?.name?.trim() || user?.email?.trim() || null;
-    },
-    resolveReadWorkspaceContext: resolveProjectCommentReadWorkspaceContext,
-    resolveFreshWorkspaceContext: resolveFreshProjectCommentWorkspaceContext,
-    resolveProjectOwnerMemberId: async (projectId, context) => {
-      if (!context || context.workspaceType !== 'team') return null;
-      return resolveSharedProjectOwner(projectId, {
-        workspaceId: context.workspaceId,
-        workspaceMemberId: context.workspaceMemberId,
-      });
-    },
-    isCommentRelayEligible: (projectId, filePath, context) => Boolean(commentRelayScope({
-      binding: getWorkspaceProjectByProjectId(db, projectId),
-      context,
-      projectId,
-      filePath,
-      publications: publicFilePublicationStore,
-    })),
-    isSharedProject: async (projectId, context) => {
-      if (!context || context.workspaceType !== 'team') return false;
-      return Boolean(
-        await resolveSharedProjectOwner(projectId, {
-          workspaceId: context.workspaceId,
-          workspaceMemberId: context.workspaceMemberId,
-        }),
-      );
-    },
-    onPublishedCommentMutation: createPersonalPublishedCommentMutationHandler(db),
-    ...(collabCloud
-      ? {
-          // Explicit UI/CLI request runs even when no project SSE subscriber
-          // has ever existed; never rely on the hub's in-memory dirty mark.
-          pullCommentsNow: (projectId, context) => collabCloud.pullProject(projectId, context),
-          onCommentsRead: async (
-            projectId,
-            leasedContext,
-            resolveFreshWorkspaceContext,
-          ) => {
-            // Consume the hub push channel's dirty mark: first read after
-            // opening a project pulls THAT project's missed comments — a
-            // targeted pull, because the poll loop only covers projects with
-            // a live events subscriber and this read can arrive before (or
-            // without) one.
-            if (dirtyCommentProjects.delete(projectId)) {
-              // The list response may use a short successful authority lease,
-              // but the cloud pull mutates local state and therefore must
-              // independently prove the same exact member and Workspace with
-              // fresh authority. Any denial, outage, identity drift, no-op, or
-              // failure restores the dirty mark for a later authorized read.
-              if (!leasedContext) {
-                dirtyCommentProjects.add(projectId);
-                return;
-              }
-              try {
-                const freshResolution = await resolveFreshWorkspaceContext();
-                if (!freshResolution.ok || !freshResolution.context) {
-                  dirtyCommentProjects.add(projectId);
-                  return;
-                }
-                const freshContext = freshResolution.context;
-                if (
-                  freshContext.workspaceId !== leasedContext.workspaceId
-                  || freshContext.workspaceMemberId
-                    !== leasedContext.workspaceMemberId
-                ) {
-                  dirtyCommentProjects.add(projectId);
-                  return;
-                }
-                if (!await collabCloud.pullProject(projectId, freshContext)) {
-                  dirtyCommentProjects.add(projectId);
-                }
-              } catch {
-                dirtyCommentProjects.add(projectId);
-              }
-            }
-          },
-          // The durable outbox also reconciles pin_seq (recvq5BVsolIxi): a genuinely
-          // new comment on a team-shared project is inserted with a
-          // provisional LOCAL pin_seq (pin_seq_confirmed=0 — see
-          // upsertPreviewComment); once this push resolves with the
-          // collab-cloud's globally-serialized seq, confirmPreviewCommentPinSeq
-          // overwrites it with that authoritative value, which is what keeps
-          // two devices creating a comment in the same ~5s poll window from
-          // ever landing on the same number. The guard inside
-          // confirmPreviewCommentPinSeq is idempotent, so a coalesced edit can
-          // safely supply the first successful relay seq when the create's
-          // original delivery failed.
-          onCommentCreated: (comment, context) => {
-            if (!context) return;
-            const enqueued = collabCloud.enqueueComment(comment, context);
-            if (!enqueued) {
-              console.warn('[od] refused to enqueue comment without exact Team authority');
-            }
-            return enqueued;
-          },
-          onCommentUpdated: (comment, context) => {
-            if (!context) return;
-            const enqueued = collabCloud.enqueueComment(comment, context);
-            if (!enqueued) {
-              console.warn('[od] refused to enqueue comment update without exact Team authority');
-            }
-            return enqueued;
-          },
-          onCommentDeleted: (comment, context) => {
-            if (!context) return;
-            const enqueued = collabCloud.enqueueCommentDeletion(comment, context);
-            if (!enqueued) {
-              console.warn('[od] refused to enqueue comment deletion without exact Team authority');
-            }
-            return enqueued;
-          },
-        }
-      : {}),
   });
   registerTerminalRoutes(app, {
     db,
@@ -9455,8 +4117,6 @@ export async function startServer({
   });
   registerImportRoutes(app, {
     db,
-    publicFileMutations,
-    stopPublicFilesBeforeDelete,
     http: httpDeps,
     uploads: uploadDeps,
     node: nodeDeps,
@@ -9468,8 +4128,6 @@ export async function startServer({
     conversations: conversationDeps,
     projectFiles: projectFileDeps,
     validation: validationDeps,
-    fetchProjectCreationWorkspaceDirectory,
-    enforceWorkspaceProjectMutation: enforceAuthoritativeProjectMutation,
   });
 
   // Whether the caller may mutate (edit / publish-toggle / delete) a design
@@ -9487,32 +4145,20 @@ export async function startServer({
   // backend actually enforces, instead of re-deriving (or forgetting to
   // derive) an equivalent check per surface.
   const canMutateUserDesignSystem = async (
-    root: string,
+    _root: string,
     id: string,
-    req: any,
-  ): Promise<boolean> => {
-    const synced = await isTeamSyncedUserDesignSystem(root, id);
-    if (!synced) return true;
-    const resolution = await resolveTeamResourceScope(req);
-    if (!resolution.ok) return false;
-    const resources = await designSystemsTeamShare.sharedResources(resolution.scope);
-    return resources.find((resource) => resource.id === id)?.canUnshare === true;
-  };
+  ): Promise<boolean> => typeof id === 'string' && id.startsWith('user:');
 
   // Resource catalog
   registerStaticResourceRoutes(app, {
     db,
     http: httpDeps,
     paths: pathDeps,
-    verifyWorkspaceReadAuthority,
-    verifyWorkspaceRequestAuthority,
-    teamResources: collab.teamResources,
     resources: {
       listAllSkills,
       listAllDesignTemplates,
       listAllSkillLikeEntries,
       listAllDesignSystems,
-      resolveWorkspaceScope: resolveDesignSystemWorkspaceScope,
       canMutateUserDesignSystem,
       mimeFor,
     },
@@ -9537,64 +4183,13 @@ export async function startServer({
     paths: pathDeps,
     projectStore: projectStoreDeps,
     projectFiles: projectFileDeps,
-    verifyWorkspaceRequestAuthority,
-    workspaceResources: { getWorkspaceResource, getWorkspaceResourceByResourceId },
     designSystems: {
       buildUserDesignSystemArchive,
       // Hoisted above (before `registerStaticResourceRoutes`) so the
       // design-system LIST route can reuse the exact same verdict.
       canMutateUserDesignSystem,
-      createUserDesignSystem: createWorkspaceOwnedDesignSystem,
+      createUserDesignSystem,
       deleteUserDesignSystem,
-      // spec 04 §11: unshare `id` from the team hub before DELETE proceeds
-      // locally, but ONLY when it is on the LIVE team share list — never
-      // `isTeamSyncedUserDesignSystem` alone. That flag is
-      // true only for a teammate's PULLED copy; the sharer deleting their own
-      // original always reads `teamSynced: false`, so a check gated on it
-      // would keep letting the sharer's own delete sail past unnoticed, which
-      // is exactly how the hub index used to survive this route untouched
-      // and `syncSharedTeamDesignSystem` kept re-stamping `markTeamSynced()`
-      // onto every teammate forever.
-      unshareTeamDesignSystemIfShared: async (id, req) => {
-        const requestContext = workspaceResourceContextFromRequest(req);
-        const hasWorkspaceContextHeaders = Object.keys(req.headers ?? {}).some(
-          (name) => name.startsWith('x-od-workspace-') || name === 'x-od-app-user-id',
-        );
-        if (requestContext === null && !hasWorkspaceContextHeaders) return false;
-        const verified = await verifyExplicitWorkspaceRequestContext({
-          req,
-          requireTeam: false,
-        });
-        if (!verified.ok) {
-          throw Object.assign(new Error(verified.message), {
-            status: verified.status,
-            code: verified.code,
-            ...(verified.retryable ? { retryable: true } : {}),
-          });
-        }
-        // Personal resources have no Team hub partition to retract. Their
-        // authoritative Personal scope is still verified above, then local
-        // deletion proceeds without issuing a Team command.
-        if (verified.context.workspaceType !== 'team') return false;
-        const scope = teamResourceRequestScopeFromContext(verified.context);
-        if (!scope) {
-          throw Object.assign(new Error('the requested workspace is not available to this member'), {
-            status: 403,
-            code: 'WORKSPACE_ACCESS_DENIED',
-          });
-        }
-        const rememberedScope = rememberTeamResourceScope(scope);
-        const unshared = await unshareIfCurrentlyShared(
-          designSystemsTeamShare,
-          id,
-          rememberedScope,
-        );
-        if (unshared) {
-          designSystemsTeamList.invalidate(rememberedScope);
-          notifyDesignSystemLinkedMutation(id, rememberedScope, 'personal');
-        }
-        return unshared;
-      },
       ensureUserDesignSystemWorkspaceProject,
       listAllDesignSystems,
       listUserDesignSystemFiles,
@@ -9614,30 +4209,10 @@ export async function startServer({
     generationJobs: designSystemGenerationJobs,
   });
   registerBrandRoutes(app, {
-    resolveCreatedProjectHome,
     brandsRoot: BRANDS_DIR,
     userDesignSystemsRoot: USER_DESIGN_SYSTEMS_DIR,
-    resolveDesignSystemWorkspaceId: resolveDesignSystemWorkspaceScope,
-    authorizeDesignSystemRead: designSystemRouteServices.authorizeDesignSystemRead,
     deleteDesignSystemForRequest: designSystemRouteServices.deleteDesignSystemForRequest,
-    isDesignSystemWorkspaceBound: (designSystemId) =>
-      Boolean(getWorkspaceResourceByResourceId(db, 'design_system', designSystemId))
-      || listTeamWorkspaceResourceWorkspaceIds(db).some((workspaceId) =>
-        Boolean(getWorkspaceResource(
-          db,
-          'design_system',
-          workspaceId,
-          workspaceTeamDesignSystemBindingResourceId(workspaceId, designSystemId),
-        )),
-      ),
     authorizeProjectRequest,
-    createWorkspaceOwnedDesignSystem: createWorkspaceOwnedDesignSystemForContext,
-    deleteWorkspaceOwnedDesignSystem: (root, designSystemId) =>
-      removeWorkspaceOwnedDesignSystem(root, designSystemId, {
-        deleteUserDesignSystem,
-        deleteWorkspaceResourceByResourceId: (resourceType, resourceId) =>
-          deleteWorkspaceResourceByResourceId(db, resourceType, resourceId),
-      }),
     projectsRoot: PROJECTS_DIR,
     skillsRoot: SKILLS_DIR,
     dataDir: RUNTIME_DATA_DIR,
@@ -9770,23 +4345,16 @@ export async function startServer({
     db,
     isProjectEditingBusy: (projectId) => design.runs.list().some((run) =>
       run.projectId === projectId && !design.runs.isTerminal(run.status)),
-    publicFileMutations,
-    stopPublicFilesBeforeDelete,
     http: httpDeps,
     paths: pathDeps,
     uploads: uploadDeps,
     node: nodeDeps,
     projectStore: projectStoreDeps,
     authorizeProjectRequest,
-    isProjectRevoked: (projectId) =>
-      revokedTeamProjectMirrors.has(projectId),
-    isProjectUnmaterializedPlaceholder: (projectId) =>
-      projectIsUnmaterializedSharedPlaceholder(projectId),
     projectFiles: projectFileDeps,
     documents: { buildDocumentPreview },
     artifacts: artifactDeps,
     projectPreviewScopes,
-    verifyWorkspaceRequestAuthority,
   });
   // Immutable chat-artifact snapshot reads. Same read authority as /raw; see
   // routes/project/chat-artifacts.ts for the gate chain.
@@ -9817,32 +4385,6 @@ export async function startServer({
     authorizeProjectToolRequest,
   });
 
-  const velaRoutesLifecycle = registerVelaRoutes(app, {
-    paths: { RUNTIME_DATA_DIR },
-    appConfig: { readAppConfig },
-    http: { getPublicBaseUrl },
-    env: process.env,
-    onCredentialStateObserved: refreshWorkspaceHubAccountIdentity,
-  });
-
-  const allowScopedPluginReplace = (
-    scope: { workspaceId: string; workspaceMemberId: string } | null,
-    pluginId: string,
-  ): boolean | string => {
-    if (!scope) return true;
-    const installed = getInstalledPlugin(db, pluginId);
-    if (installed?.sourceKind === 'bundled') {
-      return `Bundled plugin "${pluginId}" cannot be replaced`;
-    }
-    const binding = getWorkspaceResourceByResourceId(db, 'plugin', pluginId);
-    if (
-      binding?.workspaceId === scope.workspaceId
-      && binding.visibility === 'personal'
-      && binding.createdByWorkspaceMemberId === scope.workspaceMemberId
-    ) return true;
-    return `Plugin "${pluginId}" is owned by another workspace member`;
-  };
-
   const pluginRouteHelpers = {
     PLUGIN_PREVIEWS_DIR,
     applyBakedPreviews,
@@ -9860,7 +4402,7 @@ export async function startServer({
     isLocalSameOrigin,
     resolvedPortRef,
     pluginShareTaskStore,
-    installOrUpgradePlugin: async (req, res, mode, installWorkspaceContext) => {
+    installOrUpgradePlugin: async (req, res, mode) => {
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       const id = req.params.id;
       let source = '';
@@ -9901,11 +4443,6 @@ export async function startServer({
       res.flushHeaders?.();
       const writeEvent = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
       if (mode === 'upgrade') writeEvent('progress', { kind: 'progress', phase: 'resolving', message: `Upgrading ${id} from ${source} (policy=${body.policy === 'pinned' ? 'pinned' : 'latest'})` });
-      // A fresh scoped install is stamped Personal to the exact verified
-      // Workspace/member. Replacement is checked before any existing bytes
-      // are removed, so another member cannot overwrite a same-id Personal
-      // plugin. Headerless local/CLI installs remain unbound and available on
-      // that compatibility lane, but explicit Workspaces quarantine them.
       try {
         const basePlugin = mode === 'upgrade' ? getInstalledPlugin(db, id) : null;
         for await (const ev of installPlugin(db, {
@@ -9922,17 +4459,11 @@ export async function startServer({
           archiveIntegrity: marketplaceResolution?.archiveIntegrity ?? basePlugin?.archiveIntegrity,
           lockfilePath: PLUGIN_LOCKFILE_PATH,
           allowReplacePlugin: (pluginId) =>
-            allowScopedPluginReplace(installWorkspaceContext, pluginId),
+            getInstalledPlugin(db, pluginId)?.sourceKind === 'bundled'
+              ? `Bundled plugin "${pluginId}" cannot be replaced`
+              : true,
         })) {
           writeEvent(ev.kind, ev);
-          if (ev.kind === 'success' && mode === 'install' && installWorkspaceContext && ev.plugin?.id) {
-            ensureWorkspaceResource(db, 'plugin', installWorkspaceContext.workspaceId, ev.plugin.id, {
-              visibility: 'personal',
-              resourceState: 'active',
-              createdByWorkspaceMemberId: installWorkspaceContext.workspaceMemberId,
-              updatedByWorkspaceMemberId: installWorkspaceContext.workspaceMemberId,
-            });
-          }
           if (ev.kind === 'success' || ev.kind === 'error') break;
         }
       } catch (err) {
@@ -9947,37 +4478,13 @@ export async function startServer({
         const body = req.body && typeof req.body === 'object' ? req.body : {};
         const action = normalizePluginShareAction(body.action);
         if (!action) return sendApiError(res, 400, 'BAD_REQUEST', 'action must be publish-github or contribute-open-design');
-        const createWorkspace = await authorizeCreatedProjectWorkspace(
-          req,
-          fetchProjectCreationWorkspaceDirectory,
-        );
-        if (!createWorkspace.ok) {
-          return sendCreatedProjectWorkspaceError(res, createWorkspace);
-        }
         const actionPluginId = PLUGIN_SHARE_ACTION_PLUGIN_IDS[action];
         const actionPlugin = getInstalledPlugin(db, actionPluginId);
         if (!actionPlugin) return res.status(409).json({ ok: false, code: 'share-action-plugin-missing', message: `The bundled action plugin "${actionPluginId}" is not installed. Restart the daemon so bundled plugins are registered.` });
         const now = Date.now(); const id = randomId(); const cid = randomId(); const sourceSlug = githubRepoNameFromPluginName(sourcePlugin.id); const stagedPath = `plugin-source/${sourceSlug}`; const prompt = renderPluginSharePrompt({ action, sourcePlugin, stagedPath }); const metadata = { kind: 'prototype' }; const projectRoot = await ensureProject(PROJECTS_DIR, id, metadata); await copyPluginFolderForProjectContext(sourcePlugin.fsPath, path.join(projectRoot, 'plugin-source', sourceSlug));
         insertProject(db, { id, name: `${PLUGIN_SHARE_ACTION_LABELS[action]}: ${sourcePlugin.title || sourcePlugin.id}`, skillId: null, designSystemId: null, pendingPrompt: prompt, metadata, createdAt: now, updatedAt: now });
         insertConversation(db, { id: cid, projectId: id, title: null, createdAt: now, updatedAt: now });
-        // The share task IS a chat project — it opens with a seeded prompt the
-        // user immediately runs. `createPluginShareProject` (apps/web) mints no
-        // workspace headers at all, so this was permanently unbound, not merely
-        // racy: the very first turn 403s on the workspace gate.
-        bindCreatedProjectToWorkspace(
-          (input) => ensureWorkspaceProject(db, input),
-          createWorkspace.context,
-          id,
-          now,
-        );
-        const registry = await loadPluginRegistryView(
-          createWorkspace.context
-            ? {
-                workspaceId: createWorkspace.context.workspaceId,
-                workspaceMemberId: createWorkspace.context.workspaceMemberId,
-              }
-            : {},
-        );
+        const registry = await loadPluginRegistryView();
         const connectorProbe = buildConnectorProbe(connectorService);
         const resolved = resolvePluginSnapshot({ db, body: { pluginId: actionPluginId, pluginInputs: { source_plugin_id: sourcePlugin.id, source_plugin_title: sourcePlugin.title || sourcePlugin.id, source_plugin_version: sourcePlugin.version, source_plugin_path: sourcePlugin.fsPath, plugin_context_path: stagedPath }, locale: typeof body.locale === 'string' ? body.locale : undefined }, projectId: id, conversationId: cid, registry, connectorProbe });
         if (resolved && !resolved.ok) return res.status(resolved.status).json(resolved.body);
@@ -10005,7 +4512,7 @@ export async function startServer({
       try { const body = req.body && typeof req.body === 'object' ? req.body : {}; const target = body.target === 'od' || body.target === 'claude-plugin' || body.target === 'agent-skill' ? body.target : null; if (!target) return res.status(400).json({ error: 'target must be one of: od, claude-plugin, agent-skill' }); const outDir = typeof body.outDir === 'string' && body.outDir.length > 0 ? body.outDir : null; if (!outDir) return res.status(400).json({ error: 'outDir is required' }); const { exportPlugin, ExportError } = await import('./plugins/export.js'); try { const result = await exportPlugin({ db, target, outDir, ...(typeof body.snapshotId === 'string' ? { snapshotId: body.snapshotId } : {}), ...(typeof body.projectId === 'string' ? { projectId: body.projectId } : {}) }); res.json({ ok: true, ...result }); } catch (err) { if (err instanceof ExportError) return res.status(404).json({ error: err.message }); throw err; } } catch (err) { res.status(500).json({ error: String(err) }); }
     },
     handleProjectInstallFolder: async (req, res) => {
-      try { const project = getProject(db, req.params.id); if (!project) return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found'); const projectBinding = getWorkspaceProjectByProjectId(db, req.params.id); if (!projectBinding?.workspaceId || !projectBinding.createdByWorkspaceMemberId) return sendApiError(res, 409, 'WORKSPACE_PROJECT_UNBOUND', 'project must have an exact workspace owner before installing a plugin'); const installScope = { workspaceId: String(projectBinding.workspaceId), workspaceMemberId: String(projectBinding.createdByWorkspaceMemberId) }; const body = req.body && typeof req.body === 'object' ? req.body : {}; const relativePath = normalizeProjectPluginFolderPath(body.path); const projectRoot = resolveProjectDir(PROJECTS_DIR, req.params.id, project.metadata); const folder = await resolveProjectChildDirectory(projectRoot, relativePath); const warnings = []; const log = []; let plugin = null; let message = 'Install finished.'; for await (const ev of installPlugin(db, { source: folder, roots: PLUGIN_REGISTRY_ROOTS, allowReplacePlugin: (pluginId) => allowScopedPluginReplace(installScope, pluginId) })) { if (ev.message) log.push(ev.message); if (Array.isArray(ev.warnings)) warnings.splice(0, warnings.length, ...ev.warnings); if (ev.kind === 'success') { plugin = ev.plugin; ensureWorkspaceResource(db, 'plugin', installScope.workspaceId, ev.plugin.id, { visibility: 'personal', resourceState: 'active', createdByWorkspaceMemberId: installScope.workspaceMemberId, updatedByWorkspaceMemberId: installScope.workspaceMemberId }); message = `Installed ${ev.plugin.title}.`; break; } if (ev.kind === 'error') { message = ev.message; break; } } res.status(plugin ? 200 : 400).json({ ok: Boolean(plugin), plugin, warnings, message, log }); } catch (err) { const code = err && err.code; const status = code === 'ENOENT' || code === 'ENOTDIR' ? 404 : 400; sendApiError(res, status, status === 404 ? 'PLUGIN_FOLDER_NOT_FOUND' : 'BAD_REQUEST', String(err?.message || err)); }
+      try { const project = getProject(db, req.params.id); if (!project) return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found'); const body = req.body && typeof req.body === 'object' ? req.body : {}; const relativePath = normalizeProjectPluginFolderPath(body.path); const projectRoot = resolveProjectDir(PROJECTS_DIR, req.params.id, project.metadata); const folder = await resolveProjectChildDirectory(projectRoot, relativePath); const warnings = []; const log = []; let plugin = null; let message = 'Install finished.'; for await (const ev of installPlugin(db, { source: folder, roots: PLUGIN_REGISTRY_ROOTS, allowReplacePlugin: (pluginId) => getInstalledPlugin(db, pluginId)?.sourceKind === 'bundled' ? `Bundled plugin "${pluginId}" cannot be replaced` : true })) { if (ev.message) log.push(ev.message); if (Array.isArray(ev.warnings)) warnings.splice(0, warnings.length, ...ev.warnings); if (ev.kind === 'success') { plugin = ev.plugin; message = `Installed ${ev.plugin.title}.`; break; } if (ev.kind === 'error') { message = ev.message; break; } } res.status(plugin ? 200 : 400).json({ ok: Boolean(plugin), plugin, warnings, message, log }); } catch (err) { const code = err && err.code; const status = code === 'ENOENT' || code === 'ENOTDIR' ? 404 : 400; sendApiError(res, status, status === 404 ? 'PLUGIN_FOLDER_NOT_FOUND' : 'BAD_REQUEST', String(err?.message || err)); }
     },
     handleProjectPluginCli: async (req, res, action) => {
       try { const project = getProject(db, req.params.id); if (!project) return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found'); const body = req.body && typeof req.body === 'object' ? req.body : {}; const relativePath = normalizeProjectPluginFolderPath(body.path); const projectRoot = resolveProjectDir(PROJECTS_DIR, req.params.id, project.metadata); const folder = await resolveProjectChildDirectory(projectRoot, relativePath); const subcommand = action === 'publish-github' ? 'publish-repo' : 'open-design-pr'; const timeout = action === 'publish-github' ? 240_000 : 300_000; const result = await execCommandViaLoginShell(OD_NODE_BIN, [OD_BIN, 'plugin', subcommand, folder, '--json'], { timeout }); const payload = result.stdout ? JSON.parse(result.stdout) : null; if (!result.ok || !payload?.ok) return res.status(500).json({ ok: false, code: payload?.error?.label || (action === 'publish-github' ? 'publish-repo-failed' : 'open-design-pr-failed'), message: payload?.error?.stderr || payload?.error?.stdout || (action === 'publish-github' ? 'GitHub repo publish failed.' : 'OpenDesign PR creation failed.'), log: payload?.steps?.map((step) => step.stderr || step.stdout || step.command).filter(Boolean) ?? [result.stderr || result.stdout || `${subcommand} failed`] }); res.json({ ok: true, message: action === 'publish-github' ? (payload.repoUrl ? `Published plugin to ${payload.repoUrl}.` : 'Published plugin to GitHub.') : (payload.prUrl ? `Opened OpenDesign PR flow at ${payload.prUrl}.` : 'Opened OpenDesign PR flow.'), ...(payload.repoUrl ? { url: payload.repoUrl } : {}), ...(payload.prUrl ? { url: payload.prUrl } : {}), log: payload.steps?.map((step) => step.stderr || step.stdout || step.command).filter(Boolean) ?? [] }); } catch (err) { res.status(400).json({ ok: false, message: String(err?.message || err), log: [] }); }
@@ -10020,7 +4527,7 @@ export async function startServer({
     },
     handleProjectShareTask: async (req, res) => {
       if (!isLocalSameOrigin(req, resolvedPort)) return res.status(403).json({ error: 'cross-origin request rejected' });
-      try { const project = getProject(db, req.params.id); if (!project) return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found'); const body = req.body && typeof req.body === 'object' ? req.body : {}; const action: PluginShareAction | null = body.action === 'publish-github' || body.action === 'contribute-open-design' ? body.action : null; if (!action) return sendApiError(res, 400, 'BAD_REQUEST', 'plugin share action is required'); const relativePath = normalizeProjectPluginFolderPath(body.path); const projectRoot = resolveProjectDir(PROJECTS_DIR, req.params.id, project.metadata); const folder = await resolveProjectChildDirectory(projectRoot, relativePath); const task = pluginShareTaskStore.createAndStart(req.params.id, { action, path: relativePath }, folder); res.status(202).json({ taskId: task.id, action, path: relativePath, status: task.status, startedAt: task.startedAt }); } catch (err) { const code = err && err.code; const status = code === 'ENOENT' || code === 'ENOTDIR' ? 404 : 400; sendApiError(res, status, status === 404 ? 'PLUGIN_FOLDER_NOT_FOUND' : 'BAD_REQUEST', String(err?.message || err)); }
+      try { const project = getProject(db, req.params.id); if (!project) return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found'); const body = req.body && typeof req.body === 'object' ? req.body : {}; const action = body.action === 'publish-github' || body.action === 'contribute-open-design' ? body.action : null; if (!action) return sendApiError(res, 400, 'BAD_REQUEST', 'plugin share action is required'); const relativePath = normalizeProjectPluginFolderPath(body.path); const projectRoot = resolveProjectDir(PROJECTS_DIR, req.params.id, project.metadata); const folder = await resolveProjectChildDirectory(projectRoot, relativePath); const task = pluginShareTaskStore.createAndStart(req.params.id, { action, path: relativePath }, folder); res.status(202).json({ taskId: task.id, action, path: relativePath, status: task.status, startedAt: task.startedAt }); } catch (err) { const code = err && err.code; const status = code === 'ENOENT' || code === 'ENOTDIR' ? 404 : 400; sendApiError(res, status, status === 404 ? 'PLUGIN_FOLDER_NOT_FOUND' : 'BAD_REQUEST', String(err?.message || err)); }
     },
   };
 
@@ -10028,20 +4535,10 @@ export async function startServer({
   // plugin context against the live registry. Skills + design systems are
   // walked from disk; craft is empty in v1; atoms come from the
   // first-party catalog. Project-scoped overrides arrive in Phase 4.
-  async function loadPluginRegistryView(options: {
-    workspaceId?: string | null;
-    workspaceMemberId?: string | null;
-  } = {}) {
+  async function loadPluginRegistryView() {
     const [skills, designSystems] = await Promise.all([
-      listAllSkills(options),
-      listAllDesignSystems(
-        options.workspaceId !== undefined
-          ? {
-              workspaceId: options.workspaceId,
-              workspaceMemberId: options.workspaceMemberId ?? null,
-            }
-          : {},
-      ),
+      listAllSkills(),
+      listAllDesignSystems(),
     ]);
     // Spec §23.3.3: surface the bundled scenario plugins so apply()
     // can fall back to the matching scenario's pipeline when the
@@ -10105,108 +4602,6 @@ export async function startServer({
     return Array.from(byTaskKind.values());
   }
 
-  const readWorkspaceTeamPlugin = async (
-    workspaceId: string,
-    pluginId: string,
-  ) => {
-    const marker = await readTeamResourceMaterialization(
-      PLUGIN_REGISTRY_ROOTS.userPluginsRoot,
-      workspaceId,
-      pluginId,
-      pluginId,
-    );
-    if (!marker) return null;
-    if (!workspaceTeamPluginBindingAllowsRead(db, workspaceId, pluginId)) {
-      return null;
-    }
-    // Upgrade compatibility: materializations created before Team plugins
-    // joined `workspace_resources` remain readable, but the first exact-scope
-    // read adopts them so hub SSE/reconnect/poll retractions can tombstone
-    // them from then on. Never takes over a Personal or other-Workspace row.
-    const teamBindingResourceId = workspaceTeamPluginBindingResourceId(
-      workspaceId,
-      pluginId,
-    );
-    const existingBinding = getWorkspaceResourceByResourceId(
-      db,
-      'plugin',
-      teamBindingResourceId,
-    );
-    if (!existingBinding) {
-      ensureWorkspaceResource(
-        db,
-        'plugin',
-        workspaceId,
-        teamBindingResourceId,
-        {
-          visibility: 'team',
-          resourceState: 'active',
-          resourceHubResourceId: marker.hubResourceId,
-        },
-      );
-    }
-    return resolveWorkspaceTeamPluginWithBindingGate({
-      bindingAllowsRead: () =>
-        workspaceTeamPluginBindingAllowsRead(db, workspaceId, pluginId),
-      resolve: async () => {
-        const resolved = await resolvePluginFolder({
-          folder: teamResourceMaterializationDir(
-            PLUGIN_REGISTRY_ROOTS.userPluginsRoot,
-            workspaceId,
-            pluginId,
-            pluginId,
-          ),
-          folderId: pluginId,
-          sourceKind: 'user',
-          source: marker.sourceKey,
-        });
-        return resolved.ok ? resolved.record : null;
-      },
-    });
-  };
-  const listWorkspacePlugins = async (
-    dbHandle,
-    workspaceId?: string | null,
-    workspaceMemberId?: string | null,
-  ) => {
-    const personal = listInstalledPlugins(dbHandle, workspaceId, workspaceMemberId);
-    const exactWorkspaceId = workspaceId?.trim();
-    if (!exactWorkspaceId) return personal;
-    const workspaceRoot = teamResourceWorkspaceRoot(
-      PLUGIN_REGISTRY_ROOTS.userPluginsRoot,
-      exactWorkspaceId,
-    );
-    let entries: fs.Dirent[] = [];
-    try {
-      entries = await fs.promises.readdir(workspaceRoot, { withFileTypes: true });
-    } catch {
-      return personal;
-    }
-    const team = (
-      await Promise.all(
-        entries
-          .filter((entry) => entry.isDirectory())
-          .map((entry) => readWorkspaceTeamPlugin(exactWorkspaceId, entry.name)),
-      )
-    ).filter((plugin): plugin is NonNullable<typeof plugin> => plugin != null);
-    const teamIds = new Set(team.map((plugin) => plugin.id));
-    return [...team, ...personal.filter((plugin) => !teamIds.has(plugin.id))];
-  };
-  const getWorkspacePluginForRequest = async (
-    dbHandle,
-    id: string,
-    workspaceId: string | null,
-    workspaceMemberId?: string | null,
-  ) => {
-    const exactWorkspaceId = workspaceId?.trim();
-    if (exactWorkspaceId) {
-      const team = await readWorkspaceTeamPlugin(exactWorkspaceId, id);
-      if (team) return team;
-    }
-    return listInstalledPlugins(dbHandle, workspaceId, workspaceMemberId).find(
-      (plugin) => plugin.id === id,
-    ) ?? null;
-  };
   const getLocalPluginBySource = async (
     dbHandle,
     id: string,
@@ -10221,24 +4616,13 @@ export async function startServer({
   registerPluginRoutes(app, {
     db,
     authorizeProjectRequest,
-    teamResources: collab.teamResources,
     paths: { PROJECTS_DIR, PLUGIN_REGISTRY_ROOTS, PLUGIN_LOCKFILE_PATH },
     ids: idDeps,
     projectStore: projectStoreDeps,
     conversations: conversationDeps,
-    fetchProjectCreationWorkspaceDirectory,
-    verifyWorkspaceReadAuthority,
-    verifyWorkspaceRequestAuthority,
-    workspaceResources: {
-      getWorkspaceResource,
-      getWorkspaceResourceByResourceId,
-      workspaceTeamPluginBindingAllowsRead,
-      getWorkspaceProjectByProjectId,
-    },
     plugins: {
-      listInstalledPlugins: listWorkspacePlugins,
+      listInstalledPlugins,
       getInstalledPlugin,
-      getWorkspacePlugin: getWorkspacePluginForRequest,
       getLocalPluginBySource,
       installPlugin,
       isSafePluginId,
@@ -10271,8 +4655,6 @@ export async function startServer({
   });
   registerPluginAssetRoutes(app, {
     db,
-    verifyWorkspaceRequestAuthority,
-    getWorkspacePlugin: getWorkspacePluginForRequest,
     pluginAssetCache,
     AssetCacheError,
     assetCacheRewriteUrl,
@@ -10325,10 +4707,7 @@ export async function startServer({
     projectStore: projectStoreDeps,
     authorizeProjectRequest,
     authorizeProjectToolRequest,
-    isProjectUnmaterializedPlaceholder: (projectId) =>
-      projectIsUnmaterializedSharedPlaceholder(projectId),
     projectFiles: projectFileDeps,
-    verifyWorkspaceRequestAuthority,
   });
 
   const composeDaemonSystemPrompt = async ({
@@ -10353,86 +4732,7 @@ export async function startServer({
       typeof projectId === 'string' && projectId
         ? getProject(db, projectId)
         : null;
-    const projectWorkspaceBinding =
-      typeof projectId === 'string' && projectId
-        ? getWorkspaceProjectByProjectId(db, projectId)
-        : null;
-    const projectWorkspaceId =
-      typeof projectWorkspaceBinding?.workspaceId === 'string'
-        ? projectWorkspaceBinding.workspaceId.trim()
-        : '';
-    const projectCreatorMemberId =
-      typeof projectWorkspaceBinding?.createdByWorkspaceMemberId === 'string'
-        ? projectWorkspaceBinding.createdByWorkspaceMemberId.trim()
-        : '';
     const metadata = project?.metadata;
-    const localCatalogScope = (value) => {
-      const workspaceId = typeof value?.workspaceId === 'string'
-        ? value.workspaceId.trim()
-        : '';
-      const workspaceMemberId = typeof value?.workspaceMemberId === 'string'
-        ? value.workspaceMemberId.trim()
-        : '';
-      return workspaceId && workspaceMemberId
-        ? { workspaceId, workspaceMemberId }
-        : null;
-    };
-    // Resource provenance is intentionally independent from project
-    // attribution. A Home selection can be staged while Workspace identity is
-    // transitioning; the daemon persists the local catalogue partition so
-    // the first run reads the same local record without waiting for identity
-    // discovery or treating this as remote membership authority.
-    const designSystemCatalogScope = localCatalogScope(
-      metadata?.localCatalogScopes?.designSystem,
-    );
-    const designSystemWorkspaceId =
-      designSystemCatalogScope?.workspaceId ?? projectWorkspaceId;
-    const designSystemMemberId =
-      designSystemCatalogScope?.workspaceMemberId ?? projectCreatorMemberId;
-    const projectDesignSystemBinding = (summary) => {
-      if (!designSystemWorkspaceId || summary?.source === 'built-in') return null;
-      const logicalResourceId =
-        typeof summary?.id === 'string' ? summary.id.trim() : '';
-      if (!logicalResourceId) return null;
-      if (summary?.teamSynced === true) {
-        const canonicalTeamBinding = getWorkspaceResource(
-          db,
-          'design_system',
-          designSystemWorkspaceId,
-          workspaceTeamDesignSystemBindingResourceId(
-            designSystemWorkspaceId,
-            logicalResourceId,
-          ),
-        );
-        if (canonicalTeamBinding) return canonicalTeamBinding;
-      }
-      // Keep legacy rows readable while old local data converges to the
-      // Workspace-qualified Team envelope id.
-      return getWorkspaceResource(
-        db,
-        'design_system',
-        designSystemWorkspaceId,
-        logicalResourceId,
-      ) ?? null;
-    };
-    const designSystemVisibleToRun = (summary) => {
-      if (summary?.source === 'built-in') return true;
-      // A truly unbound local project is the legacy CLI/BYOK lane. Bound
-      // projects must resolve resources from their persisted project scope;
-      // shell/current Workspace state never participates.
-      if (!designSystemWorkspaceId) return true;
-      const binding = projectDesignSystemBinding(summary);
-      if (
-        !binding
-        || binding.resourceState === 'deleted'
-      ) {
-        return false;
-      }
-      if (binding.visibility === 'team') return true;
-      return binding.visibility === 'personal'
-        && Boolean(designSystemMemberId)
-        && binding.createdByWorkspaceMemberId?.trim() === designSystemMemberId;
-    };
     let appConfigForPrompt = null;
     try {
       appConfigForPrompt = await readAppConfig(RUNTIME_DATA_DIR);
@@ -10478,21 +4778,9 @@ export async function startServer({
           allowAppDefault: project === null,
         });
     const effectiveDesignSystemId = designSystemSelection.id;
-    const projectResourceScope =
-      typeof projectId === 'string' && projectId
-        ? getWorkspaceProjectByProjectId(db, projectId)
-        : null;
-    // Shared with OD Next's frozen-package capture so a Skill this prompt can
-    // resolve is a Skill that route can freeze, and vice versa.
-    const skillResourceScope = resolveSkillCatalogScope({
-      metadata,
-      workspaceBinding: projectResourceScope,
-    });
     let allSkillsPromise: ReturnType<typeof listAllSkillLikeEntries> | null = null;
     const loadAllSkills = async () => {
-      allSkillsPromise ??= skillResourceScope
-        ? listAllSkillLikeEntries(skillResourceScope)
-        : listAllSkillLikeEntries();
+      allSkillsPromise ??= listAllSkillLikeEntries();
       return await allSkillsPromise;
     };
 
@@ -10752,57 +5040,29 @@ export async function startServer({
     let activeDesignSystemId = null;
     let designSystemDigest = null;
     if (effectiveDesignSystemId) {
-      const designSystemListOptions = designSystemWorkspaceId
-        ? {
-            workspaceId: designSystemWorkspaceId,
-            workspaceMemberId: designSystemMemberId || null,
-          }
-        : {};
-      let systems = await listAllDesignSystems(designSystemListOptions);
-      let summary = systems.find(
-        (system) =>
-          system.id === effectiveDesignSystemId
-          && designSystemVisibleToRun(system),
-      );
-      if (summary?.source === 'user' && summary.teamSynced !== true) {
+      let systems = await listAllDesignSystems();
+      let summary = systems.find((system) => system.id === effectiveDesignSystemId);
+      if (summary?.source === 'user') {
         await ensureUserDesignSystemWorkspaceProject(db, effectiveDesignSystemId);
-        systems = await listAllDesignSystems(designSystemListOptions);
-        summary = systems.find(
-          (system) =>
-            system.id === effectiveDesignSystemId
-            && designSystemVisibleToRun(system),
-        );
+        systems = await listAllDesignSystems();
+        summary = systems.find((system) => system.id === effectiveDesignSystemId);
       }
       const editingOwnDraftDesignSystem =
         project?.metadata?.importedFrom === 'design-system'
         && project.designSystemId === effectiveDesignSystemId;
       designSystemTitle = summary?.title;
       if (summary && (isProjectUsableDesignSystem(summary) || editingOwnDraftDesignSystem)) {
-        // A pulled Team mirror is a canonical, read-only package. Its
-        // metadata may carry the author's local editing-project id, which is
-        // neither authority to mutate a same-slug Personal backing project nor
-        // a safe path to read an unrelated local project's DESIGN.md.
-        const workspaceBody = summary.teamSynced === true
-          ? null
-          : await readDesignSystemWorkspaceTextFile(db, summary, 'DESIGN.md');
-        const registryBody = await readAvailableDesignSystem(
-          effectiveDesignSystemId,
-          designSystemListOptions,
-        );
+        const workspaceBody = await readDesignSystemWorkspaceTextFile(db, summary, 'DESIGN.md');
+        const registryBody = await readAvailableDesignSystem(effectiveDesignSystemId);
         designSystemBody = (workspaceBody ?? registryBody) ?? undefined;
         // Single seam: env gate + built-in→user-installed fallback chain
         // live together inside `resolveDesignSystemAssets` so the whole
         // server-side asset-resolution path can be tested end-to-end
         // from real disk fixtures (see `tests/design-system-assets.test.ts`).
-        const resourceBinding = projectDesignSystemBinding(summary);
-        const scopedUserDesignSystemsRoot =
-          designSystemWorkspaceId && resourceBinding?.visibility === 'team'
-            ? teamResourceWorkspaceRoot(USER_DESIGN_SYSTEMS_DIR, designSystemWorkspaceId)
-            : USER_DESIGN_SYSTEMS_DIR;
         const assets = await resolveDesignSystemAssets(
           effectiveDesignSystemId,
           DESIGN_SYSTEMS_DIR,
-          scopedUserDesignSystemsRoot,
+          USER_DESIGN_SYSTEMS_DIR,
         );
         designSystemUsageMd = assets.usageMd;
         designSystemTokensCss = assets.tokensCss;
@@ -11536,17 +5796,6 @@ export async function startServer({
       cleanupOdNextRunInputProjection();
       return design.runs.fail(run, code, message);
     };
-    // Freeze the billing address once, before the first asynchronous setup
-    // step. HTTP-created runs already carry the scope captured by the request
-    // authorization transaction. Internal runs pin here. Retries reuse the
-    // existing property and therefore never consult a later project rebind.
-    if (!Object.prototype.hasOwnProperty.call(run, 'workspaceScope')) {
-      run.workspaceScope =
-        typeof projectId === 'string' && projectId
-          ? pinRunWorkspaceScopeForProject(db, projectId)
-          : null;
-      design.runs.persistState(run);
-    }
     // Stash the original user prompt + per-turn config so the
     // langfuse-bridge report path can include them without reaching back
     // into chatBody across the createChatRunService boundary. Each field
@@ -11762,10 +6011,6 @@ export async function startServer({
       );
     }
     const transportSourceImages = odNextTaskInputSnapshot?.imagePaths ?? safeImages;
-    const amrStagedImages =
-      def.id === 'amr' && !odNextTaskInputSnapshot
-        ? await stageAmrImagePaths(cwd ?? PROJECT_ROOT, safeImages, UPLOAD_DIR)
-        : transportSourceImages;
 
     // Project-scoped attachments: project-relative paths inside cwd. Each
     // is run through the same path-traversal guard the file CRUD endpoints
@@ -12444,13 +6689,7 @@ export async function startServer({
     } catch {
       configuredAgentEnv = {};
     }
-    const requestedLiveModelScope = def.id === 'amr'
-      ? resolveAmrProfile({
-          ...process.env,
-          ...(def.env || {}),
-          ...configuredAgentEnv,
-        })
-      : null;
+    const requestedLiveModelScope = null;
     const configuredModel =
       typeof appConfigForRun?.agentModels?.[def.id]?.model === 'string'
         ? appConfigForRun.agentModels[def.id].model
@@ -12493,46 +6732,6 @@ export async function startServer({
     };
     const agentLaunch = resolveAgentLaunch(def, configuredAgentEnv);
     const resolvedBin = agentLaunch.selectedPath;
-    if (def.id === 'amr' && resolvedBin && agentLaunch.launchPath) {
-      // Concretize omitted/default AMR model requests to the live catalog
-      // default before the resume guard. The AMR preflight below applies the
-      // same rewrite before spawn; keeping this earlier copy aligned prevents
-      // stored concrete session models from comparing against raw `default`.
-      try {
-        const resumeProbe = await resolveAmrModelProbe({ dataDir: RUNTIME_DATA_DIR, env: process.env, readAppConfig });
-        const askedForDefault =
-          typeof model !== 'string' || !model.trim() || model.trim().toLowerCase() === 'default';
-        const resumeFetchers = {
-          fetchPreset: () => fetchVelaPresetModels(resumeProbe.launchPath, resumeProbe.env),
-          fetchRemote: () => fetchVelaRemoteModelsWithRetry(resumeProbe.launchPath, resumeProbe.env),
-        };
-        // A `default` request resolves against the caller's own catalog; the
-        // preset seed is shared by every plan and would pick a model this
-        // caller may not be entitled to.
-        const resumeCatalog = askedForDefault && !hasDefaultModelEnvOverride
-          ? await amrModelLoadingCache.getAuthoritative(resumeProbe.cacheKey, resumeFetchers, AMR_DEFAULT_MODEL_CATALOG_WAIT_MS)
-          : await amrModelLoadingCache.get(resumeProbe.cacheKey, resumeFetchers);
-        const resumeLiveModels = amrRunModels(def.id, requestedLiveModelScope, resumeCatalog);
-        const resumeModelIds = new Set(resumeLiveModels.map((c) => c?.id).filter(Boolean));
-        const defaultRunModel = resolveDefaultModelFromOptions(resumeLiveModels);
-        if (
-          !safeModel ||
-          safeModel === 'default' ||
-          (
-            askedForDefault &&
-            !hasDefaultModelEnvOverride &&
-            defaultRunModel &&
-            (!resumeModelIds.has(safeModel) || safeModel !== defaultRunModel)
-          )
-        ) {
-          safeModel = defaultRunModel ?? safeModel ?? null;
-          agentOptions.model = safeModel;
-        }
-      } catch {
-        // Degrade silently: keep the requested value. The preflight below records
-        // the probe failure and applies the identical fallback.
-      }
-    }
     const previousMarkerTask = isOdNextInitialRun && strategyTaskAtStart?.continuedFromTaskExecutionId
       ? getStrategyTaskExecution(db, strategyTaskAtStart.continuedFromTaskExecutionId) : null;
     const requiresProtocolMigration = Boolean(previousMarkerTask && !usesProductionMarker(previousMarkerTask));
@@ -12554,7 +6753,7 @@ export async function startServer({
     // directly. Public chat requests cannot reach this branch.
     const forceInternalResume =
       pendingNativeSessionContinue != null &&
-      (runtimeResumesSessionById(def) || (def.id === 'amr' && !!pendingNativeSessionContinue.amrContinuation)) &&
+      runtimeResumesSessionById(def) &&
       pendingNativeSessionContinue.sessionId.length > 0;
     const agentResumeCtx = forceInternalResume
       ? {
@@ -12852,11 +7051,7 @@ export async function startServer({
       ? OD_NEXT_BUNDLE_ECHO_GUARD_V2
       : ECHO_GUARD;
     const includeStableForPayload = isOdNextInitialRun || includeStableInstructions;
-    const promptImagePaths = selectPromptImagePaths(
-      def.id,
-      transportSourceImages,
-      amrStagedImages,
-    );
+    const promptImagePaths = transportSourceImages;
     const acpPromptImagePaths = odNextTaskInputSnapshot
       ? excludeAcpImagePathsAlreadyDeliveredAsResources(
           promptImagePaths,
@@ -13562,7 +7757,6 @@ export async function startServer({
         ...runSideEffectsForRun(run),
         cancelRequested: !!run.cancelRequested,
       };
-      const amrContinuationRecovery = def.id === 'amr' ? acpSession?.getContinuationRecovery?.() : null;
       const liveSessionId = def.resumesSessionViaAcpLoad === true
         ? acpSession?.getDurableSessionId?.() ?? null
         : agentResumeCtx.isResuming
@@ -13577,8 +7771,7 @@ export async function startServer({
           run.nativeSessionContinueAttemptCount ?? 0,
         totalRetryAttemptCount: run.retryAttemptCount ?? 0,
         sideEffects,
-        supportsNativeSessionContinue: runtimeResumesSessionById(def) || !!amrContinuationRecovery,
-        hasVerifiedAmrContinuation: !!amrContinuationRecovery && amrContinuationRecovery.sessionId === liveSessionId,
+        supportsNativeSessionContinue: runtimeResumesSessionById(def),
         hasNativeSession: !!run.conversationId && !!liveSessionId,
       });
       if (
@@ -13621,7 +7814,6 @@ export async function startServer({
           retry_delay_ms: postToolResumeDecision.retryDelayMs,
         });
         run.nativeSessionContinuePending = {
-          amrContinuation: amrContinuationRecovery?.cursor ?? null,
           sessionId: liveSessionId,
           stablePromptHash: currentStableHash,
           stablePromptSections: currentStableSections,
@@ -13913,160 +8105,6 @@ export async function startServer({
         },
         safeModel,
       ).catch(() => null);
-    }
-
-    // agentLaunch / resolvedBin are resolved above the resume guard (hoisted).
-    // Hoisted above the AMR catalog preflight: the empty-catalog branch
-    // below calls `sendAmrAccountFailure(...)` to surface AMR_AUTH_REQUIRED
-    // for signed-out users, and a `const` declared later in the same outer
-    // function scope would hit a TDZ ReferenceError before initialization.
-    const sendAmrAccountFailure = (failure) => {
-      send('error', createSseErrorPayload(
-        failure.code,
-        failure.message,
-        {
-          retryable: false,
-          details: amrAccountFailureDetails(failure),
-        },
-      ));
-    };
-
-    // The catalog default an AMR turn switches to when vela rejects the
-    // selected model, e.g. one that has left the catalog since it was saved.
-    let amrFallbackModel = null;
-    if (def.id === 'amr' && resolvedBin && agentLaunch.launchPath) {
-      const launchPath = agentLaunch.launchPath ?? resolvedBin;
-      const modelProbeEnv = launchPath
-        ? applyAgentLaunchEnv(
-            spawnEnvForAgent(
-              def.id,
-              {
-                ...createAgentRuntimeEnv(process.env, daemonUrl, toolTokenGrant, OD_NODE_BIN, inheritedEnvironment),
-                ...(def.env || {}),
-              },
-              configuredAgentEnv,
-              undefined,
-              { resolvedBin: agentLaunch.selectedPath },
-            ),
-            agentLaunch,
-          )
-        : null;
-      const amrModelScope = resolveAmrProfile(modelProbeEnv ?? process.env);
-      // Resolve the AMR model catalog through the SAME shared cache the UI's
-      // `/api/amr/models` endpoint serves (AmrModelLoadingCache): a cached
-      // authoritative `vela model list` when it is hot, otherwise the offline
-      // `vela model preset` seed while a remote refresh runs in the background.
-      //
-      // Why not a fresh `vela model list` per run: that authoritative call
-      // needs network reachability to the AMR gateway AND `$HOME` (the offline
-      // `preset`/`--version` calls need neither), takes up to ~10s, and only
-      // retries a narrow set of network errors. Running it blocking on every
-      // turn turned any transient gateway/timeout/HOME hiccup into a hard
-      // "AMR model … is not available from Vela" — even for a logged-in user
-      // who already picked a real model the picker surfaced from the preset
-      // seed. Under CorpLink/飞连 the call routinely exceeded the timeout, so
-      // AMR became unusable in packaged nightlies. Reusing the cache keeps that
-      // blocking probe off the per-run hot path and degrades to preset instead
-      // of fail-closing; vela's own `session/set_model` remains the final gate.
-      const userAskedForDefault =
-        typeof model !== 'string' ||
-        !model.trim() ||
-        model.trim().toLowerCase() === 'default';
-      let liveModels = [];
-      try {
-        const probe = await resolveAmrModelProbe({ dataDir: RUNTIME_DATA_DIR, env: process.env, readAppConfig });
-        const fetchers = {
-          fetchPreset: () => fetchVelaPresetModels(probe.launchPath, probe.env),
-          fetchRemote: () => fetchVelaRemoteModelsWithRetry(probe.launchPath, probe.env),
-        };
-        const catalog = userAskedForDefault && !hasDefaultModelEnvOverride
-          ? await amrModelLoadingCache.getAuthoritative(probe.cacheKey, fetchers, AMR_DEFAULT_MODEL_CATALOG_WAIT_MS)
-          : await amrModelLoadingCache.get(probe.cacheKey, fetchers);
-        liveModels = amrRunModels(def.id, amrModelScope, catalog);
-      } catch (error) {
-        // Do not swallow silently: a probe failure here is exactly what made
-        // the packaged AMR breakage undiagnosable (the old `catch {}` left no
-        // trace in any log or diagnostics bundle). Record it and degrade to the
-        // remembered catalog below.
-        console.warn('[amr] model catalog preflight probe failed', error);
-        liveModels = getRememberedLiveModels(def.id, amrModelScope);
-      }
-      const liveModelIds = new Set(
-        liveModels.map((candidate) => candidate?.id).filter(Boolean),
-      );
-      // A request that came in as 'default'/empty is normally pre-resolved to a
-      // concrete id via the agent-wide cached model order; if it still is not,
-      // adopt the catalog's enabled default so the spawn layer always has a
-      // usable real id.
-      const defaultRunModel = resolveDefaultModelFromOptions(liveModels);
-      if (
-        !safeModel ||
-        safeModel === 'default' ||
-        (
-          userAskedForDefault &&
-          !hasDefaultModelEnvOverride &&
-          defaultRunModel &&
-          (!liveModelIds.has(safeModel) || safeModel !== defaultRunModel)
-        )
-      ) {
-        safeModel = defaultRunModel ?? (safeModel === 'default' ? null : safeModel ?? null);
-        agentOptions.model = safeModel;
-      }
-      if (liveModelIds.size === 0) {
-        // The catalog is genuinely empty: even the offline preset seed could
-        // not be read, which almost always means the user is signed out (`vela`
-        // catalog calls 401) or the CLI is unrunnable. Prefer the relogin
-        // affordance over a misleading "choose a model".
-        if (def.id === 'amr') {
-          const loginStatus = readVelaLoginStatus(
-            modelProbeEnv ?? process.env,
-            configuredAgentEnv,
-          );
-          if (!loginStatus.loggedIn) {
-            sendAmrAccountFailure({
-              code: 'AMR_AUTH_REQUIRED',
-              message:
-                'AMR sign-in is required. Sign in to AMR Cloud again, then retry this run.',
-              action: 'relogin',
-            });
-            return finishStrategyAwarePhysicalRun('failed', 1, null);
-          }
-        }
-        // Logged in but no catalog at all AND no resolvable model: only now is
-        // there nothing safe to forward, so surface the model error.
-        if (!safeModel) {
-          send('error', createAmrModelUnavailablePayload(safeModel, {
-            reason: 'model_catalog_unavailable',
-          }));
-          return finishStrategyAwarePhysicalRun('failed', 1, null);
-        }
-        // Otherwise fall through with the user's selected model and let vela's
-        // `session/set_model` be the authoritative gate.
-      } else if (!safeModel) {
-        // Catalog known but we could not resolve any model id to forward.
-        send('error', createAmrModelUnavailablePayload(
-          typeof model === 'string' && model.trim() ? model : safeModel,
-          { availableModels: [...liveModelIds] },
-        ));
-        return finishStrategyAwarePhysicalRun('failed', 1, null);
-      }
-      amrFallbackModel = defaultRunModel && defaultRunModel !== safeModel ? defaultRunModel : null;
-      // NOTE: when the selected model is absent from the (possibly preset-only
-      // or stale) catalog we intentionally do NOT fail-close. The cached/preset
-      // catalog can lag the live one, and a logged-in user picked a concrete
-      // id; vela rejects a truly unsupported model at `session/set_model` with
-      // a precise error, which beats a pre-emptive block on a flaky metadata read.
-    }
-
-    if (
-      def.id === 'amr' &&
-      safeModel &&
-      !isVelaChatCapableModelId(safeModel)
-    ) {
-      send('error', createAmrModelUnavailablePayload(safeModel, {
-        reason: 'model_not_chat_capable',
-      }));
-      return finishStrategyAwarePhysicalRun('failed', 1, null);
     }
 
     // Plain-streaming adapters that own a "continue most recent
@@ -14771,28 +8809,10 @@ export async function startServer({
       undefined,
       { resolvedBin: agentLaunch.selectedPath },
     );
-    if (def.id === 'amr') {
-      const loginStatus = readVelaLoginStatus(agentSpawnEnv, configuredAgentSpawnEnv);
-      if (!loginStatus.loggedIn) {
-        cleanupPromptFile();
-        revokeToolToken('child_exit');
-        unregisterChatAgentEventSink();
-        sendAmrAccountFailure({
-          code: 'AMR_AUTH_REQUIRED',
-          message: 'AMR sign-in is required. Sign in to AMR Cloud again, then retry this run.',
-          action: 'relogin',
-        });
-        return finishStrategyAwarePhysicalRun('failed', 1, null);
-      }
-    }
     const odMediaEnv = createOpenDesignToolEnv({
       daemonUrl,
       projectDir: cwd,
       projectId: typeof projectId === 'string' ? projectId : null,
-      workspaceScope: run.workspaceScope,
-      runId: run.id,
-      conversationId: run.conversationId,
-      analyticsContext: run.analyticsContext ?? null,
     });
     if (run.cancelRequested || design.runs.isTerminal(run.status)) {
       cleanupPromptFile();
@@ -14848,19 +8868,13 @@ export async function startServer({
     let jsonEventStreamHandler: ReturnType<typeof createJsonEventStreamHandler> | null = null;
     let agentStdoutTail = '';
     let agentStderrTail = '';
-    const agentStderrFilter = createAgentStderrVisibilityFilter(agentId);
     const emitVisibleAgentStderr = (chunk: unknown) => {
-      const visibleChunk = agentStderrFilter.write(chunk);
+      const visibleChunk = String(chunk ?? '');
       if (!visibleChunk) return;
       agentStderrTail = `${agentStderrTail}${visibleChunk}`.slice(-2000);
       send('stderr', { chunk: visibleChunk });
     };
-    const flushVisibleAgentStderr = () => {
-      const visibleChunk = agentStderrFilter.flush();
-      if (!visibleChunk) return;
-      agentStderrTail = `${agentStderrTail}${visibleChunk}`.slice(-2000);
-      send('stderr', { chunk: visibleChunk });
-    };
+    const flushVisibleAgentStderr = () => {};
     try {
       // Prompt delivery via stdin is now the universal default. This bypasses
       // both the cmd.exe 8KB limit and the CreateProcess 32KB limit.
@@ -14876,61 +8890,6 @@ export async function startServer({
         ...(mmdRouteLaunchEnv || {}),
         ...odMediaEnv,
         ...(byokOpenCodeProvider ? byokOpenCodeProvider.env : {}),
-        ...await openDesignAmrTraceEnvForRun({
-          agentId: def.id,
-          runId: run.id,
-          conversationId: run.conversationId,
-          runAttempt: openDesignAmrRunAttempt({
-            cumulativeRetryAttemptCount: run.cumulativeRetryAttemptCount,
-            retryAttemptCount: run.retryAttemptCount,
-            manualResumeAttemptCount: run.manualResumeAttemptCount,
-          }),
-          // Vela's workspace-credit isolation reads this env together with the
-          // signed-in account identity. The run pins the project's exact
-          // Workspace before its first asynchronous setup step; Vela/AMR
-          // remains the authority for membership, balance, and billing
-          // eligibility. Team and Personal bindings are both sent explicitly.
-          // An unbound project is refused before process spawn. Later project
-          // rebinds and ambient/current selection never participate.
-          projectId,
-          workspaceScope: run.workspaceScope,
-          externalPluginAnalytics: run.externalPluginAnalytics ?? null,
-        }, {
-          // Report persisted-binding vs truly-unbound selection to the daemon
-          // log and telemetry. Ids and the branch name only —
-          // never member rows or credentials.
-          onWorkspaceScopeOutcome: (outcome) => {
-            console.log(
-              `[od] amr workspace scope ${outcome.kind}`
-                + ` project=${outcome.projectId}`
-                + ` workspace=${outcome.workspaceId ?? 'none'}`
-                + ` run=${run.id}`,
-            );
-            const context = run.analyticsContext ?? null;
-            if (!context || !design?.analytics?.capture) return;
-            design.analytics.capture({
-              eventName: 'amr_workspace_scope_resolved',
-              context,
-              // `design.getAppVersion` is the only app-version accessor this
-              // scope can see; the identically-named helper inside
-              // `createFinalizedMessageTelemetryReporter` is a different
-              // function's local and resolving it here threw a ReferenceError
-              // out of the spawn path, failing 100% of AMR runs. That helper's
-              // own last resort is this same accessor, so the value is
-              // unchanged.
-              appVersion: design.getAppVersion?.() ?? 'unknown',
-              properties: {
-                page_name: 'chat_panel',
-                area: 'chat_panel',
-                project_id: outcome.projectId,
-                conversation_id: run.conversationId ?? null,
-                run_id: run.id,
-                workspace_scope_outcome: outcome.kind,
-                workspace_id: outcome.workspaceId,
-              },
-            });
-          },
-        }),
         // OpenCode external-MCP injection (issue #2142). Layered AFTER
         // spawnEnvForAgent / odMediaEnv / configuredAgentEnv so the
         // daemon-built MCP config wins over a stale value the user
@@ -15096,12 +9055,8 @@ export async function startServer({
       revokeToolToken('child_exit');
       unregisterChatAgentEventSink();
       send('error', createSseErrorPayload(
-        err instanceof AmrWorkspaceScopeRequiredError
-          ? err.code
-          : 'AGENT_EXECUTION_FAILED',
-        err instanceof AmrWorkspaceScopeRequiredError
-          ? err.message
-          : `spawn failed: ${err.message}`,
+        'AGENT_EXECUTION_FAILED',
+        `spawn failed: ${err.message}`,
       ));
       finishStrategyAwarePhysicalRun('failed', 1, null);
       return;
@@ -16189,14 +10144,11 @@ export async function startServer({
         stdioMcpRemovedInVersion: def.acpStdioMcpRemovedInVersion ?? null,
         executionProfile,
         completePromptOnTurnEnd: def.acpTurnEndCompletesPrompt === true,
-        ...(def.id === 'amr' ? { modelUnavailableErrorCode: 'AMR_MODEL_UNAVAILABLE' } : {}),
-        ...(def.id === 'amr' && amrFallbackModel ? { fallbackModel: amrFallbackModel } : {}),
         // Resume the prior upstream session (drives `session/load`) when the
         // resume-identity guard says it is safe; otherwise a fresh session/new.
         ...(def.resumesSessionViaAcpLoad === true && agentResumePromptPolicy.resumeSessionId
           ? { resumeSessionId: agentResumePromptPolicy.resumeSessionId }
           : {}),
-        nativeContinuation: forceInternalResume ? pendingNativeSessionContinue?.amrContinuation : null,
         onCliReady: () => noteCliReadyAt(),
         onSessionInit: () => noteSessionInitDoneAt(),
         onPromptComplete: () => clearFirstOutputWatchdog(),
@@ -16249,20 +10201,6 @@ export async function startServer({
           // silence rather than our own teardown.
           if (event === 'error') retireAttemptOnAcpVerdict();
           if (event === 'error') flushVisibleAgentStderr();
-          if (def.id === 'amr' && event === 'error') {
-            const failure = classifyAmrAccountFailureSignal({
-              details: data?.error?.details,
-              message: data?.message,
-              errorMessage: data?.error?.message,
-              errorCode: data?.error?.code,
-              stdoutTail: agentStdoutTail,
-              stderrTail: agentStderrTail,
-            }, configuredAgentEnv);
-            if (failure) {
-              sendAmrAccountFailure(failure);
-              return;
-            }
-          }
           // Hold back the `resume_failed` error so the same-turn reseed stays
           // transparent. When this run is resuming an upstream session via
           // `session/load` and the agent reports that session is gone, the ACP
@@ -16422,7 +10360,7 @@ export async function startServer({
         // This handle came from our captured agent_sessions record (or a
         // same-run daemon continuation), never from the public chat payload.
         resumeSessionOwned: agentResumeCtx.isResuming,
-        imagePaths: def.supportsImagePaths ? amrStagedImages : [],
+        imagePaths: def.supportsImagePaths ? transportSourceImages : [],
         clientVersion: design.getAppVersion?.() ?? '0.0.0',
         // Capture-style resume, same contract as `exec resume <thread_id>`:
         // the id comes off the stream, and the daemon replays it here.
@@ -16782,16 +10720,6 @@ export async function startServer({
         code !== 0 &&
         !run.cancelRequested
       ) {
-        if (def.id === 'amr') {
-          const amrFailure = classifyAmrAccountFailureSignal({
-            stdoutTail: agentStdoutTail,
-            stderrTail: agentStderrTail,
-          }, configuredAgentEnv);
-          if (amrFailure) {
-            sendAmrAccountFailure(amrFailure);
-            return finishWithRetryDecision('failed', code ?? 1, signal ?? null);
-          }
-        }
         const authFailure = classifyAgentAuthFailure(
           agentId,
           `${agentStderrTail}\n${agentStdoutTail}`,
@@ -17620,7 +11548,6 @@ export async function startServer({
     prompt,
     systemPrompt,
     template,
-    workspaceScope,
   }) => {
     // Each Orbit run gets its own project so the conversation, messages, and
     // live artifact are isolated. The handler does the synchronous prep here
@@ -17641,8 +11568,6 @@ export async function startServer({
     if (!agentId) throw new Error('No available agent is configured for Orbit. Choose an agent in Settings first.');
 
     const now = Date.now();
-    const normalizedWorkspaceScope =
-      normalizePersistedAutomationWorkspaceScope(workspaceScope);
     const projectId = `orbit-${randomUUID()}`;
     const conversationId = `orbit-conv-${randomUUID()}`;
     const assistantMessageId = `orbit-assistant-${randomUUID()}`;
@@ -17662,12 +11587,6 @@ export async function startServer({
       createdAt: now,
       updatedAt: now,
     });
-    bindProjectToPersistedAutomationWorkspace(
-      (input) => ensureWorkspaceProject(db, input),
-      normalizedWorkspaceScope,
-      projectId,
-      now,
-    );
     insertConversation(db, {
       id: conversationId,
       projectId,
@@ -17811,29 +11730,6 @@ export async function startServer({
       loadPluginRegistryView,
       renderPluginBriefTemplate,
       getLocalPluginBySource: (id, source) => getLocalPluginBySource(db, id, source),
-      authorizePluginRequest: async (req, res, pluginId) => {
-        const authority = resolveOptionalLocalWorkspaceRequestAuthority(req);
-        if (!authority.ok) {
-          sendApiError(
-            res,
-            authority.status,
-            authority.code,
-            authority.message,
-          );
-          return false;
-        }
-        const plugin = await getWorkspacePluginForRequest(
-          db,
-          pluginId,
-          authority.context?.workspaceId ?? null,
-          authority.context?.workspaceMemberId ?? null,
-        );
-        if (!plugin) {
-          sendApiError(res, 404, 'PLUGIN_NOT_FOUND', 'plugin not found');
-          return false;
-        }
-        return true;
-      },
     },
     telemetry: {
       taskTelemetryForRun: (runId) => taskObservationRollout.telemetryForRun(runId),
@@ -17847,29 +11743,6 @@ export async function startServer({
       reconcileAssistantMessageOnRunEnd,
     },
     internalRuns: internalRunCreation,
-    // POST /api/runs and POST /api/chat are this file's "create a run" entry
-    // points — see RegisterRunRoutesDeps.enforceWorkspaceProjectMutation.
-    // Same provider `collab` was built with (collab.workspaceContext ===
-    // workspaceContext), matching the cross-check `registerProjectRoutes`
-    // wires up for its own mutation routes above.
-    enforceWorkspaceProjectMutation: enforceAuthoritativeProjectMutation,
-    projectStore: {
-      getWorkspaceProject,
-      getWorkspaceProjectByProjectId,
-      ensureWorkspaceProject,
-    },
-    amrWorkspaceScope: {
-      isSignedIn: async () => {
-        const appConfig = await readAppConfig(RUNTIME_DATA_DIR).catch(
-          () => ({}),
-        );
-        return readVelaLoginStatus(
-          process.env,
-          agentCliEnvForAgent(appConfig.agentCliEnv, 'amr'),
-        ).loggedIn;
-      },
-    },
-    authorizeProjectRequest,
   });
 
   // Each routine fire resolves an agent, prepares project/conversation state,
@@ -17887,8 +11760,6 @@ export async function startServer({
     }
 
     const now = startedAt;
-    const storedRoutineWorkspaceScope =
-      normalizePersistedAutomationWorkspaceScope(routine.context.workspaceScope);
     const routineContext = normalizeRunContextSelection(routine.context);
     const routineSkillId = routine.skillId ?? routineContext.skillIds?.[0] ?? null;
     const contextMetadata = {
@@ -17943,12 +11814,6 @@ export async function startServer({
         createdAt: now,
         updatedAt: now,
       });
-      bindProjectToPersistedAutomationWorkspace(
-        (input) => ensureWorkspaceProject(db, input),
-        storedRoutineWorkspaceScope,
-        projectId,
-        now,
-      );
       createdProjectId = projectId;
     };
     if (routine.target.mode === 'reuse') {
@@ -17961,7 +11826,7 @@ export async function startServer({
     }
 
     let conversationId = `routine-conv-${randomUUID()}`;
-    let conversationCreatedEvent: ProjectConversationCreatedSsePayload | null = null;
+    let conversationCreatedEvent: Record<string, unknown> | null = null;
     const routineConversationTitle = () => routine.target.mode === 'reuse'
       ? `${routine.name} · ${stamp}`
       : projectName;
@@ -18001,33 +11866,13 @@ export async function startServer({
     const primaryPluginId = routineContext.pluginIds?.[0] ?? null;
     const resolveRoutinePluginSnapshot = async () => {
       if (!primaryPluginId || resolvedRoutineSnapshot) return;
-      const routineProjectBinding = getWorkspaceProjectByProjectId(db, projectId);
-      const routinePlugin = await getWorkspacePluginForRequest(
-        db,
-        primaryPluginId,
-        routineProjectBinding?.workspaceId
-          ? String(routineProjectBinding.workspaceId)
-          : null,
-        typeof routineProjectBinding?.createdByWorkspaceMemberId === 'string'
-          ? routineProjectBinding.createdByWorkspaceMemberId
-          : null,
-      );
+      const routinePlugin = getInstalledPlugin(db, primaryPluginId);
       if (!routinePlugin) {
         throw new Error(
           `Automation plugin ${primaryPluginId} is not visible to the persisted project owner`,
         );
       }
-      const registry = await loadPluginRegistryView(
-        routineProjectBinding?.workspaceId
-          ? {
-              workspaceId: String(routineProjectBinding.workspaceId),
-              workspaceMemberId:
-                typeof routineProjectBinding.createdByWorkspaceMemberId === 'string'
-                  ? routineProjectBinding.createdByWorkspaceMemberId
-                  : null,
-            }
-          : undefined,
-      );
+      const registry = await loadPluginRegistryView();
       const projectSnapshotBefore = routine.target.mode === 'reuse'
         ? getProject(db, routine.target.projectId)?.appliedPluginSnapshotId ?? null
         : null;
@@ -18394,30 +12239,19 @@ export async function startServer({
       void messageEventPayloadHeal?.stop();
       stopEvidenceDelivery();
       clearTerminalTelemetryFallbackTimers();
-      amrTerminalReportDelivery.stop();
       telemetry.disposeFatalHandlers();
       composioConnectorProvider.stopCatalogRefreshLoop();
       orbitService.stop();
       routineService?.stop();
-      clearInterval(teamResourcesPollTimer);
       // Disarms synchronously; the returned promise drains an in-flight pass.
       // Nothing here awaits it — the point is that no NEW pass can start once
       // the daemon is coming down.
       void chatArtifactMaintenance.stop();
-      workspaceHubSubscriptions?.dispose();
-      hubEventRefreshes.dispose();
-      workspaceDirectoryRefreshes.dispose();
-      workspaceBillingRuntime.dispose();
-      proactiveContentPull.dispose();
-      collabPublishWatcher.dispose();
-      collabCloud?.dispose();
     };
     const shutdownDaemonRuns = (): Promise<void> => {
       if (daemonShutdownPromise) return daemonShutdownPromise;
       daemonShutdownPromise = (async () => {
         daemonShuttingDown = true;
-        await velaRoutesLifecycle.close();
-        amrTerminalReportDelivery.stop();
         clearTerminalTelemetryFallbackTimers();
         const shutdownGraceMs = resolveChatRunShutdownGraceMs();
         await design.runs.shutdownActive({ graceMs: shutdownGraceMs });
@@ -18429,7 +12263,6 @@ export async function startServer({
         }
         await terminalService.shutdownActive();
         await browserSessionService.shutdownActive();
-        await telemetry.flushStockTelemetry();
         await design.analytics.shutdown();
       })();
       return daemonShutdownPromise;
@@ -18478,26 +12311,6 @@ export async function startServer({
           return;
         }
         resolvedPort = boundPort;
-        void cleanupAbandonedPinnedVelaSessions(RUNTIME_DATA_DIR).then(({ failed }) => {
-          if (failed) console.warn('[od] private CLI session cleanup incomplete');
-        }).catch(() => { console.warn('[od] private CLI session cleanup unavailable'); });
-        void retryShareBindingsAtStartup().then(result => {
-          if (result.deferred || result.failed || result.persistenceFailures) {
-            console.warn(`[od] public share binding completion pending: ${JSON.stringify(result)}`);
-          }
-        }).catch(() => { console.warn('[od] public share binding completion unavailable'); });
-        void retryPublicFileStopsAtStartup().then((result) => {
-          if (result.deferred || result.failed || result.persistenceFailures) {
-            console.warn(
-              `[od] public share cleanup incomplete: ${JSON.stringify(result)}; queued links may remain public`,
-            );
-          }
-        }).catch(() => {
-          console.warn(
-            "[od] public share cleanup could not read its queue; queued links may remain public",
-          );
-        });
-        startAmrTerminalReportDeliveryAfterBind(amrTerminalReportDelivery, boundPort);
         messageEventPayloadHeal ??= startMessageEventPayloadHeal({ db });
         // Only once listening: a startup-time fatal report would add lines to
         // the log tail that packaged startup telemetry samples.

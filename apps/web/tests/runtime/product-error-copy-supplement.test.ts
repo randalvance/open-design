@@ -12,7 +12,7 @@ import {
   resolveRunErrorCardDescription,
   resolveRunFailureUi,
   RUN_FAILURE_FALLBACK_MESSAGE_KEY,
-} from '../../src/runtime/amr-guidance';
+} from '../../src/runtime/run-failure-ui';
 
 function translate(key: keyof Dict, vars: Record<string, string | number> = {}): string {
   return zhCN[key].replace(/\{(\w+)\}/g, (placeholder, name: string) =>
@@ -20,8 +20,8 @@ function translate(key: keyof Dict, vars: Record<string, string | number> = {}):
   );
 }
 
-function failureCopy(code: string, detail?: string, agent = 'amr', raw = 'private diagnostic') {
-  const ui = resolveRunFailureUi(code, detail, agent, raw);
+function failureCopy(code: string, detail?: string, agent = 'claude', raw = 'private diagnostic') {
+  const ui = resolveRunFailureUi(code, detail, agent);
   const vars = {
     agent: 'Claude',
     ...(ui.messageCauseKey ? { cause: translate(ui.messageCauseKey) } : {}),
@@ -118,10 +118,6 @@ const cases: ProductCase[] = [
   ].map((code) => ({
     scenario: `回复未记录：${code}`, code, title: GENERIC_TITLE, body: GENERIC_BODY,
   })),
-  {
-    scenario: '当前套餐不支持', code: 'AMR_TIER_UPGRADE_REQUIRED',
-    title: '当前套餐不支持此任务', body: '当前套餐无法继续此任务，请升级套餐后重试。',
-  },
 ];
 
 describe('补充场景使用产品批准的标题和正文', () => {
@@ -140,42 +136,27 @@ describe('补充场景使用产品批准的标题和正文', () => {
 });
 
 describe('文案修订不能更改错误成因和恢复能力', () => {
-  it('滚动额度窗口仍描述等待重置，不能冒充 context 长度', () => {
-    const copy = failureCopy('RATE_LIMITED', 'model_window_limit', 'amr',
-      'You have reached the 5-hour usage limit for Kimi K2.6. Try again after 2026-08-12T06:34:47Z. This request was not charged to Wallet Credits.');
-    expect(copy.title).toBe('高峰期繁忙');
-    expect(copy.body).toBe('高峰期繁忙，请在 2026-08-12T06:34:47Z 后尝试（本次请求未扣费）');
-    expect(copy.ui.primaryAction).toBe('retry');
-  });
-
   it('上游过载保持模型服务不可用语义', () => {
     const copy = failureCopy('AGENT_EXECUTION_FAILED', 'provider_high_demand');
     expect(copy.title).toBe('模型服务暂不可用');
     expect(copy.body).toBe('当前模型暂不可用，请稍后再试，或更换模型。');
   });
 
-  it('Antigravity 未登录仍有终端登录入口与 Cloud 入口', () => {
+  it('Antigravity 未登录仍有终端登录入口', () => {
     const ui = resolveRunFailureUi('AGENT_AUTH_REQUIRED', null, 'antigravity');
     expect(ui.primaryAction).toBe('launch-terminal-auth');
-    expect(ui.cloudSwitchCta).toBe(true);
-  });
-
-  it('Cloud 未登录仍有授权入口', () => {
-    expect(resolveRunFailureUi('AMR_AUTH_REQUIRED', null, 'amr').primaryAction).toBe('authorize');
-  });
-
-  it('套餐升级保留升级与次级重试，不修改共享余额卡标题', () => {
-    const ui = resolveRunFailureUi('AMR_TIER_UPGRADE_REQUIRED', null, 'amr');
-    expect(ui.primaryAction).toBe('upgrade');
     expect(ui.secondaryRetry).toBe(true);
-    // 余额闸门弹窗的标题由它自己那一格决定(OPEND-2849:S06「可用额度不足」),
-    // 套餐升级那张卡的标题不能借它、也不能改它。
-    expect(translate('chat.amrBalanceGate.title')).toBe('可用额度不足');
-    expect(translate('chat.runError.title.tierUpgradeRequired')).not.toBe(translate('chat.amrBalanceGate.title'));
+  });
+
+  it('其余本地 agent 未登录走 S02:点名 agent,主动作是重试', () => {
+    const ui = resolveRunFailureUi('AGENT_AUTH_REQUIRED', null, 'claude');
+    expect(ui.primaryAction).toBe('retry');
+    expect(ui.titleKey).toBe('chat.runError.title.signInRequired.other');
+    expect(ui.messageKey).toBe('chat.runError.signInMessage.other');
   });
 
   it('处理器不支持不会多出无效重试', () => {
-    const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', 'cpu_unsupported', 'amr');
+    const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', 'cpu_unsupported', 'claude');
     expect(ui.primaryAction).toBe('contact-support');
     expect(ui.secondaryRetry).toBe(false);
   });

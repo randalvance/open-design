@@ -30,7 +30,6 @@ import type {
   InputFieldSpec,
   InstalledPluginRecord,
   McpServerConfig,
-  WorkspaceCollabContext,
   WorkspaceContextItem,
 } from '@open-design/contracts';
 import { DesignSystemPicker } from './DesignSystemPicker';
@@ -137,7 +136,6 @@ export interface ExamplePromptInfo {
 }
 
 interface Props {
-  workspaceContext?: WorkspaceCollabContext | null;
   active?: boolean;
   // Arms the first-run guidance trail (prototype chip → first preset
   // card sheen). Tri-state: true = brand-new user (no projects), false =
@@ -353,7 +351,6 @@ const EMPTY_WORKSPACE_ITEMS: WorkspaceContextItem[] = [];
 
 export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
   {
-    workspaceContext = null,
     active = true,
     prompt,
     onPromptChange,
@@ -2146,7 +2143,6 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
                 row's leading position. Sized and filled like the model chip
                 across the row. */}
             <ComposerPlusMenu
-              workspaceContext={workspaceContext}
               triggerTestId="home-hero-plus-trigger"
               placementPreference="down"
               onOpen={() =>
@@ -2330,7 +2326,6 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
             ) : null}
             {projectReferenceOpen ? (
               <ProjectReferenceModal
-                workspaceContext={workspaceContext}
                 onClose={() => {
                   // Only the dismiss paths (X / backdrop / Escape / Cancel)
                   // land here — a confirmed pick closes via
@@ -2572,7 +2567,6 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
           onPick={pickExamplePluginPreset}
           onPreview={onOpenPluginDetails}
           pulseFirstPreset={guidePulseFirstPreset}
-          workspaceContext={workspaceContext}
         />
       ) : activePromptExamples.length > 0 ? (
         <div
@@ -2657,12 +2651,11 @@ export const HomeHero = forwardRef<HomeHeroHandle, Props>(function HomeHero(
 // and rendering a sandboxed page per row costs far more than it is worth.
 function presetPreviewPoster(
   record: InstalledPluginRecord,
-  workspaceContext: WorkspaceCollabContext | null,
 ): string | null {
-  const opts = { preferBaked: true, workspaceContext };
+  const opts = { preferBaked: true };
   const baked = inferPluginPreview(record, opts);
   if (baked.kind === 'media' && baked.poster) return baked.poster;
-  const plain = inferPluginPreview(record, { workspaceContext });
+  const plain = inferPluginPreview(record);
   return plain.kind === 'media' ? plain.poster : null;
 }
 
@@ -2675,7 +2668,6 @@ function PluginPromptPresets({
   pendingPluginId,
   plugins,
   pulseFirstPreset = false,
-  workspaceContext = null,
 }: {
   activePluginId: string | null;
   chipId: string;
@@ -2686,7 +2678,6 @@ function PluginPromptPresets({
   onPreview: (record: InstalledPluginRecord) => void;
   pendingPluginId: string | null;
   plugins: InstalledPluginRecord[];
-  workspaceContext?: WorkspaceCollabContext | null;
   // First-run guide: the first card carries the attention sheen.
   pulseFirstPreset?: boolean;
 }) {
@@ -2712,7 +2703,7 @@ function PluginPromptPresets({
             chipId={chipId}
             locale={locale}
             record={record}
-            poster={presetPreviewPoster(record, workspaceContext)}
+            poster={presetPreviewPoster(record)}
             onPreview={() => onPreview(record)}
             active={activePluginId === record.id}
             pending={pendingPluginId === record.id}

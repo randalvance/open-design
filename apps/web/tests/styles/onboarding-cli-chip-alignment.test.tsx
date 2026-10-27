@@ -118,7 +118,6 @@ function renderOnboarding() {
     onRefreshAgents: vi.fn(() => agents),
     onCreateProject: vi.fn(),
     onBeginProjectCreation: () => ({ projectId: 'optimistic-project', rollback: () => undefined }),
-    onAmrBalanceGateBlockChange: () => undefined,
     onCreatePluginShareProject: vi.fn(),
     onImportClaudeDesign: vi.fn(),
     onOpenProject: vi.fn(),
@@ -166,14 +165,6 @@ beforeEach(() => {
   globalThis.ResizeObserver = ResizeObserverMock as typeof ResizeObserver;
   globalThis.fetch = vi.fn(async (input) => {
     const url = String(input);
-    if (url.endsWith('/api/integrations/vela/status')) {
-      return jsonResponse({
-        loggedIn: true,
-        profile: 'prod',
-        configPath: '/x',
-        user: { id: 'u', email: 'user@example.com' },
-      });
-    }
     return jsonResponse({});
   }) as typeof fetch;
 });

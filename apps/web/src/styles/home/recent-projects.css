@@ -1267,32 +1267,6 @@
   height: 13px;
 }
 
-/* "邀请同事" entry on the team "全部项目" header (UC-2 entry point 2). */
-.recent-projects__invite {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  /* Match the 多选 / filter pills beside it (28px). */
-  height: 28px;
-  padding: 0 14px;
-  margin-right: 4px;
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
-  color: var(--accent-contrast, #fff);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: filter 0.15s cubic-bezier(0.23, 1, 0.32, 1);
-}
-.recent-projects__invite:hover:not(:disabled) {
-  /* Re-assert the accent fill (see primitives.css global button:hover). */
-  background: var(--accent);
-  border-color: transparent;
-  filter: brightness(1.05);
-}
-
 /* Shared badge on the thumbnail + creator avatar in the meta row. Private projects stay unbadged. */
 .recent-projects__card-badge {
   /* Mirrors `.recent-projects__card-menu-anchor` exactly — same positioned

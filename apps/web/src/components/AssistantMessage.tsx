@@ -22,7 +22,6 @@ import {
 import { Button } from "@open-design/components";
 import { navigate } from "../router";
 import { deleteProjectFile, projectFileUrl, uploadProjectFiles } from "../providers/registry";
-import { useProjectCollabContext } from "../collab/collab-context";
 import { useAnalytics } from "../analytics/provider";
 import {
   trackAssistantFeedbackButtonClick,
@@ -450,10 +449,9 @@ function AssistantMessageImpl({
   nextStepVariant = 'default',
 }: Props) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const imageSrc = useCallback(
-    (path: string) => projectId ? projectFileUrl(projectId, path, workspaceContext) : path,
-    [projectId, workspaceContext],
+    (path: string) => projectId ? projectFileUrl(projectId, path) : path,
+    [projectId],
   );
   // A blocked strategy task is a sticky terminal verdict: the daemon rejects
   // every further continuation with 409 STRATEGY_TASK_STATE_MISMATCH, so the
@@ -3173,7 +3171,6 @@ function FormBlock({
 }) {
   const t = useT();
   const analytics = useAnalytics();
-  const { workspaceContext } = useProjectCollabContext();
   const formKey =
     projectId && conversationId
       ? `${projectId}:${conversationId}:${assistantMessageId}:${form.id}`
@@ -3311,12 +3308,12 @@ function FormBlock({
     if (!projectId) return false;
     const deleted = await Promise.all(
       pending.map((attachment) =>
-        deleteProjectFile(projectId, attachment.path, workspaceContext),
+        deleteProjectFile(projectId, attachment.path),
       ),
     );
     pendingUploadCleanupRef.current = pending.filter((_, index) => !deleted[index]);
     return pendingUploadCleanupRef.current.length === 0;
-  }, [projectId, workspaceContext]);
+  }, [projectId]);
 
   const handleSubmit = useCallback(
     async (
@@ -3373,8 +3370,6 @@ function FormBlock({
         const result = await uploadProjectFiles(
           projectId,
           flatFiles.map((entry) => entry.file),
-          undefined,
-          workspaceContext,
         ).catch((error) => ({
           uploaded: [],
           failed: flatFiles.map((entry) => ({

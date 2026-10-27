@@ -90,7 +90,7 @@ const failedTurn = (): ChatMessage => ({
   endedAt: 1_700_000_011_000,
   runId: 'run-1',
   runStatus: 'failed',
-  agentId: 'amr',
+  agentId: 'opencode',
   events: [{ kind: 'status', label: 'error', detail: RAW_DETAIL, code: UNMAPPED_CODE }],
 } as unknown as ChatMessage);
 
@@ -113,7 +113,7 @@ const hostMemoryCard = (): ChatMessage => ({
   role: 'assistant',
   content: MEMORY_CARD,
   createdAt: 1_700_000_012_000,
-  agentId: 'amr',
+  agentId: 'opencode',
   events: [{ kind: 'text', text: MEMORY_CARD }],
 } as unknown as ChatMessage);
 
@@ -122,7 +122,7 @@ const hostBrandAssistCard = (): ChatMessage => ({
   role: 'assistant',
   content: 'chat.brandBrowserAssistMessage\n\n<od-card type="brand-browser-assist">{}</od-card>',
   createdAt: 1_700_000_012_000,
-  agentId: 'amr',
+  agentId: 'opencode',
   events: [{ kind: 'text', text: 'chat.brandBrowserAssistMessage' }],
 } as unknown as ChatMessage);
 
@@ -140,7 +140,7 @@ const succeededTurn = (): ChatMessage => ({
   endedAt: 1_700_000_015_000,
   runId: 'run-2',
   runStatus: 'succeeded',
-  agentId: 'amr',
+  agentId: 'opencode',
   events: [{ kind: 'text', text: '做完了' }],
 } as unknown as ChatMessage);
 
@@ -163,7 +163,7 @@ function renderChat(messages: ChatMessage[]) {
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
+      config={{ agentId: 'opencode', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }

@@ -485,7 +485,7 @@ jobs:
       matrix:
         include:
           - group: a
-            files: ui/amr-onboarding.test.ts ui/app.test.ts ui/app-design-files.test.ts ui/app-manual-edit.test.ts ui/api-empty-response.test.ts
+            files: ui/app.test.ts ui/app-design-files.test.ts ui/app-manual-edit.test.ts ui/api-empty-response.test.ts
           - group: b
             files: ui/app-restoration.test.ts ui/entry-chrome-flows.test.ts ui/project-management-flows.test.ts ui/settings-api-protocol.test.ts ui/settings-local-cli-codex-fallback.test.ts ui/critical-smoke.test.ts ui/workspace-keyboard-flows.test.ts
 
@@ -526,7 +526,7 @@ jobs:
     name: ${{ matrix.name }}
     needs: [plan, runners]
     if: ${{ needs.plan.outputs.ui_p0_count != '0' }}
-    runs-on: ${{ matrix.shard == 'project-collab' && fromJSON(needs.runners.outputs.runs_on).ui_p0_heavy || fromJSON(needs.runners.outputs.runs_on).ui_p0 }}
+    runs-on: ${{ fromJSON(needs.runners.outputs.runs_on).ui_p0 }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -543,14 +543,14 @@ jobs:
         uses: ./.github/actions/setup-workspace
         with:
           postinstall-intent: ci-ui
-          runner-labels: ${{ toJSON(matrix.shard == 'project-collab' && fromJSON(needs.runners.outputs.runs_on).ui_p0_heavy || fromJSON(needs.runners.outputs.runs_on).ui_p0) }}
+          runner-labels: ${{ toJSON(fromJSON(needs.runners.outputs.runs_on).ui_p0) }}
 
       - name: Setup Playwright
         uses: ./.github/actions/setup-playwright
         with:
           package-json-path: e2e/package.json
           install-command: pnpm -C e2e exec playwright install --with-deps chromium
-          runner-labels: ${{ toJSON(matrix.shard == 'project-collab' && fromJSON(needs.runners.outputs.runs_on).ui_p0_heavy || fromJSON(needs.runners.outputs.runs_on).ui_p0) }}
+          runner-labels: ${{ toJSON(fromJSON(needs.runners.outputs.runs_on).ui_p0) }}
 
       - name: Prebuild workspace type declarations
         run: |

@@ -273,7 +273,7 @@ export function ExecutionShell({
    *
    * ── 补的是哪个画面(真机,打包版 beta 2026-09-03)────────────────────
    *
-   * ACP 那一家(`vela` / `devin` / `hermes` / `kilo` / `kimi` / `kiro` / `vibe`)在首个
+   * ACP 那一家(`devin` / `hermes` / `kilo` / `kimi` / `kiro` / `vibe`)在首个
    * token 之前一条会落行的事件都不发,壳身子是**全空的**,屏幕上只剩壳头「进行中 1m 7s」。
    * 而 daemon 这一刻正逐字发着
    * `{"type":"status","label":"waiting_for_first_output","elapsedMs":27217}`

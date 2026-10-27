@@ -30,7 +30,6 @@ import type { ComponentProps, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectView } from '../../src/components/ProjectView';
-import type { ProjectWorkspaceScopeState } from '../../src/collab/useProjectWorkspaceScope';
 import { steerChatRun, streamViaDaemon } from '../../src/providers/daemon';
 import {
   createConversation,
@@ -55,9 +54,6 @@ const FIRST_PROMPT = '先把首屏排出来';
 const QUEUED_PROMPT = '顺手把 CTA 换成深色';
 
 const chatPaneSpy = vi.hoisted(() => vi.fn());
-const workspaceScopeMocks = vi.hoisted(() => ({
-  projectScope: { loading: false, scope: null } as ProjectWorkspaceScopeState,
-}));
 
 vi.mock('../../src/i18n', () => ({
   useI18n: () => ({ locale: 'en', setLocale: () => undefined, t: (key: string) => key }),
@@ -74,23 +70,11 @@ vi.mock('../../src/providers/daemon', () => ({
   fetchChatRunStatus: vi.fn(),
   listActiveChatRuns: vi.fn().mockResolvedValue([]),
   listProjectRuns: vi.fn().mockResolvedValue([]),
-  publishDaemonRunFinishedEvent: vi.fn(),
   reattachDaemonRun: vi.fn(),
   streamViaDaemon: vi.fn(),
   // 这一页最要紧的一条断言就是「它一次都没被调用」,所以它必须在 mock 里存在,
   // 否则 ProjectView 连模块都导不进来,断言会赢在「根本没跑起来」上。
   steerChatRun: vi.fn(),
-  fetchAmrWalletSnapshot: vi.fn().mockResolvedValue(null),
-  formatVelaBalanceUsd: (value: string | null) => `$${value ?? '0'}`,
-  fetchVelaLoginStatus: vi.fn().mockResolvedValue({ loggedIn: true }),
-  startVelaLogin: vi.fn(),
-  cancelVelaLogin: vi.fn(),
-  canUpgradeVelaPlan: vi.fn().mockReturnValue(false),
-}));
-
-vi.mock('../../src/collab/useProjectWorkspaceScope', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useProjectWorkspaceScope')>()),
-  useProjectWorkspaceScope: () => workspaceScopeMocks.projectScope,
 }));
 
 vi.mock('../../src/providers/project-events', () => ({
@@ -346,10 +330,6 @@ describe('OPEND-2602:队列里的「引导对话」按下去中断当前运行',
     mockedFetchProjectFiles.mockResolvedValue([]);
     mockedFetchBrands.mockResolvedValue([]);
     mockedLoadTabs.mockResolvedValue({ tabs: [], active: null });
-    workspaceScopeMocks.projectScope = {
-      loading: false,
-      scope: { kind: 'unbound', projectId: PROJECT_ID, workspaceId: null, context: null },
-    } as ProjectWorkspaceScopeState;
     hangEveryRun();
   });
 

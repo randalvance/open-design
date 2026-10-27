@@ -36,9 +36,6 @@ async function runMedia(args: string[], env: NodeJS.ProcessEnv = {}) {
         OD_DAEMON_URL: 'http://offline.invalid',
         OD_PROJECT_ID: '',
         OD_TOOL_TOKEN: '',
-        OD_WORKSPACE_ID: '',
-        OD_WORKSPACE_MEMBER_ID: '',
-        OPEN_DESIGN_VELA_TELEMETRY: 'off',
         ...env,
       },
     });
@@ -70,7 +67,7 @@ describe('od media help', () => {
 
   it('does not dispatch a fully specified generation when help is requested', async () => {
     expectHelp(await runMedia([
-      'generate', '--surface', 'image', '--model', 'vela/gpt-image-2',
+      'generate', '--surface', 'image', '--model', 'gpt-image-2',
       '--prompt', 'A geometric poster', '--help',
     ], { OD_PROJECT_ID: 'project-media' }));
   });

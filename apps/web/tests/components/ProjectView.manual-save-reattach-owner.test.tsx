@@ -14,10 +14,8 @@ vi.mock('../../src/router', () => ({ navigate: vi.fn(), registerNavigationGuard:
 vi.mock('../../src/providers/anthropic', () => ({ streamMessage: vi.fn() }));
 vi.mock('../../src/providers/daemon', () => ({
   fetchChatRunStatus: vi.fn(),
-  fetchAmrWalletSnapshot: vi.fn().mockResolvedValue(null),
   listActiveChatRuns: vi.fn().mockResolvedValue([]),
   listProjectRuns: vi.fn().mockResolvedValue([]),
-  publishDaemonRunFinishedEvent: vi.fn(),
   reattachDaemonRun: vi.fn(),
   streamViaDaemon: vi.fn(),
 }));
@@ -66,7 +64,7 @@ vi.mock('../../src/state/projects', async () => {
 });
 vi.mock('../../src/components/AppChromeHeader', () => ({ AppChromeHeader: () => null, APP_CHROME_FILE_ACTIONS_ID: 'test-file-actions' }));
 vi.mock('../../src/components/AvatarMenu', () => ({ AvatarMenu: () => null }));
-vi.mock('../../src/components/Loading', () => ({ CenteredLoader: () => null }));
+vi.mock('../../src/components/Loading', () => ({ CenteredLoader: () => null, Spinner: () => null }));
 vi.mock('../../src/components/ChatPane', () => ({
   ChatPane: ({ messages, onSend, viewerOnly }: {
     messages: ChatMessage[];
@@ -145,7 +143,6 @@ function mountProject(runConfig: AppConfig = config) {
     initialProjectDetail={{ project, resolvedDir: '/workspace/owner-test' }}
     routeFileName={null}
     config={runConfig}
-    workspaceContextOverride={null}
     agents={[{ id: 'byok-opencode', name: 'BYOK OpenCode', bin: 'opencode', available: true, models: [] }]}
     skills={[]}
     designTemplates={[]}
@@ -309,7 +306,6 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
-
 
 const persistedArtifactHtml = '';
 

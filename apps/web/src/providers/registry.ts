@@ -1,14 +1,4 @@
-import {
-  PUBLIC_FILE_MANUAL_REVOKE_REQUIRED,
-  SHARE_ENTRY_INDEX_CONFLICT,
-  workspaceContextHasTeamIdentity,
-  type PublicFileManualRevokeRequiredData,
-  type ProjectFilePublicShareResponse,
-  type ShareUnpublishResponse,
-  type SharePublishRequest,
-} from '@open-design/contracts';
 import { boundedRequestErrorCode } from '../analytics/workspace';
-import { publishReceiptObservation } from '@open-design/contracts/analytics';
 import type {
   ConnectorAuthConfigPrepareResponse,
   ConnectorDetail,
@@ -38,7 +28,6 @@ import type {
   RestoreProjectFileVersionResponse,
   SocialShareRequest,
   SocialShareResponse,
-  WorkspaceCollabContext,
 } from '@open-design/contracts';
 import type {
   AgentInfo,
@@ -102,15 +91,6 @@ import {
   forceSharedCancellableGet,
   sharedCancellableGet,
 } from '../lib/shared-cancellable-get';
-import { workspaceProjectHeaders } from '../state/projects';
-import {
-  appendResourceQuery,
-  workspaceIdentityCacheKey,
-  workspaceResourceUrl,
-  workspaceAccountScopedCacheKey,
-  currentWorkspaceAccountGeneration,
-} from '../collab/workspace-identity';
-import { parseEntryIndexConflictDetails, PublicFilePublishError } from '../collab/public-file-publish';
 import { clientRequestIdHeaders, withDaemonFailure } from '../analytics/failure-detail';
 import { randomUUID } from '../utils/uuid';
 
@@ -152,55 +132,6 @@ export type WebDeploymentInfo = ProjectDeploymentsResponse['deployments'][number
 export type WebDeployProjectFileResponse = DeployProjectFileResponse;
 export type WebCloudflarePagesDeploySelection = CloudflarePagesDeploySelection;
 export type WebCloudflarePagesZonesResponse = CloudflarePagesZonesResponse;
-
-/**
- * What the share surfaces need from a durable public-file publication.
- * `url` is `null` when the daemon has no Viewer origin configured: the file
- * is still published (and stoppable by `slug`), but there is no link to show.
- * Consumers must not treat a null `url` as "not published", or the UI would
- * offer Publish again and upload a duplicate.
- */
-export interface WebPublicFileShareLink {
-  slug: string;
-  url: string | null;
-  /** Optional observation only; never determines publication or link readiness. */
-  publicationObservation?: { share_version?: number; published_at?: number };
-}
-
-function nonEmptyString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() ? value : null;
-}
-
-/** Normalize the POST publish-public body (`SharePublishResponse`). */
-function publicFileShareLinkFromPublish(payload: unknown): WebPublicFileShareLink {
-  const body = (payload && typeof payload === 'object' ? payload : {}) as {
-    receipt?: { slug?: unknown; version?: unknown; publishedAt?: unknown };
-    url?: unknown;
-  };
-  const slug = nonEmptyString(body.receipt?.slug);
-  if (!slug) throw new Error('Publish response is missing its receipt slug');
-  const observation = publishReceiptObservation(body.receipt);
-  return {
-    slug, url: nonEmptyString(body.url),
-    ...(Object.keys(observation).length > 0 ? { publicationObservation: observation } : {}),
-  };
-}
-
-/** Normalize the GET publish-public body (`ProjectFilePublicShareResponse`):
- * a live publication with a URL, or one whose link is unavailable (slug only). */
-export function publicFileShareLinkFromRead(payload: unknown): WebPublicFileShareLink | null {
-  const body = (payload && typeof payload === 'object' ? payload : {}) as {
-    publication?: { url?: unknown; slug?: unknown } | null;
-    link?: { status?: unknown } | null;
-    slug?: unknown;
-  };
-  const publicationSlug = nonEmptyString(body.publication?.slug);
-  const publicationUrl = nonEmptyString(body.publication?.url);
-  if (publicationSlug && publicationUrl) return { slug: publicationSlug, url: publicationUrl };
-  const unavailableSlug = nonEmptyString(body.slug);
-  if (body.link?.status === 'unavailable' && unavailableSlug) return { slug: unavailableSlug, url: null };
-  return null;
-}
 
 export function isDeployProviderId(value: unknown): value is WebDeployProviderId {
   return typeof value === 'string' && (DEPLOY_PROVIDER_IDS as readonly string[]).includes(value);
@@ -323,26 +254,16 @@ export async function fetchAgentsStream(args: {
   return collected;
 }
 
-// `workspaceContext`, when present, attaches the same workspace identity
-// headers project/plugin reads already carry (`workspaceProjectHeaders`) so
-// the daemon's `GET /api/skills` can apply its workspace-scoped filter
-// (skills.ts's `skillVisibleFromWorkspace`, mirroring `listInstalledPlugins`'s
-// one-way "unclaimed visible everywhere, claimed elsewhere hidden" rule).
-// Omit for callers that want the unfiltered, pre-workspace-isolation list.
 type CatalogReadObserver = { onReadResult?: (success: boolean) => void };
 function observeCatalogRead(options: CatalogReadObserver | undefined, success: boolean): void {
   try { options?.onReadResult?.(success); } catch { /* Observation cannot affect catalog reads. */ }
 }
 
 export async function fetchSkills(
-  workspaceContext?: WorkspaceCollabContext | null,
   options?: CatalogReadObserver,
 ): Promise<SkillSummary[]> {
   try {
-    const resp = await fetch(
-      '/api/skills',
-      workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : undefined,
-    );
+    const resp = await fetch('/api/skills');
     if (!resp.ok) { observeCatalogRead(options, false); return []; }
     const json = (await resp.json()) as { skills: SkillSummary[] };
     observeCatalogRead(options, Array.isArray(json.skills));
@@ -355,13 +276,11 @@ export async function fetchSkills(
 
 export async function fetchProjectMediaTasks(
   projectId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ProjectMediaTasksResponse> {
   const resp = await fetch(
     `/api/projects/${encodeURIComponent(projectId)}/media/tasks?includeDone=1`,
     {
       cache: 'no-store',
-      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
     },
   );
   if (!resp.ok) throw new Error(`media tasks ${resp.status}`);
@@ -501,21 +420,14 @@ async function readSkillOperationError(resp: Response): Promise<SkillImportError
   }
 }
 
-// `workspaceContext`, when present, stamps the imported skill with the
-// acting workspace (see `fetchSkills` above) so the daemon's
-// `bindImportedSkillToWorkspace` (routes/static-resource.ts) has a workspace
-// identity to bind against. Omit for callers that intentionally leave the
-// skill unclaimed (visible everywhere).
 export async function importSkill(
   input: SkillImportInput,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<{ skill: SkillSummary } | { error: SkillImportError }> {
   try {
     const resp = await fetch('/api/skills/import', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify(input),
     });
@@ -546,21 +458,15 @@ export interface SkillUpdateInput {
   triggers?: string[];
 }
 
-// `workspaceContext`, when present, proves the caller's workspace membership
-// against the daemon's `enforceWorkspaceResourceMutation` gate (see
-// `fetchSkills` above) — required once the skill being edited carries a
-// `workspace_resources` binding row; a no-op for an unbound (legacy) skill.
 export async function updateSkill(
   id: string,
   input: SkillUpdateInput,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<{ skill: SkillSummary } | { error: SkillImportError }> {
   try {
     const resp = await fetch(`/api/skills/${encodeURIComponent(id)}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify(input),
     });
@@ -594,12 +500,10 @@ export interface SkillFileEntry {
 
 export async function fetchSkillFiles(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<SkillFileEntry[]> {
   try {
     const resp = await fetch(
       `/api/skills/${encodeURIComponent(id)}/files`,
-      workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : undefined,
     );
     if (!resp.ok) return [];
     const json = (await resp.json()) as { files: SkillFileEntry[] };
@@ -609,19 +513,12 @@ export async function fetchSkillFiles(
   }
 }
 
-// `workspaceContext`, when present, proves the caller's workspace membership
-// against the daemon's `enforceWorkspaceResourceMutation` gate (see
-// `fetchSkills` above) — required once the skill being deleted carries a
-// `workspace_resources` binding row (installed/imported by someone else, or
-// pulled in from a team share); a no-op for an unbound (legacy) skill.
 export async function deleteSkill(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<{ ok: true } | { error: SkillImportError }> {
   try {
     const resp = await fetch(`/api/skills/${encodeURIComponent(id)}`, {
       method: 'DELETE',
-      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
     });
     if (!resp.ok) {
       const payload = (await resp.json().catch(() => null)) as
@@ -646,12 +543,10 @@ export async function deleteSkill(
 
 export async function fetchSkill(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<SkillDetail | null> {
   try {
     const resp = await fetch(
       `/api/skills/${encodeURIComponent(id)}`,
-      workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : undefined,
     );
     if (!resp.ok) return null;
     return (await resp.json()) as SkillDetail;
@@ -661,10 +556,9 @@ export async function fetchSkill(
 }
 
 export async function fetchDesignSystems(
-  workspaceContext?: WorkspaceCollabContext | null,
   options?: FetchDesignSystemsOptions,
 ): Promise<DesignSystemSummary[]> {
-  const result = await fetchDesignSystemsResult(workspaceContext, options);
+  const result = await fetchDesignSystemsResult(options);
   observeCatalogRead(options, result.ok);
   return result.ok ? result.designSystems : [];
 }
@@ -678,79 +572,7 @@ export type DesignSystemsResult =
   | { ok: true; designSystems: DesignSystemSummary[] }
   | { ok: false };
 
-export interface FetchDesignSystemsOptions extends CatalogReadObserver {
-  /**
-   * A realtime mutation invalidated the Team index. Every forced call starts
-   * its own authoritative read; distinct mutations must never join an older
-   * in-flight snapshot merely because they arrived inside one burst window.
-   */
-  forceTeamMaterialization?: boolean;
-  /**
-   * Exact Team ids returned by a workspace-scoped Team-index read that just
-   * completed in the caller. Reuse that witness while reading the unified
-   * catalog instead of issuing a duplicate `/team` materialization request.
-   *
-   * Supplying it also declares the catalog read itself authoritative: the only
-   * caller passes it when its fresh `/team` witness disagrees with the rows it
-   * holds, or straight after a share/unshare. So the catalog read starts fresh
-   * rather than joining one issued before that change.
-   */
-  materializedTeamIds?: readonly string[];
-}
-
-async function materializeTeamDesignSystems(
-  workspaceContext: WorkspaceCollabContext | null | undefined,
-  accountGeneration: number,
-  options?: FetchDesignSystemsOptions,
-): Promise<ReadonlySet<string>> {
-  if (!workspaceContext || !workspaceContextHasTeamIdentity(workspaceContext)) {
-    return new Set();
-  }
-  if (options?.materializedTeamIds) {
-    return new Set(options.materializedTeamIds);
-  }
-
-  // Team systems live in a workspace-scoped materialization directory. Prime
-  // that directory before reading the unified catalog so Home and every other
-  // picker see team shares even when the user has never opened the Design
-  // Systems management tab.
-  //
-  // Never replace these explicit identity headers with a daemon/Vela "active
-  // workspace" lookup. One account can have multiple clients open in different
-  // Workspaces; a backend-global active Workspace would let either client
-  // retarget the other's catalog request.
-  try {
-    // Account-scoped for the same reason the catalog key is, and with the SAME
-    // captured generation: this witness decorates the catalog rows, so a `/team`
-    // request still in flight across a sign-out/sign-in must not be joined by a
-    // post-boundary reader — that would stamp the new account's rows with the
-    // previous account's Team-share flags.
-    const cacheKey = `design-system-team-materialization:`
-      + `${workspaceAccountScopedCacheKey(workspaceContext, accountGeneration)}`;
-    const readTeamIndex = async () => {
-      const response = await fetch('/api/workspace/design-systems/team', {
-        cache: 'no-store',
-        headers: workspaceProjectHeaders(workspaceContext),
-      });
-      if (!response.ok) {
-        throw new Error(`design-systems-team ${response.status}`);
-      }
-      const body = (await response.json()) as { ids?: unknown };
-      return new Set(
-        Array.isArray(body.ids)
-          ? body.ids.filter((id): id is string => typeof id === 'string')
-          : [],
-      );
-    };
-    if (options?.forceTeamMaterialization) evictCoalescedGet(cacheKey);
-    return await coalescedGet(cacheKey, readTeamIndex);
-  } catch {
-    // Keep personal/built-in systems usable while the remote team index is
-    // temporarily unavailable. The scoped catalog request below remains the
-    // authority and still fails closed for an invalid Workspace identity.
-    return new Set();
-  }
-}
+export type FetchDesignSystemsOptions = CatalogReadObserver;
 
 /**
  * Read the unified catalog once per burst of identical concurrent readers.
@@ -765,8 +587,7 @@ async function materializeTeamDesignSystems(
  *
  * SINGLE-FLIGHT ONLY (ttl 0, no shared settled result). Some of those call
  * sites exist precisely to observe a change that just happened out of band:
- * returning home re-reads so an in-project brand extraction appears, and a
- * `forceTeamMaterialization` caller is announcing a realtime mutation. Sharing
+ * returning home re-reads so an in-project brand extraction appears. Sharing
  * a settled answer — for even a second — would hand exactly those reads the
  * state they were fired to replace.
  */
@@ -779,8 +600,7 @@ const CATALOG_SINGLE_FLIGHT_ONLY_MS = 0;
  * caller from JOINING a request that is still in flight. The callers that follow
  * a mutation are exactly the ones that must not join: `DesignSystemsTab` awaits
  * `deleteDesignSystemDraft` / `updateDesignSystemDraft` and then calls its plain
- * `onSystemsRefresh()` — no `forceTeamMaterialization`, because nothing remote
- * changed — and the daemon answers `/api/design-systems` from a snapshot taken
+ * `onSystemsRefresh()` — and the daemon answers `/api/design-systems` from a snapshot taken
  * when the request arrived. Joining a pre-mutation GET would leave the deleted
  * system on screen, or show the old published/draft status.
  *
@@ -796,9 +616,6 @@ const CATALOG_SINGLE_FLIGHT_ONLY_MS = 0;
  *     return; the finished job arrives through the invalidation path;
  *   - `ensureDesignSystemWorkspace` — it materializes an editing workspace and
  *     leaves the catalog rows alone.
- *
- * `forceTeamMaterialization` also stays as it is: that is the REMOTE
- * (team-invalidation) signal, this is the local one.
  */
 let designSystemCatalogMutationGeneration = 0;
 
@@ -806,41 +623,10 @@ function noteDesignSystemCatalogMutation(): void {
   designSystemCatalogMutationGeneration += 1;
 }
 
-async function readDesignSystemCatalog(
-  workspaceContext: WorkspaceCollabContext | null | undefined,
-  accountGeneration: number,
-  options?: FetchDesignSystemsOptions,
-): Promise<DesignSystemSummary[]> {
-  // Keyed by the exact identity the request will carry, PLUS the account
-  // boundary it was captured under — the same two-part identity the app uses
-  // for this catalog and the team-project catalog carries as its request
-  // generation. `/api/design-systems` is fail-closed on a missing scope, so a
-  // headerless read is a different, smaller catalog and never an answer a
-  // Workspace-scoped read may join. The generation is load-bearing on its own:
-  // a sign-out/sign-in cycle can leave every context field identical while the
-  // authority behind them has changed, and ttl 0 would not catch it — it stops
-  // settled-result reuse, not a post-boundary reader joining a request issued
-  // before the boundary.
-  const cacheKey = `design-system-catalog:${designSystemCatalogMutationGeneration}`
-    + `:${workspaceAccountScopedCacheKey(workspaceContext, accountGeneration)}`;
-  // Same rule as the Team index above: a forced call is an authoritative read
-  // for one mutation and must never join a snapshot issued before it.
-  //
-  // `materializedTeamIds` counts too, and it is not obvious from the name.
-  // `DesignSystemsTab.refreshTeamShared` is the only caller that supplies it,
-  // and it does so exactly when the fresh `/team` witness disagrees with the
-  // catalog it holds — or immediately after a share/unshare. Carrying that
-  // witness therefore means "what I hold is out of date"; joining a catalog GET
-  // issued before the share would omit the newly shared system or keep a
-  // retired mirror on screen. Routine mounts do not pass it, so ordinary
-  // readers still collapse onto the shared key.
-  if (options?.forceTeamMaterialization || options?.materializedTeamIds) {
-    evictCoalescedGet(cacheKey);
-  }
+async function readDesignSystemCatalog(): Promise<DesignSystemSummary[]> {
+  const cacheKey = `design-system-catalog:${designSystemCatalogMutationGeneration}`;
   return coalescedGet(cacheKey, async () => {
-    const resp = await fetch('/api/design-systems', {
-      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
-    });
+    const resp = await fetch('/api/design-systems');
     // Throw rather than return a sentinel: `coalescedGet` never caches a
     // failure, so the next reader retries instead of joining a dead entry.
     if (!resp.ok) throw new Error(`design-systems ${resp.status}`);
@@ -850,47 +636,10 @@ async function readDesignSystemCatalog(
 }
 
 export async function fetchDesignSystemsResult(
-  workspaceContext?: WorkspaceCollabContext | null,
-  options?: FetchDesignSystemsOptions,
+  _options?: FetchDesignSystemsOptions,
 ): Promise<DesignSystemsResult> {
-  // Capture the account boundary ONCE. The Team witness and the catalog are two
-  // awaited reads; letting each resolve the generation at its own call time lets
-  // them straddle a sign-out/sign-in, which would decorate post-boundary rows
-  // with pre-boundary Team-share flags. Keyed as of one boundary, the pair is at
-  // least internally consistent.
-  //
-  // What this does NOT do, stated because the opposite is easy to assume: it
-  // does not stop a late result from being COMMITTED after a boundary. Only
-  // `App`'s `refreshDesignSystems` re-checks the generation after awaiting;
-  // `DesignSystemSwitchPicker`, `DesignSystemsSection` and `LibrarySection` key
-  // their effects on workspace identity alone, and the Workspace hook
-  // deliberately retains the old context while an identity change is pending, so
-  // those fields can be unchanged across the boundary. That exposure predates
-  // coalescing — each of those readers had it when every call made its own
-  // request — and closing it means giving those three readers a generation
-  // guard, which is its own change.
-  const accountGeneration = currentWorkspaceAccountGeneration();
   try {
-    const teamSharedIds = await materializeTeamDesignSystems(
-      workspaceContext,
-      accountGeneration,
-      options,
-    );
-    const designSystems = await readDesignSystemCatalog(
-      workspaceContext,
-      accountGeneration,
-      options,
-    );
-    return {
-      ok: true,
-      // Mapped per caller: readers sharing one catalog read still resolve the
-      // Team-shared flag against their own Team-index witness.
-      designSystems: designSystems.map((system) => (
-        teamSharedIds.has(system.id)
-          ? { ...system, teamShared: true }
-          : system
-      )),
-    };
+    return { ok: true, designSystems: await readDesignSystemCatalog() };
   } catch {
     return { ok: false };
   }
@@ -898,14 +647,12 @@ export async function fetchDesignSystemsResult(
 
 export async function fetchDesignSystem(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemDetail | null> {
   try {
     // no-store so edits made elsewhere (the in-project Design System tab) are
     // reflected the next time the manager / a consumer re-reads the system.
     const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}`, {
       cache: 'no-store',
-      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
     });
     if (!resp.ok) return null;
     return parseDesignSystemDetail(await resp.json());
@@ -916,12 +663,10 @@ export async function fetchDesignSystem(
 
 export async function fetchDesignSystemFiles(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemFileSummary[]> {
   try {
     const resp = await fetch(
       `/api/design-systems/${encodeURIComponent(id)}/files`,
-      workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : undefined,
     );
     if (!resp.ok) return [];
     const json = (await resp.json()) as { files: DesignSystemFileSummary[] };
@@ -934,12 +679,10 @@ export async function fetchDesignSystemFiles(
 export async function fetchDesignSystemFile(
   id: string,
   filePath: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemFileDetail | null> {
   try {
     const resp = await fetch(
       `/api/design-systems/${encodeURIComponent(id)}/file?path=${encodeURIComponent(filePath)}`,
-      workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : undefined,
     );
     if (!resp.ok) return null;
     const json = (await resp.json()) as { file?: DesignSystemFileDetail };
@@ -951,12 +694,10 @@ export async function fetchDesignSystemFile(
 
 export async function ensureDesignSystemWorkspace(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<{ project: Project; files: ProjectFile[] } | null> {
   try {
     const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}/workspace`, {
       method: 'POST',
-      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
     });
     if (!resp.ok) return null;
     return (await resp.json()) as { project: Project; files: ProjectFile[] };
@@ -985,14 +726,12 @@ export interface DesignSystemDraftInput {
 
 export async function createDesignSystemDraft(
   input: DesignSystemDraftInput,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemDetail | null> {
   try {
     const resp = await fetch('/api/design-systems', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify(input),
     });
@@ -1006,14 +745,12 @@ export async function createDesignSystemDraft(
 
 export async function startDesignSystemGenerationJob(
   input: DesignSystemDraftInput,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemGenerationJob | null> {
   try {
     const resp = await fetch('/api/design-systems/generation-jobs', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify(input),
     });
@@ -1027,13 +764,10 @@ export async function startDesignSystemGenerationJob(
 
 export async function fetchDesignSystemGenerationJob(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemGenerationJob | null> {
   try {
     const url = `/api/design-systems/generation-jobs/${encodeURIComponent(id)}`;
-    const resp = workspaceContext
-      ? await fetch(url, { headers: workspaceProjectHeaders(workspaceContext) })
-      : await fetch(url);
+    const resp = await fetch(url);
     if (!resp.ok) return null;
     const json = (await resp.json()) as { job?: DesignSystemGenerationJob };
     return json.job ?? null;
@@ -1044,14 +778,12 @@ export async function fetchDesignSystemGenerationJob(
 
 export async function fetchProjectDesignSystemPackageAudit(
   projectId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemPackageAudit | null> {
   try {
     const resp = await fetch(
       `/api/projects/${encodeURIComponent(projectId)}/design-system-package-audit`,
       {
         cache: 'no-store',
-        ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
       },
     );
     if (!resp.ok) return null;
@@ -1064,13 +796,10 @@ export async function fetchProjectDesignSystemPackageAudit(
 
 export async function fetchDesignSystemRevisions(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemRevision[]> {
   try {
     const url = `/api/design-systems/${encodeURIComponent(id)}/revisions`;
-    const resp = workspaceContext
-      ? await fetch(url, { headers: workspaceProjectHeaders(workspaceContext) })
-      : await fetch(url);
+    const resp = await fetch(url);
     if (!resp.ok) return [];
     const json = (await resp.json()) as { revisions?: DesignSystemRevision[] };
     return json.revisions ?? [];
@@ -1083,7 +812,6 @@ export async function updateDesignSystemRevisionStatus(
   id: string,
   revisionId: string,
   status: Extract<DesignSystemRevisionStatus, 'accepted' | 'rejected'>,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemRevision | null> {
   try {
     const resp = await fetch(
@@ -1092,7 +820,6 @@ export async function updateDesignSystemRevisionStatus(
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
         },
         body: JSON.stringify({ status }),
       },
@@ -1109,14 +836,12 @@ export async function updateDesignSystemRevisionStatus(
 export async function startDesignSystemRevisionJob(
   id: string,
   input: DesignSystemRevisionJobRequest,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemGenerationJob | null> {
   try {
     const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}/revision-jobs`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify(input),
     });
@@ -1131,14 +856,12 @@ export async function startDesignSystemRevisionJob(
 export async function startDesignSystemTokenContractRebuildJob(
   id: string,
   input: DesignSystemTokenContractRebuildJobRequest = {},
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemTokenContractRebuildJobResponse | null> {
   try {
     const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}/token-contract/rebuild-jobs`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify(input),
     });
@@ -1152,14 +875,12 @@ export async function startDesignSystemTokenContractRebuildJob(
 export async function updateDesignSystemDraft(
   id: string,
   input: Partial<DesignSystemDraftInput>,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<DesignSystemDetail | null> {
   try {
     const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify(input),
     });
@@ -1174,23 +895,18 @@ export async function updateDesignSystemDraft(
 // Signal-only trigger for the daemon-side asset sync (spec 04 §9.3,
 // recvqb1t4FrckM): fires when the design-system chat's agent writes real
 // files under `assets/` in the workspace project, so the canonical
-// design-system directory — the only thing team-share/download/showcase
-// ever read from — stops shipping a stale placeholder logo. No file bytes
-// cross the browser: the daemon locates the workspace project itself and
-// copies file contents straight through on its own side of the data-
-// directory boundary. See `workspaceProjectHeaders` — this is a mutating
-// write against a resource `canMutateUserDesignSystem` gates the same way
-// PATCH/DELETE are gated, so the workspace identity headers must ride along.
+// design-system directory — the only thing download/showcase ever read
+// from — stops shipping a stale placeholder logo. No file bytes cross the
+// browser: the daemon locates the workspace project itself and copies file
+// contents straight through on its own side of the data-directory boundary.
 export async function syncDesignSystemAssetsFromWorkspace(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<{ synced: string[] } | null> {
   try {
     const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}/sync-assets`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
     });
     if (!resp.ok) return null;
@@ -1214,16 +930,12 @@ export class DesignSystemDeleteError extends Error {
 
 export async function deleteDesignSystemDraft(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<boolean> {
   try {
     const resp = await fetch(
       `/api/design-systems/${encodeURIComponent(id)}`,
       {
         method: 'DELETE',
-        ...(workspaceContext
-          ? { headers: workspaceProjectHeaders(workspaceContext) }
-          : {}),
       },
     );
     if (!resp.ok && resp.status === 403) {
@@ -1787,16 +1499,13 @@ export type SkillExampleResult =
 export async function fetchSkillExample(
   id: string,
   previewType: string = 'html',
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<SkillExampleResult> {
   if (previewType !== 'html') {
     return { unavailable: true, kind: previewType };
   }
   try {
     const url = `/api/skills/${encodeURIComponent(id)}/example`;
-    const resp = workspaceContext
-      ? await fetch(url, { headers: workspaceProjectHeaders(workspaceContext) })
-      : await fetch(url);
+    const resp = await fetch(url);
     if (!resp.ok) {
       if (resp.status === 404) {
         return { unavailable: true, kind: 'html' };
@@ -1862,19 +1571,17 @@ export async function fetchCloudflarePagesZones(): Promise<WebCloudflarePagesZon
 
 export async function fetchProjectDeployments(
   projectId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<WebDeploymentInfo[]> {
   // HtmlViewer reads this from its identity-load effect and again when the
   // Share/Export popover opens; those can overlap. Retaining nothing after the
   // read settles keeps the popover's on-demand refresh a real request — it
   // exists precisely to observe a deploy that happened since the mount read.
   return coalescedGet(
-    `project-deployments:${projectId}:${workspaceIdentityCacheKey(workspaceContext)}`,
+    `project-deployments:${projectId}`,
     async () => {
       try {
         const resp = await fetch(
           `/api/projects/${encodeURIComponent(projectId)}/deployments`,
-          workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : undefined,
         );
         if (!resp.ok) return [];
         const json = (await resp.json()) as ProjectDeploymentsResponse;
@@ -1893,7 +1600,6 @@ export async function deployProjectFile(
   providerId: WebDeployProviderId = DEFAULT_DEPLOY_PROVIDER_ID,
   cloudflarePages?: WebCloudflarePagesDeploySelection,
   target?: 'preview' | 'production',
-  workspaceContext?: WorkspaceCollabContext | null,
   requestId?: string,
 ): Promise<WebDeployProjectFileResponse> {
   const body = {
@@ -1906,7 +1612,6 @@ export async function deployProjectFile(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       ...clientRequestIdHeaders(requestId),
     },
     body: JSON.stringify(body),
@@ -1934,223 +1639,14 @@ export async function deployProjectFile(
   return (await resp.json()) as WebDeployProjectFileResponse;
 }
 
-function parsePublicFileManualRevokeData(
-  value: unknown,
-): PublicFileManualRevokeRequiredData | undefined {
-  if (!value || typeof value !== 'object') return undefined;
-  const data = value as Partial<Record<keyof PublicFileManualRevokeRequiredData, unknown>>;
-  if (
-    typeof data.projectId !== 'string'
-    // No Viewer origin configured: the live publication has no URL, only a slug.
-    || (data.url !== null && (typeof data.url !== 'string' || !data.url))
-    || typeof data.slug !== 'string'
-    || typeof data.fileName !== 'string'
-    || !data.projectId
-    || !data.slug
-    || !data.fileName
-  ) {
-    return undefined;
-  }
-  return {
-    projectId: data.projectId,
-    url: typeof data.url === 'string' ? data.url : null,
-    slug: data.slug,
-    fileName: data.fileName,
-  };
-}
-
-export async function publishProjectFilePublic(
-  projectId: string,
-  fileName: string,
-  workspaceContext?: WorkspaceCollabContext | null,
-  requestId?: string,
-  mode?: SharePublishRequest['mode'],
-): Promise<WebPublicFileShareLink> {
-  // Carry the active workspace identity so the daemon's `canShareProjectsForRequest`
-  // gate (apps/daemon/src/routes/collab-sync.ts) reads the real permission bit
-  // instead of falling back to a headerless context read — see
-  // workspaceProjectHeaders' call sites in state/projects.ts for the same pattern.
-  const resp = await fetch(
-    `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileName)}/publish-public`,
-    {
-      method: 'POST',
-      ...(workspaceContext || requestId || mode
-        ? {
-            headers: {
-              ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
-              ...clientRequestIdHeaders(requestId),
-              ...(mode ? { 'content-type': 'application/json' } : {}),
-            },
-          }
-        : {}),
-      ...(mode ? { body: JSON.stringify({ mode } satisfies SharePublishRequest) } : {}),
-    },
-  );
-  if (!resp.ok) {
-    const payload = (await resp.json().catch(() => null)) as
-      | {
-          error?: { code?: unknown; message?: unknown; data?: unknown } | string;
-          message?: unknown;
-          failure?: unknown;
-        }
-      | null;
-    const structuredError = payload?.error && typeof payload.error === 'object'
-      ? payload.error
-      : null;
-    const code = typeof structuredError?.code === 'string'
-      ? structuredError.code
-      : typeof payload?.error === 'string'
-        ? payload.error
-        : undefined;
-    const errorMessage =
-      typeof structuredError?.message === 'string'
-        ? structuredError.message
-      : typeof payload?.error === 'string'
-          ? payload.error
-          : typeof payload?.message === 'string'
-            ? payload.message
-            : undefined;
-    const recoveryData = code === PUBLIC_FILE_MANUAL_REVOKE_REQUIRED
-      ? parsePublicFileManualRevokeData(structuredError?.data)
-      : undefined;
-    throw withDaemonFailure(
-      new PublicFilePublishError(
-        errorMessage || `Publish failed (${resp.status})`,
-        resp.status,
-        code,
-        recoveryData?.projectId === projectId && recoveryData.fileName === fileName
-          ? recoveryData
-          : undefined,
-        code === SHARE_ENTRY_INDEX_CONFLICT ? parseEntryIndexConflictDetails(structuredError?.data) : undefined,
-      ),
-      { failure: payload?.failure, daemonErrorCode: code },
-    );
-  }
-  return publicFileShareLinkFromPublish(await resp.json());
-}
-
-export async function fetchProjectFileSharePlan(projectId: string, fileName: string, workspaceContext?: WorkspaceCollabContext | null) {
-  const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileName)}/share-plan`, { method: 'POST', headers: workspaceContext ? workspaceProjectHeaders(workspaceContext) : undefined });
-  if (!resp.ok) throw new Error(`Share preflight failed (${resp.status})`);
-  return resp.json() as Promise<import('@open-design/contracts').SharePlanSummary>;
-}
-
-// Only this endpoint's known codes may reach diagnostic logs; arbitrary token-shaped
-// upstream text can still contain sensitive data. No response messages are logged.
-const PUBLIC_SHARE_STATE_ERROR_CODES = new Set([
-  'invalid_file_path', 'WORKSPACE_IDENTITY_REQUIRED', 'WORKSPACE_PROJECT_SHARE_DENIED',
-  'WORKSPACE_PROJECT_OWNERSHIP_UNAVAILABLE', 'WORKSPACE_PROJECT_PUBLISH_DENIED',
-  'SHARE_STATE_UNAVAILABLE',
-]);
-
-export class PublicFileShareStateReadError extends Error {
-  constructor(
-    readonly reason: 'http' | 'network' | 'aborted' | 'invalid_response',
-    readonly requestId: string,
-    readonly status?: number,
-    readonly code = 'UNCLASSIFIED_SHARE_STATE_ERROR',
-  ) {
-    super(`Share state read failed: ${reason}${status ? ` (${status})` : ''}`);
-    this.name = 'PublicFileShareStateReadError';
-  }
-}
-
-export async function fetchProjectFilePublicShareState(
-  projectId: string,
-  fileName: string,
-  workspaceContext?: WorkspaceCollabContext | null,
-): Promise<ProjectFilePublicShareResponse> {
-  const requestId = randomUUID();
-  const started = performance.now();
-  let status: number | undefined;
-  try {
-    const resp = await fetch(
-      `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileName)}/publish-public`,
-      { headers: { ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
-        ...clientRequestIdHeaders(requestId) } },
-    );
-    status = resp.status;
-    if (!resp.ok) {
-      const payload = (await resp.json().catch(() => null)) as
-        | { error?: { code?: unknown } | string } | null;
-      const candidate = typeof payload?.error === 'string' ? payload.error : payload?.error?.code;
-      const code = typeof candidate === 'string' && PUBLIC_SHARE_STATE_ERROR_CODES.has(candidate)
-        ? candidate : undefined;
-      throw new PublicFileShareStateReadError('http', requestId, status, code);
-    }
-    return (await resp.json()) as ProjectFilePublicShareResponse;
-  } catch (error) {
-    let reason: PublicFileShareStateReadError['reason'] = 'network';
-    if (status !== undefined) reason = 'invalid_response';
-    else if (error instanceof Error && error.name === 'AbortError') reason = 'aborted';
-    const failure = error instanceof PublicFileShareStateReadError ? error
-      : new PublicFileShareStateReadError(reason, requestId, status);
-    console.warn('[share] public file state read failure', JSON.stringify({
-      operation: 'state_read', requestId, reason: failure.reason,
-      ...(failure.status !== undefined ? { status: failure.status } : {}),
-      errorCode: failure.code, durationMs: Math.max(0, Math.round(performance.now() - started)),
-    }));
-    throw failure;
-  }
-}
-
-/** Compatibility read for surfaces that only need the link, not its freshness. */
-export async function fetchProjectFilePublicPublication(
-  projectId: string,
-  fileName: string,
-  workspaceContext?: WorkspaceCollabContext | null,
-): Promise<WebPublicFileShareLink | null> {
-  const state = await fetchProjectFilePublicShareState(projectId, fileName, workspaceContext);
-  return publicFileShareLinkFromRead(state);
-}
-
-export async function unpublishProjectFilePublic(
-  projectId: string,
-  fileName: string,
-  slug: string,
-  workspaceContext?: WorkspaceCollabContext | null,
-  requestId?: string,
-): Promise<ShareUnpublishResponse> {
-  const resp = await fetch(
-    `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(fileName)}/publish-public`,
-    {
-      method: 'DELETE',
-      headers: {
-        'content-type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
-        ...clientRequestIdHeaders(requestId),
-      },
-      body: JSON.stringify({ slug }),
-    },
-  );
-  if (!resp.ok) {
-    const payload = (await resp.json().catch(() => null)) as
-      | { error?: { message?: string; code?: unknown } | string; message?: string; failure?: unknown }
-      | null;
-    const errorMessage =
-      typeof payload?.error === 'object'
-        ? payload.error.message
-        : typeof payload?.error === 'string'
-          ? payload.error
-          : payload?.message;
-    throw withDaemonFailure(new Error(errorMessage || `Unpublish failed (${resp.status})`), {
-      failure: payload?.failure,
-      daemonErrorCode: typeof payload?.error === 'object' ? payload.error.code : payload?.error,
-    });
-  }
-  return (await resp.json()) as ShareUnpublishResponse;
-}
-
 export async function checkDeploymentLink(
   projectId: string,
   deploymentId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<WebDeployProjectFileResponse> {
   const resp = await fetch(
     `/api/projects/${encodeURIComponent(projectId)}/deployments/${encodeURIComponent(deploymentId)}/check-link`,
     {
       method: 'POST',
-      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
     },
   );
   if (!resp.ok) {
@@ -2182,11 +1678,8 @@ export async function createSocialSharePayload(
 
 // Project files — all paths are scoped under .od/projects/<id>/ on disk.
 
-function projectFilesCacheKey(
-  projectId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
-): string {
-  return `project-files:${projectId}:${workspaceIdentityCacheKey(workspaceContext)}`;
+function projectFilesCacheKey(projectId: string): string {
+  return `project-files:${projectId}`;
 }
 
 const projectFilesCacheGenerations = new Map<string, number>();
@@ -2199,11 +1692,8 @@ const projectFilesCacheGenerations = new Map<string, number>();
  * pre-event snapshot, and an overtaken request re-reads before it resolves to
  * its caller.
  */
-export function invalidateProjectFilesCache(
-  projectId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
-): void {
-  const key = projectFilesCacheKey(projectId, workspaceContext);
+export function invalidateProjectFilesCache(projectId: string): void {
+  const key = projectFilesCacheKey(projectId);
   projectFilesCacheGenerations.set(key, (projectFilesCacheGenerations.get(key) ?? 0) + 1);
   evictSharedCancellableGet(key);
 }
@@ -2212,7 +1702,6 @@ export async function fetchProjectFiles(
   projectId: string,
   options?: {
     signal?: AbortSignal;
-    workspaceContext?: WorkspaceCollabContext | null;
     fresh?: boolean;
     /** External writes (for example an Agent run ending) obsolete earlier reads. */
     afterChange?: boolean;
@@ -2228,9 +1717,9 @@ export async function fetchProjectFiles(
     // A semantic write boundary must advance the domain fence even when it
     // lands inside the shared reader's identity-broadcast coalescing window.
     if (options?.afterChange) {
-      invalidateProjectFilesCache(projectId, options.workspaceContext);
+      invalidateProjectFilesCache(projectId);
     }
-    const cacheKey = projectFilesCacheKey(projectId, options?.workspaceContext);
+    const cacheKey = projectFilesCacheKey(projectId);
     const cacheGeneration = projectFilesCacheGenerations.get(cacheKey) ?? 0;
     const get = options?.fresh ? forceSharedCancellableGet : sharedCancellableGet;
     return await get(
@@ -2244,9 +1733,6 @@ export async function fetchProjectFiles(
           // sharedCancellableGet's explicit one-second window; a forced/fresh
           // read must reach the daemon instead of reusing a browser/proxy 200.
           cache: 'no-store',
-          ...(options?.workspaceContext
-            ? { headers: workspaceProjectHeaders(options.workspaceContext) }
-            : {}),
         });
         if (!resp.ok) {
           throw new Error(`Project files request failed (${resp.status})`);
@@ -2291,7 +1777,6 @@ export async function fetchProjectDesignTokenSuggestions(
     props?: ProjectDesignTokenSuggestionProp[];
     values?: Partial<Record<ProjectDesignTokenSuggestionProp, string>>;
   },
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ProjectDesignTokenSuggestion[]> {
   const params = new URLSearchParams();
   if (input.file) params.set('file', input.file);
@@ -2303,7 +1788,6 @@ export async function fetchProjectDesignTokenSuggestions(
   try {
     const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/design-token-suggestions?${params.toString()}`, {
       cache: 'no-store',
-      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
     });
     if (!resp.ok) return [];
     const json = (await resp.json()) as { suggestions?: ProjectDesignTokenSuggestion[] };
@@ -2315,18 +1799,16 @@ export async function fetchProjectDesignTokenSuggestions(
 
 export async function fetchProjectFolders(
   projectId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ProjectFolder[]> {
   // Keyed by the authority the request is made under as well as the project:
   // two readers may only share a request that carries the same Workspace
   // headers, or one identity's answer could satisfy another's read.
   return coalescedGet(
-    `project-folders:${projectId}:${workspaceIdentityCacheKey(workspaceContext)}`,
+    `project-folders:${projectId}`,
     async () => {
       try {
         const resp = await fetch(
           `/api/projects/${encodeURIComponent(projectId)}/folders`,
-          workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : undefined,
         );
         if (!resp.ok) return [];
         const json = (await resp.json()) as { folders?: ProjectFolder[] };
@@ -2342,14 +1824,12 @@ export async function fetchProjectFolders(
 export async function createProjectFolder(
   projectId: string,
   name: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ProjectFolder | null> {
   try {
     const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/folders`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify({ name }),
     });
@@ -2364,19 +1844,17 @@ export async function createProjectFolder(
 export async function deleteProjectFolder(
   projectId: string,
   folderPath: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<boolean> {
   try {
     const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/folders`, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify({ path: folderPath }),
     });
     if (!resp.ok) return false;
-    invalidateProjectFilesCache(projectId, workspaceContext);
+    invalidateProjectFilesCache(projectId);
     return true;
   } catch {
     return false;
@@ -2387,20 +1865,13 @@ export async function fetchLiveArtifacts(
   projectId: string,
   options?: {
     signal?: AbortSignal;
-    workspaceContext?: WorkspaceCollabContext | null;
   },
 ): Promise<LiveArtifactSummary[]> {
   const run = async () => {
     try {
-      const url = workspaceResourceUrl(
-        `/api/live-artifacts?projectId=${encodeURIComponent(projectId)}`,
-        options?.workspaceContext,
-      );
+      const url = `/api/live-artifacts?projectId=${encodeURIComponent(projectId)}`;
       const resp = await fetch(url, {
         ...(options?.signal ? { signal: options.signal } : {}),
-        ...(options?.workspaceContext
-          ? { headers: workspaceProjectHeaders(options.workspaceContext) }
-          : {}),
       });
       if (!resp.ok) return [];
       const json = (await resp.json()) as {
@@ -2418,7 +1889,7 @@ export async function fetchLiveArtifacts(
   // during a reopen.
   if (options?.signal) return run();
   return coalescedGet(
-    `live-artifacts:${workspaceIdentityCacheKey(options?.workspaceContext)}:${projectId}`,
+    `live-artifacts:${projectId}`,
     run,
   );
 }
@@ -2426,13 +1897,9 @@ export async function fetchLiveArtifacts(
 export async function fetchLiveArtifact(
   projectId: string,
   artifactId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<LiveArtifact | null> {
   try {
-    const resp = await fetch(
-      liveArtifactDetailUrl(projectId, artifactId, workspaceContext),
-      workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : undefined,
-    );
+    const resp = await fetch(liveArtifactDetailUrl(projectId, artifactId));
     if (!resp.ok) return null;
     const json = (await resp.json()) as {
       artifact?: LiveArtifact;
@@ -2467,18 +1934,13 @@ export class LiveArtifactRefreshError extends Error {
 export async function refreshLiveArtifact(
   projectId: string,
   artifactId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<LiveArtifactRefreshResult> {
   let resp: Response;
   try {
     resp = await fetch(
-      workspaceResourceUrl(
-        `/api/live-artifacts/${encodeURIComponent(artifactId)}/refresh?projectId=${encodeURIComponent(projectId)}`,
-        workspaceContext,
-      ),
+      `/api/live-artifacts/${encodeURIComponent(artifactId)}/refresh?projectId=${encodeURIComponent(projectId)}`,
       {
         method: 'POST',
-        ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
       },
     );
   } catch (error) {
@@ -2499,15 +1961,10 @@ export async function refreshLiveArtifact(
 export async function fetchLiveArtifactRefreshes(
   projectId: string,
   artifactId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<LiveArtifactRefreshLogEntry[]> {
   try {
     const resp = await fetch(
-      workspaceResourceUrl(
-        `/api/live-artifacts/${encodeURIComponent(artifactId)}/refreshes?projectId=${encodeURIComponent(projectId)}`,
-        workspaceContext,
-      ),
-      workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : undefined,
+      `/api/live-artifacts/${encodeURIComponent(artifactId)}/refreshes?projectId=${encodeURIComponent(projectId)}`,
     );
     if (!resp.ok) return [];
     const json = (await resp.json()) as { refreshes?: LiveArtifactRefreshLogEntry[] };
@@ -2524,20 +1981,15 @@ export async function updateLiveArtifact(
     slug?: string;
     document?: LiveArtifact['document'];
   },
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<LiveArtifact> {
   let resp: Response;
   try {
     resp = await fetch(
-      workspaceResourceUrl(
-        `/api/live-artifacts/${encodeURIComponent(artifactId)}?projectId=${encodeURIComponent(projectId)}`,
-        workspaceContext,
-      ),
+      `/api/live-artifacts/${encodeURIComponent(artifactId)}?projectId=${encodeURIComponent(projectId)}`,
       {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
         },
         body: JSON.stringify(input),
       },
@@ -2563,17 +2015,12 @@ export async function updateLiveArtifact(
 export async function deleteLiveArtifact(
   projectId: string,
   artifactId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<boolean> {
   try {
     const resp = await fetch(
-      workspaceResourceUrl(
-        `/api/live-artifacts/${encodeURIComponent(artifactId)}?projectId=${encodeURIComponent(projectId)}`,
-        workspaceContext,
-      ),
+      `/api/live-artifacts/${encodeURIComponent(artifactId)}?projectId=${encodeURIComponent(projectId)}`,
       {
         method: 'DELETE',
-        ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
       },
     );
     return resp.ok;
@@ -2595,15 +2042,8 @@ async function readApiErrorBody(resp: Response): Promise<{ message: string; code
   }
 }
 
-export function liveArtifactDetailUrl(
-  projectId: string,
-  artifactId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
-): string {
-  return workspaceResourceUrl(
-    `/api/live-artifacts/${encodeURIComponent(artifactId)}?projectId=${encodeURIComponent(projectId)}`,
-    workspaceContext,
-  );
+export function liveArtifactDetailUrl(projectId: string, artifactId: string): string {
+  return `/api/live-artifacts/${encodeURIComponent(artifactId)}?projectId=${encodeURIComponent(projectId)}`;
 }
 
 export type LiveArtifactPreviewVariant = 'rendered' | 'template' | 'rendered-source';
@@ -2612,31 +2052,23 @@ export function liveArtifactPreviewUrl(
   projectId: string,
   artifactId: string,
   variant: LiveArtifactPreviewVariant = 'rendered',
-  workspaceContext?: WorkspaceCollabContext | null,
 ): string {
-  const baseUrl = workspaceResourceUrl(
-    `/api/live-artifacts/${encodeURIComponent(artifactId)}/preview?projectId=${encodeURIComponent(projectId)}`,
-    workspaceContext,
-  );
+  const baseUrl =
+    `/api/live-artifacts/${encodeURIComponent(artifactId)}/preview?projectId=${encodeURIComponent(projectId)}`;
   return variant === 'rendered'
     ? baseUrl
-    : appendResourceQuery(baseUrl, `variant=${encodeURIComponent(variant)}`);
+    : `${baseUrl}&variant=${encodeURIComponent(variant)}`;
 }
 
 export async function fetchLiveArtifactCode(
   projectId: string,
   artifactId: string,
   variant: Exclude<LiveArtifactPreviewVariant, 'rendered'>,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<string | null> {
   try {
-    const resp = await fetch(
-      liveArtifactPreviewUrl(projectId, artifactId, variant, workspaceContext),
-      {
-        cache: 'no-store',
-        ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
-      },
-    );
+    const resp = await fetch(liveArtifactPreviewUrl(projectId, artifactId, variant), {
+      cache: 'no-store',
+    });
     if (!resp.ok) return null;
     return await resp.text();
   } catch {
@@ -2644,12 +2076,8 @@ export async function fetchLiveArtifactCode(
   }
 }
 
-export function projectFileUrl(
-  projectId: string,
-  name: string,
-  workspaceContext?: WorkspaceCollabContext | null,
-): string {
-  return projectRawUrl(projectId, name, workspaceContext);
+export function projectFileUrl(projectId: string, name: string): string {
+  return projectRawUrl(projectId, name);
 }
 
 /**
@@ -2680,7 +2108,6 @@ function previewCapabilityHref(pathname: string): string {
 export async function fetchProjectPreviewBaseHref(
   projectId: string,
   name: string,
-  _workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ProjectPreviewBaseScope | null> {
   const params = new URLSearchParams({ file: name });
   const requestUrl =
@@ -2757,14 +2184,10 @@ export interface ProjectFilePreview {
 export async function fetchProjectFilePreview(
   projectId: string,
   name: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ProjectFilePreview | null> {
   try {
     const resp = await fetch(
       `/api/projects/${encodeURIComponent(projectId)}/files/${encodeURIComponent(name)}/preview`,
-      workspaceContext
-        ? { headers: workspaceProjectHeaders(workspaceContext) }
-        : undefined,
     );
     if (!resp.ok) return null;
     return (await resp.json()) as ProjectFilePreview;
@@ -2780,10 +2203,9 @@ export async function fetchProjectFileText(
     cache?: RequestCache;
     cacheBustKey?: string | number;
     signal?: AbortSignal;
-    workspaceContext?: WorkspaceCollabContext | null;
   },
 ): Promise<string | null> {
-  const url = projectFileUrl(projectId, name, options?.workspaceContext);
+  const url = projectFileUrl(projectId, name);
   const cacheBustKey = options?.cacheBustKey;
   const requestUrl =
     cacheBustKey == null
@@ -2792,9 +2214,6 @@ export async function fetchProjectFileText(
   const init: RequestInit = {};
   if (options?.cache) init.cache = options.cache;
   if (options?.signal) init.signal = options.signal;
-  if (options?.workspaceContext) {
-    init.headers = workspaceProjectHeaders(options.workspaceContext);
-  }
 
   try {
     const resp = await fetch(requestUrl, init);
@@ -2833,7 +2252,6 @@ export async function fetchProjectFileTextPreview(
   options?: {
     limit?: number;
     cacheBustKey?: string | number;
-    workspaceContext?: WorkspaceCollabContext | null;
   },
 ): Promise<ProjectFileTextPreviewResponse | null> {
   const segments = name
@@ -2851,9 +2269,6 @@ export async function fetchProjectFileTextPreview(
   try {
     const resp = await fetch(url, {
       cache: 'no-store',
-      ...(options?.workspaceContext
-        ? { headers: workspaceProjectHeaders(options.workspaceContext) }
-        : {}),
     });
     if (!resp.ok) {
       console.warn('[fetchProjectFileTextPreview] failed:', {
@@ -2898,12 +2313,10 @@ function projectFileVersionsUrl(projectId: string, name: string): string {
 export async function fetchProjectFileVersions(
   projectId: string,
   name: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ProjectFileVersionsResponse | null> {
   try {
     const resp = await fetch(projectFileVersionsUrl(projectId, name), {
       cache: 'no-store',
-      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
     });
     if (!resp.ok) return null;
     return (await resp.json()) as ProjectFileVersionsResponse;
@@ -2916,14 +2329,12 @@ export async function fetchProjectFileVersion(
   projectId: string,
   name: string,
   versionId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ProjectFileVersionResponse | null> {
   try {
     const resp = await fetch(
       `${projectFileVersionsUrl(projectId, name)}/${encodeURIComponent(versionId)}`,
       {
         cache: 'no-store',
-        ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
       },
     );
     if (!resp.ok) return null;
@@ -2937,7 +2348,6 @@ export async function restoreProjectFileVersion(
   projectId: string,
   name: string,
   version: Pick<ProjectFileVersion, 'id'>,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<RestoreProjectFileVersionResponse | null> {
   try {
     const resp = await fetch(
@@ -2946,13 +2356,12 @@ export async function restoreProjectFileVersion(
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
         },
         body: JSON.stringify({}),
       },
     );
     if (!resp.ok) return null;
-    invalidateProjectFilesCache(projectId, workspaceContext);
+    invalidateProjectFilesCache(projectId);
     return (await resp.json()) as RestoreProjectFileVersionResponse;
   } catch {
     return null;
@@ -2971,29 +2380,10 @@ export const COMMENT_PULL_TIMEOUT_MS = 15_000;
 export async function fetchPreviewComments(
   projectId: string,
   conversationId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
-  pullRemote = false,
 ): Promise<PreviewComment[]> {
   const url = `/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}/comments`;
-  const headers = workspaceContext ? workspaceProjectHeaders(workspaceContext) : undefined;
-  if (pullRemote && workspaceContext) {
-    const controller = new AbortController();
-    const deadline = setTimeout(() => controller.abort(), COMMENT_PULL_TIMEOUT_MS);
-    try {
-      const remote = await fetch(`${url}/pull`, { method: 'POST', headers, signal: controller.signal });
-      if (remote.ok) {
-        const result = (await remote.json()) as import('@open-design/contracts').ProjectCommentPullResponse;
-        return result.comments;
-      }
-    } catch {
-      // The existing local list stays usable when remote sync is unavailable
-      // or slower than its deadline.
-    } finally {
-      clearTimeout(deadline);
-    }
-  }
   try {
-    const resp = await fetch(url, { headers });
+    const resp = await fetch(url);
     if (!resp.ok) return [];
     const json = (await resp.json()) as { comments: PreviewComment[] };
     return json.comments ?? [];
@@ -3002,19 +2392,10 @@ export async function fetchPreviewComments(
   }
 }
 
-// `workspaceContext`, when present, proves the caller's workspace membership
-// to the daemon's `enforceCommentWorkspaceMutation` gate (spec 04 §10 fix
-// #4/#6 — recvqbklNGDqYY) the same way `workspaceProjectHeaders`' call sites
-// elsewhere in this file do. A workspace-bound project mutated with no
-// headers fails closed with 401 `WORKSPACE_CONTEXT_REQUIRED` — silently, from
-// the caller's point of view, unless it inspects the response — so this
-// param is NOT optional-in-spirit for a team project even though it stays an
-// optional trailing arg for personal-project callers that have no context.
 export async function upsertPreviewComment(
   projectId: string,
   conversationId: string,
   input: PreviewCommentUpsertRequest,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<PreviewComment | null> {
   try {
     const resp = await fetch(
@@ -3023,7 +2404,6 @@ export async function upsertPreviewComment(
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
         },
         body: JSON.stringify(input),
       },
@@ -3041,7 +2421,6 @@ export async function patchPreviewCommentStatus(
   conversationId: string,
   commentId: string,
   status: PreviewCommentStatus,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<PreviewComment | null> {
   try {
     const resp = await fetch(
@@ -3050,7 +2429,6 @@ export async function patchPreviewCommentStatus(
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
         },
         body: JSON.stringify({ status }),
       },
@@ -3067,21 +2445,12 @@ export async function patchPreviewCommentStatus(
  * Persist a drag-reorder of the sidebar's display order (recvq5BVsolIxi
  * Phase 2). Writes only the dragged comment's `sortKey` — never a whole-list
  * renumber, and never touches `pinSeq` (the canvas pin number).
- *
- * `workspaceContext`, when present, attaches the same workspace identity
- * headers the sibling comment-mutation calls in this file carry (see
- * `upsertPreviewComment` above) — kept consistent with those call sites even
- * though today's `/reorder` route does not itself gate on them, so this
- * write stays correct if/when that route gains the same
- * `enforceCommentWorkspaceMutation` coverage the other comment mutations
- * have.
  */
 export async function patchPreviewCommentSortKey(
   projectId: string,
   conversationId: string,
   commentId: string,
   sortKey: number,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<PreviewComment | null> {
   try {
     const resp = await fetch(
@@ -3090,7 +2459,6 @@ export async function patchPreviewCommentSortKey(
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
         },
         body: JSON.stringify({ sortKey }),
       },
@@ -3107,14 +2475,12 @@ export async function deletePreviewComment(
   projectId: string,
   conversationId: string,
   commentId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<boolean> {
   try {
     const resp = await fetch(
       `/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}/comments/${encodeURIComponent(commentId)}`,
       {
         method: 'DELETE',
-        headers: workspaceContext ? workspaceProjectHeaders(workspaceContext) : undefined,
       },
     );
     return resp.ok;
@@ -3134,9 +2500,8 @@ export async function writeProjectTextFile(
     versionPrompt?: string | null;
     parentVersionId?: string;
   },
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ProjectFile | null> {
-  const result = await writeProjectTextFileDetailed(projectId, name, content, options, workspaceContext);
+  const result = await writeProjectTextFileDetailed(projectId, name, content, options);
   return result.ok ? result.file : null;
 }
 
@@ -3155,14 +2520,12 @@ export async function writeProjectTextFileDetailed(
     versionPrompt?: string | null;
     parentVersionId?: string;
   },
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<WriteProjectTextFileResult> {
   try {
     const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify({
         name,
@@ -3183,7 +2546,7 @@ export async function writeProjectTextFileDetailed(
         message: body.message || resp.statusText || 'Save failed',
       };
     }
-    invalidateProjectFilesCache(projectId, workspaceContext);
+    invalidateProjectFilesCache(projectId);
     const json = (await resp.json()) as ProjectFileResponse;
     return {
       ok: true,
@@ -3199,19 +2562,17 @@ export async function writeProjectBase64File(
   projectId: string,
   name: string,
   base64: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ProjectFile | null> {
   try {
     const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify({ name, content: base64, encoding: 'base64' }),
     });
     if (!resp.ok) return null;
-    invalidateProjectFilesCache(projectId, workspaceContext);
+    invalidateProjectFilesCache(projectId);
     const json = (await resp.json()) as { file: ProjectFile };
     return json.file;
   } catch {
@@ -3223,7 +2584,6 @@ export async function uploadProjectFile(
   projectId: string,
   file: File,
   desiredName?: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ProjectFile | null> {
   try {
     const form = new FormData();
@@ -3231,11 +2591,10 @@ export async function uploadProjectFile(
     if (desiredName) form.append('name', desiredName);
     const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files`, {
       method: 'POST',
-      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
       body: form,
     });
     if (!resp.ok) return null;
-    invalidateProjectFilesCache(projectId, workspaceContext);
+    invalidateProjectFilesCache(projectId);
     const json = (await resp.json()) as { file: ProjectFile };
     return json.file;
   } catch {
@@ -3251,7 +2610,6 @@ export async function importProjectFigma(
   projectId: string,
   file: File,
   opts?: { notes?: string; subdir?: string },
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<{ ok: true; result: FigmaImportResult } | { ok: false; error: string }> {
   try {
     const form = new FormData();
@@ -3260,9 +2618,6 @@ export async function importProjectFigma(
     if (opts?.subdir && opts.subdir.trim()) form.append('subdir', opts.subdir.trim());
     const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/figma/import`, {
       method: 'POST',
-      ...(workspaceContext
-        ? { headers: workspaceProjectHeaders(workspaceContext) }
-        : {}),
       body: form,
     });
     if (!resp.ok) {
@@ -3276,7 +2631,7 @@ export async function importProjectFigma(
       }
       return { ok: false, error: message };
     }
-    invalidateProjectFilesCache(projectId, workspaceContext);
+    invalidateProjectFilesCache(projectId);
     const result = (await resp.json()) as FigmaImportResult;
     return { ok: true, result };
   } catch (err) {
@@ -3306,7 +2661,6 @@ export async function uploadProjectFiles(
   projectId: string,
   files: File[],
   dir?: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<UploadProjectFilesResult> {
   if (files.length === 0) return { uploaded: [], failed: [] };
 
@@ -3330,7 +2684,6 @@ export async function uploadProjectFiles(
         `/api/projects/${encodeURIComponent(projectId)}/upload`,
         {
           method: 'POST',
-          ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
           body: form,
         },
       );
@@ -3349,7 +2702,7 @@ export async function uploadProjectFiles(
         break;
       }
 
-      invalidateProjectFilesCache(projectId, workspaceContext);
+      invalidateProjectFilesCache(projectId);
       const json = (await resp.json()) as {
         files: { name: string; path: string; size?: number; originalName?: string }[];
       };
@@ -3393,7 +2746,6 @@ export async function uploadProjectFiles(
 export function projectRawUrl(
   projectId: string,
   filePath: string,
-  _workspaceContext?: WorkspaceCollabContext | null,
 ): string {
   // Encode each path segment individually so a slash inside the file
   // path stays a path separator, not %2F.
@@ -3404,26 +2756,17 @@ export function projectRawUrl(
   return `/api/projects/${encodeURIComponent(projectId)}/raw/${safePath}`;
 }
 
-export function designSystemStaticUrl(
-  designSystemId: string,
-  filePath: string,
-  workspaceContext?: WorkspaceCollabContext | null,
-): string {
-  return workspaceResourceUrl(
-    `/api/design-systems/${encodeURIComponent(designSystemId)}/static?path=${encodeURIComponent(filePath)}`,
-    workspaceContext,
-  );
+export function designSystemStaticUrl(designSystemId: string, filePath: string): string {
+  return `/api/design-systems/${encodeURIComponent(designSystemId)}/static?path=${encodeURIComponent(filePath)}`;
 }
 
 export async function fetchDesignSystemStaticText(
   designSystemId: string,
   filePath: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<string | null> {
   try {
-    const response = await fetch(designSystemStaticUrl(designSystemId, filePath, workspaceContext), {
+    const response = await fetch(designSystemStaticUrl(designSystemId, filePath), {
       cache: 'no-store',
-      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
     });
     return response.ok ? await response.text() : null;
   } catch {
@@ -3438,18 +2781,16 @@ function looksLikeImage(name: string): boolean {
 export async function deleteProjectFile(
   projectId: string,
   name: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<boolean> {
   try {
     const resp = await fetch(
-      projectRawUrl(projectId, name, workspaceContext),
+      projectRawUrl(projectId, name),
       {
         method: 'DELETE',
-        ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
       },
     );
     if (!resp.ok) return false;
-    invalidateProjectFilesCache(projectId, workspaceContext);
+    invalidateProjectFilesCache(projectId);
     return true;
   } catch {
     return false;
@@ -3460,13 +2801,11 @@ export async function renameProjectFile(
   projectId: string,
   from: string,
   to: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<RenameProjectFileResponse> {
   const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/files/rename`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
     },
     body: JSON.stringify({ from, to }),
   });
@@ -3474,7 +2813,7 @@ export async function renameProjectFile(
     const errorBody = await readApiErrorBody(resp);
     throw new Error(errorBody.message);
   }
-  invalidateProjectFilesCache(projectId, workspaceContext);
+  invalidateProjectFilesCache(projectId);
   return (await resp.json()) as RenameProjectFileResponse;
 }
 
@@ -3570,14 +2909,10 @@ export async function replaceProjectWorkingDir(
   projectId: string,
   baseDir: string,
   desktopImportToken?: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ReplaceProjectWorkingDirResponse> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (desktopImportToken) {
     headers['x-od-desktop-import-token'] = desktopImportToken;
-  }
-  if (workspaceContext) {
-    Object.assign(headers, workspaceProjectHeaders(workspaceContext));
   }
   const resp = await fetch(
     `/api/projects/${encodeURIComponent(projectId)}/working-dir`,
@@ -3614,7 +2949,6 @@ export async function fetchHostEditors(): Promise<
 export async function openProjectInEditor(
   projectId: string,
   editorId: import('@open-design/contracts').HostEditorId,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<import('@open-design/contracts').OpenProjectInEditorResponse> {
   const resp = await fetch(
     `/api/projects/${encodeURIComponent(projectId)}/open-in`,
@@ -3622,7 +2956,6 @@ export async function openProjectInEditor(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify({ editorId }),
     },
@@ -3636,15 +2969,10 @@ export async function openProjectInEditor(
 
 export async function fetchDesignSystemPreview(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<string | null> {
   try {
     const resp = await fetch(
-      workspaceResourceUrl(
-        `/api/design-systems/${encodeURIComponent(id)}/preview`,
-        workspaceContext,
-      ),
-      workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : undefined,
+      `/api/design-systems/${encodeURIComponent(id)}/preview`,
     );
     if (!resp.ok) return null;
     return await resp.text();
@@ -3655,15 +2983,10 @@ export async function fetchDesignSystemPreview(
 
 export async function fetchDesignSystemShowcase(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<string | null> {
   try {
     const resp = await fetch(
-      workspaceResourceUrl(
-        `/api/design-systems/${encodeURIComponent(id)}/showcase`,
-        workspaceContext,
-      ),
-      workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : undefined,
+      `/api/design-systems/${encodeURIComponent(id)}/showcase`,
     );
     if (!resp.ok) return null;
     return await resp.text();
@@ -3685,13 +3008,10 @@ export async function fetchDesignSystemShowcase(
 // placeholder is the truthful UX.
 export async function fetchPluginPreviewHtml(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<SkillExampleResult> {
   try {
     const url = `/api/plugins/${encodeURIComponent(id)}/preview`;
-    const resp = workspaceContext
-      ? await fetch(url, { headers: workspaceProjectHeaders(workspaceContext) })
-      : await fetch(url);
+    const resp = await fetch(url);
     if (!resp.ok) {
       if (resp.status === 404) return { unavailable: true, kind: 'html' };
       return { error: `HTTP ${resp.status}` };
@@ -3709,14 +3029,11 @@ export async function fetchPluginPreviewHtml(
 export async function fetchPluginExampleHtml(
   pluginId: string,
   stem: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<SkillExampleResult> {
   try {
     const url =
       `/api/plugins/${encodeURIComponent(pluginId)}/example/${encodeURIComponent(stem)}`;
-    const resp = workspaceContext
-      ? await fetch(url, { headers: workspaceProjectHeaders(workspaceContext) })
-      : await fetch(url);
+    const resp = await fetch(url);
     if (!resp.ok) {
       if (resp.status === 404) return { unavailable: true, kind: 'html' };
       return { error: `HTTP ${resp.status}` };
@@ -3736,14 +3053,11 @@ export async function fetchPluginExampleHtml(
 export async function fetchPluginAssetText(
   pluginId: string,
   relpath: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<string | null> {
   try {
     const url =
       `/api/plugins/${encodeURIComponent(pluginId)}/asset/${encodePluginAssetPath(relpath)}`;
-    const resp = workspaceContext
-      ? await fetch(url, { headers: workspaceProjectHeaders(workspaceContext) })
-      : await fetch(url);
+    const resp = await fetch(url);
     if (!resp.ok) return null;
     return await resp.text();
   } catch {
@@ -3762,14 +3076,12 @@ function encodePluginAssetPath(relpath: string): string {
 
 export async function installSkill(
   input: InstallSkillRequest,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<{ skill: SkillSummary } | { error: SkillImportError }> {
   try {
     const resp = await fetch('/api/skills/install', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify(input),
     });
@@ -3781,19 +3093,12 @@ export async function installSkill(
   }
 }
 
-// `workspaceContext`, when present, proves the caller's workspace membership
-// against the daemon's `enforceWorkspaceResourceMutation` gate — see
-// `deleteSkill` above for the same pattern on the user-authored skill CRUD
-// surface; this is the counterpart for the marketplace "已安装" uninstall
-// action (`PluginsView.tsx`'s `uninstallResource`).
 export async function uninstallSkill(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<{ ok: true } | { error: string }> {
   try {
     const resp = await fetch(`/api/skills/${encodeURIComponent(id)}`, {
       method: 'DELETE',
-      ...(workspaceContext ? { headers: workspaceProjectHeaders(workspaceContext) } : {}),
     });
     const json = await resp.json();
     if (!resp.ok) return { error: json.error ?? 'Uninstall failed' };
@@ -3823,14 +3128,10 @@ export async function installDesignSystem(
 
 export async function uninstallDesignSystem(
   id: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<{ ok: true } | { error: string }> {
   try {
     const resp = await fetch(`/api/design-systems/${encodeURIComponent(id)}`, {
       method: 'DELETE',
-      ...(workspaceContext
-        ? { headers: workspaceProjectHeaders(workspaceContext) }
-        : {}),
     });
     // Success is decided by the status, not by a parsed body: this route can
     // answer an empty 204, and parsing first threw straight into the catch —
@@ -3937,14 +3238,12 @@ export async function applyLibraryAsset(
   projectId: string,
   dir?: string,
   opts?: { includeElement?: boolean },
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<LibraryApplyResponse | null> {
   try {
     const resp = await fetch(`/api/library/assets/${encodeURIComponent(assetId)}/apply`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}),
       },
       body: JSON.stringify({
         projectId,

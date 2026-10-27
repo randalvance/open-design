@@ -17,8 +17,6 @@ import {
   computeIncludeStable,
   hashStableInstructions,
   isAgentResumeFailure,
-  isAmrOpencodeEventStreamResumeFailure,
-  isAmrResumeFailure,
   isClaudeResumeFailure,
   isCodexResumeFailure,
   isOpencodeResumeFailure,
@@ -639,83 +637,9 @@ describe('isOpencodeResumeFailure', () => {
     ).toBe(true);
   });
 
-  it('ignores unrelated OpenCode errors and empty input', () => {
-    expect(isOpencodeResumeFailure('OpenCode auth failed: login required')).toBe(false);
-    expect(isOpencodeResumeFailure('rate limit exceeded')).toBe(false);
-    expect(isOpencodeResumeFailure('')).toBe(false);
-  });
-});
-
-describe('isAmrResumeFailure', () => {
-  it('matches vela\'s structured resume_failed ACP error on stdout', () => {
-    expect(
-      isAmrResumeFailure('{"jsonrpc":"2.0","id":4,"error":{"code":-32600,"message":"the resumed session could not be loaded","data":{"kind":"resume_failed","phase":"session_load","retryable":true}}}'),
-    ).toBe(true);
-  });
-
-  it('does not match a bare mention of resume_failed in assistant prose', () => {
-    expect(isAmrResumeFailure('The build step logged resume_failed as a warning.')).toBe(false);
-    expect(isAmrResumeFailure('')).toBe(false);
-  });
-});
-
-describe('isAmrOpencodeEventStreamResumeFailure', () => {
-  it('matches AMR opencode event-stream EOF failures', () => {
-    expect(
-      isAmrOpencodeEventStreamResumeFailure(
-        'json-rpc id 4: opencode event stream: opencode SSE ended before prompt completion',
-      ),
-    ).toBe(true);
-    expect(
-      isAmrOpencodeEventStreamResumeFailure('opencode SSE ended before prompt completion'),
-    ).toBe(true);
-  });
-
-  it('keeps compaction continuation out of destructive reseed', () => {
-    expect(
-      isAmrOpencodeEventStreamResumeFailure(
-        'json-rpc id 4: opencode event stream: opencode compaction continuation ended before prompt completion',
-      ),
-    ).toBe(false);
-    expect(
-      isAmrOpencodeEventStreamResumeFailure(
-        'opencode compaction continuation ended before prompt completion',
-      ),
-    ).toBe(false);
-  });
-
-  it('ignores unrelated AMR/opencode output', () => {
-    expect(isAmrOpencodeEventStreamResumeFailure('opencode auth failed')).toBe(false);
-    expect(isAmrOpencodeEventStreamResumeFailure('')).toBe(false);
-    // A compaction that merely RAN is not a compaction that died. The phrase
-    // has to name the EOF, or every successful compaction log line would send
-    // the turn through a cold re-seed.
-    expect(
-      isAmrOpencodeEventStreamResumeFailure('opencode compaction continuation started'),
-    ).toBe(false);
-  });
 });
 
 describe('isAgentResumeFailure dispatch', () => {
-  it('routes amr to the resume_failed structured detector on stdout', () => {
-    // AMR's signal arrives on stdout (the ACP JSON-RPC channel), not stderr.
-    expect(
-      isAgentResumeFailure('amr', '', '{"error":{"data":{"kind":"resume_failed"}}}'),
-    ).toBe(true);
-    expect(
-      isAgentResumeFailure('amr', '{"error":{"data":{"kind":"resume_failed"}}}', ''),
-    ).toBe(false);
-  });
-
-  it('routes AMR opencode event-stream EOF to the resume failure detector', () => {
-    expect(
-      isAgentResumeFailure(
-        'amr',
-        'json-rpc id 4: opencode event stream: opencode SSE ended before prompt completion',
-        '',
-      ),
-    ).toBe(true);
-  });
 
   it('routes codex to the rollout-not-found detector', () => {
     expect(
@@ -799,36 +723,4 @@ describe('resolveAgentResumeFailurePolicy', () => {
     });
   });
 
-  it('never reseeds a compaction continuation failure', () => {
-    expect(
-      resolveAgentResumeFailurePolicy({
-        agentId: 'amr',
-        stderr:
-          'json-rpc id 4: opencode event stream: opencode compaction continuation ended before prompt completion',
-        stdout: '',
-        isResuming: true,
-        resumeSessionId: 'ses-old',
-      }),
-    ).toEqual({
-      resumeFailed: false,
-      clearStaleSession: false,
-      autoReseedFullTranscript: false,
-      reason: null,
-    });
-  });
-
-  it('leaves a compaction EOF on a create turn alone', () => {
-    // The gate that keeps this from becoming a general retry: no stored handle
-    // was being continued, so there is nothing stale to clear and nothing to
-    // re-seed — the turn already ran from scratch.
-    expect(
-      resolveAgentResumeFailurePolicy({
-        agentId: 'amr',
-        stderr: 'opencode compaction continuation ended before prompt completion',
-        stdout: '',
-        isResuming: false,
-        resumeSessionId: null,
-      }).resumeFailed,
-    ).toBe(false);
-  });
 });

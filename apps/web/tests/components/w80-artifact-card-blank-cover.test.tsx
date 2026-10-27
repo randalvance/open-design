@@ -33,8 +33,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ArtifactCards } from '../../src/components/FileOpsSummary';
 import { HtmlProjectCoverFrame } from '../../src/components/project-cover';
-import { CollabProvider } from '../../src/collab/collab-context';
-import { workspaceContextFixture } from '../helpers/workspace-context';
 
 const PROJECT_ID = 'c7e3b234-2fb3-4f6e-8aae-a3a00697c476';
 const raw = (name: string) => `/api/projects/${PROJECT_ID}/raw/${name}`;
@@ -63,38 +61,11 @@ const flush = async (hops = 12): Promise<void> => {
   }
 };
 
-function projectCollabValue() {
-  return {
-    workspaceContext: workspaceContextFixture({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-    }),
-    workspaceContextLoading: false,
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed' as const,
-    isOwner: false,
-    isEffectiveOwner: true,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: vi.fn(),
-    requestPublish: vi.fn(),
-    refreshPresence: vi.fn(),
-    checkStatusNow: vi.fn(),
-  };
-}
-
 function renderCards(items: Parameters<typeof ArtifactCards>[0]['items']) {
   return render(
-    <CollabProvider value={projectCollabValue()}>
+    <>
       <ArtifactCards items={items} projectId={PROJECT_ID} />
-    </CollabProvider>,
+    </>,
   );
 }
 

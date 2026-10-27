@@ -8,12 +8,6 @@ import { LIBRARY_UI_VISIBLE } from '../features/libraryUi';
 import type { Dict } from '../i18n/types';
 import { copyToClipboard } from '../lib/copy-to-clipboard';
 import { projectFileUrl, projectRawUrl } from '../providers/registry';
-import {
-  appendResourceQuery,
-  workspaceIdentityCacheKey,
-  workspaceProjectHeaders,
-} from '../collab/workspace-identity';
-import { useProjectCollabContext } from '../collab/collab-context';
 import { buildSrcdoc } from '../runtime/srcdoc';
 import type { LiveArtifactWorkspaceEntry, ProjectFile, ProjectFileKind, ProjectFolder } from '../types';
 import {
@@ -24,7 +18,7 @@ import {
 import { isVisualStabilityMode } from '../utils/visualStability';
 import type { PluginFolderAgentAction } from './design-files/pluginFolderActions';
 import { getPluginFolderCandidates } from './design-files/pluginFolders';
-import { FileSyncBadge } from '../collab/FileSyncBadge';
+import { Spinner } from './Loading';
 import { Icon } from './Icon';
 import { LiveArtifactBadges } from './LiveArtifactBadges';
 import { RemixIcon } from './RemixIcon';
@@ -54,21 +48,12 @@ interface Props {
   projectId: string;
   projectKind: TrackingProjectKind;
   filesRefreshKey?: number;
-  /** Read-only viewer of a team-shared project: disables project mutations. */
-  viewerOnly?: boolean;
-  /**
-   * True while a non-owner member's local mirror has not yet caught up to the
-   * project's published head. Existing files belong to the last complete
-   * local materialization and remain useful while the next version downloads;
-   * only an empty local result swaps the creation CTAs for a syncing notice.
-   */
-  downloadPending?: boolean;
   /**
    * Whether `files` reflects a file list the daemon actually returned. Zero
    * files before the first authoritative read is indistinguishable from a
    * genuinely empty project, and the empty-state CTAs create NEW content --
    * offering them to someone whose project does have files is the same class
-   * of mistake the `downloadPending` branch below already guards (OPEND-2283).
+   * of mistake (OPEND-2283).
    */
   filesAuthoritative?: boolean;
   /**
@@ -486,8 +471,6 @@ export function DesignFilesPanel({
   projectId,
   projectKind,
   filesRefreshKey = 0,
-  viewerOnly = false,
-  downloadPending = false,
   filesAuthoritative = true,
   emptyLookBeforeFirstListing = false,
   rootDirName,
@@ -523,7 +506,6 @@ export function DesignFilesPanel({
   navState,
   onNavStateChange,
 }: Props) {
-  const { workspaceContext } = useProjectCollabContext();
   const t = useT();
   const analytics = useAnalytics();
   // The page the run is currently building, if it has produced one. Only HTML
@@ -943,15 +925,12 @@ export function DesignFilesPanel({
           className="df-row-check"
           onClick={(e) => {
             e.stopPropagation();
-            if (viewerOnly) return; // read-only viewer cannot batch-select files
             toggleSelect(f.name);
           }}
-          role={viewerOnly ? undefined : 'checkbox'}
-          aria-checked={viewerOnly ? undefined : isSelected}
-          aria-disabled={viewerOnly ? 'true' : undefined}
-          tabIndex={viewerOnly ? -1 : 0}
+          role="checkbox"
+          aria-checked={isSelected}
+          tabIndex={0}
           onKeyDown={(e) => {
-            if (viewerOnly) return;
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               e.stopPropagation();
@@ -959,9 +938,7 @@ export function DesignFilesPanel({
             }
           }}
         >
-          {viewerOnly ? null : (
-            <RemixIcon name={isSelected ? 'checkbox-line' : 'checkbox-blank-line'} size={14} />
-          )}
+          <RemixIcon name={isSelected ? 'checkbox-line' : 'checkbox-blank-line'} size={14} />
         </span>
         <span
           className="df-row-icon df-row-openable"
@@ -1033,33 +1010,27 @@ export function DesignFilesPanel({
         >
           {relativeTime(f.mtime, t)}
         </span>
-        {viewerOnly ? (
-          // Read-only viewer: the row menu (rename / delete / move) is a mutation
-          // entry point, so render an inert placeholder that keeps row layout.
-          <span className="df-row-menu df-row-menu-placeholder" aria-hidden />
-        ) : (
-          <span
-            data-testid={`design-file-menu-${f.name}`}
-            className="df-row-menu"
-            style={isHovered ? { opacity: 1 } : undefined}
-            role="button"
-            tabIndex={0}
-            aria-label={t('designFiles.rowMenu')}
-            onClick={(e) => {
+        <span
+          data-testid={`design-file-menu-${f.name}`}
+          className="df-row-menu"
+          style={isHovered ? { opacity: 1 } : undefined}
+          role="button"
+          tabIndex={0}
+          aria-label={t('designFiles.rowMenu')}
+          onClick={(e) => {
+            e.stopPropagation();
+            openMenuFor(f.name, e.target as HTMLElement);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
               e.stopPropagation();
-              openMenuFor(f.name, e.target as HTMLElement);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                e.stopPropagation();
-                openMenuFor(f.name, e.currentTarget as HTMLElement);
-              }
-            }}
-          >
-            ⋯
-          </span>
-        )}
+              openMenuFor(f.name, e.currentTarget as HTMLElement);
+            }
+          }}
+        >
+          ⋯
+        </span>
       </div>
     );
   }
@@ -1068,7 +1039,7 @@ export function DesignFilesPanel({
   // instead of compact list rows — the #5517 reference card grid. The grid IS
   // the preview surface, so a single click on the thumb opens the page in a
   // workspace tab; the name button is the inline-rename entry point for
-  // editors (read-only viewers open instead), and the ⋯ menu carries
+  // editors, and the ⋯ menu carries
   // open / rename / copy-path / download / delete.
   function renderPageCard(f: ProjectFile, category: FileCategory) {
     const isSelected = selected.has(f.name);
@@ -1085,15 +1056,12 @@ export function DesignFilesPanel({
           className="df-card-check"
           onClick={(e) => {
             e.stopPropagation();
-            if (viewerOnly) return; // read-only viewer cannot batch-select files
             toggleSelect(f.name);
           }}
-          role={viewerOnly ? undefined : 'checkbox'}
-          aria-checked={viewerOnly ? undefined : isSelected}
-          aria-disabled={viewerOnly ? 'true' : undefined}
-          tabIndex={viewerOnly ? -1 : 0}
+          role="checkbox"
+          aria-checked={isSelected}
+          tabIndex={0}
           onKeyDown={(e) => {
-            if (viewerOnly) return;
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               e.stopPropagation();
@@ -1101,9 +1069,7 @@ export function DesignFilesPanel({
             }
           }}
         >
-          {viewerOnly ? null : (
-            <RemixIcon name={isSelected ? 'checkbox-line' : 'checkbox-blank-line'} size={14} />
-          )}
+          <RemixIcon name={isSelected ? 'checkbox-line' : 'checkbox-blank-line'} size={14} />
         </span>
         <button
           type="button"
@@ -1148,16 +1114,10 @@ export function DesignFilesPanel({
             ) : (
               <button
                 type="button"
-                className={`df-card-name-btn ${viewerOnly ? '' : 'is-renamable'}`}
-                title={viewerOnly ? openLabel : t('common.rename')}
+                className="df-card-name-btn is-renamable"
+                title={t('common.rename')}
                 onClick={(e) => {
                   e.stopPropagation();
-                  // Read-only viewers have no rename entry point, so the name
-                  // stays a plain open target for them.
-                  if (viewerOnly) {
-                    onOpenFile(f.name);
-                    return;
-                  }
                   startRename(f.name);
                 }}
               >
@@ -1168,90 +1128,9 @@ export function DesignFilesPanel({
               {categoryLabel(category, t)} · {relativeTime(f.mtime, t)}
             </span>
           </div>
-          {viewerOnly ? (
-            // Read-only viewer: the ⋯ menu is a mutation entry point, so keep
-            // an inert placeholder that preserves the meta-strip layout.
-            <span className="df-row-menu df-row-menu-placeholder" aria-hidden />
-          ) : (
-            <span
-              data-testid={`design-file-menu-${f.name}`}
-              className="df-row-menu"
-              role="button"
-              tabIndex={0}
-              aria-label={t('designFiles.rowMenu')}
-              onClick={(e) => {
-                e.stopPropagation();
-                openMenuFor(f.name, e.target as HTMLElement);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  openMenuFor(f.name, e.currentTarget as HTMLElement);
-                }
-              }}
-            >
-              ⋯
-            </span>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Images in the masonry waterfall: bare image cards — no name/meta strip,
-  // the picture IS the card. Check chip floats top-left and the row menu
-  // (rename/delete live there) floats top-right, both hover-revealed. A single
-  // click on the picture opens the image in a workspace tab.
-  function renderImageCard(f: ProjectFile, _category: FileCategory) {
-    const isSelected = selected.has(f.name);
-    const openLabel = `${t('designFiles.previewOpen')} ${f.name}`;
-    const src = appendResourceQuery(
-      projectRawUrl(projectId, f.name, workspaceContext),
-      `v=${Math.round(f.mtime)}`,
-    );
-    return (
-      <div
-        key={f.name}
-        data-testid={`design-file-row-${f.name}`}
-        className={`df-card df-card--image ${isSelected ? 'selected' : ''}`}
-      >
-        <span
-          className="df-card-check"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (viewerOnly) return; // read-only viewer cannot batch-select files
-            toggleSelect(f.name);
-          }}
-          role={viewerOnly ? undefined : 'checkbox'}
-          aria-checked={viewerOnly ? undefined : isSelected}
-          aria-disabled={viewerOnly ? 'true' : undefined}
-          tabIndex={viewerOnly ? -1 : 0}
-          onKeyDown={(e) => {
-            if (viewerOnly) return;
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              e.stopPropagation();
-              toggleSelect(f.name);
-            }
-          }}
-        >
-          {viewerOnly ? null : (
-            <RemixIcon name={isSelected ? 'checkbox-line' : 'checkbox-blank-line'} size={14} />
-          )}
-        </span>
-        <DesignFileImageThumb
-          src={src}
-          title={openLabel}
-          onOpen={() => onOpenFile(f.name)}
-        />
-        {/* Positioned overlay — rendered after the thumb so the card's first
-            button stays the primary open target (mirrors list rows, where
-            controls never precede the openable name). */}
-        {viewerOnly ? null : (
           <span
             data-testid={`design-file-menu-${f.name}`}
-            className="df-row-menu df-card-menu-overlay"
+            className="df-row-menu"
             role="button"
             tabIndex={0}
             aria-label={t('designFiles.rowMenu')}
@@ -1269,7 +1148,72 @@ export function DesignFilesPanel({
           >
             ⋯
           </span>
-        )}
+        </div>
+      </div>
+    );
+  }
+
+  // Images in the masonry waterfall: bare image cards — no name/meta strip,
+  // the picture IS the card. Check chip floats top-left and the row menu
+  // (rename/delete live there) floats top-right, both hover-revealed. A single
+  // click on the picture opens the image in a workspace tab.
+  function renderImageCard(f: ProjectFile, _category: FileCategory) {
+    const isSelected = selected.has(f.name);
+    const openLabel = `${t('designFiles.previewOpen')} ${f.name}`;
+    const src = `${projectRawUrl(projectId, f.name)}?v=${Math.round(f.mtime)}`;
+    return (
+      <div
+        key={f.name}
+        data-testid={`design-file-row-${f.name}`}
+        className={`df-card df-card--image ${isSelected ? 'selected' : ''}`}
+      >
+        <span
+          className="df-card-check"
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleSelect(f.name);
+          }}
+          role="checkbox"
+          aria-checked={isSelected}
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleSelect(f.name);
+            }
+          }}
+        >
+          <RemixIcon name={isSelected ? 'checkbox-line' : 'checkbox-blank-line'} size={14} />
+        </span>
+        <DesignFileImageThumb
+          src={src}
+          title={openLabel}
+          onOpen={() => onOpenFile(f.name)}
+        />
+        {/* Positioned overlay — rendered after the thumb so the card's first
+            button stays the primary open target (mirrors list rows, where
+            controls never precede the openable name). */}
+        <span
+          data-testid={`design-file-menu-${f.name}`}
+          className="df-row-menu df-card-menu-overlay"
+          role="button"
+          tabIndex={0}
+          aria-label={t('designFiles.rowMenu')}
+          onClick={(e) => {
+            e.stopPropagation();
+            openMenuFor(f.name, e.target as HTMLElement);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              e.stopPropagation();
+              openMenuFor(f.name, e.currentTarget as HTMLElement);
+            }
+          }}
+        >
+          ⋯
+        </span>
       </div>
     );
   }
@@ -1304,12 +1248,7 @@ export function DesignFilesPanel({
     try {
       const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/archive/batch`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(workspaceContext
-            ? workspaceProjectHeaders(workspaceContext)
-            : {}),
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ files: fileList }),
       });
       if (!resp.ok) {
@@ -1344,9 +1283,6 @@ export function DesignFilesPanel({
     ev.preventDefault();
     dragDepthRef.current = 0;
     setDraggingFiles(false);
-    // Read-only viewer of a shared project: dropping files is a mutation, so
-    // ignore the drop entirely (the drag affordance is also suppressed below).
-    if (viewerOnly) return;
     setDropReadError(null);
     try {
       const dropped = await filesFromDataTransfer(ev.dataTransfer);
@@ -1385,7 +1321,7 @@ export function DesignFilesPanel({
     }
   }
 
-  const fileActions = viewerOnly ? null : (
+  const fileActions = (
     <div className="df-actions">
       {LIBRARY_UI_VISIBLE && onSelectFromLibrary ? (
         <button
@@ -1516,18 +1452,13 @@ export function DesignFilesPanel({
         <span className="df-empty-title">
           {t('designFiles.empty')}
         </span>
-        {/* Keep starter actions discoverable in shared read-only
-            projects, but disable every project mutation in place. */}
         <div className="df-empty-actions">
           <button
             type="button"
             className="df-empty-cta df-empty-cta-primary"
             data-testid={beforeFirstListing ? undefined : 'design-files-empty-new-sketch'}
-            disabled={viewerOnly}
             onClick={onNewSketch}
-            title={viewerOnly
-              ? t('fileViewer.readonlySharedNoExport')
-              : t('designFiles.newSketch')}
+            title={t('designFiles.newSketch')}
           >
             <Icon name="pencil" size={13} />
             <span>{t('designFiles.newSketch')}</span>
@@ -1538,11 +1469,8 @@ export function DesignFilesPanel({
             type="button"
             className="df-empty-cta df-empty-cta-doc"
             data-testid={beforeFirstListing ? undefined : 'design-files-empty-new-document'}
-            disabled={viewerOnly}
             onClick={onPaste}
-            title={viewerOnly
-              ? t('fileViewer.readonlySharedNoExport')
-              : t('designFiles.newDocumentTitle')}
+            title={t('designFiles.newDocumentTitle')}
           >
             <Icon name="file" size={13} />
             <span>{t('designFiles.newDocument')}</span>
@@ -1551,11 +1479,8 @@ export function DesignFilesPanel({
             type="button"
             className="df-empty-cta df-empty-cta-upload"
             data-testid={beforeFirstListing ? undefined : 'design-files-upload-trigger'}
-            disabled={viewerOnly}
             onClick={onUpload}
-            title={viewerOnly
-              ? t('fileViewer.readonlySharedNoExport')
-              : t('designFiles.upload.title')}
+            title={t('designFiles.upload.title')}
           >
             <Icon name="upload" size={13} />
             <span>{t('designFiles.upload.label')}</span>
@@ -1578,11 +1503,8 @@ export function DesignFilesPanel({
               type="button"
               className="df-empty-cta df-empty-cta-tertiary"
               data-testid={beforeFirstListing ? undefined : 'design-files-empty-create-design-system'}
-              disabled={viewerOnly}
               onClick={onCreateDesignSystem}
-              title={viewerOnly
-                ? t('fileViewer.readonlySharedNoExport')
-                : t('dsManager.createTitle')}
+              title={t('dsManager.createTitle')}
             >
               <Icon name="blocks" size={14} />
               <span>{t('dsManager.createTitle')}</span>
@@ -1624,7 +1546,6 @@ export function DesignFilesPanel({
           className="df-body"
           onDragEnter={(ev) => {
             ev.preventDefault();
-            if (viewerOnly) return; // no "drop to upload" hint in read-only
             dragDepthRef.current += 1;
             setDraggingFiles(true);
           }}
@@ -1683,18 +1604,16 @@ export function DesignFilesPanel({
                   <Icon name="download" size={13} />
                   <span>{t('designFiles.download')}</span>
                 </button>
-                {viewerOnly ? null : (
-                  <button
-                    type="button"
-                    className="danger"
-                    data-testid="design-files-batch-delete"
-                    disabled={deleting}
-                    onClick={() => void handleBatchDelete()}
-                    title={t('designFiles.deleteSelected', { n: selected.size })}
-                  >
-                    <span>{t('designFiles.delete')}</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  className="danger"
+                  data-testid="design-files-batch-delete"
+                  disabled={deleting}
+                  onClick={() => void handleBatchDelete()}
+                  title={t('designFiles.deleteSelected', { n: selected.size })}
+                >
+                  <span>{t('designFiles.delete')}</span>
+                </button>
                 <button type="button" className="df-batch-clear" onClick={clearSelection}>
                   {t('designFiles.clearSelection')}
                 </button>
@@ -1712,7 +1631,6 @@ export function DesignFilesPanel({
                 file={buildPreviewFile}
                 filesRefreshKey={filesRefreshKey ?? 0}
                 steps={runSteps ?? []}
-                workspaceContext={workspaceContext}
               />
             </div>
           ) : files.length === 0 && liveArtifacts.length === 0 && (folders?.length ?? 0) === 0 && !filesAuthoritative ? (
@@ -1721,7 +1639,7 @@ export function DesignFilesPanel({
             // "no designs yet" would be a guess. Say we are working instead.
             <div className="df-empty df-empty-syncing" data-testid="design-files-loading">
               <div className="df-empty-pill">
-                <FileSyncBadge state="downloading" size={20} />
+                <Spinner size={20} />
                 <span className="df-empty-title">{t('common.loading')}</span>
               </div>
             </div>
@@ -1729,25 +1647,7 @@ export function DesignFilesPanel({
           ) : null}
           {buildPreviewFile && running && !buildPreviewDismissed ? null
           : files.length === 0 && liveArtifacts.length === 0 && (folders?.length ?? 0) === 0 && filesAuthoritative ? (
-            downloadPending ? (
-              // A shared project whose local mirror has not caught up yet
-              // reads as EXACTLY the same zero-files result as a genuinely
-              // empty project (this list is a plain local-disk read — see
-              // `downloadPending`'s doc comment). Without this branch the two
-              // are indistinguishable and the CTAs below (which create NEW
-              // content) actively mislead a viewer whose project is about to
-              // have real files. Swap them for a syncing notice instead.
-              <div className="df-empty df-empty-syncing" data-testid="design-files-syncing">
-                <div className="df-empty-pill">
-                  <FileSyncBadge state="downloading" size={20} />
-                  <span className="df-empty-title">
-                    {t('designFiles.syncing')}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              renderEmptyState(false)
-            )
+            renderEmptyState(false)
           ) : (
             <>
               {availableTabs.length > 0 ? (
@@ -1960,7 +1860,7 @@ export function DesignFilesPanel({
               : t('designFiles.copyLocalPath')}
           </button>
           <a
-            href={projectFileUrl(projectId, menuPos.name, workspaceContext)}
+            href={projectFileUrl(projectId, menuPos.name)}
             download={menuPos.name}
             style={{ textDecoration: 'none' }}
           >
@@ -2063,33 +1963,17 @@ function HtmlCardThumbnail({
   file: ProjectFile;
   filesRefreshKey: number;
 }) {
-  const {
-    workspaceContext,
-    workspaceContextLoading,
-  } = useProjectCollabContext();
   const tooLargeForThumbnail = file.size > HTML_THUMBNAIL_INLINE_MAX_BYTES;
-  const url = projectFileUrl(projectId, file.name, workspaceContext);
-  const authorizationScopeKey = workspaceContextLoading
-    ? null
-    : workspaceContext
-      ? `workspace:${workspaceIdentityCacheKey(workspaceContext)}`
-      : 'local';
+  const url = projectFileUrl(projectId, file.name);
   const refreshKey = htmlSourceSnapshotRefreshKey(file, filesRefreshKey);
-  const thumbnailIdentity = authorizationScopeKey
-    ? {
-        authorizationScopeKey,
-        projectId,
-        fileName: file.name,
-        refreshKey,
-      }
-    : null;
-  const baseHref = projectRawUrl(
+  const thumbnailIdentity = {
+    authorizationScopeKey: 'local',
     projectId,
-    baseDirForFile(file.name),
-    workspaceContext,
-  );
+    fileName: file.name,
+    refreshKey,
+  };
+  const baseHref = projectRawUrl(projectId, baseDirForFile(file.name));
   const [srcDoc, setSrcDoc] = useState<string | null>(() => {
-    if (!thumbnailIdentity) return null;
     const source =
       getHtmlSourceSnapshot(
         thumbnailIdentity.authorizationScopeKey,
@@ -2137,7 +2021,7 @@ function HtmlCardThumbnail({
 
   useEffect(() => {
     setSrcDoc(null);
-    if (tooLargeForThumbnail || !thumbnailIdentity) return;
+    if (tooLargeForThumbnail) return;
     const cachedSource =
       getHtmlSourceSnapshot(
         thumbnailIdentity.authorizationScopeKey,
@@ -2160,7 +2044,7 @@ function HtmlCardThumbnail({
         thumbnailIdentity,
         async () => {
           const response = await fetch(
-            appendResourceQuery(url, `v=${Math.round(file.mtime)}`),
+            `${url}?v=${Math.round(file.mtime)}`,
             {},
           );
           return response?.ok ? response.text() : null;
@@ -2185,7 +2069,6 @@ function HtmlCardThumbnail({
       abandonSlot();
     };
   }, [
-    authorizationScopeKey,
     baseHref,
     nearViewport,
     refreshKey,

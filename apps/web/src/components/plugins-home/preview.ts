@@ -16,11 +16,7 @@
 // branch on a single discriminator and lets the unit tests assert
 // classification without touching React.
 
-import type {
-  InstalledPluginRecord,
-  WorkspaceCollabContext,
-} from '@open-design/contracts';
-import { workspaceResourceUrl } from '../../collab/workspace-identity';
+import type { InstalledPluginRecord } from '@open-design/contracts';
 
 export type PluginPreviewKind = 'media' | 'html' | 'design' | 'text';
 
@@ -68,7 +64,6 @@ export interface DesignPreviewSpec {
   brand: string;
   designSystemId: string | null;
   swatches: string[];
-  workspaceContext?: WorkspaceCollabContext | null;
 }
 
 export interface TextPreviewSpec {
@@ -190,7 +185,6 @@ export function inferPluginPreview(
   record: InstalledPluginRecord,
   opts?: {
     preferBaked?: boolean;
-    workspaceContext?: WorkspaceCollabContext | null;
   },
 ): PluginPreviewSpec {
   const preview = readPreview(record);
@@ -228,10 +222,7 @@ export function inferPluginPreview(
       if (opts?.preferBaked && poster) {
         const relative = !/^(?:[a-z][a-z\d+.-]*:|\/)/i.test(poster);
         const posterUrl = relative
-          ? workspaceResourceUrl(
-            `/api/plugins/${encodeURIComponent(record.id)}/asset/${poster.replace(/^\.\//, '').split('/').map(encodeURIComponent).join('/')}`,
-            opts.workspaceContext,
-          )
+          ? `/api/plugins/${encodeURIComponent(record.id)}/asset/${poster.replace(/^\.\//, '').split('/').map(encodeURIComponent).join('/')}`
           : poster;
         return {
           kind: 'media', mediaType: 'image', poster: posterUrl,
@@ -240,10 +231,7 @@ export function inferPluginPreview(
       }
       return {
         kind: 'html',
-        src: workspaceResourceUrl(
-          `/api/plugins/${encodeURIComponent(record.id)}/preview`,
-          opts?.workspaceContext,
-        ),
+        src: `/api/plugins/${encodeURIComponent(record.id)}/preview`,
         label: entry.replace(/^\.\//, '').split(/[\\/]/).pop() ?? entry,
         source: 'preview',
       };
@@ -290,10 +278,7 @@ export function inferPluginPreview(
         typeof examples[0]!.title === 'string' ? (examples[0]!.title as string) : stem;
       return {
         kind: 'html',
-        src: workspaceResourceUrl(
-          `/api/plugins/${encodeURIComponent(record.id)}/example/${encodeURIComponent(stem)}`,
-          opts?.workspaceContext,
-        ),
+        src: `/api/plugins/${encodeURIComponent(record.id)}/example/${encodeURIComponent(stem)}`,
         label: title,
         source: 'example',
         exampleStem: stem,
@@ -307,9 +292,6 @@ export function inferPluginPreview(
       brand: brandLabel(record),
       designSystemId: designSystemRef(record),
       swatches: deriveSwatches(record),
-      ...(opts?.workspaceContext
-        ? { workspaceContext: opts.workspaceContext }
-        : {}),
     };
   }
 

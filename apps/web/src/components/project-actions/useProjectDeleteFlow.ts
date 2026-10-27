@@ -1,16 +1,10 @@
 import { useCallback, useRef, useState } from 'react';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import type { TrackingProjectCollectionPage } from '@open-design/contracts/analytics';
 
 import { useAnalytics } from '../../analytics/provider';
 import { trackWorkspaceProjectActionResult } from '../../analytics/events';
-import {
-  stableAnalyticsRequestErrorCode,
-  workspaceAnalyticsDimensions,
-} from '../../analytics/workspace';
+import { stableAnalyticsRequestErrorCode } from '../../analytics/workspace';
 import type { Project } from '../../types';
-import { useProjectShareHistoryState } from '../share/useProjectShareHistory';
-import { currentWorkspaceAccountGeneration } from '../../collab/workspace-identity';
 
 /** Return `false` (or reject) when the daemon refused or the request failed;
  *  anything else means the project is gone. */
@@ -29,19 +23,14 @@ export type ProjectDeleteHandler = (id: string) => Promise<boolean | void> | boo
 export function useProjectDeleteFlow(input: {
   onDelete?: ProjectDeleteHandler;
   analyticsPage: TrackingProjectCollectionPage;
-  workspaceContext: WorkspaceCollabContext | null | undefined;
 }) {
-  const { onDelete, analyticsPage, workspaceContext } = input;
+  const { onDelete, analyticsPage } = input;
   const analytics = useAnalytics();
   const [target, setTarget] = useState<Project | null>(null);
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
   const [failed, setFailed] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const accountGeneration = currentWorkspaceAccountGeneration();
-  const { history, status } = useProjectShareHistoryState(target && workspaceContext ? target.id : undefined, workspaceContext, 'delete-confirmation');
-  const shareReadStatus = target && !workspaceContext ? 'error' : status;
-  const activeShareCount = history ? history.publications.filter(publication => publication.status === 'active').length : null;
 
   const request = useCallback((project: Project) => {
     setFailed(false);
@@ -57,11 +46,9 @@ export function useProjectDeleteFlow(input: {
   }, [pending]);
 
   const commit = useCallback(async () => {
-    if (!target || !onDelete || pending || inFlight.current || shareReadStatus !== 'ready' || activeShareCount === null
-      || accountGeneration !== currentWorkspaceAccountGeneration()) return;
+    if (!target || !onDelete || pending || inFlight.current) return;
     inFlight.current = true;
     const startedAt = performance.now();
-    const workspaceDimensions = workspaceAnalyticsDimensions(workspaceContext);
     setFailed(false);
     setErrorMessage(null);
     setPending(true);
@@ -78,7 +65,6 @@ export function useProjectDeleteFlow(input: {
           failed_count: 1,
           duration_ms: Math.round(performance.now() - startedAt),
           error_code: 'request_failed',
-          ...workspaceDimensions,
         });
         setFailed(true);
         return;
@@ -93,7 +79,6 @@ export function useProjectDeleteFlow(input: {
         succeeded_count: 1,
         failed_count: 0,
         duration_ms: Math.round(performance.now() - startedAt),
-        ...workspaceDimensions,
       });
     } catch (err) {
       console.warn('[useProjectDeleteFlow] delete project failed:', err);
@@ -109,13 +94,12 @@ export function useProjectDeleteFlow(input: {
         failed_count: 1,
         duration_ms: Math.round(performance.now() - startedAt),
         error_code: stableAnalyticsRequestErrorCode(err),
-        ...workspaceDimensions,
       });
     } finally {
       inFlight.current = false;
       setPending(false);
     }
-  }, [activeShareCount, accountGeneration, analytics.track, analyticsPage, onDelete, pending, shareReadStatus, target, workspaceContext]);
+  }, [analytics.track, analyticsPage, onDelete, pending, target]);
 
-  return { target, pending, failed, errorMessage, activeShareCount, shareReadStatus, request, cancel, commit };
+  return { target, pending, failed, errorMessage, request, cancel, commit };
 }

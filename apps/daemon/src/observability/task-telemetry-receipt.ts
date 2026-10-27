@@ -1,14 +1,14 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { readTaskTelemetrySinkConfig, readTelemetrySinkConfig, type RunTelemetrySinkConfig } from '../langfuse-trace.js';
+import { readTelemetrySinkConfig, type RunTelemetrySinkConfig } from '../langfuse-trace.js';
 
 export interface TaskTraceReceipt {
   taskExecutionId: string;
   idempotencyKey: string;
   traceId: string;
   protocol: 'legacy-v1' | 'otlp-v4';
-  transport: 'langfuse' | 'relay' | 'vela';
+  transport: 'langfuse' | 'relay';
 }
 
 /** Small non-secret exporter receipt under the caller's resolved daemon data root.
@@ -34,7 +34,7 @@ export function taskTraceReceipts(dataDir?: string) {
         if (r?.taskExecutionId === id && (idempotencyKey === undefined || r.idempotencyKey === idempotencyKey)
           && typeof r.traceId === 'string' && r.traceId.length > 0
           && ['legacy-v1', 'otlp-v4'].includes(r.protocol)
-          && ['langfuse', 'relay', 'vela'].includes(r.transport)) return r;
+          && ['langfuse', 'relay'].includes(r.transport)) return r;
       } catch { /* Unknown is preferable to a guessed trace identity. */ }
       return undefined;
     },
@@ -47,13 +47,10 @@ export function taskUpdateSink(
   dataDir: string,
   clientTraceId: string,
   env: NodeJS.ProcessEnv = process.env,
-  configuredEnv: Record<string, string> = {},
 ): RunTelemetrySinkConfig | null {
   if (!clientTraceId.startsWith('strategy-task:')) return null;
   const receipt = taskTraceReceipts(dataDir).read(clientTraceId.slice('strategy-task:'.length));
   if (!receipt) return null;
-  const sink = receipt.transport === 'vela'
-    ? readTaskTelemetrySinkConfig(env, configuredEnv)
-    : readTelemetrySinkConfig(env);
+  const sink = readTelemetrySinkConfig(env);
   return sink?.kind === receipt.transport ? sink : null;
 }

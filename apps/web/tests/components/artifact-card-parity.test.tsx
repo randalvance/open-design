@@ -29,10 +29,8 @@ import { AssistantMessage } from '../../src/components/AssistantMessage';
 import { FileOpsSummary } from '../../src/components/FileOpsSummary';
 import { RemixIcon } from '../../src/components/RemixIcon';
 import { REMIX_ICON_PATHS } from '../../src/components/remix-icon-paths';
-import { CollabProvider } from '../../src/collab/collab-context';
 import type { ChatMessage, ProjectFile } from '../../src/types';
 import type { FileOpEntry } from '../../src/runtime/file-ops';
-import { workspaceContextFixture } from '../helpers/workspace-context';
 
 beforeAll(() => {
   const store = new Map<string, string>();
@@ -64,33 +62,6 @@ afterEach(() => {
 });
 
 const PROJECT_ID = 'c7e3b234-2fb3-4f6e-8aae-a3a00697c476';
-
-function projectCollabValue() {
-  return {
-    workspaceContext: workspaceContextFixture({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-    }),
-    workspaceContextLoading: false,
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed' as const,
-    isOwner: false,
-    isEffectiveOwner: true,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: vi.fn(),
-    requestPublish: vi.fn(),
-    refreshPresence: vi.fn(),
-    checkStatusNow: vi.fn(),
-  };
-}
 
 const RUN_STARTED_AT = 1787794097356;
 const RUN_ENDED_AT = 1787794110470;
@@ -185,7 +156,7 @@ function producedOnlyTurn(names: string[], overrides: Partial<ChatMessage> = {})
 
 function renderTurn(message: ChatMessage, extra: Record<string, unknown> = {}) {
   return render(
-    <CollabProvider value={projectCollabValue()}>
+    <>
       <AssistantMessage
         message={message}
         streaming={false}
@@ -194,7 +165,7 @@ function renderTurn(message: ChatMessage, extra: Record<string, unknown> = {}) {
         isLast
         {...extra}
       />
-    </CollabProvider>,
+    </>,
   );
 }
 
@@ -305,7 +276,7 @@ describe('两条产物面板路径给出同一副卡', () => {
 describe('产物卡缩略图适配', () => {
   it('图片卡声明完整画面适配，视频与 HTML 仍走各自的专用预览', () => {
     render(
-      <CollabProvider value={projectCollabValue()}>
+      <>
         <FileOpsSummary
           entries={[
             fileOpEntry('portrait.png'),
@@ -314,7 +285,7 @@ describe('产物卡缩略图适配', () => {
           ]}
           projectId={PROJECT_ID}
         />
-      </CollabProvider>,
+      </>,
     );
 
     const imageCard = screen.getByTestId('artifact-card-portrait.png');
@@ -356,14 +327,14 @@ describe('音频产物', () => {
 describe('动作胶囊的字形', () => {
   it('「分享」使用与右上角一致的 share-forward 图标,「导出」保留下载图标', () => {
     render(
-      <CollabProvider value={projectCollabValue()}>
+      <>
         <FileOpsSummary
           entries={[fileOpEntry('landing.html')]}
           projectId={PROJECT_ID}
           onPublish={vi.fn()}
           onExport={vi.fn()}
         />
-      </CollabProvider>,
+      </>,
     );
 
     const publish = screen.getByTestId('artifact-card-publish-landing.html');
@@ -397,14 +368,14 @@ describe('动作胶囊的字形', () => {
             <span>Export</span>
           </button>
         </div>
-        <CollabProvider value={projectCollabValue()}>
+        <>
           <FileOpsSummary
             entries={[fileOpEntry('landing.html')]}
             projectId={PROJECT_ID}
             onPublish={vi.fn()}
             onExport={vi.fn()}
           />
-        </CollabProvider>
+        </>
       </div>,
     );
 
@@ -458,7 +429,7 @@ describe('动作胶囊的字形', () => {
    */
   it('动作浮层逐条对齐最新设计稿(玻璃底 / 模糊 / 内描边 / 药丸圆角)', () => {
     render(
-      <CollabProvider value={projectCollabValue()}>
+      <>
         <FileOpsSummary
           entries={[fileOpEntry('landing.html')]}
           projectId={PROJECT_ID}
@@ -466,7 +437,7 @@ describe('动作胶囊的字形', () => {
           onPublish={vi.fn()}
           onExport={vi.fn()}
         />
-      </CollabProvider>,
+      </>,
     );
 
     const act = getComputedStyle(screen.getByTestId('artifact-card-export-landing.html'));
@@ -517,13 +488,13 @@ describe('导出行为', () => {
   it('单格式产物(md)点「导出」直接下载,不弹任何东西', () => {
     const onExport = vi.fn();
     render(
-      <CollabProvider value={projectCollabValue()}>
+      <>
         <FileOpsSummary
           entries={[fileOpEntry('notes.md')]}
           projectId={PROJECT_ID}
           onExport={onExport}
         />
-      </CollabProvider>,
+      </>,
     );
 
     const act = screen.getByTestId('artifact-card-export-notes.md');
@@ -536,13 +507,13 @@ describe('导出行为', () => {
   it('单格式产物(png)同样直接下载', () => {
     const onExport = vi.fn();
     render(
-      <CollabProvider value={projectCollabValue()}>
+      <>
         <FileOpsSummary
           entries={[fileOpEntry('poster.png')]}
           projectId={PROJECT_ID}
           onExport={onExport}
         />
-      </CollabProvider>,
+      </>,
     );
 
     const act = screen.getByTestId('artifact-card-export-poster.png');
@@ -554,13 +525,13 @@ describe('导出行为', () => {
   it('多格式产物(html)是按钮,点它把菜单交给预览区(反向对照)', () => {
     const onExport = vi.fn();
     render(
-      <CollabProvider value={projectCollabValue()}>
+      <>
         <FileOpsSummary
           entries={[fileOpEntry('landing.html')]}
           projectId={PROJECT_ID}
           onExport={onExport}
         />
-      </CollabProvider>,
+      </>,
     );
 
     const act = screen.getByTestId('artifact-card-export-landing.html');
@@ -589,7 +560,7 @@ describe('导出行为', () => {
 describe('卡上的两枚胶囊复用预览区的菜单', () => {
   function renderHtmlCard(overrides: Record<string, unknown> = {}) {
     return render(
-      <CollabProvider value={projectCollabValue()}>
+      <>
         <FileOpsSummary
           entries={[fileOpEntry('landing.html')]}
           projectId={PROJECT_ID}
@@ -597,7 +568,7 @@ describe('卡上的两枚胶囊复用预览区的菜单', () => {
           onExport={vi.fn()}
           {...overrides}
         />
-      </CollabProvider>,
+      </>,
     );
   }
 
@@ -653,7 +624,7 @@ describe('卡上的两枚胶囊复用预览区的菜单', () => {
     const firstPublish = vi.fn();
     const secondPublish = vi.fn();
     render(
-      <CollabProvider value={projectCollabValue()}>
+      <>
         <FileOpsSummary
           entries={[fileOpEntry('landing.html')]}
           projectId={PROJECT_ID}
@@ -664,7 +635,7 @@ describe('卡上的两枚胶囊复用预览区的菜单', () => {
           projectId={PROJECT_ID}
           onPublish={secondPublish}
         />
-      </CollabProvider>,
+      </>,
     );
 
     const [firstButton, secondButton] = screen.getAllByTestId('artifact-card-publish-landing.html');
@@ -680,13 +651,13 @@ describe('卡上的两枚胶囊复用预览区的菜单', () => {
   it('单格式产物照旧直接下载,压根不惊动预览区(反向对照)', () => {
     const onExport = vi.fn();
     render(
-      <CollabProvider value={projectCollabValue()}>
+      <>
         <FileOpsSummary
           entries={[fileOpEntry('notes.md')]}
           projectId={PROJECT_ID}
           onExport={onExport}
         />
-      </CollabProvider>,
+      </>,
     );
     const act = screen.getByTestId('artifact-card-export-notes.md');
     expect(act.tagName).toBe('A');

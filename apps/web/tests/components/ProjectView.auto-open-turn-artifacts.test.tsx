@@ -80,10 +80,8 @@ vi.mock('../../src/providers/daemon', () => ({
   GENERIC_DAEMON_DISCONNECT_CODE: 'GENERIC_DAEMON_DISCONNECT',
   GENERIC_DAEMON_DISCONNECT_MESSAGE: 'daemon stream disconnected before run completed',
   fetchChatRunStatus: (...args: unknown[]) => fetchChatRunStatus(...args),
-  fetchAmrWalletSnapshot: vi.fn().mockResolvedValue(null),
   listActiveChatRuns: (...args: unknown[]) => listActiveChatRuns(...args),
   listProjectRuns: (...args: unknown[]) => listProjectRuns(...args),
-  publishDaemonRunFinishedEvent: (...args: unknown[]) => publishDaemonRunFinishedEvent(...args),
   reattachDaemonRun: (...args: unknown[]) => reattachDaemonRun(...args),
   streamViaDaemon: (...args: unknown[]) => streamViaDaemon(...args),
 }));
@@ -181,6 +179,7 @@ vi.mock('../../src/components/FileWorkspace', () => ({
 
 vi.mock('../../src/components/Loading', () => ({
   CenteredLoader: () => null,
+  Spinner: () => null,
 }));
 
 function renderProjectView(options?: { resolvedDir?: string | null; metadata?: unknown }) {

@@ -28,9 +28,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AssistantMessage } from '../../src/components/AssistantMessage';
-import { CollabProvider } from '../../src/collab/collab-context';
 import type { ChatMessage, ProjectFile } from '../../src/types';
-import { workspaceContextFixture } from '../helpers/workspace-context';
 
 beforeAll(() => {
   const store = new Map<string, string>();
@@ -50,33 +48,6 @@ afterEach(() => {
   window.localStorage.clear();
   vi.restoreAllMocks();
 });
-
-function projectCollabValue() {
-  return {
-    workspaceContext: workspaceContextFixture({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-    }),
-    workspaceContextLoading: false,
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed' as const,
-    isOwner: false,
-    isEffectiveOwner: true,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: vi.fn(),
-    requestPublish: vi.fn(),
-    refreshPresence: vi.fn(),
-    checkStatusNow: vi.fn(),
-  };
-}
 
 const ARTIFACT_NAME = 'design-manifesto-parchment.html';
 
@@ -135,7 +106,7 @@ function greetingTurn(overrides: Partial<ChatMessage> = {}): ChatMessage {
 
 function renderTurn(message: ChatMessage, projectFiles: ProjectFile[]) {
   return render(
-    <CollabProvider value={projectCollabValue()}>
+    <>
       <AssistantMessage
         message={message}
         streaming={false}
@@ -143,7 +114,7 @@ function renderTurn(message: ChatMessage, projectFiles: ProjectFile[]) {
         projectFiles={projectFiles}
         isLast
       />
-    </CollabProvider>,
+    </>,
   );
 }
 

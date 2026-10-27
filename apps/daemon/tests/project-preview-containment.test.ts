@@ -2,7 +2,6 @@ import type http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { ensureWorkspaceProject, openDatabase } from '../src/db.js';
 import { startServer } from '../src/server.js';
 import { rewriteOutsideExecutableHtmlRanges } from '../src/routes/project/index.js';
 
@@ -10,7 +9,6 @@ describe('project preview containment routes', () => {
   let server: http.Server;
   let baseUrl: string;
   const projectsToClean: string[] = [];
-  const cleanupWorkspaceHeaders = new Map<string, Record<string, string>>();
 
   beforeAll(async () => {
     const started = (await startServer({ port: 0, returnServer: true })) as {
@@ -23,11 +21,7 @@ describe('project preview containment routes', () => {
 
   afterAll(async () => {
     for (const id of projectsToClean.splice(0)) {
-      const headers = cleanupWorkspaceHeaders.get(id);
-      await fetch(`${baseUrl}/api/projects/${id}`, {
-        method: 'DELETE',
-        ...(headers ? { headers } : {}),
-      }).catch(() => {});
+      await fetch(`${baseUrl}/api/projects/${id}`, { method: 'DELETE' }).catch(() => {});
     }
     await new Promise<void>((resolve) => server.close(() => resolve()));
   });
@@ -55,41 +49,6 @@ describe('project preview containment routes', () => {
       body: JSON.stringify({ name, content }),
     });
     expect(response.ok).toBe(true);
-  }
-
-  function workspaceHeaders(workspaceId: string, workspaceMemberId: string): Record<string, string> {
-    return {
-      'x-od-workspace-id': workspaceId,
-      'x-od-workspace-member-id': workspaceMemberId,
-      'x-od-workspace-type': 'personal',
-      'x-od-workspace-role': 'member',
-      'x-od-workspace-member-status': 'active',
-      'x-od-workspace-lifecycle-state': 'active',
-      'x-od-workspace-can-share-projects': 'true',
-      'x-od-workspace-can-write-synced-files': 'true',
-    };
-  }
-
-  function bindPersonalProject(
-    projectId: string,
-    workspaceId: string,
-    workspaceMemberId: string,
-  ): void {
-    const dataDir = process.env.OD_DATA_DIR;
-    if (!dataDir) throw new Error('OD_DATA_DIR is required by the daemon test harness');
-    const db = openDatabase(process.cwd(), { dataDir });
-    ensureWorkspaceProject(db, {
-      projectId,
-      workspaceId,
-      visibility: 'personal',
-      resourceState: 'active',
-      createdByWorkspaceMemberId: workspaceMemberId,
-      updatedByWorkspaceMemberId: workspaceMemberId,
-      resourceHubResourceId: null,
-      cloudTombstonedAt: null,
-      syncState: 'local_only',
-    });
-    cleanupWorkspaceHeaders.set(projectId, workspaceHeaders(workspaceId, workspaceMemberId));
   }
 
   // OPEND-2283. The web client builds its srcDoc preview from this response.
@@ -264,85 +223,6 @@ describe('project preview containment routes', () => {
     expect(await assetResponse.text()).toContain('color: black');
   });
 
-  it('preserves script contents while rewriting workspace-scoped asset URLs', async () => {
-    const workspaceId = `workspace-${randomUUID()}`;
-    const workspaceMemberId = `member-${randomUUID()}`;
-    const projectId = await createProject({ entryFile: 'index.html' });
-    const script = [
-      'const src = "assets/runtime.png";',
-      'const markup = \'<link href="styles/runtime.css">'
-        + '<img src="assets/runtime.png" srcset="assets/runtime.png 1x">\';',
-      "const cssText = 'background: url(\"assets/runtime.png\")';",
-      "const url = 'blob:preview'; URL.revokeObjectURL(url);",
-    ].join(' ');
-    const inlineHandler = 'URL.revokeObjectURL(url)';
-    const dataUrl = 'data:text/html,<script>URL.revokeObjectURL(url)</script>';
-    const newlineJavascriptUrl = 'java\nscript:URL.revokeObjectURL(url)';
-    const tabJavascriptUrl = 'java\tscript:URL.revokeObjectURL(url)';
-    const vbscriptUrl = 'vbscript:URL.revokeObjectURL(url)';
-    const xlinkJavascriptUrl = "javascript:url('assets/executable.svg')";
-    const xlinkDataUrl = "data:image/svg+xml,<svg onload=url('assets/data.svg')></svg>";
-    await writeProjectFile(
-      projectId,
-      'index.html',
-      [
-        '<!doctype html>',
-        '<html><head>',
-        '<!-- code sample: <script> -->',
-        '<textarea><script></textarea>',
-        '<script src="assets/external.js"></script>',
-        `<script>${script}</script>`,
-        '</head><body>',
-        `<button onclick="${inlineHandler}" style="background: url(assets/button.png)">Revoke</button>`,
-        `<img src="assets/image.png" srcset="assets/image-1x.png 1x" onerror="${inlineHandler}">`,
-        `<link onload="${inlineHandler}" href="assets/theme-before.css" rel="stylesheet">`,
-        `<link href="assets/theme-after.css" onload="${inlineHandler}" rel="stylesheet">`,
-        `<iframe src="${dataUrl}"></iframe>`,
-        `<a href="${newlineJavascriptUrl}">Newline executable URL</a>`,
-        `<a href="${tabJavascriptUrl}">Tab executable URL</a>`,
-        `<a href="${vbscriptUrl}">Legacy executable URL</a>`,
-        `<svg><a xlink:href="${xlinkJavascriptUrl}">Namespaced executable URL</a></svg>`,
-        `<svg><a xlink:href="${xlinkDataUrl}">Namespaced data URL</a></svg>`,
-        '<style>.hero { background: url("assets/background.png"); }</style>',
-        '</body></html>',
-      ].join(''),
-    );
-    bindPersonalProject(projectId, workspaceId, workspaceMemberId);
-
-    const scopeQuery = new URLSearchParams({ workspaceId, workspaceMemberId });
-    const response = await fetch(
-      `${baseUrl}/api/projects/${projectId}/raw/index.html?${scopeQuery}`,
-    );
-    expect(response.status).toBe(200);
-    const html = await response.text();
-    const scopedAssetUrl = (assetPath: string) =>
-      `/api/projects/${projectId}/raw/${assetPath}?workspaceId=${workspaceId}`
-      + `&workspaceMemberId=${workspaceMemberId}`;
-
-    expect(html).toContain(`<script>${script}</script>`);
-    expect(html).toContain(
-      `onclick="${inlineHandler}" style="background: url(${scopedAssetUrl('assets/button.png')})"`,
-    );
-    expect(html).toContain(`<script src="${scopedAssetUrl('assets/external.js')}">`);
-    expect(html).toContain(
-      `<img src="${scopedAssetUrl('assets/image.png')}"`
-      + ` srcset="${scopedAssetUrl('assets/image-1x.png')} 1x" onerror="${inlineHandler}">`,
-    );
-    expect(html).toContain(`srcset="${scopedAssetUrl('assets/image-1x.png')} 1x"`);
-    expect(html).toContain(
-      `<link onload="${inlineHandler}" href="${scopedAssetUrl('assets/theme-before.css')}"`,
-    );
-    expect(html).toContain(
-      `<link href="${scopedAssetUrl('assets/theme-after.css')}" onload="${inlineHandler}"`,
-    );
-    expect(html).toContain(`<iframe src="${dataUrl}"></iframe>`);
-    expect(html).toContain(`<a href="${newlineJavascriptUrl}">Newline executable URL</a>`);
-    expect(html).toContain(`<a href="${tabJavascriptUrl}">Tab executable URL</a>`);
-    expect(html).toContain(`<a href="${vbscriptUrl}">Legacy executable URL</a>`);
-    expect(html).toContain(`xlink:href="${xlinkJavascriptUrl}"`);
-    expect(html).toContain(`xlink:href="${xlinkDataUrl}"`);
-    expect(html).toContain(`url("${scopedAssetUrl('assets/background.png')}")`);
-  });
 
   it('serves generated PNG assets through preview scopes and clearly 404s missing image references', async () => {
     const projectId = await createProject({ entryFile: 'index.html' });
@@ -380,114 +260,6 @@ describe('project preview containment routes', () => {
     const missingBody = await missingAsset.json() as { error?: { message?: string } };
     expect(missingBody.error?.message).toContain('ENOENT');
     expect(missingBody.error?.message).toContain('assets/missing.png');
-  });
-
-  it('derives Workspace authority for headerless project previews and their runtime-created assets', async () => {
-    const workspaceId = `workspace-${randomUUID()}`;
-    const workspaceMemberId = `member-${randomUUID()}`;
-    const projectId = await createProject({ entryFile: 'brand.html' });
-    await writeProjectFile(
-      projectId,
-      'brand.html',
-      [
-        '<!doctype html><html><head><title>Brand</title></head><body>',
-        '<script type="application/json" id="brand">{"logo":"logos/mark.png"}</script>',
-        '<script>const img = document.createElement("img"); img.src = JSON.parse(document.querySelector("#brand").textContent).logo; document.body.append(img);</script>',
-        '</body></html>',
-      ].join(''),
-    );
-    await writeProjectFile(projectId, 'logos/mark.png', 'brand-logo-bytes');
-    bindPersonalProject(projectId, workspaceId, workspaceMemberId);
-
-    const scopeQuery = new URLSearchParams({ workspaceId, workspaceMemberId });
-    const scopedPlainRawResponse = await fetch(
-      `${baseUrl}/api/projects/${projectId}/raw/brand.html?${scopeQuery}`,
-    );
-    expect(scopedPlainRawResponse.status).toBe(200);
-    expect(await scopedPlainRawResponse.text()).not.toContain('<base href=');
-
-    const unscopedRawResponse = await fetch(
-      `${baseUrl}/api/projects/${projectId}/raw/brand.html`,
-    );
-    expect(unscopedRawResponse.status).toBe(200);
-    expect(await unscopedRawResponse.text()).not.toContain('<base href=');
-
-    const unscopedLogoResponse = await fetch(
-      `${baseUrl}/api/projects/${projectId}/raw/logos/mark.png`,
-    );
-    expect(unscopedLogoResponse.status).toBe(200);
-    expect(await unscopedLogoResponse.text()).toBe('brand-logo-bytes');
-
-    const previewUrlResponse = await fetch(
-      `${baseUrl}/api/projects/${projectId}/preview-url?file=brand.html`,
-    );
-    expect(previewUrlResponse.status).toBe(200);
-    const previewUrlBody = await previewUrlResponse.json() as { url?: string };
-    expect(previewUrlBody.url).toMatch(
-      new RegExp(`^/api/projects/${projectId}/preview/[A-Za-z0-9_-]{8,128}/brand\\.html$`, 'u'),
-    );
-    const headerlessPreviewResponse = await fetch(
-      new URL(previewUrlBody.url!, baseUrl),
-    );
-    expect(headerlessPreviewResponse.status).toBe(200);
-    expect(await headerlessPreviewResponse.text()).toContain('<title>Brand</title>');
-
-    scopeQuery.append('odPreviewBridge', 'scroll');
-    const rawResponse = await fetch(
-      `${baseUrl}/api/projects/${projectId}/raw/brand.html?${scopeQuery}`,
-    );
-    expect(rawResponse.status).toBe(200);
-    const html = await rawResponse.text();
-    const baseHref = html.match(/<base\s+href="([^"]+)"/i)?.[1];
-    expect(baseHref).toMatch(
-      new RegExp(`^/api/projects/${projectId}/preview/[A-Za-z0-9_-]{8,128}/$`, 'u'),
-    );
-    expect(html).toContain('data-od-project-preview-base');
-    expect(html).toContain('data-od-preview-base-bridge');
-    expect(html).toContain("type: 'od:preview-base-scope'");
-
-    const workspaceScope = /\/preview\/([^/]+)\//u.exec(baseHref!)?.[1];
-    const workspaceRenewal = await fetch(
-      `${baseUrl}/api/projects/${projectId}/preview/${workspaceScope}/renew`,
-      {
-        method: 'POST',
-        headers: { 'x-od-preview-scope-renewal': '1' },
-      },
-    );
-    expect(workspaceRenewal.status).toBe(200);
-
-    // The browser resolves runtime-created `img.src = "logos/mark.png"`
-    // against <base>. A query-scoped raw document cannot do this because URL
-    // resolution never inherits the document query string.
-    const runtimeLogoUrl = new URL('logos/mark.png', new URL(baseHref!, baseUrl));
-    expect(runtimeLogoUrl.search).toBe('');
-    expect(runtimeLogoUrl.pathname).toContain(`/api/projects/${projectId}/preview/`);
-    const logoResponse = await fetch(runtimeLogoUrl);
-    expect(logoResponse.status).toBe(200);
-    expect(await logoResponse.text()).toBe('brand-logo-bytes');
-
-    const wrongWorkspaceQuery = new URLSearchParams({
-      workspaceId: `wrong-${randomUUID()}`,
-      workspaceMemberId,
-      odPreviewBridge: 'scroll',
-    });
-    const wrongWorkspaceResponse = await fetch(
-      `${baseUrl}/api/projects/${projectId}/raw/brand.html?${wrongWorkspaceQuery}`,
-    );
-    expect(wrongWorkspaceResponse.status).toBe(403);
-    expect(await wrongWorkspaceResponse.text()).not.toContain('/preview/');
-
-    const foreignProjectId = await createProject({ entryFile: 'brand.html' });
-    await writeProjectFile(foreignProjectId, 'logos/mark.png', 'foreign-logo-bytes');
-    bindPersonalProject(
-      foreignProjectId,
-      `foreign-workspace-${randomUUID()}`,
-      `foreign-member-${randomUUID()}`,
-    );
-    const borrowedTokenUrl = new URL(runtimeLogoUrl);
-    borrowedTokenUrl.pathname = borrowedTokenUrl.pathname.replace(projectId, foreignProjectId);
-    const borrowedTokenResponse = await fetch(borrowedTokenUrl);
-    expect(borrowedTokenResponse.status).toBe(404);
   });
 
   it('serves minted preview HTML and assets without bearer headers when API token auth is enabled', async () => {

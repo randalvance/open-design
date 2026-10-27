@@ -658,7 +658,7 @@ describe('GET /api/projects/:id resolvedDir', () => {
     expect(writeResp.status).toBe(200);
 
     const rawResp = await fetch(
-      `${baseUrl}/api/projects/${projectId}/raw/nested/demo/index.html?workspaceId=ws-cover&workspaceMemberId=wm-cover`,
+      `${baseUrl}/api/projects/${projectId}/raw/nested/demo/index.html`,
       {
       headers: { Origin: 'null' },
       },
@@ -668,10 +668,9 @@ describe('GET /api/projects/:id resolvedDir', () => {
     expect(rawResp.headers.get('access-control-allow-origin')).toBe('*');
     const html = await rawResp.text();
     expect(html).toContain('<h1>nested ok</h1>');
-    expect(html).toContain(
-      `/api/projects/${projectId}/raw/fonts/inter.woff2?workspaceId=ws-cover&workspaceMemberId=wm-cover`,
-    );
-    expect(html).not.toContain('../../fonts/inter.woff2');
+    // A plain raw read returns the untouched bytes: relative asset references
+    // are left for the browser to resolve against the nested document URL.
+    expect(html).toContain('../../fonts/inter.woff2');
   });
   it('rejects non-boolean skipDiscoveryBrief on POST /api/projects', async () => {
     const projectId = `proj-skip-discovery-bad-${Date.now()}`;

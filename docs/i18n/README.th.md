@@ -1,7 +1,5 @@
 <h1 align="center">OpenDesign: พื้นที่ทำงานร่วมกับเอเจนต์ออกแบบ AI แห่งแรก</h1>
 
-> ✨ **[ฉลอง 100K ดาวบน GitHub กับ OpenDesign Go](https://open-design.ai/pricing/)** — เพิ่มเครดิต Go เป็นสองเท่า: **เดือนแรกเพียง 8 ดอลลาร์สหรัฐ พร้อมเครดิตรายเดือนสูงสุด 120 ดอลลาร์สหรัฐสำหรับโมเดลที่รองรับใน Design Plan** ใช้ได้กับโมเดลมากกว่า 10 รุ่น เช่น GPT-6 Luna, DeepSeek V4.1 Flash, GLM-5.3 Flash-X และ MiMo V2.6 Flash แพ็กเกจส่วนบุคคลทุกแบบมีสิทธิ์ใช้ API กับ Codex, Claude Code, DSH, OpenCode และเครื่องมืออื่น ๆ
-
 <p align="center">
   <img src="../../docs/assets/readme-hero-design-agent.webp" alt="OpenDesign: พื้นที่ทำงานร่วมกับเอเจนต์ออกแบบ AI แห่งแรก" width="100%" />
 </p>
@@ -9,7 +7,6 @@
 <p align="center">
   <a href="https://open-design.ai/">เว็บไซต์</a> ·
   <a href="https://open-design.ai/">ดาวน์โหลด</a> ·
-  <a href="https://open-design.ai/cloud/">OpenDesign Cloud</a> ·
   <a href="https://discord.gg/qhbcCH8Am4">Discord</a> ·
   <a href="https://x.com/nexudotio">ติดตาม @nexudotio</a>
 </p>
@@ -27,7 +24,7 @@
 
 ## OpenDesign คืออะไร
 
-OpenDesign คือ**พื้นที่ทำงานร่วมกับเอเจนต์ออกแบบ AI แห่งแรก** เริ่มจากบรีฟ แล้วใช้เอเจนต์เขียนโค้ดที่คุณคุ้นเคยหรือ OpenDesign Cloud สร้างต้นแบบที่สอดคล้องกับระบบดีไซน์ของคุณ แชร์ให้ทีมรับชมและรวบรวมข้อเสนอแนะ ก่อนให้เอเจนต์ปรับปรุงงานต่อในโปรเจกต์เดิม
+OpenDesign คือ**พื้นที่ทำงานร่วมกับเอเจนต์ออกแบบ AI แห่งแรก** เริ่มจากบรีฟ แล้วใช้เอเจนต์เขียนโค้ดที่คุณคุ้นเคยสร้างต้นแบบที่สอดคล้องกับระบบดีไซน์ของคุณ ตรวจดูและแสดงความคิดเห็น ก่อนให้เอเจนต์ปรับปรุงงานต่อในโปรเจกต์เดิม
 
 เวิร์กโฟลว์นี้เปิดกว้างและขยายได้ OpenDesign ใช้สัญญาอนุญาต Apache 2.0 ทีมงานจึงตรวจสอบและปรับทักษะ เทมเพลต ระบบดีไซน์ และปลั๊กอินให้เข้ากับกระบวนการของตนได้
 
@@ -115,7 +112,7 @@ OpenDesign คือ**พื้นที่ทำงานร่วมกับ�
 ใช้ `od mcp install <agent> --print` เพื่อ preview แบบ dry-run · ใช้ `--uninstall` เพื่อลบ · ดูรายการเต็มด้วย `od mcp install --help`.
 
 <p align="center">
-  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="CLI coding-agent 25 ตัวที่ OpenDesign รองรับ — Claude Code · Codex · OpenCode · Hermes · Antigravity · Vela · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
+  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="CLI coding-agent 24 ตัวที่ OpenDesign รองรับ — Claude Code · Codex · OpenCode · Hermes · Antigravity · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
 </p>
 
 **ยังไม่มี CLI ติดตั้ง?** BYOK proxy ที่ `POST /api/proxy/{anthropic,openai,azure,google,ollama,senseaudio}/stream` ให้ loop แบบเดียวกัน (ไม่ต้อง spawn process) — วาง `baseUrl` + `apiKey` + `model` ได้เลย พร้อมรองรับ OpenAI, Anthropic, Azure OpenAI, Google Gemini, Ollama, LM Studio, vLLM หรือ endpoint ที่เข้ากันได้กับ OpenAI. การป้องกัน SSRF ต่อ target จะบล็อก internal IPs / link-local / CGNAT ที่ daemon edge.
@@ -235,7 +232,7 @@ Live dashboard, decision room, KPI wall — artifact หน้าเดียว
 - 🖥️ **Local-first, BYOK ทุกชั้น.** แอป desktop native สำหรับ macOS (Apple Silicon + Intel) และ Windows (x64). Linux AppImage อยู่ใน release lane แบบ optional. Product analytics และ session replay ต้องได้รับ consent; safety/reliability telemetry ที่ scrub ข้อมูลแล้วทำงานตลอด. ก่อนอธิบาย path ของ daemon data ต้องอ่าน **Daemon data directory contract** ใน `AGENTS.md` ที่ราก repo และ README นี้ต้องไม่ระบุ path ซ้ำ.
 - 🌍 **ประกอบกันได้บน 4 plane.** **Plugins** พา workflow ที่รันได้ · functional **skills** พาพฤติกรรมของ agent · **design templates** พา rendering blueprint · **design systems** พาแบรนด์. ทั้งสี่ใช้ directory แบบ portable และ versionable ที่ใครก็ author และ publish ได้.
 - 🔁 **Refresh codebase เดิม.** ส่ง `git` repo + `DESIGN.md` ให้ agent แล้วมัน refactor component จริงของคุณให้เข้ากับ brand spec.
-- 🔒 **Privacy by conviction.** โปรเจกต์ทำงานได้บนเครื่องของคุณหรือระบบที่คุณติดตั้งเอง คำขอไปยังโมเดลคลาวด์และ OpenDesign Cloud จะถูกส่งไปยังบริการที่เกี่ยวข้อง BYOK proxy มีการป้องกัน SSRF
+- 🔒 **Privacy by conviction.** โปรเจกต์ทำงานได้บนเครื่องของคุณหรือระบบที่คุณติดตั้งเอง คำขอไปยังโมเดลคลาวด์จะถูกส่งไปยังบริการที่เกี่ยวข้อง BYOK proxy มีการป้องกัน SSRF
 
 ---
 
@@ -531,7 +528,6 @@ Architecture เต็ม → [`docs/architecture.md`](../../docs/architecture.m
 - [x] Sidecar protocol + Electron desktop + IPC automation
 - [x] Artifact lint API + 5-dim self-critique pre-emit gate
 - [x] **0.8.0** — plugin marketplace infrastructure (official plugins 261 ตัว, manifest spec, per-agent install scripts)
-- [x] **0.9.0** — OpenDesign Cloud (official Model Router ในตัวแอป: zero config, one-click sign-in)
 - [x] Packaged Electron builds — macOS (Apple Silicon + Intel) + Windows (x64) + Linux AppImage (optional lane)
 - [ ] Comment-mode surgical edits — ship บางส่วนแล้ว; reliable targeted patching กำลังทำอยู่
 - [ ] AI-emitted tweaks panel UX — ยังไม่ implement

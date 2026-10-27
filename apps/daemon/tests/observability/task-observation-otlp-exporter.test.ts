@@ -1152,10 +1152,6 @@ describe('task observation OTLP exporter', () => {
       LANGFUSE_SECRET_KEY: 'sk-fixture',
       LANGFUSE_BASE_URL: 'https://self-host.example.test',
     };
-    const configuredVela = {
-      VELA_CONTROL_KEY: 'ck-fixture',
-      VELA_API_URL: 'https://vela.example.test',
-    };
 
     expect(readTaskTelemetrySinkConfig({
       ...env,
@@ -1165,13 +1161,9 @@ describe('task observation OTLP exporter', () => {
     expect(direct).toMatchObject({ kind: 'langfuse', baseUrl: 'https://self-host.example.test' });
     expect(readTaskObservationExporterConfig(direct, {
       ...env,
-      ...configuredVela,
       LANGFUSE_EXPORTER_MODE: 'otlp',
     })).toMatchObject({ mode: 'otlp', baseUrl: 'https://self-host.example.test' });
     expect(readTaskTelemetrySinkConfig({ OPEN_DESIGN_VELA_TELEMETRY: 'off' })).toBeNull();
-    const authenticated = readTaskTelemetrySinkConfig({ ...env, OPEN_DESIGN_VELA_TELEMETRY: 'on' }, configuredVela);
-    expect(authenticated?.kind).toBe('vela');
-    expect(readTaskObservationExporterConfig(authenticated, { LANGFUSE_EXPORTER_MODE: 'otlp' })).toBeNull();
     expect(TASK_OBSERVATION_SCHEMA_CAPABILITY_V1).toMatchObject({
       schema: 'open-design.task-observation-schema-capability/v1',
       aggregateSchema: 'open-design.strategy-task-observation/v1',

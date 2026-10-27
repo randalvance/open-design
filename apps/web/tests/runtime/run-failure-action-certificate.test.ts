@@ -30,7 +30,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { resolveRunFailureUi } from '../../src/runtime/amr-guidance';
+import { resolveRunFailureUi } from '../../src/runtime/run-failure-ui';
 import { en } from '../../src/i18n/locales/en';
 import { zhCN } from '../../src/i18n/locales/zh-CN';
 
@@ -69,13 +69,13 @@ const COPY_NAME_BY_DETAIL = {
 
 describe('S30 · daemon 判定不可重试的环境失败,卡片不能给〔重试〕主按钮', () => {
   it('certificate_failure(同事撞上的那一格)不该给〔重试〕', () => {
-    const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', 'certificate_failure', 'amr');
+    const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', 'certificate_failure', 'claude');
 
     expect(ui.primaryAction).not.toBe('retry');
   });
 
   it('certificate_failure 该有自己的文案,而不是落兜底通用卡', () => {
-    const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', 'certificate_failure', 'amr');
+    const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', 'certificate_failure', 'claude');
 
     expect(ui.titleKey).not.toBe('chat.runError.title.generic');
     expect(ui.messageKey).not.toBeNull();
@@ -84,7 +84,7 @@ describe('S30 · daemon 判定不可重试的环境失败,卡片不能给〔重�
   it.each(CLIENT_ENVIRONMENT_DETAILS)(
     'client-environment detail %s 不该给〔重试〕',
     (detail) => {
-      const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', detail, 'amr');
+      const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', detail, 'claude');
 
       expect(ui.primaryAction).not.toBe('retry');
     },
@@ -93,18 +93,16 @@ describe('S30 · daemon 判定不可重试的环境失败,卡片不能给〔重�
   it.each(CLIENT_ENVIRONMENT_DETAILS)(
     '%s 的主按钮是〔去设置〕,次按钮才是重试',
     (detail) => {
-      const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', detail, 'amr');
+      const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', detail, 'claude');
 
       expect(ui.primaryAction).toBe('open-settings');
       // 设计是故意保留重试的:上游同一句话里混着一类真·网络抖动。
       expect(ui.secondaryRetry).toBe(true);
-      // 这一档不推 Cloud —— 用户的公司网络在 Cloud 那条路上一样在。
-      expect(ui.cloudSwitchCta).toBe(false);
     },
   );
 
   it.each(CLIENT_ENVIRONMENT_DETAILS)('%s 用 S30 的标题与正文', (detail) => {
-    const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', detail, 'amr');
+    const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', detail, 'claude');
 
     expect(ui.titleKey).toBe(`chat.runError.title.${COPY_NAME_BY_DETAIL[detail]}`);
     expect(ui.messageKey).toBe(`chat.runError.${COPY_NAME_BY_DETAIL[detail]}Message`);
@@ -112,7 +110,7 @@ describe('S30 · daemon 判定不可重试的环境失败,卡片不能给〔重�
   });
 
   it('这张卡跟 agent 无关 —— 公司网络不挑智能体', () => {
-    for (const agentId of ['amr', 'claude', 'codex', 'antigravity', null]) {
+    for (const agentId of ['claude', 'codex', 'antigravity', 'byok-opencode', null]) {
       const ui = resolveRunFailureUi(
         'AGENT_EXECUTION_FAILED',
         'certificate_failure',
@@ -124,7 +122,7 @@ describe('S30 · daemon 判定不可重试的环境失败,卡片不能给〔重�
 
   /**
    * ⚠️ 这一格**没有**换成产品文档 S30 的润色列,判据写在
-   * `amr-guidance.ts` 的 `clientEnvironmentCard` 文档注释里:S30 唯一那行润色格
+   * `run-failure-ui.ts` 的 `clientEnvironmentCard` 文档注释里:S30 唯一那行润色格
    * 只适用于「地区不支持」,而这五格一个都不是地区拦截。所以正文现在采用补充文档 revision 96 的证书文案。
    */
   it('S30 的中文正文逐字照设计稿,并且不承诺「配好证书就能用」', () => {
@@ -145,7 +143,7 @@ describe('S30 · daemon 判定不可重试的环境失败,卡片不能给〔重�
     const rendered = new Set(
       CLIENT_ENVIRONMENT_DETAILS.map(
         (detail) => {
-          const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', detail, 'amr');
+          const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', detail, 'claude');
           return ui.messageKey ? zhCN[ui.messageKey] : null;
         },
       ),
@@ -172,7 +170,6 @@ describe('兜底:后端命名过的失败,不再冒充「什么都不知道」',
       'AGENT_EXECUTION_FAILED',
       'spawn_enoexec',
       'claude',
-      null,
       { retryable: false, failureAction: 'none' },
     );
 
@@ -184,7 +181,6 @@ describe('兜底:后端命名过的失败,不再冒充「什么都不知道」',
       'AGENT_EXECUTION_FAILED',
       'spawn_enoexec',
       'claude',
-      null,
       { failureAction: 'none' },
     );
 
@@ -196,7 +192,6 @@ describe('兜底:后端命名过的失败,不再冒充「什么都不知道」',
       'AGENT_EXECUTION_FAILED',
       'upstream_5xx',
       'claude',
-      null,
       { retryable: true, failureAction: 'retry' },
     );
 
@@ -208,7 +203,7 @@ describe('兜底:后端命名过的失败,不再冒充「什么都不知道」',
     // retryableHint ?? false, retryableHint ? 'retry' : 'none')` —— 也就是说
     // 真·未知默认就带 retryable:false。若不先问「后端到底有没有命名」,
     // 读裁决反而会把这一格的重试削掉,正好削错人。
-    const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', 'unknown', 'claude', null, {
+    const ui = resolveRunFailureUi('AGENT_EXECUTION_FAILED', 'unknown', 'claude', {
       retryable: false,
       failureAction: 'none',
     });

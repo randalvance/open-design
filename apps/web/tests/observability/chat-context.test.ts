@@ -115,7 +115,7 @@ describe('observability/chat-context — correlation', () => {
       conversation_id: 'conv-1',
       project_id: 'proj-1',
       run_id: 'run-1',
-      agent_id: 'vela',
+      agent_id: 'opencode',
       model_id: 'deepseek-v4-flash',
     });
     const log = buildChatLog(2);
@@ -129,7 +129,7 @@ describe('observability/chat-context — correlation', () => {
       expect(props?.run_id, name).toBe('run-1');
       expect(props?.conversation_id, name).toBe('conv-1');
       expect(props?.project_id, name).toBe('proj-1');
-      expect(props?.agent_id, name).toBe('vela');
+      expect(props?.agent_id, name).toBe('opencode');
       expect(props?.model_id, name).toBe('deepseek-v4-flash');
     }
   });

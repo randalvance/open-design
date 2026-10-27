@@ -16,16 +16,12 @@ import type { UiScenario } from '@/playwright/resources';
 import { T } from '@/timeouts';
 import { expectStableCount } from '../lib/playwright/assertions.js';
 import {
-  AMR_PERSONAL_WORKSPACE_HEADERS,
   createProjectViaApi,
   gotoProject,
-  mockAmrPersonalWorkspace,
-  mockAmrWalletSnapshot,
-} from '@/playwright/amr';
+} from '@/playwright/entry';
 import {
   applyStandardMocks,
   failedRunEventBody,
-  routeAgents,
   routeMockAgents,
   routeRunSequence,
   routeSuccessfulRuns,
@@ -1199,21 +1195,6 @@ test('[P0] @critical friendly daemon failure guidance persists between failed se
     eventBodies: [failedRunEventBody('connection refused')],
   });
 
-  // This scenario exercises a local agent, not authentication. Give project
-  // creation a deterministic Personal Workspace identity: signed-out would
-  // enter Cloud-first onboarding, while an unresolved status leaves the new
-  // workspace bootstrap gate unable to authorize project creation.
-  await page.route('**/api/integrations/vela/status*', async (route) => {
-    await route.fulfill({
-      json: {
-        loggedIn: true,
-        profile: 'local',
-        configPath: '/tmp/.amr/config.json',
-        user: { id: 'restoration-error', email: 'restoration-error@example.com' },
-      },
-    });
-  });
-  await mockAmrPersonalWorkspace(page);
   await gotoEntryHome(page);
   await createProject(page, entry);
   await expectWorkspaceReady(page);
@@ -1230,7 +1211,6 @@ test('[P0] @critical friendly daemon failure guidance persists between failed se
     projectId,
     'error-cross-tab.html',
     '<!doctype html><html><body><h1>Error cross tab</h1></body></html>',
-    AMR_PERSONAL_WORKSPACE_HEADERS,
   );
   // The file is written out-of-band through APIRequestContext, so reload the
   // real project surface instead of depending on an in-app mutation event or
@@ -1301,31 +1281,7 @@ test('[P0] a successful retry after a failed send restores the workspace to a fr
 });
 
 test('[P0] retrying a failed run does not duplicate the original user message', async ({ page }) => {
-  // G16 keeps Retry on Cloud failures; CLI failures switch runtime instead.
-  // Keep this scenario about retry deduplication with an explicit Cloud owner.
-  await routeAgents(page, [{
-    id: 'amr', name: 'OpenDesign AMR', bin: 'vela', available: true,
-    version: 'test', models: [{ id: 'glm-5', label: 'glm-5' }],
-  }]);
-  await page.route('**/api/app-config', async (route) => {
-    if (route.request().method() !== 'GET') {
-      await route.continue();
-      return;
-    }
-    await route.fulfill({ json: { config: {
-      onboardingCompleted: true, agentId: 'amr', skillId: null,
-      designSystemId: null, agentModels: { amr: { model: 'glm-5', reasoning: 'default' } },
-      privacyDecisionAt: 1,
-      telemetry: { metrics: false, content: false, artifactManifest: false },
-    } } });
-  });
-  await page.route('**/api/integrations/vela/status*', async (route) => {
-    await route.fulfill({ json: {
-      loggedIn: true, profile: 'local',
-      user: { id: 'retry-dedup-user', email: 'retry-dedup@example.com', plan: 'plus' },
-    } });
-  });
-  await mockAmrWalletSnapshot(page, { balanceUsd: '20.00' });
+  await routeMockAgents(page);
 
   const runs = await routeRunSequence(page, {
     runIdPrefix: 'retry-run',
@@ -1340,20 +1296,18 @@ test('[P0] retrying a failed run does not duplicate the original user message', 
   });
 
   const projectId = `retry-dedup-${crypto.randomUUID()}`;
-  await createProjectViaApi(page, projectId, 'Retry dedup restore', {
-    accountBalanceUsd: '20.00', accountCredits: 2_000, accountPlan: 'plus',
-  });
+  await createProjectViaApi(page, projectId, 'Retry dedup restore');
   await gotoProject(page, projectId);
   await expect.poll(async () => page.evaluate((key) => {
     const raw = window.localStorage.getItem(key);
     return raw ? JSON.parse(raw).agentId : null;
-  }, STORAGE_KEY)).toBe('amr');
+  }, STORAGE_KEY)).toBe('mock');
 
   const prompt = 'retry dedup prompt';
   await sendPrompt(page, prompt);
   await expectFriendlyGenericRunFailure(page);
   await runs.expectCount(1);
-  expect(runs.bodies[0]).toMatchObject({ agentId: 'amr', projectId });
+  expect(runs.bodies[0]).toMatchObject({ agentId: 'mock', projectId });
   const retryButton = runErrorCard(page).getByRole('button', { name: /^Retry$/i });
   await expect(retryButton).toBeVisible();
   await expect(page.locator('.msg.user', { hasText: prompt })).toHaveCount(1);
@@ -1368,7 +1322,7 @@ test('[P0] retrying a failed run does not duplicate the original user message', 
     'true',
   );
   await runs.expectCount(2);
-  expect(runs.bodies[1]).toMatchObject({ agentId: 'amr', projectId });
+  expect(runs.bodies[1]).toMatchObject({ agentId: 'mock', projectId });
   await expect(page.locator('.msg.user', { hasText: prompt })).toHaveCount(1);
 });
 
@@ -2246,10 +2200,8 @@ async function seedHtmlArtifact(
   projectId: string,
   fileName: string,
   content: string,
-  workspaceHeaders?: Readonly<Record<string, string>>,
 ) {
   const resp = await page.request.post(`/api/projects/${projectId}/files`, {
-    ...(workspaceHeaders ? { headers: { ...workspaceHeaders } } : {}),
     data: {
       name: fileName,
       content,

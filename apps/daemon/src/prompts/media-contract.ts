@@ -255,8 +255,8 @@ Run via your shell tool (Bash on Claude Code, exec on Codex/Gemini, etc.):
   --output <filename> \\
   --prompt "<full prompt>" \\
   [--aspect 1:1|16:9|9:16|4:3|3:4] \\
-  [--quality <tier>]                # vela/* images only; gpt-image-2 accepts low|medium|high
-  [--resolution <res>]              # vela/* images only; e.g. 1K, 2K — must be published for --aspect
+  [--quality <tier>]                # image only; gpt-image-2 accepts low|medium|high
+  [--resolution <res>]              # image only; e.g. 1K, 2K — must be published for --aspect
   [--length <seconds>]              # video only
   [--duration <seconds>]            # audio only
   [--prompt-influence <0-1>]        # audio:sfx only; higher follows the prompt more closely
@@ -279,18 +279,9 @@ A size or tier the user names IS that ask, in any language — "2K", "1k",
 "high quality", "高质量". Map it onto \`--resolution\` / \`--quality\`;
 restating it inside the prompt text does not reach the provider.
 
-OpenDesign Cloud image and video models use the \`vela/*\` catalogue prefix.
-Always invoke those models through \`"$OD_NODE_BIN" "$OD_BIN" media generate\`.
-Never invoke the \`vela\` CLI directly and never call its remote media API.
-The daemon owns model routing, trusted Workspace attribution, task polling,
-downloads, and final project-file placement.
-
-The product shorthands \`nano-banana\` and \`nano-banana-2\` mean
-\`vela/nano-banana-2\`, and
-\`nano-banana-2-lite\` means \`vela/nano-banana-2-lite\`. Prefer the canonical
-\`vela/*\` ids in commands. Never substitute a Fal model path or the local
-Google Nano Banana provider unless the user explicitly names that different
-provider.
+The product shorthands \`nano-banana\` and \`nano-banana-2\` mean the Nano
+Banana provider's \`gemini-3.1-flash-image-preview\`. Never substitute a Fal
+model path for them unless the user explicitly names that different provider.
 
 The command prints a single line of JSON describing the written file:
 
@@ -507,15 +498,12 @@ path is given.
      use \`flux-pro-ultra\` — but tell the user it takes 60–180s
    - **Image, default / no preference stated**: use an explicitly named model
      in the current user message, then the run-scoped BYOK image default, then the project metadata's
-     \`imageModel\` if set; otherwise use \`vela/gpt-image-2\`
+     \`imageModel\` if set; otherwise use \`gpt-image-2\`
    - **Video**: preserve an explicitly requested model and provider. Otherwise
-     prefer the configured run/project default if available. Before choosing an
-     OpenDesign Cloud video model, read the account/workspace catalogue using
-     \`"$OD_NODE_BIN" "$OD_BIN" media models --cloud --json\`. Choose only a returned
-     video model. An empty list means no cloud video capability for this account;
-     a failed read means unknown. Report either gap and do not silently change
-     an explicitly requested model or billing channel. Local Motion and configured
-     BYOK providers are independent of this cloud catalogue.
+     prefer the configured run/project default if available. If no video model
+     is configured, report the capability gap; do not silently change an
+     explicitly requested model or provider. Local Motion and configured BYOK
+     providers are the available video channels.
 
    Default aspect ratio (use when \`aspectRatio\` is unknown):
    - Landscape/outdoor scenes, cinematic, widescreen → \`16:9\`

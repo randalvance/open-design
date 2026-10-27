@@ -7,11 +7,6 @@ import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
 
 import {
   DESIGN_FILES_TAB,
@@ -22,9 +17,6 @@ import {
   settleManualEditExit,
 } from '../../src/components/FileWorkspace';
 import { ENABLE_BLANK_PAGE_WORKSPACE_ENTRYPOINT } from '../../src/components/workspace/tab-launcher';
-import { fileViewerSourceAuthorizationScopeKey } from '../../src/components/FileViewer';
-import { nextShareRequestNonce } from '../../src/components/share-request-nonce';
-import type { ObservedShareUpdateRequest } from '../../src/components/share/observed-public-share-link';
 import { I18nProvider } from '../../src/i18n';
 import { DesignFilesPanel } from '../../src/components/DesignFilesPanel';
 import {
@@ -39,10 +31,6 @@ import {
   fetchProjectFolders,
 } from '../../src/providers/registry';
 import type { ChatMessage, OpenTabsState, ProjectFile, ProjectFolder } from '../../src/types';
-import {
-  CollabProvider,
-  type CollabContextValue,
-} from '../../src/collab/collab-context';
 import { IframeKeepAliveProvider } from '../../src/components/IframeKeepAlivePool';
 import { navigate } from '../../src/router';
 
@@ -302,175 +290,6 @@ function workspaceFile(name: string): ProjectFile {
     mime: name.endsWith('.html') ? 'text/html' : 'text/plain',
   };
 }
-
-function teamContext(
-  workspaceId: string,
-  workspaceMemberId: string,
-): WorkspaceCollabContext {
-  return {
-    workspaceId,
-    workspaceType: 'team',
-    workspaceMemberId,
-    role: 'owner',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: 'team_plus',
-    providerMode: 'platform_credits',
-    teamId: `team-${workspaceId}`,
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 3, usedSeats: 1 }),
-    permissions: buildWorkspacePermissions({ role: 'owner', lifecycleState: 'active' }),
-  };
-}
-
-function collabValue(workspaceContext: WorkspaceCollabContext): CollabContextValue {
-  return {
-    workspaceContext,
-    workspaceContextLoading: false,
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed',
-    isOwner: true,
-    isEffectiveOwner: true,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: () => {},
-    requestPublish: () => {},
-    refreshPresence: () => {},
-    checkStatusNow: () => {},
-  };
-}
-
-it('keeps an observed share witness through a transient missing active file but clears it on a real file switch', async () => {
-  const onObservedPublicShareLink = vi.fn();
-  const file = workspaceFile('index.html');
-  const props: React.ComponentProps<typeof FileWorkspace> = {
-    projectId: 'project-1', projectKind: 'prototype', files: [file], liveArtifacts: [],
-    onRefreshFiles: vi.fn(), isDeck: false,
-    tabsState: { tabs: ['index.html'], active: 'index.html' }, onTabsStateChange: vi.fn(),
-    onObservedPublicShareLink,
-  };
-  const view = render(<CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}><FileWorkspace {...props} /></CollabProvider>);
-  await act(async () => {});
-  // Mounting is not a file switch; see isObservedShareFileSwitch.
-  expect(onObservedPublicShareLink).not.toHaveBeenCalled();
-
-  view.rerender(<CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}><FileWorkspace {...props} files={[]} /></CollabProvider>);
-  expect(onObservedPublicShareLink).not.toHaveBeenCalled();
-
-  view.rerender(<CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}><FileWorkspace {...props} files={[file]} /></CollabProvider>);
-  expect(onObservedPublicShareLink).not.toHaveBeenCalled();
-
-  const otherFile = workspaceFile('other.html');
-  view.rerender(<CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}><FileWorkspace {...props} files={[file, otherFile]} tabsState={{ tabs: ['other.html'], active: 'other.html' }} /></CollabProvider>);
-  await waitFor(() => expect(onObservedPublicShareLink).toHaveBeenCalledWith(null));
-});
-it('keeps an observed share witness when the same file view remounts (Owner-S13 sign-out race)', async () => {
-  // Signing out refreshes the Workspace context before the login status
-  // settles; ProjectView re-keys and remounts FileWorkspace on the SAME file.
-  // A remount is not a file switch: clearing the App-held witness here makes
-  // WorkspaceTabsBar see no signed-out share route and re-home to Home.
-  const onObservedPublicShareLink = vi.fn();
-  const file = workspaceFile('index.html');
-  const props: React.ComponentProps<typeof FileWorkspace> = {
-    projectId: 'project-1', projectKind: 'prototype', files: [file], liveArtifacts: [],
-    onRefreshFiles: vi.fn(), isDeck: false,
-    tabsState: { tabs: ['index.html'], active: 'index.html' }, onTabsStateChange: vi.fn(),
-    onObservedPublicShareLink,
-  };
-  const context = teamContext('workspace-a', 'member-a');
-  const first = render(<CollabProvider value={collabValue(context)}><FileWorkspace {...props} /></CollabProvider>);
-  first.unmount();
-  render(<CollabProvider value={collabValue(context)}><FileWorkspace {...props} /></CollabProvider>);
-  await act(async () => {});
-  expect(onObservedPublicShareLink).not.toHaveBeenCalledWith(null);
-});
-it('S14 shared HTML deletion warns about the exact active file link before a cancellable delete', async () => {
-  const context = teamContext('workspace-a', 'member-a');
-  const request = vi.fn(async (url: RequestInfo | URL) => String(url).endsWith('/share-state')
-    ? Response.json({ projectId: 'project-1', bindingExists: true, hasEverShared: true, publications: [
-      { sourceFilePath: 'index.html', slug: 'live', status: 'active' },
-      { sourceFilePath: 'old.html', slug: 'old', status: 'stopped' },
-    ] })
-    : new Response('', { status: 200 }));
-  const confirmDelete = vi.fn(() => false);
-  vi.stubGlobal('fetch', request);
-  vi.stubGlobal('confirm', confirmDelete);
-  render(<CollabProvider value={collabValue(context)}><FileWorkspace
-    projectId="project-1" projectKind="prototype" files={[workspaceFile('index.html')]}
-    liveArtifacts={[]} onRefreshFiles={vi.fn()} isDeck={false}
-    tabsState={{ tabs: [], active: null }} onTabsStateChange={vi.fn()}
-  /></CollabProvider>);
-  fireEvent.click(screen.getByTestId('design-file-menu-index.html'));
-  fireEvent.click(screen.getByTestId('design-file-delete-index.html'));
-  await waitFor(() => expect(confirmDelete).toHaveBeenCalledWith(expect.stringContaining('1 pages being shared')));
-  expect(request).toHaveBeenCalledWith('/api/projects/project-1/share-state', expect.objectContaining({ headers: expect.objectContaining({ 'x-od-workspace-id': 'workspace-a' }) }));
-  expect(request.mock.calls.some(([url]) => String(url).includes('/files/index.html') && !String(url).endsWith('/preview'))).toBe(false);
-});
-
-it('S14 batch deletion warns only for active links attached to selected HTML files', async () => {
-  const request = vi.fn(async (url: RequestInfo | URL) => String(url).endsWith('/share-state')
-    ? Response.json({ projectId: 'project-1', bindingExists: true, hasEverShared: true, publications: [
-      { sourceFilePath: 'index.html', slug: 'live', status: 'active' },
-      { sourceFilePath: 'other.html', slug: 'other', status: 'active' },
-      { sourceFilePath: 'index.html', slug: 'old', status: 'stopped' },
-    ] }) : new Response('', { status: 200 }));
-  const confirmDelete = vi.fn(() => false);
-  vi.stubGlobal('fetch', request);
-  vi.stubGlobal('confirm', confirmDelete);
-  const { container } = render(<CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}><FileWorkspace
-    projectId="project-1" projectKind="prototype" files={[workspaceFile('index.html'), workspaceFile('picture.png')]}
-    liveArtifacts={[]} onRefreshFiles={vi.fn()} isDeck={false}
-    tabsState={{ tabs: [], active: null }} onTabsStateChange={vi.fn()}
-  /></CollabProvider>);
-  fireEvent.click(screen.getByTestId('design-file-row-index.html').querySelector('.df-card-check')!);
-  fireEvent.click(container.querySelector('[data-testid="design-files-batch-delete"]')!);
-  await waitFor(() => expect(confirmDelete).toHaveBeenCalledWith(expect.stringContaining('1 pages being shared')));
-  expect(request.mock.calls.filter(([url]) => String(url).endsWith('/share-state'))).toHaveLength(1);
-});
-
-it('S14 HTML deletion without workspace identity does not guess that the file has no active links', async () => {
-  const request = vi.fn(async (_url: RequestInfo | URL) => new Response('', { status: 200 }));
-  const confirmDelete = vi.fn(() => true);
-  const alertFailure = vi.fn();
-  vi.stubGlobal('fetch', request);
-  vi.stubGlobal('confirm', confirmDelete);
-  vi.stubGlobal('alert', alertFailure);
-  render(<FileWorkspace
-    projectId="project-1" projectKind="prototype" files={[workspaceFile('index.html')]}
-    liveArtifacts={[]} onRefreshFiles={vi.fn()} isDeck={false}
-    tabsState={{ tabs: [], active: null }} onTabsStateChange={vi.fn()}
-  />);
-  fireEvent.click(screen.getByTestId('design-file-menu-index.html'));
-  fireEvent.click(screen.getByTestId('design-file-delete-index.html'));
-  await waitFor(() => expect(alertFailure).toHaveBeenCalled());
-  expect(confirmDelete).not.toHaveBeenCalled();
-  expect(request.mock.calls.filter(([url]) => String(url).endsWith('/share-state'))).toHaveLength(0);
-});
-it('S14 unavailable share-state blocks HTML deletion rather than silently claiming no active links', async () => {
-  const request = vi.fn(async (_url: RequestInfo | URL) => new Response('', { status: 503 }));
-  const confirmDelete = vi.fn(() => true);
-  const alertFailure = vi.fn();
-  vi.stubGlobal('fetch', request);
-  vi.stubGlobal('confirm', confirmDelete);
-  vi.stubGlobal('alert', alertFailure);
-  render(<CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}><FileWorkspace
-    projectId="project-1" projectKind="prototype" files={[workspaceFile('index.html')]}
-    liveArtifacts={[]} onRefreshFiles={vi.fn()} isDeck={false}
-    tabsState={{ tabs: [], active: null }} onTabsStateChange={vi.fn()}
-  /></CollabProvider>);
-  fireEvent.click(screen.getByTestId('design-file-menu-index.html'));
-  fireEvent.click(screen.getByTestId('design-file-delete-index.html'));
-  await waitFor(() => expect(alertFailure).toHaveBeenCalled());
-  expect(confirmDelete).not.toHaveBeenCalled();
-  expect(request.mock.calls.filter(([url]) => String(url).endsWith('/share-state'))).toHaveLength(1);
-});
 
 function cssDeclarations(css: string, selector: string): string {
   const blocks: string[] = [];
@@ -1578,7 +1397,7 @@ describe('FileWorkspace launcher tab creation', () => {
             advance revision
           </button>
           <IframeKeepAliveProvider>
-            <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+            <>
               <FileWorkspace
                 projectId="project-1"
                 projectKind="prototype"
@@ -1589,7 +1408,7 @@ describe('FileWorkspace launcher tab creation', () => {
                 tabsState={tabsState}
                 onTabsStateChange={setTabsState}
               />
-            </CollabProvider>
+            </>
           </IframeKeepAliveProvider>
         </>
       );
@@ -1659,7 +1478,7 @@ describe('FileWorkspace launcher tab creation', () => {
       });
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+          <>
             <FileWorkspace
               projectId="project-1"
               projectKind="prototype"
@@ -1670,7 +1489,7 @@ describe('FileWorkspace launcher tab creation', () => {
               tabsState={tabsState}
               onTabsStateChange={setTabsState}
             />
-          </CollabProvider>
+          </>
         </IframeKeepAliveProvider>
       );
     }
@@ -1699,146 +1518,6 @@ describe('FileWorkspace launcher tab creation', () => {
     expect(mockedFetchProjectFileText).toHaveBeenCalledTimes(2);
   });
 
-  it.each(['beta', 'design-files', 'initial-design-files', 'initial-route-pending'] as const)(
-    'S13 consumes same-file login update intent on %s selection without resurrecting on return to A',
-    async (destination) => {
-      const alpha = workspaceFile('alpha.html');
-      const beta = workspaceFile('beta.html');
-      const workspace = teamContext('workspace-a', 'member-a');
-      const authorizationScopeKey = fileViewerSourceAuthorizationScopeKey(false, workspace) ?? '';
-      if (!authorizationScopeKey) throw new Error('missing test workspace scope');
-      const onLoginUpdateRequestHandled = vi.fn();
-      const publishFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        if (url.includes('publish-public')) return new Response(JSON.stringify(init?.method === 'POST'
-          ? { url: 'https://example.invalid/alpha', slug: 'alpha', fileName: alpha.name }
-          : { publication: { url: 'https://example.invalid/alpha', slug: 'alpha', fileName: alpha.name },
-              status: 'active', freshness: 'outdated' }), { status: 200 });
-        if (url.includes('/share-state')) return new Response(JSON.stringify({
-          projectId: 'project-1', hasEverShared: true, bindingExists: true,
-          publications: [{ sourceFilePath: alpha.name, slug: 'alpha', status: 'active' }],
-        }), { status: 200 });
-        if (url.includes('/integrations/vela/status')) return new Response(JSON.stringify({
-          loggedIn: true, loginInFlight: false, user: { id: 'account-1' },
-        }), { status: 200 });
-        return new Response('{}', { status: 200 });
-      });
-      if (destination === 'initial-design-files' || destination === 'initial-route-pending') {
-        vi.stubGlobal('fetch', publishFetch);
-      }
-      mockedFetchProjectFileText.mockImplementation(async (_projectId, fileName) => (
-        `<html><body>${fileName}</body></html>`
-      ));
-      function Harness() {
-        const [tabsState, setTabsState] = useState<OpenTabsState>({
-          tabs: [alpha.name, beta.name],
-          active: destination.startsWith('initial-') ? null : alpha.name,
-        });
-        const [openRequest, setOpenRequest] = useState<{ name: string; nonce: number } | null>(null);
-        const [request, setRequest] = useState<ObservedShareUpdateRequest | null>({
-          nonce: 17, accountId: 'account-1', expiresAt: Date.now() + 60_000,
-          link: { status: 'active', projectId: 'project-1', filePath: alpha.name,
-            slug: 'alpha', url: 'https://example.invalid/alpha', workspaceId: workspace.workspaceId,
-            workspaceMemberId: workspace.workspaceMemberId, authorizationScopeKey, freshness: 'outdated' },
-        });
-        return <><button type="button" data-testid="open-requested-route-file"
-          onClick={() => setOpenRequest({ name: alpha.name, nonce: 1 })}>Open requested route file</button>
-        <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(workspace)}>
-            <FileWorkspace projectId="project-1" projectKind="prototype" files={[alpha, beta]}
-              liveArtifacts={[]} onRefreshFiles={vi.fn()} isDeck={false}
-              tabsState={tabsState} onTabsStateChange={setTabsState}
-              routeFileName={destination === 'initial-route-pending' ? alpha.name : null}
-              openRequest={openRequest}
-              loginUpdateRequest={request}
-              onLoginUpdateRequestHandled={(nonce) => {
-                onLoginUpdateRequestHandled(nonce);
-                setRequest(null);
-              }} />
-          </CollabProvider>
-        </IframeKeepAliveProvider></>;
-      }
-      render(<Harness />);
-      if (destination === 'initial-route-pending') {
-        expect(onLoginUpdateRequestHandled).not.toHaveBeenCalled();
-        fireEvent.click(screen.getByTestId('open-requested-route-file'));
-        await waitFor(() => expect(publishFetch.mock.calls.filter(([url, init]) =>
-          String(url).includes('publish-public') && init?.method === 'POST')).toHaveLength(1));
-        expect(onLoginUpdateRequestHandled).toHaveBeenCalledExactlyOnceWith(17);
-        return;
-      }
-      if (destination === 'initial-design-files') {
-        await waitFor(() => expect(onLoginUpdateRequestHandled).toHaveBeenCalledExactlyOnceWith(17));
-        fireEvent.click(screen.getByRole('tab', { name: /alpha\.html/i }));
-        await waitFor(() => expect(mockedFetchProjectFileText).toHaveBeenCalled());
-        expect(onLoginUpdateRequestHandled).toHaveBeenCalledTimes(1);
-        expect(publishFetch.mock.calls.filter(([url, init]) =>
-          String(url).includes('publish-public') && init?.method === 'POST')).toHaveLength(0);
-        return;
-      }
-      await waitFor(() => expect(mockedFetchProjectFileText).toHaveBeenCalled());
-      expect(onLoginUpdateRequestHandled).not.toHaveBeenCalled();
-      if (destination === 'beta') fireEvent.click(screen.getByRole('tab', { name: /beta\.html/i }));
-      else fireEvent.click(screen.getByTestId('design-files-tab'));
-      await waitFor(() => expect(onLoginUpdateRequestHandled).toHaveBeenCalledExactlyOnceWith(17));
-      fireEvent.click(screen.getByRole('tab', { name: /alpha\.html/i }));
-      expect(onLoginUpdateRequestHandled).toHaveBeenCalledTimes(1);
-    },
-  );
-
-  it('evicts the fourth HTML tab without reattaching the three surviving preview frames', async () => {
-    const files = ['alpha.html', 'beta.html', 'gamma.html', 'delta.html'].map(workspaceFile);
-    mockedFetchProjectFileText.mockImplementation(async (_projectId, fileName) => (
-      `<html><body>${fileName}</body></html>`
-    ));
-
-    function Harness() {
-      const [tabsState, setTabsState] = useState<OpenTabsState>({
-        tabs: files.map((file) => file.name),
-        active: 'alpha.html',
-      });
-      return (
-        <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
-            <FileWorkspace
-              projectId="project-1"
-              projectKind="prototype"
-              files={files}
-              liveArtifacts={[]}
-              onRefreshFiles={vi.fn()}
-              isDeck={false}
-              tabsState={tabsState}
-              onTabsStateChange={setTabsState}
-            />
-          </CollabProvider>
-        </IframeKeepAliveProvider>
-      );
-    }
-
-    render(<Harness />);
-    fireEvent.click(screen.getByRole('tab', { name: /beta\.html/i }));
-    await waitFor(() => expect(mockedFetchProjectFileText).toHaveBeenCalledTimes(2));
-    fireEvent.click(screen.getByRole('tab', { name: /gamma\.html/i }));
-    await waitFor(() => expect(mockedFetchProjectFileText).toHaveBeenCalledTimes(3));
-    const survivingFrames = ['beta.html', 'gamma.html'].map((name) => (
-      document.querySelector(`iframe[title="${name}"][data-od-render-mode="url-load"]`)
-    ));
-    expect(survivingFrames.every(Boolean)).toBe(true);
-    const appendSpy = vi.spyOn(Node.prototype, 'appendChild');
-
-    fireEvent.click(screen.getByRole('tab', { name: /delta\.html/i }));
-    await waitFor(() => expect(mockedFetchProjectFileText).toHaveBeenCalledTimes(4));
-    await waitFor(() => expect(document.querySelector('iframe[title="alpha.html"]')).toBeNull());
-
-    for (const [index, name] of ['beta.html', 'gamma.html'].entries()) {
-      const frame = survivingFrames[index];
-      expect(document.querySelector(
-        `iframe[title="${name}"][data-od-render-mode="url-load"]`,
-      )).toBe(frame);
-      expect(appendSpy.mock.calls.filter(([node]) => node === frame)).toHaveLength(0);
-    }
-  });
-
   it('deletes the active HTML viewer without reattaching a surviving warm iframe', async () => {
     const alpha = workspaceFile('alpha.html');
     const beta = workspaceFile('beta.html');
@@ -1853,7 +1532,7 @@ describe('FileWorkspace launcher tab creation', () => {
       });
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+          <>
             <FileWorkspace
               projectId="project-1"
               projectKind="prototype"
@@ -1865,7 +1544,7 @@ describe('FileWorkspace launcher tab creation', () => {
               tabsState={tabsState}
               onTabsStateChange={setTabsState}
             />
-          </CollabProvider>
+          </>
         </IframeKeepAliveProvider>
       );
     }
@@ -1906,18 +1585,16 @@ describe('FileWorkspace launcher tab creation', () => {
       active,
       files,
       tabs,
-      workspaceContext,
       filesRefreshKey = 0,
     }: {
       active: string;
       files: ProjectFile[];
       tabs: string[];
-      workspaceContext: WorkspaceCollabContext;
       filesRefreshKey?: number;
     }) {
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(workspaceContext)}>
+          <>
             <FileWorkspace
               projectId="project-1"
               projectKind="prototype"
@@ -1929,18 +1606,15 @@ describe('FileWorkspace launcher tab creation', () => {
               onTabsStateChange={vi.fn()}
               filesRefreshKey={filesRefreshKey}
             />
-          </CollabProvider>
+          </>
         </IframeKeepAliveProvider>
       );
     }
-
-    const workspaceContext = teamContext('workspace-a', 'member-a');
     const { rerender } = render(
       <Harness
         active={alphaName}
         files={[workspaceFile(alphaName), workspaceFile(betaName)]}
         tabs={[alphaName, betaName]}
-        workspaceContext={workspaceContext}
       />,
     );
     await waitFor(() => expect(mockedFetchProjectFileText).toHaveBeenCalledTimes(1));
@@ -1951,7 +1625,6 @@ describe('FileWorkspace launcher tab creation', () => {
         active={betaName}
         files={[workspaceFile(alphaName), workspaceFile(betaName)]}
         tabs={[alphaName, betaName]}
-        workspaceContext={{ ...workspaceContext }}
       />,
     );
     await waitFor(() => expect(mockedFetchProjectFileText).toHaveBeenCalledTimes(2));
@@ -1965,7 +1638,6 @@ describe('FileWorkspace launcher tab creation', () => {
         active={betaName}
         files={[]}
         tabs={[alphaName, betaName]}
-        workspaceContext={{ ...workspaceContext }}
       />,
     );
     expect(document.body.contains(alphaFrame)).toBe(true);
@@ -1979,7 +1651,6 @@ describe('FileWorkspace launcher tab creation', () => {
         active={alphaName}
         files={[workspaceFile(alphaName), workspaceFile(betaName)]}
         tabs={[alphaName, betaName]}
-        workspaceContext={{ ...workspaceContext }}
       />,
     );
     expect(screen.getByTestId('artifact-preview-frame')).toBe(alphaFrame);
@@ -1993,7 +1664,6 @@ describe('FileWorkspace launcher tab creation', () => {
         active={alphaName}
         files={[workspaceFile(alphaName), workspaceFile(betaName)]}
         tabs={[alphaName]}
-        workspaceContext={{ ...workspaceContext }}
       />,
     );
     await waitFor(() => expect(document.querySelector('iframe[title="beta.html"]')).toBeNull());
@@ -2003,13 +1673,12 @@ describe('FileWorkspace launcher tab creation', () => {
   it('evicts a deleted HTML viewer after a committed file refresh even when its tab persists', async () => {
     const alphaName = 'alpha.html';
     const betaName = 'beta.html';
-    const workspaceContext = teamContext('workspace-a', 'member-a');
     const tabs = [alphaName, betaName];
 
     function Harness({ files, refreshKey }: { files: ProjectFile[]; refreshKey: number }) {
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(workspaceContext)}>
+          <>
             <FileWorkspace
               projectId="project-1"
               projectKind="prototype"
@@ -2022,7 +1691,7 @@ describe('FileWorkspace launcher tab creation', () => {
               tabsState={{ tabs, active: alphaName }}
               onTabsStateChange={vi.fn()}
             />
-          </CollabProvider>
+          </>
         </IframeKeepAliveProvider>
       );
     }
@@ -2067,7 +1736,7 @@ describe('FileWorkspace launcher tab creation', () => {
       const [snapshot, setSnapshot] = useState({ files: initialFiles, generation: 1 });
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+          <>
             <button
               type="button"
               data-testid="commit-r1-missing"
@@ -2103,7 +1772,7 @@ describe('FileWorkspace launcher tab creation', () => {
               tabsState={{ tabs: [fileName], active: fileName }}
               onTabsStateChange={vi.fn()}
             />
-          </CollabProvider>
+          </>
         </IframeKeepAliveProvider>
       );
     }
@@ -2188,7 +1857,7 @@ describe('FileWorkspace launcher tab creation', () => {
         const [snapshot, setSnapshot] = useState({ files: initialFiles, generation: 1 });
         return (
           <IframeKeepAliveProvider>
-            <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+            <>
               <button
                 type="button"
                 data-testid="commit-racing-r1-missing"
@@ -2219,7 +1888,7 @@ describe('FileWorkspace launcher tab creation', () => {
                 tabsState={{ tabs: [fileName], active: fileName }}
                 onTabsStateChange={vi.fn()}
               />
-            </CollabProvider>
+            </>
           </IframeKeepAliveProvider>
         );
       }
@@ -2281,7 +1950,7 @@ describe('FileWorkspace launcher tab creation', () => {
       const [snapshot, setSnapshot] = useState({ files: initialFiles, generation: 1 });
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+          <>
             <output data-testid="failed-r2-generation">{snapshot.generation}</output>
             <button
               type="button"
@@ -2333,7 +2002,7 @@ describe('FileWorkspace launcher tab creation', () => {
               tabsState={{ tabs: [fileName], active: fileName }}
               onTabsStateChange={vi.fn()}
             />
-          </CollabProvider>
+          </>
         </IframeKeepAliveProvider>
       );
     }
@@ -2543,7 +2212,7 @@ describe('FileWorkspace launcher tab creation', () => {
       });
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+          <>
             <FileWorkspace
               projectId="project-1"
               projectKind="prototype"
@@ -2554,7 +2223,7 @@ describe('FileWorkspace launcher tab creation', () => {
               tabsState={tabsState}
               onTabsStateChange={setTabsState}
             />
-          </CollabProvider>
+          </>
         </IframeKeepAliveProvider>
       );
     }
@@ -2600,7 +2269,7 @@ describe('FileWorkspace launcher tab creation', () => {
 
     render(
       <IframeKeepAliveProvider>
-        <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+        <>
           <FileWorkspace
             projectId="project-1"
             projectKind="prototype"
@@ -2611,7 +2280,7 @@ describe('FileWorkspace launcher tab creation', () => {
             tabsState={{ tabs: [alpha.name], active: alpha.name }}
             onTabsStateChange={vi.fn()}
           />
-        </CollabProvider>
+        </>
       </IframeKeepAliveProvider>,
     );
 
@@ -2652,39 +2321,6 @@ describe('FileWorkspace launcher tab creation', () => {
     expect(toggle.getAttribute('aria-pressed')).toBe('false');
   });
 
-  it('evicts the previous project preview pool when the workspace changes', async () => {
-    const workspaceContext = teamContext('workspace-a', 'member-a');
-    function Harness({ projectId, fileName }: { projectId: string; fileName: string }) {
-      const file = workspaceFile(fileName);
-      return (
-        <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(workspaceContext)}>
-            <FileWorkspace
-              projectId={projectId}
-              projectKind="prototype"
-              files={[file]}
-              liveArtifacts={[]}
-              onRefreshFiles={vi.fn()}
-              isDeck={false}
-              tabsState={{ tabs: [fileName], active: fileName }}
-              onTabsStateChange={vi.fn()}
-            />
-          </CollabProvider>
-        </IframeKeepAliveProvider>
-      );
-    }
-
-    const { rerender } = render(<Harness projectId="project-1" fileName="old.html" />);
-    await waitFor(() => expect(document.querySelector('iframe[title="old.html"]')).not.toBeNull());
-    const oldFrame = document.querySelector('iframe[title="old.html"]');
-
-    rerender(<Harness projectId="project-2" fileName="new.html" />);
-
-    await waitFor(() => expect(document.querySelector('iframe[title="new.html"]')).not.toBeNull());
-    expect(document.body.contains(oldFrame)).toBe(false);
-    expect(document.querySelector('.iframe-keep-alive-pool iframe[title="old.html"]')).toBeNull();
-  });
-
   it('evicts the least-recently-used HTML viewer after the fourth warm tab', async () => {
     const files = ['alpha.html', 'beta.html', 'gamma.html', 'delta.html'].map(workspaceFile);
     mockedFetchProjectFileText.mockImplementation(async (_projectId, fileName) => (
@@ -2698,7 +2334,7 @@ describe('FileWorkspace launcher tab creation', () => {
       });
       return (
         <IframeKeepAliveProvider>
-          <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
+          <>
             <FileWorkspace
               projectId="project-1"
               projectKind="prototype"
@@ -2709,7 +2345,7 @@ describe('FileWorkspace launcher tab creation', () => {
               tabsState={tabsState}
               onTabsStateChange={setTabsState}
             />
-          </CollabProvider>
+          </>
         </IframeKeepAliveProvider>
       );
     }
@@ -2876,30 +2512,6 @@ describe('FileWorkspace launcher tab creation', () => {
       'New Terminal',
       'Side chat',
     ]);
-  });
-
-  it('shows project sync progress on the Design Files root tab without hiding materialized files', () => {
-    render(
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[workspaceFile('notes.txt')]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        viewerOnly
-        fileSyncBadge="downloading"
-        tabsState={{ tabs: [], active: DESIGN_FILES_TAB }}
-        onTabsStateChange={vi.fn()}
-      />,
-    );
-
-    const rootTab = screen.getByTestId('design-files-tab');
-    expect(rootTab.title).toContain('Downloading from the team');
-    expect(rootTab.getAttribute('aria-label')).toContain('Downloading from the team');
-    expect(rootTab.querySelector('svg')).toBeTruthy();
-    expect(screen.getByText('notes.txt')).toBeTruthy();
-    expect(screen.queryByTestId('design-files-syncing')).toBeNull();
   });
 
   it('opens Design Files from the browser snapshot toast action instead of the manifest file', async () => {
@@ -3288,37 +2900,7 @@ describe('FileWorkspace launcher tab creation', () => {
         browserTabs,
       });
     });
-    expect(await screen.findByRole('heading', { name: 'Share', level: 2 })).toBeVisible();
-  });
-
-  it('F13: two artifact-card requests at the same clock tick reopen the real Share panel after close', async () => {
-    const onTabsStateChange = vi.fn();
-    let lastNonce = 100;
-    function Host() {
-      const [tabs, setTabs] = useState<OpenTabsState>({ tabs: ['cover.html'], active: '__browser__:1', browserTabs: [{ id: '__browser__:1', label: 'Browser 1', title: 'Dribbble', url: 'https://dribbble.com/' }] });
-      const [shareRequest, setShareRequest] = useState<{ name: string; nonce: number; anchorId: string } | null>({ name: 'landing.html', nonce: 100, anchorId: 'artifact-card' });
-      return <>
-        <button type="button" data-artifact-anchor="artifact-card" onClick={() => setShareRequest(previous => {
-          const nonce = nextShareRequestNonce(previous?.nonce, 100);
-          lastNonce = nonce;
-          return { name: 'landing.html', nonce, anchorId: 'artifact-card' };
-        })}>Artifact card Share</button>
-        <FileWorkspace projectId="project-1" projectKind="prototype" files={[workspaceFile('cover.html'), workspaceFile('landing.html')]}
-          liveArtifacts={[]} onRefreshFiles={vi.fn()} isDeck={false} tabsState={tabs}
-          shareRequest={shareRequest} onTabsStateChange={next => { onTabsStateChange(next); setTabs(next); }} />
-      </>;
-    }
-    render(<Host />);
-    await waitFor(() => expect(onTabsStateChange).toHaveBeenCalledWith(expect.objectContaining({ active: 'landing.html' })));
-    expect(await screen.findByRole('heading', { name: 'Share', level: 2 })).toBeVisible();
-    expect(lastNonce).toBe(100);
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
-    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Share', level: 2 })).toBeNull());
-    fireEvent.click(screen.getByRole('button', { name: 'Artifact card Share' }));
-    expect(lastNonce).toBe(101);
-    expect(await screen.findByRole('heading', { name: 'Share', level: 2 })).toBeVisible();
-    expect(onTabsStateChange).toHaveBeenCalledTimes(2);
-    expect(onTabsStateChange).toHaveBeenLastCalledWith(expect.objectContaining({ active: 'landing.html', browserTabs: [expect.objectContaining({ url: 'https://dribbble.com/' })] }));
+    expect(await screen.findByTestId('artifact-share-panel')).toBeVisible();
   });
 
   it('opens and activates the target file for a download request', async () => {
@@ -3347,154 +2929,6 @@ describe('FileWorkspace launcher tab creation', () => {
         active: 'landing.html',
         browserTabs,
       });
-    });
-  });
-
-  it('S14 design-system project delete requires authoritative active-share warning before backing-project deletion', async () => {
-    const onDeleteDesignSystemProject = vi.fn(async () => false);
-    const request = vi.fn(async (url: RequestInfo | URL) => {
-      if (String(url) === '/api/projects/project-1/share-state') return Response.json({
-        projectId: 'project-1', bindingExists: true, hasEverShared: true,
-        publications: [{ slug: 'shared-kit', sourceFilePath: 'kit.html', status: 'active' }],
-      });
-      return new Response('', { status: 200 });
-    });
-    vi.stubGlobal('fetch', request);
-    vi.stubGlobal('confirm', vi.fn(() => true));
-    render(
-      <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>
-        <FileWorkspace
-          projectId="project-1" projectKind="prototype" files={[workspaceFile('kit.html')]}
-          liveArtifacts={[]} onRefreshFiles={vi.fn()} isDeck={false}
-          tabsState={{ tabs: [], active: '__design_system__' }} onTabsStateChange={vi.fn()}
-          designSystemProject={{ id: 'neutral-modern', title: 'Neutral Modern', category: 'Starter', source: 'bundled', updatedAt: 1 } as never}
-          designSystemEditable onDeleteDesignSystemProject={onDeleteDesignSystemProject}
-        />
-      </CollabProvider>,
-    );
-    fireEvent.click(await screen.findByRole('button', { name: 'More actions' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete Neutral Modern' }));
-    const dialog = await screen.findByTestId('project-delete-confirm-dialog');
-    await waitFor(() => expect(within(dialog).getByText(/1 page.*shared|1 active/i)).toBeTruthy());
-    expect(onDeleteDesignSystemProject).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByTestId('project-delete-confirm-accept'));
-    await waitFor(() => expect(onDeleteDesignSystemProject).toHaveBeenCalledWith('project-1'));
-  });
-
-  it.each(['missing workspace identity', 'share-state HTTP failure'])(
-    'S14 design-system delete blocks unknown active-share count: %s', async (failure) => {
-      const onDeleteDesignSystemProject = vi.fn(async () => true);
-      const request = vi.fn(async (_url: RequestInfo | URL) => new Response('', { status: 503 }));
-      vi.stubGlobal('fetch', request);
-      vi.stubGlobal('confirm', vi.fn(() => true));
-      const panel = (
-        <FileWorkspace
-          projectId="project-1" projectKind="prototype" files={[workspaceFile('kit.html')]}
-          liveArtifacts={[]} onRefreshFiles={vi.fn()} isDeck={false}
-          tabsState={{ tabs: [], active: '__design_system__' }} onTabsStateChange={vi.fn()}
-          designSystemProject={{ id: 'neutral-modern', title: 'Neutral Modern', category: 'Starter', source: 'bundled', updatedAt: 1 } as never}
-          designSystemEditable onDeleteDesignSystemProject={onDeleteDesignSystemProject}
-        />
-      );
-      render(failure === 'missing workspace identity' ? panel
-        : <CollabProvider value={collabValue(teamContext('workspace-a', 'member-a'))}>{panel}</CollabProvider>);
-      fireEvent.click(await screen.findByRole('button', { name: 'More actions' }));
-      fireEvent.click(screen.getByRole('menuitem', { name: 'Delete Neutral Modern' }));
-      const dialog = await screen.findByTestId('project-delete-confirm-dialog');
-      await waitFor(() => expect(within(dialog).getByTestId('project-delete-confirm-accept').hasAttribute('disabled')).toBe(true));
-      expect(onDeleteDesignSystemProject).not.toHaveBeenCalled();
-      if (failure === 'missing workspace identity') {
-        expect(request.mock.calls.some(([url]) => String(url).endsWith('/share-state'))).toBe(false);
-      } else {
-        await waitFor(() => expect(request.mock.calls.some(([url]) => String(url).endsWith('/share-state'))).toBe(true));
-      }
-    },
-  );
-
-  it('focuses the design-system workspace tab without adding it to file tabs', async () => {
-    const onTabsStateChange = vi.fn();
-
-    render(
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[workspaceFile('cover.html')]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        tabsState={{ tabs: ['cover.html'], active: 'cover.html' }}
-        openRequest={{ name: '__design_system__', nonce: 1 }}
-        onTabsStateChange={onTabsStateChange}
-        designSystemProject={{
-          id: 'neutral-modern',
-          title: 'Neutral Modern',
-          category: 'Starter',
-          source: 'bundled',
-          updatedAt: 1,
-        } as never}
-      />,
-    );
-
-    await waitFor(() => {
-      expect(onTabsStateChange).toHaveBeenCalledWith({
-        tabs: ['cover.html'],
-        active: '__design_system__',
-      });
-    });
-  });
-
-  it('reloads design-system source files under the complete pinned Workspace identity', async () => {
-    const workspaceA = teamContext('workspace-a', 'member-a');
-    const workspaceB = teamContext('workspace-b', 'member-b');
-    const props = {
-      projectId: 'project-1',
-      projectKind: 'prototype' as const,
-      files: [workspaceFile('DESIGN.md'), workspaceFile('brand.json')],
-      liveArtifacts: [],
-      onRefreshFiles: vi.fn(),
-      isDeck: false,
-      tabsState: { tabs: [], active: '__design_system__' },
-      onTabsStateChange: vi.fn(),
-      designSystemProject: {
-        id: 'neutral-modern',
-        title: 'Neutral Modern',
-        category: 'Starter',
-        source: 'bundled',
-        updatedAt: 1,
-      } as never,
-    };
-
-    const { rerender } = render(
-      <CollabProvider value={collabValue(workspaceA)}>
-        <FileWorkspace {...props} />
-      </CollabProvider>,
-    );
-    await waitFor(() => {
-      expect(mockedFetchProjectFileText).toHaveBeenCalledWith(
-        'project-1',
-        'DESIGN.md',
-        { cache: 'no-store', workspaceContext: workspaceA },
-      );
-    });
-
-    mockedFetchProjectFileText.mockClear();
-    rerender(
-      <CollabProvider value={collabValue(workspaceB)}>
-        <FileWorkspace {...props} />
-      </CollabProvider>,
-    );
-
-    await waitFor(() => {
-      expect(mockedFetchProjectFileText).toHaveBeenCalledWith(
-        'project-1',
-        'DESIGN.md',
-        { cache: 'no-store', workspaceContext: workspaceB },
-      );
-      expect(mockedFetchProjectFileText).toHaveBeenCalledWith(
-        'project-1',
-        'brand.json',
-        { cache: 'no-store', workspaceContext: workspaceB },
-      );
     });
   });
 
@@ -4759,24 +4193,6 @@ describe('FileWorkspace add-module menu', () => {
 });
 
 describe('FileWorkspace empty-project generation contract', () => {
-  it('shows the first-materialization syncing surface instead of mounting a cached workspace tab', () => {
-    render(
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[workspaceFile('stale.html')]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        tabsState={{ tabs: ['terminal:stale'], active: 'terminal:stale' }}
-        onTabsStateChange={vi.fn()}
-        materializationPending
-      />,
-    );
-
-    expect(screen.getByTestId('design-files-syncing')).toBeTruthy();
-    expect(screen.queryByTestId('design-files-empty')).toBeNull();
-  });
 
   // OPEND-2283. An empty list and a list that has not arrived read identically
   // here, and the CTAs below ("新建草图" / "上传") actively mislead someone whose
@@ -4910,82 +4326,6 @@ describe('FileWorkspace empty-project generation contract', () => {
     );
 
     expect(screen.getByTestId('design-files-empty')).toBeTruthy();
-  });
-
-  // OPEND-2283. Read-only is fail-closed while ownership is still unproven, and
-  // that is correct — but the banner states a FACT ("this is a shared project"),
-  // and during that window the fact is unknown. Entering your own personal
-  // project cold showed it for seconds before the workspace context resolved.
-  // Disable the controls, do not assert the reason.
-  it('does not claim a project is shared while ownership is still unproven', () => {
-    const file = workspaceFile('artifact.html');
-    render(
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[file]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        tabsState={{ tabs: [file.name], active: file.name }}
-        onTabsStateChange={vi.fn()}
-        viewerOnly
-      />,
-    );
-
-    expect(document.querySelector('.workspace-readonly-notice')).toBeNull();
-  });
-
-  it('states the reason once the project is confirmed shared', () => {
-    const file = workspaceFile('artifact.html');
-    render(
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[file]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        tabsState={{ tabs: [file.name], active: file.name }}
-        onTabsStateChange={vi.fn()}
-        viewerOnly
-        readonlyNotice="这是 麻薯 创建的共享项目。"
-      />,
-    );
-
-    const notice = document.querySelector('.workspace-readonly-notice');
-    expect(notice).not.toBeNull();
-    expect(notice?.textContent).toContain('麻薯');
-  });
-
-  it('keeps an already-materialized viewer and header actions mounted during route revalidation', () => {
-    const file = workspaceFile('artifact.html');
-    const tabsState = { tabs: [file.name], active: file.name };
-    const onTabsStateChange = vi.fn();
-    const renderWorkspace = (materializationPending: boolean) => (
-      <FileWorkspace
-        projectId="project-1"
-        projectKind="prototype"
-        files={[file]}
-        liveArtifacts={[]}
-        onRefreshFiles={vi.fn()}
-        isDeck={false}
-        tabsState={tabsState}
-        onTabsStateChange={onTabsStateChange}
-        materializationPending={materializationPending}
-        fileActionsBefore={<button type="button">Reveal artifact</button>}
-        headerActions={<button type="button">Project action</button>}
-      />
-    );
-    const { rerender } = render(renderWorkspace(false));
-    const retainedViewer = screen.getByTestId('retained-file-viewer');
-
-    rerender(renderWorkspace(true));
-
-    expect(screen.getByTestId('retained-file-viewer')).toBe(retainedViewer);
-    expect(screen.queryByTestId('design-files-syncing')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Reveal artifact' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Project action' })).toBeTruthy();
   });
 
   function assistantMessage(runStatus: 'running' | 'failed'): ChatMessage {

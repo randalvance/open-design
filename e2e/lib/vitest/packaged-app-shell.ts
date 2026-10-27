@@ -19,9 +19,9 @@ const PACKAGED_APP_SHELL_PROBE = `
   (doc, ElementCtor) => {
     const home = doc.querySelector('[data-testid="entry-nav-home"]');
     const onboardingShell = doc.querySelector('.entry-shell--onboarding, .entry-onboarding-modal');
-    const cloudSignIn = doc.querySelector('.onboarding-cloud__primary');
+    const primaryCta = doc.querySelector('[data-testid="onboarding-landing-primary"]');
     return {
-      cloudSignInVisible: cloudSignIn instanceof ElementCtor,
+      primaryCtaVisible: primaryCta instanceof ElementCtor,
       homeVisible: home instanceof ElementCtor && home.getClientRects().length > 0,
       onboardingVisible: onboardingShell instanceof ElementCtor,
       text: doc.body?.textContent?.trim().slice(0, 300) ?? '',
@@ -33,7 +33,7 @@ const PACKAGED_APP_SHELL_PROBE = `
 export const packagedAppShellExpression = `(${PACKAGED_APP_SHELL_PROBE})(document, HTMLElement)`;
 
 export type PackagedAppShellSnapshot = {
-  cloudSignInVisible: boolean;
+  primaryCtaVisible: boolean;
   homeVisible: boolean;
   onboardingVisible: boolean;
   text: string;
@@ -76,7 +76,7 @@ export function asPackagedAppShellSnapshot(value: unknown): PackagedAppShellSnap
   if (typeof value !== 'object' || value == null || Array.isArray(value)) return null;
   const candidate = value as Partial<PackagedAppShellSnapshot>;
   if (
-    typeof candidate.cloudSignInVisible !== 'boolean' ||
+    typeof candidate.primaryCtaVisible !== 'boolean' ||
     typeof candidate.homeVisible !== 'boolean' ||
     typeof candidate.onboardingVisible !== 'boolean' ||
     typeof candidate.text !== 'string' ||
@@ -90,8 +90,8 @@ export function asPackagedAppShellSnapshot(value: unknown): PackagedAppShellSnap
 /**
  * A surface the packaged app can legitimately come to rest on.
  *
- * `home` is the signed-in/seeded main shell. `onboarding-landing` is the cloud
- * sign-in landing a first run stops at.
+ * `home` is the seeded main shell. `onboarding-landing` is the first-run
+ * landing a fresh install stops at.
  */
 export type PackagedAppShellState = 'home' | 'onboarding-landing';
 
@@ -115,8 +115,7 @@ export function packagedAppRouteUrl(value: unknown): boolean {
  * neither — a blank window, a crashed renderer, a boot still on the loader, or
  * a half-rendered onboarding shell all fall through to `null`.
  *
- * The landing is recognised positively from the identity gate's sign-in CTA.
- * Local and BYOK are intentionally unavailable until identity completes, so a
+ * The landing is recognised positively from its primary call-to-action. A
  * bare `onboardingVisible` would degrade this into "anything that is not home"
  * and stop failing on a renderer that mounted the shell and then died.
  */
@@ -124,7 +123,7 @@ export function packagedAppShellState(value: unknown): PackagedAppShellState | n
   const snapshot = asPackagedAppShellSnapshot(value);
   if (snapshot == null) return null;
   if (snapshot.homeVisible) return 'home';
-  if (snapshot.onboardingVisible && snapshot.cloudSignInVisible) {
+  if (snapshot.onboardingVisible && snapshot.primaryCtaVisible) {
     return 'onboarding-landing';
   }
   return null;
@@ -353,10 +352,9 @@ export type PackagedAppShellPolicyInput = {
  * Derived from the daemon's own `onboardingCompleted`, never from the smoke
  * profile, so a run's setup and its accepted terminal state cannot disagree.
  * The smoke seeds `onboardingCompleted: true` before start and independently
- * confirms that the daemon retains it. The auth-first entry shell may still
- * route a signed-out core run to the cloud sign-in landing; that is an identity
- * gate, not evidence that onboarding state was lost. A genuine first run may
- * stop on the same surface after the daemon explicitly reports `false`.
+ * confirms that the daemon retains it. A genuine first run stops on the
+ * first-run landing after the daemon explicitly reports `false`; that is not
+ * evidence that onboarding state was lost.
  *
  * `coreProfile` still narrows it: the full profile goes on to drive the entry
  * rail, which `clickUpdaterRailExpression` refuses while onboarding is up, so
@@ -462,9 +460,8 @@ export function assertSeededOnboardingRetained(input: {
  * The two launch scenarios the packaged app legitimately has.
  *
  * Both are real product behaviour, not a contradiction. A first run reaches
- * the cloud sign-in landing because setup has not completed; a completed but
- * signed-out core run can reach the same landing because identity is now the
- * entry gate. The daemon config reading distinguishes the two and the retained
+ * the first-run landing because setup has not completed; a seeded run reaches
+ * home. The daemon config reading distinguishes the two and the retained
  * seed proves a protocol cold launch did not switch data roots.
  */
 export type PackagedLaunchScenario = 'completed-user' | 'first-run';
@@ -538,10 +535,10 @@ export function packagedAppShellFailureReason(
   const snapshot = asPackagedAppShellSnapshot(value);
   if (snapshot == null) return 'the packaged renderer returned no app-shell snapshot';
   if (packagedAppShellState(value) === 'onboarding-landing' && !options.acceptOnboardingLanding) {
-    return 'the packaged renderer stopped on the onboarding cloud sign-in landing, but this smoke profile has to drive the entry rail and needs home';
+    return 'the packaged renderer stopped on the first-run onboarding landing, but this smoke profile has to drive the entry rail and needs home';
   }
   if (snapshot.onboardingVisible) {
-    return 'the onboarding shell mounted but its cloud sign-in landing did not render (no sign-in CTA, or fewer than two runtime links)';
+    return 'the onboarding shell mounted but its first-run landing did not render (no primary call-to-action)';
   }
-  return 'neither the home nav rail nor the onboarding cloud sign-in landing rendered';
+  return 'neither the home nav rail nor the first-run onboarding landing rendered';
 }

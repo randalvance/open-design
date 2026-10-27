@@ -71,7 +71,6 @@ vi.mock('../../src/providers/daemon', () => ({
   fetchChatRunStatus: (...args: unknown[]) => fetchChatRunStatus(...args),
   listActiveChatRuns: (...args: unknown[]) => listActiveChatRuns(...args),
   listProjectRuns: (...args: unknown[]) => listProjectRuns(...args),
-  publishDaemonRunFinishedEvent: (...args: unknown[]) => publishDaemonRunFinishedEvent(...args),
   reattachDaemonRun: (...args: unknown[]) => reattachDaemonRun(...args),
   streamViaDaemon: (...args: unknown[]) => streamViaDaemon(...args),
 }));
@@ -123,7 +122,7 @@ vi.mock('../../src/components/FileWorkspace', () => ({
   FileWorkspace: () => null,
 }));
 
-vi.mock('../../src/components/Loading', () => ({ CenteredLoader: () => null }));
+vi.mock('../../src/components/Loading', () => ({ CenteredLoader: () => null, Spinner: () => null }));
 
 const RUN_ID = '2b09f25a-78db-438e-a2c9-1ebaf7056668';
 const MESSAGE_ID = 'b7b61e19-486c-47b3-937f-8b6f68f0a871';

@@ -1,13 +1,11 @@
 @import './styles/remixicon/remixicon.css';
 @import './styles/design-system-flow.css';
 @import './styles/tokens.css';
-@import './styles/share-tokens.css';
 @import './styles/material.css';
 @import './styles/app-wash.css';
 @import './styles/base.css';
 @import '../../../packages/components/src/styles.css';
 @import './styles/primitives.css';
-@import './styles/plan-badge.css';
 @import './styles/social-share.css';
 @import './styles/workspace/terminal.css';
 @import './styles/shell.css';

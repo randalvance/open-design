@@ -1,19 +1,15 @@
-// Entry rail layout under a signed-in workspace (OPEND-2757): the 最近项目 list
-// scrolls inside the rail's remaining height while the top destinations and
-// the bottom social links stay put — whatever the window height, and while it
-// changes. The signed-out visual home keeps the recent-projects grid on the
-// page instead, so this spec mocks the personal Workspace the rail section
-// needs and seeds enough projects to overflow a short window.
+// Entry rail layout (OPEND-2757): the 最近项目 list scrolls inside the rail's
+// remaining height while the top destinations and the bottom social links
+// stay put — whatever the window height, and while it changes. This spec
+// seeds enough projects to overflow a short window.
 import { expect, test } from '@/playwright/suite';
 import type { Locator, Page } from '@playwright/test';
-import { AMR_PERSONAL_WORKSPACE_ITEM, mockAmrPersonalWorkspace } from '@/playwright/amr';
 import { ensureRailOpen } from '@/playwright/rail';
 import { T } from '@/timeouts';
 import {
   captureVisual,
   configureVisualPage,
   gotoVisualHome,
-  mockSignedInVelaAccount,
   waitForVisualFonts,
   type VisualProject,
 } from '@/playwright/visual';
@@ -60,49 +56,8 @@ async function expectHitTargetIsSelf(locator: Locator): Promise<void> {
   })).toBe(true);
 }
 
-/** A workspace-bound Home lists projects through the workspace-scoped
- *  catalog (`GET /api/workspaces/:id/projects?view=drafts`), not the unscoped
- *  `/api/projects` the visual fixture already answers; wrap the same rows in
- *  the summary shape that read returns. */
-async function mockWorkspaceProjectList(page: Page, projects: readonly VisualProject[]): Promise<void> {
-  const summaries = projects.map((project) => ({
-    ...project,
-    workspaceId: AMR_PERSONAL_WORKSPACE_ITEM.workspaceId,
-    visibility: 'personal',
-    resourceState: 'active',
-    createdByWorkspaceMemberId: AMR_PERSONAL_WORKSPACE_ITEM.workspaceMemberId,
-    updatedByWorkspaceMemberId: AMR_PERSONAL_WORKSPACE_ITEM.workspaceMemberId,
-    resourceHubResourceId: null,
-    cloudTombstonedAt: null,
-    syncState: 'local_only',
-    currentUserAccess: {
-      canOpen: true,
-      canRename: true,
-      canDelete: true,
-      canDuplicate: true,
-      canMoveToTeam: true,
-      canMoveToPersonal: false,
-      canExport: true,
-      canSendTo: true,
-      canRestoreVersion: true,
-    },
-    project,
-  }));
-  await page.route('**/api/workspaces/*/projects**', async (route) => {
-    const request = route.request();
-    if (request.method() !== 'GET' || !new URL(request.url()).pathname.endsWith('/projects')) {
-      await route.fallback();
-      return;
-    }
-    await route.fulfill({ json: { projects: summaries } });
-  });
-}
-
 async function openRailWithRecentProjects(page: Page): Promise<void> {
   await configureVisualPage(page, { projects: RAIL_PROJECTS });
-  await mockSignedInVelaAccount(page);
-  await mockAmrPersonalWorkspace(page);
-  await mockWorkspaceProjectList(page, RAIL_PROJECTS);
   await gotoVisualHome(page);
   await ensureRailOpen(page);
   await expect(page.getByTestId('entry-nav-recent-item')).toHaveCount(RAIL_PROJECTS.length, {

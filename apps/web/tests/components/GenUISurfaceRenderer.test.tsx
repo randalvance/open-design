@@ -12,10 +12,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { GenUISurfaceRenderer } from '../../src/components/GenUISurfaceRenderer';
-import type {
-  GenUISurfaceSpec,
-  WorkspaceCollabContext,
-} from '@open-design/contracts';
+import type { GenUISurfaceSpec } from '@open-design/contracts';
 
 afterEach(() => cleanup());
 
@@ -64,36 +61,21 @@ describe('GenUISurfaceRenderer', () => {
     );
   });
 
-  it('keeps a bundled component iframe on the captured Workspace identity', () => {
+  it('loads a bundled component iframe from the plugin asset route', () => {
     const surface: GenUISurfaceSpec = {
       id: 'review',
       kind: 'form',
       persist: 'run',
       component: { path: './surfaces/review.html', sandbox: 'iframe' },
     };
-    const workspaceContext = {
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-      workspaceType: 'team',
-      role: 'member',
-      memberStatus: 'active',
-      lifecycleState: 'active',
-      permissions: {
-        canShareProjects: true,
-        canWriteSyncedFiles: true,
-      },
-    } as WorkspaceCollabContext;
     render(
       <GenUISurfaceRenderer
         pending={{ surface, runId: 'run-1', componentPluginId: 'plugin-1' }}
-        workspaceContext={workspaceContext}
         onAnswered={() => undefined}
       />,
     );
 
     const src = screen.getByTestId('genui-component-iframe').getAttribute('src');
-    const parsed = new URL(src ?? '', 'https://od.local');
-    expect(parsed.searchParams.get('workspaceId')).toBe('workspace-a');
-    expect(parsed.searchParams.get('workspaceMemberId')).toBe('member-a');
+    expect(src).toBe('/api/plugins/plugin-1/asset/surfaces/review.html');
   });
 });

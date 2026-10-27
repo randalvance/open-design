@@ -145,7 +145,6 @@ describe('Onboarding welcome (theme toggle removed)', () => {
           onRefreshAgents={vi.fn(() => AGENTS)}
           onCreateProject={vi.fn()}
           onBeginProjectCreation={() => ({ projectId: 'optimistic-project', rollback: () => undefined })}
-          onAmrBalanceGateBlockChange={() => undefined}
           onCreatePluginShareProject={vi.fn()}
           onImportClaudeDesign={vi.fn()}
           onOpenProject={vi.fn()}
@@ -164,8 +163,8 @@ describe('Onboarding welcome (theme toggle removed)', () => {
   it('renders no sun/moon theme toggle on the welcome pane', () => {
     const { container } = renderOnboarding();
 
-    expect(container.querySelector('.onboarding-cloud__pane')).not.toBeNull();
-    expect(container.querySelector('.onboarding-cloud__theme')).toBeNull();
+    expect(container.querySelector('.onboarding-landing__pane')).not.toBeNull();
+    expect(container.querySelector('.onboarding-landing__theme')).toBeNull();
   });
 
   it('exposes no theme control by accessible name', () => {

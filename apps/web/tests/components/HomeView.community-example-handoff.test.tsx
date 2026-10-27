@@ -20,14 +20,6 @@ vi.mock('../../src/analytics/provider', async (importOriginal) => {
   return { ...actual, useAnalytics: () => ({ ...actual.useAnalytics?.(), track: analytics.track }) };
 });
 
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>();
-  return {
-    ...actual,
-    useWorkspaceContext: () => ({ context: null, loading: false, failure: 'unsupported' as const }),
-  };
-});
-
 import { HomeView } from '../../src/components/HomeView';
 import { createPluginUseHandoff } from '../../src/components/home-hero/plugin-authoring';
 import type { PluginLoopSubmit } from '../../src/components/PluginLoopHome';

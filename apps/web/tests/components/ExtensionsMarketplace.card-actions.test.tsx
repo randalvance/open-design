@@ -28,39 +28,6 @@ vi.mock('../../src/analytics/provider', async (importOriginal) => {
   return { ...actual, useAnalytics: () => ({ track: analyticsTrack }) };
 });
 
-const TEAM_CONTEXT = {
-  workspaceId: 'ws-team',
-  workspaceType: 'team',
-  workspaceMemberId: 'mem-owner',
-  role: 'owner',
-  memberStatus: 'active',
-  lifecycleState: 'active',
-  billingState: 'active',
-  planId: 'team-pro',
-  teamId: 'ws-team',
-  permissions: {
-    canManageMembers: true,
-    canManageBilling: true,
-    canInviteMembers: true,
-    canManageAutoRecharge: true,
-    canShareProjects: true,
-    canWriteSyncedFiles: true,
-    canViewWorkspaceSettings: true,
-    canManageSharedResources: true,
-  },
-  seatSummary: { seatLimit: 5, usedSeats: 1, availableSeats: 4, isSeatFull: false },
-  providerMode: 'cloud',
-};
-
-let workspaceContext: unknown = null;
-
-// Spread the real module — see the note in ExtensionsMarketplace.team-scope.test.tsx.
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>()),
-  useWorkspaceContext: () => ({ context: workspaceContext, loading: false, refresh: vi.fn() }),
-  useWorkspaceBilling: () => null,
-}));
-
 const USER_SKILL = {
   id: 'deck-polish',
   name: 'deck-polish',
@@ -123,7 +90,6 @@ function installSuccessStream(id: string): Response {
 }
 
 beforeEach(() => {
-  workspaceContext = null;
   skills = [USER_SKILL, OFFICIAL_SKILL];
   installResolvers = [];
   skillDetailFailuresRemaining = 0;
@@ -423,8 +389,7 @@ describe('ExtensionsMarketplace import', () => {
     });
   });
 
-  it('#132 — a successful plugin URL import keeps workspace authority and reveals the result', async () => {
-    workspaceContext = TEAM_CONTEXT;
+  it('#132 — a successful plugin URL import reveals the result', async () => {
     const { container } = renderMarketplace();
     await waitFor(() => {
       expect(container.querySelectorAll('.plugin-marketplace__item').length).toBeGreaterThan(0);
@@ -459,11 +424,6 @@ describe('ExtensionsMarketplace import', () => {
         && JSON.parse(String(init?.body ?? '{}')).source === IMPORT_URL,
     );
     expect(installCall).toBeTruthy();
-    expect(installCall?.[1]?.headers).toMatchObject({
-      'x-od-workspace-id': TEAM_CONTEXT.workspaceId,
-      'x-od-workspace-member-id': TEAM_CONTEXT.workspaceMemberId,
-      'x-od-workspace-type': TEAM_CONTEXT.workspaceType,
-    });
   });
 
   it('imports a skill URL through the daemon instead of showing the unsupported placeholder', async () => {

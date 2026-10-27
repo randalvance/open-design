@@ -29,7 +29,7 @@ describe('onboarding layout styles', () => {
   // content, so without an explicit inline-axis `start` the stretched link
   // floats its label mid-column.
   it('pins the onboarding back link to the content column start', () => {
-    const backBlock = cssDeclarations('.onboarding-view__back-to-cloud');
+    const backBlock = cssDeclarations('.onboarding-view__back');
 
     expect(backBlock).toMatch(/(?:^|[;\n])\s*justify-self:\s*start\s*;/);
     expect(backBlock).toMatch(/(?:^|[;\n])\s*align-self:\s*start\s*;/);
@@ -47,15 +47,4 @@ describe('onboarding layout styles', () => {
     expect(benefitsBlock).not.toMatch(/(?:^|[;\n])\s*flex-wrap:\s*nowrap\s*;/);
   });
 
-  // The sign-in fallback is one centered line of text with an inline link,
-  // not a card — the pending state keeps a single focal CTA.
-  it('renders the activation fallback as a centered inline line', () => {
-    const lineBlock = cssDeclarations('.onboarding-cloud__activation');
-    const linkBlock = cssDeclarations('.onboarding-cloud__activation-link');
-
-    expect(lineBlock).toMatch(/(?:^|[;\n])\s*justify-content:\s*center\s*;/);
-    expect(lineBlock).toMatch(/(?:^|[;\n])\s*flex-wrap:\s*wrap\s*;/);
-    expect(lineBlock).not.toMatch(/(?:^|[;\n])\s*(?:border|background)\s*:/);
-    expect(linkBlock).toMatch(/(?:^|[;\n])\s*text-decoration:\s*underline\s*;/);
-  });
 });

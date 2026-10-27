@@ -73,7 +73,7 @@ function stoppedMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     createdAt: 1,
     runId: 'run-stopped',
     runStatus: 'canceled',
-    agentId: 'amr',
+    agentId: 'opencode',
     cancelOrigin: 'user_stop',
     events: TODO_EVENTS,
     ...overrides,
@@ -98,7 +98,7 @@ function pane(opts: { messages: ChatMessage[]; streaming?: boolean }) {
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
+      config={{ agentId: 'opencode', agentCliEnv: {} } as unknown as AppConfig}
     />
   );
 }

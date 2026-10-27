@@ -73,8 +73,8 @@ describe('MEDIA_USER_REPLY_CONTRACT mirrors', () => {
     expect(daemonBody).not.toContain('图片生成服务暂时不可用');
   });
 
-  it('routes an unspecified image model through the managed Cloud default', () => {
-    expect(generationBody).toContain('otherwise use \\`vela/gpt-image-2\\`');
-    expect(generationBody).not.toContain('otherwise use \\`gpt-image-2\\`');
+  it('routes an unspecified image model to the gpt-image-2 default', () => {
+    expect(generationBody).toContain('otherwise use \\`gpt-image-2\\`');
+    expect(generationBody).not.toContain('vela/');
   });
 });

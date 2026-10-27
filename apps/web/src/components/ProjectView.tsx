@@ -2,8 +2,6 @@ import { useStartupReady } from '../observability/startup-ready';
 import { navigationTiming, useProjectNavigationReady, observeNavigation } from '../observability/navigation-timing';
 import { withLiveArtifactDeliveries } from '../runtime/live-artifact-delivery';
 import { readRetriedErrorSurface, retriedErrorSurfaceKey, writeRetriedErrorSurface } from '../runtime/chat/retried-error-surface';
-import type { ObservedPublicShareLink, ObservedShareUpdateRequest } from './share/observed-public-share-link';
-import type { ShareLoginReturn } from './share/share-login-return';
 import {
   startTransition,
   useCallback,
@@ -35,7 +33,6 @@ import {
   GENERIC_DAEMON_DISCONNECT_MESSAGE,
   listActiveChatRuns,
   listProjectRuns,
-  publishDaemonRunFinishedEvent,
   reattachDaemonRun,
   reportChatRunFeedback,
   streamViaDaemon,
@@ -77,7 +74,6 @@ import {
   runAgentProviderId,
 } from '../analytics/run-task';
 import { useCoalescedCallback } from '../hooks/useCoalescedCallback';
-import { requestAmrArtifactUpgrade } from '../runtime/amr-artifact-upgrade';
 import {
   resolveQuestionFormStrategyTaskExecutionId,
   strategySettledMessageFields,
@@ -86,15 +82,10 @@ import {
 } from '../runtime/strategy-question-continuation';
 import {
   isTodoWriteToolName,
-  isWorkspaceLifecycleReadable,
-  workspaceBillingAuthorityContext,
-  workspacePrincipalKey,
-  type AmrWalletSnapshot,
   type ByokChatProviderConfig,
   type ByokMediaDefaults,
   type ByokChatProtocol,
   type ChatTaskExecutionAnalytics,
-  type ProjectWorkspaceScope,
 } from '@open-design/contracts';
 import {
   anonymizeArtifactId,
@@ -155,11 +146,6 @@ import { randomUUID } from '../utils/uuid';
 import { DEFAULT_NOTIFICATIONS, KNOWN_PROVIDERS } from '../state/config';
 import type { TodoItem } from '../runtime/todos';
 import {
-  amrAuthRetryMatchesRouteContext,
-  type AmrAuthRetryContinuation,
-  type AmrAuthRetryPersonalAdoptionWitness,
-} from '../runtime/amr-auth-retry-continuation';
-import {
   appendErrorStatusEvent,
   removeErrorStatusEvent,
   runFailureFieldsFromError,
@@ -175,33 +161,7 @@ import {
 } from '../runtime/design-delivery';
 import { notifyArtifactDelivered } from './experience-survey-trigger';
 import { RESUME_CONTINUE_PROMPT } from '../runtime/resume';
-import {
-  amrBalanceGateScopeForWorkspaceContext,
-  amrBalanceGateScopesMatch,
-  amrWalletBalanceUsd,
-  checkAmrBalanceGate,
-  fetchAmrBalanceCardWalletSnapshot,
-  isAmrBalanceGateScope,
-  type AmrBalanceGateScope,
-} from '../runtime/amr-balance-gate';
-import { checkAmrFundingFeedback } from '../runtime/amr-funding-feedback';
-import {
-  amrBalanceBlockedDialog,
-  amrBalanceDialogUpgradeIntent,
-  amrBalanceUpgradeIntent,
-  resolveAmrBalanceBranch,
-  type AmrBalanceBlockedDialogKind,
-} from '../runtime/amr-balance-branch';
-import { AmrBalanceDialog } from './AmrBalanceDialog';
-import { AmrOwnerTopUpDialog } from './chat/AmrOwnerTopUpDialog';
 import { markHistoryReplayLanded } from './chat/useCharReveal';
-import { workspaceAutoRechargeUrl, workspaceUpgradeUrl } from './EntryNavRail';
-import {
-  amrHandoffDeviceId,
-  attributedAmrUrl,
-  recordAmrEntry,
-} from '../analytics/amr-attribution';
-import { getResolvedDeviceId } from '../analytics/client';
 import {
   cancelBrandExtraction,
   continueBrandExtraction,
@@ -256,7 +216,6 @@ import {
   cacheTabsLocally,
   persistTabsToDaemonNow,
   listPlugins,
-  resolvedWorkspaceContextForWrite,
   type SaveMessageOptions,
   waitGeneratedPluginShareTask,
 } from '../state/projects';
@@ -267,7 +226,6 @@ import type {
   ChatSessionMode,
   InstalledPluginRecord,
   RunContextSelection,
-  WorkspaceCollabContext,
   WorkspaceContextItem,
 } from '@open-design/contracts';
 import type {
@@ -307,35 +265,6 @@ import { Icon } from './Icon';
 import { useWorkspaceTabsDockRef } from './workspaceTabsDock';
 import { localizePluginTitle } from './plugins-home/localization';
 import { DesignSystemPicker } from './DesignSystemPicker';
-import { PresenceBar } from '../collab/PresenceBar';
-import { useProjectCollab } from '../collab/useProjectCollab';
-import { OwnedContentUpdate } from './OwnedContentUpdate';
-import {
-  currentUserDirectoryEntry,
-  useTeamMembers,
-} from '../collab/useTeamMembers';
-import { currentWorkspaceAccountGeneration, workspaceIdentityCacheKey } from '../collab/workspace-identity';
-import {
-  useWorkspaceBillingResponse,
-  useWorkspaceContext,
-  workspaceBillingSummaryForContext,
-  workspaceIdentityCanBillAmr,
-} from '../collab/useWorkspaceContext';
-import {
-  projectWorkspaceContext,
-  projectWorkspaceScopeAuthorizesAmr,
-  projectWorkspaceScopeReady,
-  projectWorkspaceVisibility,
-  runWorkspaceIdentity,
-  runWorkspacePersonalAdoptionWitness,
-  useProjectWorkspaceScope,
-} from '../collab/useProjectWorkspaceScope';
-import {
-  CollabProvider,
-  type CollabContextValue,
-  type ProjectResourceAuthority,
-} from '../collab/collab-context';
-import { persistCommentAnchors } from '../collab/comment-anchor-client';
 import {
   createSingleflightRunner,
   reconcileAttachedComments,
@@ -361,7 +290,6 @@ import {
   selectAutoOpenTurnArtifact,
   selectAutoOpenTurnArtifacts,
 } from './auto-open-file';
-import { nextShareRequestNonce } from './share-request-nonce';
 import { buildRepoImportPrompt, designSystemNeedsRepoConnect } from './design-system-github-evidence';
 import { isDesignSystemProject, resolveProjectDesignSystemId } from './design-system-project';
 import { collectReferencedJsxNames } from '../runtime/jsx-module-refs';
@@ -441,7 +369,6 @@ import {
   buildFinalizeRequest,
 } from '../lib/resolve-finalize-request';
 import type { CommentSendResult } from './comment-send-result';
-import { projectReadOnlyClaim } from './project-readonly-claim';
 
 type BrandBrowserSnapshot =
   | { status: 'ready'; html: string; css: string; baseUrl: string }
@@ -468,13 +395,8 @@ type ProjectChatSendMeta = ChatSendMeta & {
    *  success (tracking spec C14/C15). Daemon mode only. */
   dsEnrichment?: boolean;
   /** Marks a send replayed from the queued-sends drain. Its payload already
-   *  lives in the queue item, so a pre-run block (e.g. the AMR balance gate)
-   *  must NOT re-queue it — only pause further drains. */
+   *  lives in the queue item, so a pre-run block must NOT re-queue it. */
   queueDrain?: boolean;
-  /** The OpenDesign Cloud balance gate already ran for this exact send at
-   *  the home submit (with any soft warning answered there); skip re-gating
-   *  so the user is never double-prompted for one task. */
-  amrGatePrechecked?: boolean;
   /** The caller owns a payload that must be consumed exactly once — the Home
    *  handoff's separately persisted prompt, an inline question form's single
    *  answer. Once the payload is durably parked in this view's queue, report
@@ -511,9 +433,6 @@ export function mergeSavedPreviewComment(current: PreviewComment[], saved: Previ
   return current.map((comment, index) => (index === existingIndex ? saved : comment));
 }
 
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
 
 function conversationForkErrorCode(error: unknown): TrackingConversationForkErrorCode {
   if (error instanceof ProjectConversationsHttpError) {
@@ -544,36 +463,8 @@ function conversationForkPoint(
 
 export async function listConversationsWithRetry(
   projectId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<Conversation[]> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= CONVERSATION_LOAD_RETRY_DELAYS_MS.length; attempt += 1) {
-    try {
-      return await listConversations(projectId, {
-        throwOnError: true,
-        workspaceContext,
-      });
-    } catch (err) {
-      lastError = err;
-      // A shared project may be visible in the catalog just before its local
-      // conversation materialization completes. Only that transient 404 earns
-      // the bounded retry window; auth/permission/request failures are settled
-      // and retrying them merely leaves the entire project in a loading state.
-      if (
-        !(err instanceof ProjectConversationsHttpError)
-        || err.status !== 404
-        || workspaceContext?.workspaceType !== 'team'
-      ) {
-        throw err;
-      }
-      const delay = CONVERSATION_LOAD_RETRY_DELAYS_MS[attempt];
-      if (delay === undefined) break;
-      await wait(delay);
-    }
-  }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error('Could not load conversations for this project.');
+  return listConversations(projectId, { throwOnError: true });
 }
 
 /**
@@ -641,7 +532,7 @@ function terminalErrorEventOf(message: ChatMessage): AgentEvent | undefined {
  * (its Run had none to write). So the post-run alignment refresh arrives
  * carrying only the process status — and the plain `{...server}` copy read that
  * silence as a correction, dropping the verdict AND its reason code. The
- * blocked card that `runtime/amr-guidance.ts` already writes for
+ * blocked card that `runtime/run-failure-ui.ts` already writes for
  * `od_next_protocol_runtime_state_missing` could therefore never render: with
  * no `runStatus: 'failed'` there is no `retryAssistant`, with no
  * `retryAssistant` there is no `runFailureUi`, and the chat fell back to the
@@ -867,47 +758,8 @@ function ensureConversationPresent(
 
 interface Props {
   project: Project;
-  /**
-   * Exact project-bound Workspace authority resolved by the route gate.
-   * Production deep links pass this instead of borrowing the shell's mutable
-   * current/default Workspace. Tests and legacy embedded callers may omit it
-   * and retain the existing provider behavior.
-   */
-  workspaceContextOverride?: WorkspaceCollabContext | null;
-  /** Fresh route-bootstrap witnesses, reused to avoid repeating scope/detail reads. */
-  initialWorkspaceScope?: ProjectWorkspaceScope | null;
+  /** Fresh route-bootstrap detail, reused to avoid repeating the detail read. */
   initialProjectDetail?: ProjectDetailSeed | null;
-  /** The seeded project row is a Team-bound placeholder, not content authority. */
-  initialMaterializationPending?: boolean;
-  /** Workspace/member authorization lifetime for async title reads. */
-  projectAuthorizationKey?: string;
-  onObservedPublicShareLink?: (share: ObservedPublicShareLink | null) => void;
-  observedPublicShareLink?: ObservedPublicShareLink | null;
-  loginUpdateRequest?: ObservedShareUpdateRequest | null;
-  onLoginUpdateRequestHandled?: (nonce: number) => void;
-  shareLoginReturn?: ShareLoginReturn | null;
-  onShareLoginReturnChange?: (request: ShareLoginReturn | null) => void;
-  amrAuthRetryContinuation?: AmrAuthRetryContinuation | null;
-  onArmAmrAuthRetryContinuation?: (
-    continuation: Omit<AmrAuthRetryContinuation, 'accountIdAtArm' | 'createdAtMs'>,
-  ) => void;
-  onConsumeAmrAuthRetryContinuation?: (
-    continuation: AmrAuthRetryContinuation,
-  ) => boolean;
-  onDiscardAmrAuthRetryContinuation?: (
-    continuation: AmrAuthRetryContinuation,
-  ) => void;
-  /**
-   * The current title from the team catalog when this project is shared by
-   * another member. That catalog is the naming authority; the member's local
-   * mirror may carry an older real name with a newer local timestamp.
-   */
-  authoritativeProjectName?: string;
-  /** Re-read the catalog after a metadata invalidation before merging detail. */
-  resolveAuthoritativeProjectName?: (
-    projectId: string,
-    expectedAuthorizationKey: string,
-  ) => Promise<ProjectNameAuthorityResolution>;
   routeFileName: string | null;
   /**
    * Routed conversation id. When set (the URL is
@@ -938,8 +790,6 @@ interface Props {
   daemonLive: boolean;
   onModeChange: (mode: AppConfig['mode']) => void;
   onAgentChange: (id: string) => void;
-  /** Resolves only after the App configuration owner has persisted Cloud. */
-  onSwitchToCloud?: () => Promise<void>;
   onAgentModelChange: (
     id: string,
     choice: { model?: string; reasoning?: string; serviceTier?: string },
@@ -947,7 +797,6 @@ interface Props {
   onApiModelChange?: (model: string) => void;
   onRefreshAgents: () => void;
   onOpenSettings: (section?: SettingsSection) => void;
-  onOpenAmrSettings?: () => void;
   onOpenMcpSettings?: () => void;
   onBrowsePlugins?: () => void;
   onOpenConnectors?: () => void;
@@ -1013,8 +862,6 @@ interface Props {
 }
 
 export type ProjectRenameFenceToken = Readonly<{
-  accountGeneration: number;
-  scopeKey: string;
   projectId: string;
   mutationVersion: number;
 }>;
@@ -1058,49 +905,7 @@ const BEDROCK_BYOK_UNSUPPORTED_MESSAGE =
   'AWS Bedrock BYOK chat requires AWS credential signing and is not supported by the current API-key proxy.';
 const CHAT_PANEL_KEYBOARD_STEP = 16;
 const DESIGN_SYSTEM_AUDIT_AUTO_REPAIR_ATTEMPTS = 2;
-// The conversations list 404s while a project is not yet in the local daemon DB.
-// For a personal project that is a transient blip, but opening a TEAM-SHARED
-// project a member has not pulled yet only registers it locally after the collab
-// status resolves and the auto-pull completes — several seconds against a remote
-// collab backend (e.g. a packaged feature-env build round-tripping through vela).
-// The old ~1s window ran out mid-pull and surfaced a hard "conversations 404"
-// error on first open of a shared project. Retry on the 404 long enough to cover
-// that sync (~12s); a genuinely missing project is rare on this path (the user
-// navigated in from a real project list) and still surfaces the error afterward.
-const CONVERSATION_LOAD_RETRY_DELAYS_MS = [
-  120, 300, 600, 1000, 1500, 2000, 2500, 3500,
-] as const;
-type ConversationMaterializationRecovery = {
-  projectId: string;
-  authorityKey: string;
-  generation: number;
-  workspaceContext: WorkspaceCollabContext;
-  errorMessage: string;
-};
-export function reconcileConversationRecoveryGlobalError(
-  current: string | null,
-  previousConversationError: string,
-  nextConversationError: string,
-): string {
-  return current === null || current === previousConversationError
-    ? nextConversationError
-    : current;
-}
-export function createConversationMaterializationGenerationController() {
-  let current = 0;
-  return {
-    begin(): number {
-      current += 1;
-      return current;
-    },
-    invalidate(generation: number): void {
-      if (current === generation) current += 1;
-    },
-    isCurrent(generation: number): boolean {
-      return current === generation;
-    },
-  };
-}
+
 // Trailing-debounce window for the canonical (daemon + SQLite) tab-state write.
 // Embedded-browser navigation bursts settle well within this; the local cache
 // is written immediately so nothing is lost if the daemon write is coalesced.
@@ -1519,15 +1324,6 @@ function autoSendContextKey(projectId: string): string {
   return `od:auto-send-context:${projectId}`;
 }
 
-/** Exact workspace/member authority checked by the Home AMR preflight. */
-function autoSendAmrGateWitnessKey(projectId: string): string {
-  return `od:auto-send-amr-gate-witness:${projectId}`;
-}
-
-function legacyAutoSendAmrGateOkKey(projectId: string): string {
-  return `od:auto-send-amr-gate-ok:${projectId}`;
-}
-
 function designSystemAuditAutoRepairKey(projectId: string): string {
   return `od:design-system-audit-auto-repair:${projectId}`;
 }
@@ -1566,22 +1362,6 @@ function readAutoSendContext(projectId: string): RunContextSelection | null {
   }
 }
 
-function readAutoSendAmrGateWitness(
-  projectId: string,
-): AmrBalanceGateScope | undefined {
-  if (typeof window === 'undefined') return undefined;
-  try {
-    const raw = window.sessionStorage.getItem(
-      autoSendAmrGateWitnessKey(projectId),
-    );
-    if (!raw) return undefined;
-    const parsed = JSON.parse(raw) as unknown;
-    return isAmrBalanceGateScope(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 function clearAutoSendSession(projectId: string): void {
   if (typeof window === 'undefined') return;
   try {
@@ -1589,8 +1369,6 @@ function clearAutoSendSession(projectId: string): void {
     window.sessionStorage.removeItem(autoSendPromptKey(projectId));
     window.sessionStorage.removeItem(autoSendAttachmentsKey(projectId));
     window.sessionStorage.removeItem(autoSendContextKey(projectId));
-    window.sessionStorage.removeItem(autoSendAmrGateWitnessKey(projectId));
-    window.sessionStorage.removeItem(legacyAutoSendAmrGateOkKey(projectId));
   } catch {
     /* ignore */
   }
@@ -1841,20 +1619,6 @@ function appendLiveArtifactEventItem(
 }
 
 /**
- * Whether a project open should start with the chat pane collapsed (workspace
- * focus mode). Uses `useProjectCollab`'s confirmed shared-non-owner signal
- * (`isSharedNonOwner`) — not raw `isOwner` — so a catalog-confirmed owner whose
- * `/collab/status` payload is still missing `ownerMemberId` does not latch into
- * focus mode permanently (review: sticky apply ref).
- */
-export function shouldDefaultCollapseChatForSharedNonOwner(collab: {
-  enabled: boolean;
-  isSharedNonOwner: boolean;
-}): boolean {
-  return collab.enabled && collab.isSharedNonOwner;
-}
-
-/**
  * B11 —— 「当前 agent 不支持中途插话」什么时候才**说得通**。
  *
  * 这句话是对「队列里那颗为什么不是『引导对话』」的解释,而「引导」只有在
@@ -1955,7 +1719,7 @@ function projectMediaVoiceSeed(
 // Carry the creation-time model pick into the conversation ONLY when it belongs
 // to the active BYOK provider. Guards against clobbering a user's Settings
 // default with a model from a different provider — e.g. a SenseAudio user whose
-// image project was created with the dialog's default `vela/gpt-image-2` keeps their
+// image project was created with the dialog's default `gpt-image-2` keeps their
 // configured SenseAudio model instead of being forced to the registry default.
 // AIHubMix's live (`aihubmix-` prefixed) ids resolve via mediaModelProviderId
 // without waiting on the async catalogue, so the AIHubMix path still seeds.
@@ -2071,19 +1835,11 @@ function isOpenCodeByokChatProtocol(
 function projectEventToAgentEvent(evt: ProjectEvent): LiveArtifactEventItem['event'] | null {
   if (evt.type === 'file-changed') return null;
   if (evt.type === 'conversation-created') return null;
-  // Collab realtime hop-2 invalidations are handled directly in
-  // `handleProjectEvent` (they trigger targeted re-fetches, not artifact cards).
-  if (
-    evt.type === 'comment-changed' ||
-    evt.type === 'presence-changed' ||
-    evt.type === 'project-metadata-changed' ||
-    evt.type === 'project-content-transfer-state' ||
-    // Same shape of signal: `handleProjectEvent` turns it into a targeted
-    // conversation re-read. It must be named here rather than left to fall
-    // through — the tail of this function assumes whatever survives is a
-    // live-artifact refresh and reads `evt.phase` off it.
-    evt.type === 'chat-artifact-refs-changed'
-  ) {
+  // `handleProjectEvent` turns this one into a targeted conversation re-read.
+  // It must be named here rather than left to fall through — the tail of this
+  // function assumes whatever survives is a live-artifact refresh and reads
+  // `evt.phase` off it.
+  if (evt.type === 'chat-artifact-refs-changed') {
     return null;
   }
   if (evt.type === 'live_artifact') {
@@ -2122,70 +1878,28 @@ function artifactWithHtml(
       };
 }
 
-const SHARED_PROJECT_PLACEHOLDER_NAME = '共享项目';
-
-export type ProjectNameAuthorityResolution =
-  | { kind: 'resolved'; name: string | null }
-  | { kind: 'stale' };
-
 /**
  * Reconcile the route/list snapshot with the daemon detail response.
  *
- * A shared-project placeholder is created locally with `updatedAt = now`, so
- * timestamp-only selection can make it look newer than the catalog row whose
- * real title the user already saw. Detail still owns newer project fields, but
- * it must never replace a meaningful catalog title with that transport
- * placeholder. The project-id check also keeps a late response from a previous
- * route out of the next project.
+ * Detail owns newer project fields; the project-id check keeps a late response
+ * from a previous route out of the next project, and an older detail row never
+ * regresses a newer local record.
  */
 export function reconcileProjectDetail(
   project: Project,
   detail: Project | null,
-  authoritativeProjectName?: string | null,
 ): Project {
-  const authoritativeName = authoritativeProjectName?.trim() || null;
-  const routedProject = authoritativeName
-    ? { ...project, name: authoritativeName }
-    : project;
   if (!detail || detail.id !== project.id || detail.updatedAt < project.updatedAt) {
-    return routedProject;
+    return project;
   }
-  const projectName = routedProject.name.trim();
-  const detailName = detail.name.trim();
-  if (
-    detailName === SHARED_PROJECT_PLACEHOLDER_NAME
-    && projectName
-    && projectName !== SHARED_PROJECT_PLACEHOLDER_NAME
-  ) {
-    // The placeholder is an unmaterialized transport row, not a newer project
-    // authority. Reject the whole row so its null skill/design metadata cannot
-    // regress the catalog/local record along with its synthetic title.
-    return routedProject;
-  }
-  return authoritativeName ? { ...detail, name: authoritativeName } : detail;
+  return detail;
 }
 
 export function ProjectView({
   project,
-  workspaceContextOverride,
-  initialWorkspaceScope,
   initialProjectDetail,
-  initialMaterializationPending = false,
-  projectAuthorizationKey = project.id,
-  amrAuthRetryContinuation = null,
-  onArmAmrAuthRetryContinuation,
-  onConsumeAmrAuthRetryContinuation,
-  onDiscardAmrAuthRetryContinuation,
-  authoritativeProjectName,
-  resolveAuthoritativeProjectName,
   routeFileName,
   routeConversationId = null,
-  onObservedPublicShareLink,
-  observedPublicShareLink,
-  loginUpdateRequest,
-  onLoginUpdateRequestHandled,
-  shareLoginReturn,
-  onShareLoginReturnChange,
   config,
   agents,
   skills,
@@ -2198,8 +1912,6 @@ export function ProjectView({
   onApiModelChange,
   onRefreshAgents,
   onOpenSettings,
-  onOpenAmrSettings,
-  onSwitchToCloud,
   onOpenMcpSettings,
   onBrowsePlugins,
   onOpenConnectors,
@@ -2227,11 +1939,6 @@ export function ProjectView({
   // would 404, and an unpersisted project must not fan out conversation,
   // file, or presence requests. The view draws only what this tab knows.
   const projectReadsHeld = projectReadsHeldForCreation(creationHandoff);
-  const amrAuthRetryMountIdRef = useRef<string | null>(null);
-  if (amrAuthRetryMountIdRef.current === null) {
-    amrAuthRetryMountIdRef.current = randomUUID();
-  }
-  const activeAuthorizationLifetimeRef = useRef<string | null>(projectAuthorizationKey);
   /**
    * The Home-carried attachments, by every name the workspace might list them
    * under. `selectPrimaryProjectFile` uses it to NOT auto-open a file the user
@@ -2275,169 +1982,10 @@ export function ProjectView({
     refreshInitialHomeAttachmentFileNames();
   }
 
-  useEffect(() => {
-    activeAuthorizationLifetimeRef.current = projectAuthorizationKey;
-    return () => {
-      if (activeAuthorizationLifetimeRef.current === projectAuthorizationKey) {
-        activeAuthorizationLifetimeRef.current = null;
-      }
-    };
-  }, [projectAuthorizationKey]);
   const analytics = useAnalytics();
-  const ambientWorkspaceContextState = useWorkspaceContext();
-  const workspaceContextState = workspaceContextOverride !== undefined
-    ? {
-        context: workspaceContextOverride,
-        loading: false,
-        identityChangePending: false,
-      }
-    : ambientWorkspaceContextState;
-  const { context: workspaceContext } = workspaceContextState;
-  const projectWorkspaceScopeState = useProjectWorkspaceScope(
-    project.id,
-    workspaceContext,
-    project.workspaceId,
-    initialWorkspaceScope,
-    !projectReadsHeld,
-  );
-  // The project's resolved scope when there is one. While that first read is
-  // pending, the persisted project binding may witness the matching caller;
-  // answered unavailable states deliberately do not borrow it.
-  const resolvedProjectRunWorkspaceContext = runWorkspaceIdentity(
-    projectWorkspaceScopeState,
-    workspaceContext,
-    project.workspaceId,
-  );
-  const personalAdoptionContext = runWorkspacePersonalAdoptionWitness(
-    projectWorkspaceScopeState,
-    workspaceContext,
-    project.workspaceId,
-  );
-  // Scope revalidation returns a freshly decoded context object even when the
-  // data-plane authority did not change. Project hydration is keyed to the
-  // authority carried by resource requests, not that object's allocation:
-  // replacing an equivalent object must not blank conversations, messages,
-  // tabs, or files while the same project remains open.
-  const projectRunAuthorityKey = workspaceIdentityCacheKey(
-    resolvedProjectRunWorkspaceContext,
-  );
-  const amrAuthRetryPersonalAdoptionWitness:
-    AmrAuthRetryPersonalAdoptionWitness | null = personalAdoptionContext
-      ? {
-          workspaceIdentityKey: workspaceIdentityCacheKey(personalAdoptionContext),
-          workspaceId: personalAdoptionContext.workspaceId,
-          workspaceMemberId: personalAdoptionContext.workspaceMemberId,
-          workspaceType: 'personal',
-          memberStatus: 'active',
-        }
-      : null;
-  const canonicalProjectRunWorkspaceContextRef = useRef<{
-    authorityKey: string;
-    context: WorkspaceCollabContext | null;
-  }>({
-    authorityKey: projectRunAuthorityKey,
-    context: resolvedProjectRunWorkspaceContext,
-  });
-  if (
-    canonicalProjectRunWorkspaceContextRef.current.authorityKey
-    !== projectRunAuthorityKey
-  ) {
-    canonicalProjectRunWorkspaceContextRef.current = {
-      authorityKey: projectRunAuthorityKey,
-      context: resolvedProjectRunWorkspaceContext,
-    };
-  }
-  const projectRunWorkspaceContext =
-    canonicalProjectRunWorkspaceContextRef.current.context;
-  const projectResourceAuthority: ProjectResourceAuthority =
-    projectWorkspaceScopeState.failure === 'forbidden'
-    || projectWorkspaceScopeState.failure === 'unsupported'
-      ? 'denied'
-      : projectWorkspaceScopeState.scope?.kind === 'unbound'
-        ? 'local'
-        : projectRunWorkspaceContext
-          ? 'workspace'
-          : 'pending';
-  const projectResourceAuthorityRef = useRef(projectResourceAuthority);
-  projectResourceAuthorityRef.current = projectResourceAuthority;
-  const projectRunWorkspaceContextRef = useRef(projectRunWorkspaceContext);
-  projectRunWorkspaceContextRef.current = projectRunWorkspaceContext;
-  // The AMR pre-run balance gate uses the project's resolved scope, or the one
-  // narrow adoption witness returned above: an exact active Personal caller
-  // for an explicitly unbound historical project. When no safe witness exists,
-  // handleSend skips the local balance preflight and lets the daemon return its
-  // explicit authorization/adoption decision. It must never inspect an
-  // unrelated account wallet just because project scope is inconclusive.
-  const projectRunBillingContext = projectWorkspaceContext(
-    projectWorkspaceScopeState.scope,
-  );
-  const readableTranscriptPrincipalRef = useRef<string | null>(null);
-  readableTranscriptPrincipalRef.current =
-    !projectWorkspaceScopeState.loading
-    && !projectWorkspaceScopeState.failure
-    && projectRunBillingContext?.memberStatus === 'active'
-    && isWorkspaceLifecycleReadable(projectRunBillingContext.lifecycleState)
-      ? workspacePrincipalKey(projectRunBillingContext)
-      : null;
-  // A pending first scope read may use the exact ambient caller only when
-  // runWorkspaceIdentity has already proven it matches project.workspaceId.
-  // That same safe witness is valid for the balance preflight. Settled
-  // unavailable/forbidden states produce no run identity and therefore no
-  // preflight context; they must never fall through to the Personal wallet.
-  const projectRunPreflightContext =
-    projectRunBillingContext ?? projectRunWorkspaceContext;
-  /**
-   * 同一个工作区,但**「谁在问」这一位取权威的那一份**(OPEND-2720)。
-   *
-   * `projectRunPreflightContext` 回答的是「这一笔钱从哪个钱包出」,那必须是
-   * 项目自己的 scope —— 上面那段注释在防的就是它掉回环境里那个个人钱包。
-   * 但它回答不了「问的人是谁」:那份上下文由
-   * `resolveLocalProjectWorkspaceScope` 拼出来,而那个函数的文档注释第一句就是
-   * 「without consulting the membership directory」,`role` 填的是一个最小权限
-   * 占位。占位是**承重结构**(daemon 写闸门按 role 算 `privileged`,它就是
-   * 「创建者可写 / 非创建者只读」的实现方式),所以不能去改它;能改的是别拿它
-   * 回答钱的问题 —— 拿它问,团队所有者会被判成「去找你的所有者充值」,而他
-   * 自己就是所有者。
-   *
-   * `workspaceBillingAuthorityContext` 只合并 role 这一位,而且要求权威上下文
-   * 指的是**同一个工作区的同一个成员**;身份三位一个都不从权威那边取,scope
-   * 为空时结果也为空。所以它不可能把这笔钱换到另一个钱包上。
-   *
-   * ⚠️ 这个值**只服务付款入口**(出哪张弹窗 / 给不给升级链接 / 链接落哪)。
-   * 项目资源请求、写权限、只读态一律继续用 `projectRunWorkspaceContext` ——
-   * 它才是 `workspaceProjectHeaders` 的取数处。守卫见
-   * `tests/components/ProjectView.opend2720-billing-authority.test.tsx`
-   * 的「账单上下文不许流进项目资源/写权限那条链」。
-   */
-  const projectRunBillingAuthorityContext = useMemo(
-    () => workspaceBillingAuthorityContext(projectRunPreflightContext, workspaceContext),
-    [projectRunPreflightContext, workspaceContext],
-  );
-  const cloudModelSelected = config.mode === 'daemon' && config.agentId === 'amr';
-  const projectRunRequiresWorkspaceScope = cloudModelSelected;
-  // An OpenDesign Cloud run needs a wallet, and the ONLY client-side veto is
-  // "there is no billing principal at all". Either witness suffices: the
-  // caller's own cloud identity, or a project scope that already names an
-  // explicit personal/team principal.
-  //
-  // What this deliberately stops doing is requiring the PROJECT's membership
-  // projection to resolve before a send. A transient directory failure says
-  // nothing authoritative about access or billing: the daemon still forwards
-  // the project's persisted Workspace id with the signed-in account, and Vela
-  // makes the final membership/balance decision. It must not be converted to a
-  // Personal run. A settled unbound historical project is also allowed to
-  // reach the daemon: with an exact Personal witness it may be transactionally
-  // adopted; with a Team/absent witness the daemon rejects it explicitly.
-  // An explicit backend rejection is preferable to a client-side dead button
-  // or a popup for the wrong wallet.
-  //
-  // Strictly a widening: every state this admits was previously blocked, and
-  // nothing previously admitted becomes blocked.
-  const projectRunHasBillableAmrPrincipal =
-    !projectRunRequiresWorkspaceScope ||
-    projectWorkspaceScopeState.scope?.kind === 'unbound' ||
-    workspaceIdentityCanBillAmr(workspaceContextState) ||
-    projectWorkspaceScopeAuthorizesAmr(projectWorkspaceScopeState.scope);
+  // Project resources are local: the project itself is the only authority
+  // lifetime for its conversations, files, tabs and transcript reads.
+  const projectRunAuthorityKey = project.id;
   // Onboarding first-generation funnel (spec §11.1). Consume the pending entry
   // (set by the Home recommendation) exactly once on mount; the refs guard the
   // two lifecycle events so each fires only for the genuine first send / first
@@ -2475,96 +2023,17 @@ export function ProjectView({
   // but ProjectView remains mounted in that flow so revisit snapshots survive.
   // Leaving the project (or changing project identity) crosses the boundary:
   // drop every source snapshot before a later mount can seed content that the
-  // next project/workspace context has not reauthorized.
-  // `viewerOnly` is not a revocation signal: it also represents authorized
-  // read-only members, so this ProjectView lifetime is the fail-closed boundary.
+  // next project has not reauthorized.
   useEffect(() => () => {
     invalidateHtmlSourceSnapshotProject(project.id);
   }, [project.id]);
-  // Team collaboration: presence for a shared project. Dormant (no heartbeat,
-  // renders nothing) unless the workspace context marks the viewer an active
-  // team member — safe to mount unconditionally.
-  const projectCollab = useProjectCollab(projectReadsHeld ? null : project?.id ?? null, {
-    workspaceContext: projectRunWorkspaceContext,
-    workspaceContextLoading: projectWorkspaceScopeState.loading,
-    initialMaterializationPending,
-    // The daemon's own `workspace_projects` verdict for this project. A
-    // `personal` row is the same authority its write gate consults, so the
-    // read-only banner must not outlive it when `/collab/status` cannot
-    // answer (OPEND-2624).
-    projectVisibility: projectWorkspaceVisibility(projectWorkspaceScopeState.scope),
-    presenceFilePath: project?.metadata?.entryFile ?? null,
-  });
-  // A Team-bound placeholder is safe to render and comment around, but its
-  // empty tree is never a writer authority. Reuse the established viewer-only
-  // gates for content/run/project mutations until the daemon's own status poll
-  // proves first materialization finished. Keep the read-only ownership banner
-  // keyed to `projectCollab.viewerOnly` below so an owner reinstall sees a
-  // syncing project, not the misleading “shared by someone else” notice.
-  const projectMutationReadOnly =
-    projectCollab.viewerOnly || projectCollab.materializationPending;
-  const { resolve: resolvePresenceMember } = useTeamMembers(
-    currentUserDirectoryEntry(projectRunWorkspaceContext),
-    projectRunWorkspaceContext,
-  );
-  // Tab layout is private browser state for a read-only Team viewer. Keep its
-  // identity-partitioned local cache working, but only let a positively proven
-  // project writer update the daemon's shared project row. Personal and legacy
-  // unbound projects retain their existing local-daemon persistence once the
-  // daemon has settled that scope. The local project row is not an unbound
-  // authority witness: it can lag a daemon-side Team binding.
-  const projectTabsCanPersistToDaemon =
-    projectWorkspaceScopeState.scope?.kind === 'unbound'
-    || projectWorkspaceScopeState.scope?.kind === 'personal'
-    || (
-      projectWorkspaceScopeState.scope?.kind === 'team'
-      && projectCollab.writerAuthority === 'allowed'
-    );
-  const projectTabsCanPersistToDaemonRef = useRef(
-    projectTabsCanPersistToDaemon,
-  );
-  projectTabsCanPersistToDaemonRef.current = projectTabsCanPersistToDaemon;
-  // Stable references (useCallback with empty deps inside useCollab) — safe
-  // for the project-events handler's dependency array without re-subscribing.
-  const {
-    refreshPresence: collabRefreshPresence,
-    checkStatusNow: collabCheckStatusNow,
-  } = projectCollab;
-  // Read-only banner copy: when the collab cloud resolved who shared this project,
-  // name them ("这是 麻薯 创建的共享项目…"); otherwise fall back to the name-less
-  // notice. Only computed when the viewer is actually read-only.
-  // Keyed to `isSharedNonOwner`, not `viewerOnly`: the latter is fail-closed and
-  // also covers the status-unknown window, where naming this a shared project
-  // would be a guess. `isSharedNonOwner` requires positive evidence (see its
-  // docblock in useProjectCollab) -- exactly what a factual banner needs.
-  const readonlyNoticeText = projectReadOnlyClaim({
-    isSharedNonOwner: projectCollab.isSharedNonOwner,
-    ownerDisplayName: projectCollab.ownerDisplayName,
-    t,
-  });
-  // Team-share file-sync badge for the design-files tab bar + empty state
-  // (recvqghymxqQQq). A member downloads (their local mirror trails the
-  // published head); the owner uploads (a local edit hasn't published yet).
-  // The two are mutually exclusive — a project has exactly one writer — so at
-  // most one of these is ever true.
-  const fileSyncBadge: 'downloading' | 'uploading' | null = projectCollab.downloadPending
-    ? 'downloading'
-    : projectCollab.enabled && projectCollab.isOwner && projectCollab.syncState === 'pending_upload'
-      ? 'uploading'
-      : null;
   const projectDetail = useProjectDetail(
     project.id,
-    projectRunWorkspaceContext,
-    project.workspaceId,
     initialProjectDetail,
     !projectReadsHeld,
   );
   const detailedProject = projectDetail.project?.id === project.id ? projectDetail.project : null;
-  const currentProject = reconcileProjectDetail(
-    project,
-    detailedProject,
-    authoritativeProjectName,
-  );
+  const currentProject = reconcileProjectDetail(project, detailedProject);
   const resolvedProjectDesignSystemId = resolveProjectDesignSystemId(currentProject);
   // A project can outlive a Design System being disabled in Settings. Keep the
   // persisted project value intact for recovery, but do not inject a disabled
@@ -2665,37 +2134,6 @@ export function ProjectView({
     () => conversations.find((conversation) => conversation.id === activeConversationId) ?? null,
     [conversations, activeConversationId],
   );
-  // Team collaboration: persist a comment that drifted to `lost` so its ghost
-  // pin survives reload. Only ProjectView has the active conversation id the
-  // anchor route needs; fed to the drift ladder through the collab context.
-  const handleLostAnchors = useCallback(
-    (writeBacks: AnchorWriteBack[]) => {
-      if (!activeConversationId || writeBacks.length === 0) return;
-      void persistCommentAnchors({
-        projectId: project.id,
-        conversationId: activeConversationId,
-        writeBacks,
-        workspaceContext: projectRunWorkspaceContext,
-      });
-    },
-    [project.id, activeConversationId, projectRunWorkspaceContext],
-  );
-  const collabValue = useMemo<CollabContextValue>(
-    () => ({
-      ...projectCollab,
-      workspaceContext: projectRunWorkspaceContext,
-      workspaceContextLoading: projectWorkspaceScopeState.loading,
-      projectResourceAuthority,
-      onLostAnchors: handleLostAnchors,
-    }),
-    [
-      projectCollab,
-      projectRunWorkspaceContext,
-      projectWorkspaceScopeState.loading,
-      projectResourceAuthority,
-      handleLostAnchors,
-    ],
-  );
   const activeSessionMode = activeConversation?.sessionMode ?? 'design';
   const [messagesConversationId, setMessagesConversationId] = useState<string | null>(null);
   const [failedMessagesConversationId, setFailedMessagesConversationId] = useState<string | null>(null);
@@ -2704,17 +2142,6 @@ export function ProjectView({
     source: 'read' | 'create';
   } | null>(null);
   const conversationLoadError = conversationLoadFailure?.message ?? null;
-  const conversationMaterializationRecoveryRef =
-    useRef<ConversationMaterializationRecovery | null>(null);
-  const conversationMaterializationGenerationControllerRef =
-    useRef<ReturnType<typeof createConversationMaterializationGenerationController> | null>(null);
-  const conversationMaterializationGenerationController =
-    conversationMaterializationGenerationControllerRef.current
-    ?? createConversationMaterializationGenerationController();
-  conversationMaterializationGenerationControllerRef.current =
-    conversationMaterializationGenerationController;
-  const conversationMaterializationRecoveryInFlightRef =
-    useRef<ConversationMaterializationRecovery | null>(null);
   const [messageLoadRetryNonce, setMessageLoadRetryNonce] = useState(0);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   // Claimed by Send/reattach, not by transcript order: a delayed host memory
@@ -2903,10 +2330,9 @@ export function ProjectView({
   const designMdState = useDesignMdState(
     project.id,
     designMdRefreshKey,
-    projectRunWorkspaceContext,
     !projectReadsHeld,
   );
-  const finalize = useFinalizeProject(project.id, projectRunWorkspaceContext);
+  const finalize = useFinalizeProject(project.id);
   const terminalLauncher = useTerminalLaunch();
   const [projectActionsToast, setProjectActionsToast] = useState<{
     message: string;
@@ -2964,328 +2390,6 @@ export function ProjectView({
   const autoOpenedBrandDesignSystemRef = useRef<string | null>(null);
   const brandEmptyTranscriptRetriesRef = useRef<Map<string, number>>(new Map());
   const [chatSeed, setChatSeed] = useState<{ id: string; value: string } | null>(null);
-  // Sign-in blocks and live gateway funding rejections share these dialogs.
-  // `conversationId` remembers whose
-  // queue to resume when the dialog resolves (sign-in done / recharge landed).
-  const [amrBalanceGateBlock, setAmrBalanceGateBlock] = useState<
-    {
-      reason: 'insufficient' | 'signed_out';
-      modelId?: string | null;
-      fundingScope?: AmrBalanceGateScope;
-      /**
-       * 这一档同时唤起哪个弹窗 —— 由**身份**决定(规格 §6.V):`upgrade` 是会员
-       * 转化弹窗(owner 那两格共用同一张,T58);`ask_owner` 是「找所有者充值」
-       * 那张(所有非 owner 成员)。
-       *
-       * 决定在**拦截发生的那一刻**做完并记下来,而不是渲染时再算:身份换了
-       * (切工作区)不该把一张已经开着的弹窗换成另一张。
-       */
-      dialog: AmrBalanceBlockedDialogKind;
-      /**
-       * 那张会员转化弹窗的主按钮去哪 —— 订阅档的差别全落在这一位上(T58)。
-       * 和 `dialog` 同一刻、同一个 branch 快照算出来,免得弹窗开着的时候切了
-       * 工作区,按钮突然指向另一个工作区的账单页。
-       */
-      upgradeIntent: 'pricing' | 'auto_recharge';
-      snapshot: AmrWalletSnapshot | null;
-      conversationId: string;
-      /** Live gateway rejections do not wait for a wallet display read. */
-      failureAuthorityKey?: string;
-      fundingRunKey?: string;
-      fundingSource?: 'preflight' | 'gateway';
-      workspaceContext?: WorkspaceCollabContext | null;
-    } | null
-  >(null);
-  /**
-   * 余额提示卡(交付稿第 76 格)要显示的那份读数,`null` = 不提示。
-   *
-   * **告警档已经整档撤掉**(规格 T66,产品 2026-09-07 原话「这个要不先不要了,
-   * 跟产品说了一下,不要这个了」)。余额 `> 0` 现在不再产生任何 UI —— 没有卡、
-   * 没有弹窗、不挡发送。产品追问范围后确认要留的是另一头:「余额为零的那个卡片
-   * 要显示的,并且也要弹窗的」。
-   *
-   * 于是这条 state 只剩三个写入口,都和「钱真的没了」有关:
-   *
-   *   · 拦截档(`gate.kind === 'hard'` 且 `reason === 'insufficient'`)
-   *   · 空钱包但硬拦让位(`gate.kind === 'empty_not_blocked'`,T55)
-   *   · 跑到一半死在钱上(T61 的凭据,读数**可能是正数**——那是它停下来时的余额)
-   *
-   * 判定本身在 `runtime/amr-balance-gate.ts`,这只是判定结果的呈现。
-   *
-   * ## 为什么数字和锚点装在**同一个** state 里
-   *
-   * T61(产品 2026-09-07)把这张卡从「当前余额的实时读数」改成「**这一轮为什么
-   * 停下来的凭据**」,凭据必须有主 —— `anchorMessageId` 就是那个主。三个写入口
-   * 各自知道自己的主是谁:
-   *
-   *   · 空钱包但硬拦让位(`gate.kind === 'empty_not_blocked'`)
-   *     → 刚画出去的那一轮(`assistantId`),它照常跑
-   *   · 跑到一半死在钱上                  → 那条失败的助手消息
-   *   · 拦截档(`gate.kind === 'hard'`)  → **`null`**:那一轮已经被
-   *     `retractPaintedTurn` 收回,没有 run 也就没有轮次可挂
-   *
-   * 两者拆成两条 state 就会有「成对写」这条只能靠人记住的约定,而漏写任何一半
-   * 都是静默的:漏了锚点,卡退回流水末尾、跟着新一轮往下跑(T61 ② 失效);
-   * 漏了数字,那一轮的卡永远画不出来。装成一个对象之后**没有半份可写**。
-   *
-   * ⚠️ 锚点只回答「挂在谁下面」。**什么时候出现由那一轮自己的收尾状态决定**,
-   * 判据在 `ChatPane.isFinishedTurn`,这里不重复一遍。
-   */
-  const [amrBalanceCard, setAmrBalanceCard] = useState<{
-    balanceUsd: number;
-    anchorMessageId: string | null;
-  } | null>(null);
-  const amrBalanceCardUsd = amrBalanceCard?.balanceUsd ?? null;
-  const amrBalanceCardAnchorId = amrBalanceCard?.anchorMessageId ?? null;
-  /**
-   * 出这张卡时那份钱包读数的 profile。只在**没有工作区上下文**时用得到 ——
-   * 那种情况下升级链接退回 profile 兜底(和 `AmrBalanceDialog` 同一条规则)。
-   */
-  const [amrBalanceCardProfile, setAmrBalanceCardProfile] = useState<string | null>(null);
-  /**
-   * **跑到一半死在钱上的那一轮,也要点亮同一张卡。**
-   *
-   * 用户 2026-09-02 裁决:「额度不足和额度耗尽,升级卡各只有一张,不存在第二张
-   * 白色通用报错卡」。下面那两处 `setAmrBalanceCard` 都在**发送前**的余额闸门
-   * 里 —— 闸门看不出问题、run 起来了、跑到一半才耗尽的那一格,在此之前只有
-   * daemon 的 `AMR_INSUFFICIENT_BALANCE` → 通用白卡。白卡那一半已经由
-   * `amr-guidance` 的 `suppressCard` 撤掉,这里补上另一半。
-   *
-   * 判据从**消息**上读,不挂在 `onError` 回调里:错误事件是落库的,所以刷新之后
-   * 卡还在;而发送路径和重挂路径各有一个 `onError`,挂回调等于要在两处各写一遍,
-   * 漏一处就是刷新后卡消失。
-   */
-  const amrBalanceFailure = useMemo(
-    () => amrInsufficientBalanceFailure(messages),
-    [messages],
-  );
-  const amrBalanceFailureMessageId = amrBalanceFailure?.messageId ?? null;
-  /**
-   * 那一轮停下来时的余额,**已经记在那条失败事件上**的那一份(T61 ④)。
-   *
-   * 有它就不再问钱包 —— 卡上的数字是「那一轮为什么停」的凭据,不是今天的读数。
-   * 没有它(这一轮刚死、或者是这个字段存在之前落的库)才现查一次,查完写回去。
-   */
-  const amrBalanceFailureArchivedUsd = amrBalanceFailure?.archivedBalanceUsd ?? null;
-  /**
-   * **补查落空了没有。** 落空 = 报错卡那一半没人接得住,得还回去。
-   *
-   * 三态,不是两态:`false` 同时覆盖「没有这样一轮失败」和「补查还在路上」——
-   * 这两格都不该画白卡。前者本来就没有失败可说,后者画了就会先闪一下白卡再
-   * 换成升级卡,把裁决里的「一张卡」闪成两张。只有**查完了、确实没有数字**
-   * 那一格才置 true。
-   */
-  const [amrBalanceFailureWalletUnavailable, setAmrBalanceFailureWalletUnavailable] =
-    useState(false);
-  /**
-   * 补查要读**哪个钱包**。
-   *
-   * 和发送前那道闸门钉在同一个工作区身份上(`projectRunPreflightContext`)——
-   * 这一轮的钱是从那儿出的。少了这一步,补查会去读账号级的
-   * `/api/integrations/vela/wallet`,而那条请求里根本没有 workspace 参数
-   * (`daemon/src/routes/vela.ts:601`):团队项目会念出这个人**个人账号**的余额。
-   * 那不是「数字略有出入」,是整张卡说反 —— 团队钱包 $0 的那一轮会被个人的
-   * $12.50 画成橙色的「余额可能撑不完下一个任务」,而真相是「现在无法开始新任务」,
-   * 且他把个人钱包充满也救不了这个团队。
-   *
-   * 判据字符串化之后当 effect 的依赖:scope 落定得比这条失败晚时,effect 会
-   * 自己重跑一次把数字换过来,不需要额外的等待态。
-   */
-  const amrBalanceCardScope = useMemo(
-    () => amrBalanceGateScopeForWorkspaceContext(projectRunPreflightContext),
-    [projectRunPreflightContext],
-  );
-  const amrBalanceCardScopeKey = amrBalanceCardScope
-    ? `${amrBalanceCardScope.workspaceType}:${amrBalanceCardScope.workspaceId}:${amrBalanceCardScope.workspaceMemberId}`
-    : '';
-  const amrBalanceCardScopeRef = useRef(amrBalanceCardScope);
-  amrBalanceCardScopeRef.current = amrBalanceCardScope;
-  /**
-   * 把补查到的读数写进那条失败消息。**在渲染之后才会被调用**,所以装在 ref 里 ——
-   * 真正的写入要走 `updateMessageById`(落库那一半在它里面),而它在本组件里
-   * 定义得比这条 effect 晚,直接引用会撞 TDZ。填充在它旁边,见那一处的注释。
-   */
-  const archiveAmrBalanceReadingRef = useRef<
-    (messageId: string, balanceUsd: number) => void
-  >(() => undefined);
-  useEffect(() => {
-    if (!amrBalanceFailureMessageId) {
-      setAmrBalanceFailureWalletUnavailable(false);
-      return;
-    }
-    let cancelled = false;
-    // 换了一轮失败就重新查:上一轮的结论不能替这一轮回答。
-    setAmrBalanceFailureWalletUnavailable(false);
-    if (amrBalanceFailureArchivedUsd != null) {
-      // **这一轮已经存过档了 —— 不再问钱包。** 卡上的数字是「那一轮为什么停下来」
-      // 的凭据,不是当前余额的读数(T61 ④,产品 2026-09-07:「它就好像历史记录
-      // 一样,存档在当时状态了」)。再查一次就会拿今天的余额去改写当时的失败态:
-      // 充完值回来看,那一轮会写着「剩余额度 $20.00 / 余额可能撑不完下一个任务」,
-      // 数字是今天的、句子是当时的,作为凭据是错的。
-      setAmrBalanceCard({
-        balanceUsd: amrBalanceFailureArchivedUsd,
-        anchorMessageId: amrBalanceFailureMessageId,
-      });
-      return;
-    }
-    void (async () => {
-      // 存档里还没有这一轮 —— 要么它刚死、要么它落库时还没有这个字段。失败事件
-      // 本身**不带余额**(daemon 的 `classifyAmrAccountFailure` 只给出错误码),
-      // 所以第一次只能现查。有工作区身份就走闸门那条被后端证明过的工作区读数,
-      // 没有(旧的未绑定项目)才退回账号钱包 —— 那种项目花的本来就是账号的钱。
-      const snapshot = await fetchAmrBalanceCardWalletSnapshot(
-        amrBalanceCardScopeRef.current,
-      );
-      if (cancelled) return;
-      // 读不出确定的数字就**什么都不念**。这张卡把余额报给用户,编一个出来
-      // 比不出卡更糟 —— 判定用的是和闸门同一条解析规则,两处不另算。
-      //
-      // 但「不念数字」不等于「不给出路」:这一轮是死在钱上的,充值入口是它
-      // 唯一的自救口。所以这里把落空**说出来**,由 ChatPane 把白色报错卡
-      // (充值 + 重试)还回来,而不是两张卡都不画、屏幕上什么都不剩。
-      const balanceUsd = amrBalanceCardBalanceUsd(snapshot);
-      if (balanceUsd == null) {
-        setAmrBalanceFailureWalletUnavailable(true);
-        return;
-      }
-      // 这份读数是替**那条失败的助手消息**取的,卡就挂在它下面(T61)。
-      setAmrBalanceCard({ balanceUsd, anchorMessageId: amrBalanceFailureMessageId });
-      setAmrBalanceCardProfile(snapshot?.profile ?? null);
-      // 并且**记下来**:这一轮的凭据从此不再重新报价(T61 ④)。写回去之后
-      // `amrBalanceFailureArchivedUsd` 就有值了,这条 effect 会再跑一次并走上面
-      // 那条不查钱包的路,把同一个数字原样交回去 —— 幂等,不会来回改写。
-      archiveAmrBalanceReadingRef.current(amrBalanceFailureMessageId, balanceUsd);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [amrBalanceFailureMessageId, amrBalanceFailureArchivedUsd, amrBalanceCardScopeKey]);
-  /**
-   * 这一次要付钱的工作区,把这个人放进 §6.V 的哪一格。
-   *
-   * 用的是 `projectRunPreflightContext` —— 余额门查的是同一个工作区,不是环境里
-   * 恰好选中的那个;两处不同源就会出现「查 A 的钱、按 B 的身份呈现」。
-   */
-  /**
-   * 这个工作区的**套餐**,投影到要付这笔钱的那个工作区上。
-   *
-   * 不能只靠 `context.planId`:走到客户端的 collab context 是用 vela 的
-   * `/api/v1/workspaces` 目录行拼出来的,而目录行不带套餐字段 —— daemon 和 web
-   * 两侧的 `workspaceContextFromDirectoryItem` 都把 `planId` 写死成 null
-   * (`daemon/src/collab/vela-workspace-context.ts` / `collab/useWorkspaceContext.ts`)。
-   * 2026-09-04 用真账号打后端实测过:一个 `team_max` 的团队工作区,vela 自己报
-   * `planId: "team_max"`,而 `GET /api/workspace/context` 报 null。只认 context
-   * 就会把每一个团队 Max 所有者都判成非 Max,把他送去 Pricing 买他已经买过的套餐。
-   *
-   * 工作区套餐唯一的真实来源是账单快照,所以这里跟 Home(`EntryShell`)用同一个
-   * 投影函数。scope 钉在 `projectRunPreflightContext` 上,而不是环境里恰好选中的
-   * 那个工作区 —— 否则又会变成「查 A 的钱、按 B 的套餐呈现」。
-   */
-  const projectRunPreflightBillingResponse = useWorkspaceBillingResponse({
-    context: projectRunPreflightContext,
-  });
-  const projectRunPreflightBilling = useMemo(
-    () =>
-      workspaceBillingSummaryForContext(
-        projectRunPreflightBillingResponse,
-        projectRunPreflightContext,
-      ),
-    [projectRunPreflightBillingResponse, projectRunPreflightContext],
-  );
-  const amrBalanceBranch = useMemo(
-    () =>
-      resolveAmrBalanceBranch({
-        // 钱包是 `projectRunPreflightContext` 那一个工作区的;**身份**取
-        // 权威的那一份(同工作区同成员才合并),否则团队所有者会被那份拼出来
-        // 的 `role: 'member'` 判进「去找所有者」那一格 —— 而他自己就是所有者。
-        context: projectRunBillingAuthorityContext,
-        billing: projectRunPreflightBilling,
-      }),
-    [projectRunPreflightBilling, projectRunBillingAuthorityContext],
-  );
-  const amrBalanceBranchRef = useRef(amrBalanceBranch);
-  amrBalanceBranchRef.current = amrBalanceBranch;
-  /**
-   * 「找所有者充值」弹窗是从**卡上那颗按钮**点开的(而不是拦截时自动弹出的)。
-   * 拦截时自动弹出的那一份记在 `amrBalanceGateBlock.dialog` 上,两者共用同一个
-   * 组件,任一为真就渲染。
-   */
-  const [amrOwnerTopUpFromCard, setAmrOwnerTopUpFromCard] = useState(false);
-  /**
-   * 升级卡那颗按钮:**点了跳哪由身份 × 订阅决定**(规格 §6.V 的第四列)。
-   *
-   *   非 Max · owner → 现有的 Pricing 深链(和弹窗同一个落点,「卡和弹窗都直接跳 Pricing」)
-   *   Max   · owner → vela web 端 + 自动充值意图(他没有更高的套餐可买,充值才是解法)
-   *   任何非 owner  → 不外跳:账单动作 B 会拒。给他「找所有者充值」那张弹窗,
-   *                   那是他唯一真正走得通的一条路(也是 §6.Y 死胡同的出口)。
-   *
-   * 落点复用 `workspaceUpgradeUrl` / `workspaceAutoRechargeUrl` 这两个唯一决策点,
-   * 免得升级卡和账号菜单、设置面板各自长出一条不一样的链接。
-   */
-  const handleAmrBalanceCardUpgrade = useCallback(() => {
-    const branch = amrBalanceBranchRef.current;
-    const intent = amrBalanceUpgradeIntent(branch);
-    if (intent === 'ask_owner') {
-      setAmrOwnerTopUpFromCard(true);
-      return;
-    }
-    const fallbackProfile = amrBalanceCardProfile;
-    // 自动充值链接对「可读但不可写」的工作区会返回 null(权限位不同,见
-    // `workspaceAutoRechargeUrl`)。那时退回 Pricing —— 少一个功能好过一颗死按钮。
-    // 落点和上面那个 `intent` 必须问同一份上下文。分支已经按权威身份算过了,
-    // 链接这一半要是回头去问那个拼出来的 `role: 'member'`,
-    // `workspaceAutoRechargeUrl` 就会因为 `canManageAutoRecharge` 为假而返回
-    // null,把一个 Max 所有者退回套餐页 —— 而同一格的弹窗跳的是自动充值。
-    const url =
-      (intent === 'auto_recharge'
-        ? workspaceAutoRechargeUrl(projectRunBillingAuthorityContext, { fallbackProfile })
-        : null)
-      ?? workspaceUpgradeUrl(projectRunBillingAuthorityContext, null, { fallbackProfile });
-    if (!url) return;
-    const entrySource =
-      intent === 'auto_recharge'
-        ? ('chat_upgrade_card_auto_recharge' as const)
-        : ('chat_upgrade_card' as const);
-    const metricsConsent = config.telemetry?.metrics === true;
-    const attribution = recordAmrEntry(analytics.track, entrySource, new Date(), {
-      metricsConsent,
-    });
-    const deviceId = amrHandoffDeviceId({
-      metricsConsent,
-      resolvedDeviceId: getResolvedDeviceId(),
-      installationId: config.installationId,
-    });
-    window.open(
-      attributedAmrUrl(url, attribution, deviceId),
-      '_blank',
-      'noopener,noreferrer',
-    );
-  }, [
-    amrBalanceCardProfile,
-    analytics.track,
-    config.installationId,
-    config.telemetry?.metrics,
-    projectRunBillingAuthorityContext,
-  ]);
-  // Conversations with a balance-gate check currently in flight. Sends that
-  // arrive during the check queue instead of racing a duplicate run through
-  // the not-yet-busy window the gate's await opens.
-  const amrGateInFlightConversationsRef = useRef<Set<string>>(new Set());
-  // Conversations whose queue auto-drain is paused because the balance gate
-  // blocked a send. Without the pause, every unrelated re-run of the drain
-  // effect would re-hit the wallet endpoint and re-pop the dialog. Lifted by
-  // the next send that passes the gate.
-  const amrGatePausedQueueConversationsRef = useRef<Set<string>>(new Set());
-  /**
-   * 被余额硬拦下来的那一发的 `clientRequestId`(OPEND-2719)。
-   *
-   * 拦截档不再把这一发塞进待发送队列 —— 队列的语义是「等一等就能跑」,而钱包
-   * 是空的:它会一直躺在那儿,用户看到的就是单里说的「没有触发额度不足提示,
-   * 而是把消息加入待发送队列」。既然不代管,就得把正文还给输入框,而
-   * `handleSend` 只回一个布尔。用请求 id 做钥匙,`handleComposerSend` 才认得出
-   * 「回 false 的这一发正是我刚发的那一发」,而不是被一次并发的拒绝误伤。
-   */
-  const amrGateBlockedRequestRef = useRef<string | null>(null);
   /**
    * 正在等服务端确认的那一次重试(OPEND-2758)。
    *
@@ -3597,7 +2701,6 @@ export function ProjectView({
   const loadedTranscriptRef = useRef<{
     projectId: string;
     conversationId: string;
-    principalKey: string | null;
   } | null>(null);
   const creatingConversationRef = useRef(false);
   // Last conversation id this view pushed into the URL. Lets the
@@ -3614,69 +2717,6 @@ export function ProjectView({
   }, [project.id]);
   const projectRunAuthorityKeyRef = useRef(projectRunAuthorityKey);
   projectRunAuthorityKeyRef.current = projectRunAuthorityKey;
-  const shownFundingFailuresRef = useRef(new Set<string>());
-  const fundingDialogContext = {
-    isAmr: config.mode === 'daemon' && config.agentId === 'amr',
-    branch: amrBalanceBranch,
-    scope: amrBalanceCardScope,
-    workspaceContext: projectRunBillingAuthorityContext,
-    modelId: effectiveAgentModelId(agents.find((agent) => agent.id === 'amr'), config.agentModels?.amr),
-  };
-  const fundingDialogContextRef = useRef(fundingDialogContext);
-  fundingDialogContextRef.current = fundingDialogContext;
-  // AMR funding feedback owns one dialog in its original conversation/account.
-  // Display-wallet reads and historical replays cannot open or reopen it.
-  const showAmrFundingFailure = useCallback((input: {
-    code: string | undefined;
-    runKey: string;
-    conversationId: string;
-    authorityKey: string;
-    accountGeneration: number;
-    source?: 'preflight' | 'gateway';
-    modelId?: string | null;
-  }) => {
-    if (
-      input.code !== AMR_INSUFFICIENT_BALANCE_CODE
-      || input.conversationId !== messagesConversationIdRef.current
-      || input.authorityKey !== projectRunAuthorityKeyRef.current
-      || input.accountGeneration !== currentWorkspaceAccountGeneration()
-      || !fundingDialogContextRef.current.isAmr
-      || (input.source === 'preflight' && input.modelId !== fundingDialogContextRef.current.modelId)
-    ) return;
-    const source = input.source ?? 'gateway';
-    // Only an actual gateway failure pauses pending sends. The independent
-    // read never cancels a run or changes task status.
-    if (source === 'gateway') amrGatePausedQueueConversationsRef.current.add(input.conversationId);
-    const key = `${input.accountGeneration}:${input.conversationId}:${input.runKey}`;
-    if (shownFundingFailuresRef.current.has(key)) {
-      if (source === 'gateway') setAmrBalanceGateBlock((previous) =>
-        previous?.fundingRunKey === input.runKey ? { ...previous, fundingSource: source } : previous);
-      return;
-    }
-    shownFundingFailuresRef.current.add(key);
-    const { branch, scope, workspaceContext, modelId } = fundingDialogContextRef.current;
-    setAmrBalanceGateBlock({
-      reason: 'insufficient',
-      dialog: amrBalanceBlockedDialog(branch),
-      upgradeIntent: amrBalanceDialogUpgradeIntent(branch),
-      snapshot: null,
-      modelId,
-      fundingScope: scope,
-      workspaceContext,
-      conversationId: input.conversationId,
-      failureAuthorityKey: input.authorityKey,
-      fundingRunKey: input.runKey,
-      fundingSource: source,
-    });
-  }, []);
-  useEffect(() => {
-    if (amrBalanceGateBlock?.failureAuthorityKey === undefined) return;
-    if (amrBalanceGateBlock.conversationId !== activeConversationId
-      || amrBalanceGateBlock.failureAuthorityKey !== projectRunAuthorityKey
-      || config.mode !== 'daemon' || config.agentId !== 'amr') {
-      setAmrBalanceGateBlock(null);
-    }
-  }, [activeConversationId, projectRunAuthorityKey, amrBalanceGateBlock, config.mode, config.agentId]);
   const conversationsLoadedProjectIdRef = useRef<string | null>(null);
   // Live mirror of the full project prop, for async handlers whose useCallback
   // deps only track `project.id` (e.g. the project-events handler below):
@@ -3749,9 +2789,7 @@ export function ProjectView({
     currentConversationHasActiveRun
     && !currentConversationStreaming
     && !currentConversationHasProgrammaticBrandExtractionRun;
-  const currentConversationSendDisabled = projectMutationReadOnly
-    || !projectRunHasBillableAmrPrincipal
-    || currentConversationReadPending
+  const currentConversationSendDisabled = currentConversationReadPending
     || failedMessagesConversationId === activeConversationId
     || currentConversationAwaitingActiveRunAttach;
   /**
@@ -3763,44 +2801,23 @@ export function ProjectView({
    * `handleRetry` 在这六个条件下静默 `return`,而按钮永远画成可点。
    */
   const currentConversationActionBlockReason = resolveRecoveryActionBlockReason({
-    readOnly: Boolean(projectMutationReadOnly),
+    readOnly: false,
     messagesUnavailable: failedMessagesConversationId === activeConversationId,
-    billingPrincipalResolved: Boolean(projectRunHasBillableAmrPrincipal),
+    billingPrincipalResolved: true,
     conversationBusy: Boolean(
       currentConversationBusy || currentConversationAwaitingActiveRunAttach,
     ),
   });
   const currentConversationActionDisabled = currentConversationActionBlockReason !== null;
-  // Keep the broad mutation gate above: pending authority/materialization also
-  // forbids sending, but only a settled denial can claim view-only permission.
-  let currentConversationAccessError: 'messages-unavailable' | 'read-only' | null = null;
-  if (
+  const currentConversationAccessError: 'messages-unavailable' | null =
     conversationLoadFailure?.source === 'read'
     || (activeConversationId && failedMessagesConversationId === activeConversationId)
-  ) {
-    currentConversationAccessError = 'messages-unavailable';
-  } else if (projectCollab.writerAuthority === 'denied') {
-    currentConversationAccessError = 'read-only';
-  }
+      ? 'messages-unavailable'
+      : null;
   const currentConversationActionDisabledRef = useRef(currentConversationActionDisabled);
   currentConversationActionDisabledRef.current = currentConversationActionDisabled;
-  // Directory and project scope may project different roles for the same
-  // principal. Only defer comparison while that scope is still unresolved.
-  const amrAuthRetryAuthorityPending = Boolean(
-    projectWorkspaceScopeState.loading
-    && !projectWorkspaceScopeState.failure
-    && projectCollab.writerAuthority !== 'denied'
-    && amrAuthRetryContinuation
-    && projectRunWorkspaceContext
-    && amrAuthRetryMatchesRouteContext(amrAuthRetryContinuation, projectRunWorkspaceContext),
-  );
-  const amrAuthRetryReady = !projectWorkspaceScopeState.loading
-    && !projectWorkspaceScopeState.failure
-    && messagesAuthorityKeyRef.current === projectRunAuthorityKey
-    && !currentConversationActionDisabled;
 
-  const currentConversationQueueDisabled = projectMutationReadOnly
-    || currentConversationReadPending
+  const currentConversationQueueDisabled = currentConversationReadPending
     || failedMessagesConversationId === activeConversationId;
 
   const currentConversationQueuedItems = activeConversationId
@@ -3817,14 +2834,12 @@ export function ProjectView({
           return { ...queuedItem, meta: item.meta };
         })
     : [];
-  const newConversationDisabled = creatingConversation || projectMutationReadOnly;
+  const newConversationDisabled = creatingConversation;
   // CS03: actionable business Ready, independent of the chat first-paint
   // metric. Never accept a stale transcript or a merely mounted placeholder.
   const projectInteractiveReady = Boolean(
       detailedProject
       && !projectDetail.loading
-      && !projectWorkspaceScopeState.loading
-      && !projectWorkspaceScopeState.failure
       && activeConversationId
       && messagesConversationId === activeConversationId
       && messagesInitialized
@@ -3838,8 +2853,7 @@ export function ProjectView({
     conversationId: activeConversationId,
     visible: Boolean(detailedProject && !projectDetail.loading),
     ready: projectInteractiveReady,
-    failure: projectWorkspaceScopeState.failure ? 'scope_unavailable'
-      : projectDetail.error ? 'project_unavailable'
+    failure: projectDetail.error ? 'project_unavailable'
       : conversationLoadFailure ? 'conversations_unavailable'
       : activeConversationId && failedMessagesConversationId === activeConversationId
         ? 'messages_unavailable' : null,
@@ -3855,9 +2869,6 @@ export function ProjectView({
     let cancelled = false;
     const revalidatingCurrentProject =
       conversationsLoadedProjectIdRef.current === project.id;
-    const generation = conversationMaterializationGenerationController.begin();
-    const requestWorkspaceContext = projectRunWorkspaceContextRef.current;
-    conversationMaterializationRecoveryRef.current = null;
     setPendingEmptyConversationSeed(null);
     setConversationLoadFailure(null);
     setError(null);
@@ -3878,18 +2889,12 @@ export function ProjectView({
     }
     (async () => {
       try {
-        const list = await listConversationsWithRetry(
-          project.id,
-          requestWorkspaceContext,
-        );
+        const list = await listConversationsWithRetry(project.id);
         if (cancelled) return;
         conversationsLoadedProjectIdRef.current = project.id;
         if (list.length === 0) {
-          // Conversation reads can settle before collaboration ownership. Keep
-          // the empty result and let the effect below seed only after the
-          // fail-closed viewer gate proves this caller may mutate. This avoids
-          // both a member's POST -> 403 loop and reloading the whole transcript
-          // when status later confirms an owner.
+          // Keep the empty result and let the effect below seed the first
+          // conversation for this project.
           setConversations([]);
           setActiveConversationId(null);
           setPendingEmptyConversationSeed({
@@ -3917,19 +2922,6 @@ export function ProjectView({
       } catch (err) {
         if (cancelled) return;
         const message = err instanceof Error ? err.message : 'Could not load conversations for this project.';
-        const materializationRecovery =
-          err instanceof ProjectConversationsHttpError
-          && err.status === 404
-          && requestWorkspaceContext?.workspaceType === 'team'
-            ? {
-                projectId: project.id,
-                authorityKey: projectRunAuthorityKey,
-                generation,
-                workspaceContext: requestWorkspaceContext,
-                errorMessage: message,
-              }
-            : null;
-        conversationMaterializationRecoveryRef.current = materializationRecovery;
         setPendingEmptyConversationSeed(null);
         const accessRevoked =
           err instanceof ProjectConversationsHttpError
@@ -3944,130 +2936,26 @@ export function ProjectView({
     })();
     return () => {
       cancelled = true;
-      conversationMaterializationGenerationController.invalidate(generation);
-      if (
-        conversationMaterializationRecoveryRef.current?.generation
-        === generation
-      ) {
-        conversationMaterializationRecoveryRef.current = null;
-      }
     };
   }, [
     commitPreviewComments,
-    conversationMaterializationGenerationController,
     project.id,
     projectReadsHeld,
     projectRunAuthorityKey,
   ]);
 
-  const recoverMaterializedConversations = useCallback(async (
-    signalProjectId: string,
-    signalAuthorityKey: string,
-  ) => {
-    const recovery = conversationMaterializationRecoveryRef.current;
-    if (!recovery) return;
-    if (recovery.projectId !== signalProjectId) return;
-    if (recovery.authorityKey !== signalAuthorityKey) return;
-    if (!conversationMaterializationGenerationController.isCurrent(recovery.generation)) return;
-    if (projectIdRef.current !== recovery.projectId) return;
-    if (projectRunAuthorityKeyRef.current !== recovery.authorityKey) return;
-    if (conversationMaterializationRecoveryInFlightRef.current === recovery) return;
-    conversationMaterializationRecoveryInFlightRef.current = recovery;
-    try {
-      // Materialization completion is already our retry signal, so perform one
-      // exact-scoped read here instead of extending the fixed initial retry
-      // schedule. A still-early 404 leaves recovery armed for the next signal.
-      const list = await listConversations(recovery.projectId, {
-        throwOnError: true,
-        workspaceContext: recovery.workspaceContext,
-      });
-      if (conversationMaterializationRecoveryRef.current !== recovery) return;
-      if (!conversationMaterializationGenerationController.isCurrent(recovery.generation)) return;
-      if (projectIdRef.current !== recovery.projectId) return;
-      if (projectRunAuthorityKeyRef.current !== recovery.authorityKey) return;
-
-      conversationMaterializationRecoveryRef.current = null;
-      setConversationLoadFailure(null);
-      setError((current) => (
-        current === recovery.errorMessage ? null : current
-      ));
-      if (list.length === 0) {
-        setConversations([]);
-        setActiveConversationId(null);
-        setPendingEmptyConversationSeed({
-          projectId: recovery.projectId,
-          authorityKey: recovery.authorityKey,
-        });
-        return;
-      }
-
-      setPendingEmptyConversationSeed(null);
-      setConversations(list);
-      const routedMatch = routeConversationId
-        ? list.find((candidate) => candidate.id === routeConversationId) ?? null
-        : null;
-      setActiveConversationId(routedMatch ? routedMatch.id : list[0]!.id);
-    } catch (err) {
-      if (conversationMaterializationRecoveryRef.current !== recovery) return;
-      if (!conversationMaterializationGenerationController.isCurrent(recovery.generation)) return;
-      if (projectIdRef.current !== recovery.projectId) return;
-      if (projectRunAuthorityKeyRef.current !== recovery.authorityKey) return;
-      if (
-        err instanceof ProjectConversationsHttpError
-        && err.status === 404
-      ) {
-        return;
-      }
-      // A completion signal exposed a settled non-404 failure. Stop treating
-      // it as a materialization race and surface that exact response now; a
-      // later project/authority load owns only any further retry.
-      conversationMaterializationRecoveryRef.current = null;
-      const message = err instanceof Error
-        ? err.message
-        : 'Could not load conversations for this project.';
-      setConversationLoadFailure({ message, source: 'read' });
-      setError((current) => reconcileConversationRecoveryGlobalError(
-        current,
-        recovery.errorMessage,
-        message,
-      ));
-    } finally {
-      if (conversationMaterializationRecoveryInFlightRef.current === recovery) {
-        conversationMaterializationRecoveryInFlightRef.current = null;
-      }
-    }
-  }, [
-    conversationMaterializationGenerationController,
-    routeConversationId,
-  ]);
-
-  const emptyConversationWriterAuthorized =
-    projectWorkspaceScopeState.scope?.kind === 'personal'
-    || projectWorkspaceScopeState.scope?.kind === 'unbound'
-    || (
-      projectWorkspaceScopeState.scope?.kind === 'team'
-      && projectCollab.writerAuthority === 'allowed'
-    );
-  const emptyConversationReadOnlySettled =
-    pendingEmptyConversationSeed?.projectId === project.id
-    && pendingEmptyConversationSeed.authorityKey === projectRunAuthorityKey
-    && projectCollab.writerAuthority === 'denied';
   useEffect(() => {
     if (
       !pendingEmptyConversationSeed
       || pendingEmptyConversationSeed.projectId !== project.id
       || pendingEmptyConversationSeed.authorityKey !== projectRunAuthorityKey
-      || !emptyConversationWriterAuthorized
     ) {
       return;
     }
     let cancelled = false;
-    const requestWorkspaceContext = projectRunWorkspaceContextRef.current;
     (async () => {
       try {
-        const fresh = await createConversation(project.id, undefined, {
-          workspaceContext: requestWorkspaceContext,
-        });
+        const fresh = await createConversation(project.id);
         if (cancelled) return;
         if (!fresh) {
           throw new Error('Could not create a conversation for this project.');
@@ -4091,7 +2979,6 @@ export function ProjectView({
     };
   }, [
     pendingEmptyConversationSeed,
-    emptyConversationWriterAuthorized,
     project.id,
     projectRunAuthorityKey,
   ]);
@@ -4128,25 +3015,9 @@ export function ProjectView({
   // Reset chat pane to the open default on project switch. Shared non-owner
   // projects re-collapse once collab status confirms (see below) — but only
   // once per open, so expanding chat after that is sticky for the visit.
-  const sharedNonOwnerChatDefaultAppliedRef = useRef<string | null>(null);
   useEffect(() => {
     setWorkspaceFocused(false);
-    sharedNonOwnerChatDefaultAppliedRef.current = null;
   }, [project.id]);
-
-  useEffect(() => {
-    if (sharedNonOwnerChatDefaultAppliedRef.current === project.id) return;
-    if (
-      !shouldDefaultCollapseChatForSharedNonOwner({
-        enabled: projectCollab.enabled,
-        isSharedNonOwner: projectCollab.isSharedNonOwner,
-      })
-    ) {
-      return;
-    }
-    setWorkspaceFocused(true);
-    sharedNonOwnerChatDefaultAppliedRef.current = project.id;
-  }, [project.id, projectCollab.enabled, projectCollab.isSharedNonOwner]);
 
   // Load messages whenever the active conversation changes. This happens
   // on project mount (after conversations load) and on user-triggered
@@ -4174,16 +3045,13 @@ export function ProjectView({
     const preservingLoadedTranscript =
       messagesConversationIdRef.current === activeConversationId
       && loadedTranscript?.projectId === project.id
-      && loadedTranscript.conversationId === activeConversationId
-      && loadedTranscript.principalKey !== null
-      && loadedTranscript.principalKey === readableTranscriptPrincipalRef.current;
+      && loadedTranscript.conversationId === activeConversationId;
     const liveReloadMessageIds = new Set<string>();
     if (
       messagesConversationIdRef.current === activeConversationId
       && streamingConversationIdRef.current === activeConversationId
       && abortRef.current !== null
       && cancelRef.current !== null
-      && projectResourceAuthorityRef.current !== 'denied'
     ) {
       const currentMessages = messagesRef.current;
       let assistantIndex = -1;
@@ -4212,7 +3080,6 @@ export function ProjectView({
     setMessagesInitialized(false);
     let cancelled = false;
     const transcriptController = new AbortController();
-    const requestWorkspaceContext = projectRunWorkspaceContextRef.current;
     setFailedMessagesConversationId(null);
     if (!preservingLiveConversation) {
       if (!preservingLoadedTranscript) setMessagesConversationId(null);
@@ -4247,7 +3114,6 @@ export function ProjectView({
         void fetchPreviewComments(
           project.id,
           activeConversationId,
-          requestWorkspaceContext,
         ).then((comments) => {
           if (cancelled || previewCommentsGenerationRef.current !== commentsGeneration) return;
           setPreviewComments((current) => reconcilePreviewComments(current, comments));
@@ -4258,7 +3124,6 @@ export function ProjectView({
         const list = await loadConversationTranscript(
           project.id,
           activeConversationId,
-          requestWorkspaceContext,
           transcriptController.signal,
         );
         if (cancelled) return;
@@ -4272,7 +3137,6 @@ export function ProjectView({
           && abortRef.current === liveReloadController
           && !liveReloadController.signal.aborted
           && streamingConversationIdRef.current === activeConversationId
-          && projectResourceAuthorityRef.current !== 'denied'
             ? liveReloadMessageIds
             : undefined;
         setMessages((current) =>
@@ -4294,7 +3158,6 @@ export function ProjectView({
         loadedTranscriptRef.current = {
           projectId: project.id,
           conversationId: activeConversationId,
-          principalKey: workspacePrincipalKey(requestWorkspaceContext),
         };
         setMessagesConversationId(activeConversationId);
         setFailedMessagesConversationId(null);
@@ -4477,14 +3340,13 @@ export function ProjectView({
   useEffect(() => {
     if (projectReadsHeld) return;
     let cancelled = false;
-    const requestWorkspaceContext = projectRunWorkspaceContextRef.current;
     tabsLoadedRef.current = false;
     tabsHydratedFromSavedStateRef.current = false;
     hasAppliedInitialPrimaryOpenRef.current = false;
     setOpenTabsState({ tabs: [], active: null });
     (async () => {
-      const state = await loadTabs(project.id, requestWorkspaceContext, {
-        reconcileNewerCacheToDaemon: projectTabsCanPersistToDaemonRef.current,
+      const state = await loadTabs(project.id, {
+        reconcileNewerCacheToDaemon: true,
       });
       if (cancelled) return;
       const routeActive = routeFileNameRef.current;
@@ -4505,18 +3367,8 @@ export function ProjectView({
         ),
       );
       if (routeActive && routeChangesSavedState) {
-        nextState = cacheTabsLocally(
-          project.id,
-          nextState,
-          requestWorkspaceContext,
-        );
-        if (projectTabsCanPersistToDaemonRef.current) {
-          void persistTabsToDaemonNow(
-            project.id,
-            nextState,
-            requestWorkspaceContext,
-          );
-        }
+        nextState = cacheTabsLocally(project.id, nextState);
+        void persistTabsToDaemonNow(project.id, nextState);
       }
       tabsHydratedFromSavedStateRef.current = state.hasSavedState === true;
       setOpenTabsState(nextState);
@@ -4538,7 +3390,6 @@ export function ProjectView({
   const pendingDaemonTabsRef = useRef<{
     projectId: string;
     state: OpenTabsState;
-    workspaceContext: WorkspaceCollabContext | null;
   } | null>(null);
   const flushTabsDaemonSave = useCallback(() => {
     if (tabsDaemonSaveTimerRef.current != null) {
@@ -4548,11 +3399,7 @@ export function ProjectView({
     const pending = pendingDaemonTabsRef.current;
     pendingDaemonTabsRef.current = null;
     if (pending) {
-      void persistTabsToDaemonNow(
-        pending.projectId,
-        pending.state,
-        pending.workspaceContext,
-      );
+      void persistTabsToDaemonNow(pending.projectId, pending.state);
     }
   }, []);
 
@@ -4567,23 +3414,10 @@ export function ProjectView({
       setOpenTabsState(next);
       if (!tabsLoadedRef.current) return;
       // Immediate, cheap, synchronous — keeps the cache canonical for reload.
-      const stamped = cacheTabsLocally(
-        project.id,
-        next,
-        projectRunWorkspaceContext,
-      );
-      if (!projectTabsCanPersistToDaemon) {
-        if (tabsDaemonSaveTimerRef.current != null) {
-          clearTimeout(tabsDaemonSaveTimerRef.current);
-          tabsDaemonSaveTimerRef.current = null;
-        }
-        pendingDaemonTabsRef.current = null;
-        return;
-      }
+      const stamped = cacheTabsLocally(project.id, next);
       pendingDaemonTabsRef.current = {
         projectId: project.id,
         state: stamped,
-        workspaceContext: projectRunWorkspaceContext,
       };
       if (tabsDaemonSaveTimerRef.current != null) {
         clearTimeout(tabsDaemonSaveTimerRef.current);
@@ -4593,32 +3427,12 @@ export function ProjectView({
         const pending = pendingDaemonTabsRef.current;
         pendingDaemonTabsRef.current = null;
         if (pending) {
-          void persistTabsToDaemonNow(
-            pending.projectId,
-            pending.state,
-            pending.workspaceContext,
-          );
+          void persistTabsToDaemonNow(pending.projectId, pending.state);
         }
       }, TAB_PERSIST_DEBOUNCE_MS);
     },
-    [
-      project.id,
-      projectRunWorkspaceContext,
-      projectTabsCanPersistToDaemon,
-    ],
+    [project.id],
   );
-
-  // Revocation can arrive without another tab interaction. Discard a queued
-  // write immediately instead of letting its old authority fire after the
-  // project has become read-only.
-  useEffect(() => {
-    if (projectTabsCanPersistToDaemon) return;
-    if (tabsDaemonSaveTimerRef.current != null) {
-      clearTimeout(tabsDaemonSaveTimerRef.current);
-      tabsDaemonSaveTimerRef.current = null;
-    }
-    pendingDaemonTabsRef.current = null;
-  }, [projectTabsCanPersistToDaemon]);
 
   // Flush any pending tab write when the project changes or the view unmounts,
   // so a fast project switch / close doesn't leave the daemon a debounce behind.
@@ -4659,7 +3473,6 @@ export function ProjectView({
     let next: ProjectFile[];
     try {
       next = await fetchProjectFiles(project.id, {
-        workspaceContext: projectRunWorkspaceContextRef.current,
         requireAuthoritative: true,
         ...(options?.fresh ? { fresh: true } : {}),
         ...(options?.afterChange ? { afterChange: true } : {}),
@@ -4705,9 +3518,7 @@ export function ProjectView({
       const cached = htmlContentCacheRef.current.get(name);
       if (cached && cached.mtime === mtime) return cached.text;
       try {
-        const text = await fetchProjectFileText(project.id, name, {
-          workspaceContext: projectRunWorkspaceContextRef.current,
-        });
+        const text = await fetchProjectFileText(project.id, name);
         htmlContentCacheRef.current.set(name, { mtime, text });
         return text;
       } catch {
@@ -4719,9 +3530,7 @@ export function ProjectView({
   );
 
   const refreshLiveArtifacts = useCallback(async (): Promise<LiveArtifactSummary[]> => {
-    const next = await fetchLiveArtifacts(project.id, {
-      workspaceContext: projectRunWorkspaceContextRef.current,
-    });
+    const next = await fetchLiveArtifacts(project.id);
     setLiveArtifacts(next);
     return next;
   }, [project.id, projectRunAuthorityKey]);
@@ -4840,46 +3649,6 @@ export function ProjectView({
     authorityKey: string;
     pending: boolean;
   } | null>(null);
-  useEffect(() => {
-    const previous = previousMaterializationDownloadRef.current;
-    const sameAuthority = previous?.projectId === project.id
-      && previous.authorityKey === projectRunAuthorityKey;
-    previousMaterializationDownloadRef.current = {
-      projectId: project.id,
-      authorityKey: projectRunAuthorityKey,
-      pending: projectCollab.downloadPending,
-    };
-    if (
-      !sameAuthority
-      || !previous.pending
-      || projectCollab.downloadPending
-    ) {
-      return;
-    }
-
-    // The first file read for a newly opened Team mirror can legitimately
-    // observe the empty placeholder directory. Materialization replaces that
-    // directory without producing a chokidar event for a stream that was not
-    // connected yet, so settling the download is itself an authoritative file
-    // invalidation. Fence the placeholder snapshot and fetch the exact scoped
-    // directory now; otherwise the first view stays empty until it is reopened.
-    invalidateProjectFilesCache(
-      project.id,
-      projectRunWorkspaceContextRef.current,
-    );
-    void refreshWorkspaceItems({ freshProjectFiles: true }).catch(() => {
-      // Preserve the last accepted snapshot on a transient transport failure.
-      // The project event stream and ordinary refresh paths remain retries.
-    });
-    void recoverMaterializedConversations(project.id, projectRunAuthorityKey);
-  }, [
-    project.id,
-    projectRunAuthorityKey,
-    projectCollab.downloadPending,
-    recoverMaterializedConversations,
-    refreshWorkspaceItems,
-  ]);
-
   useEffect(() => {
     if (!currentBrandExtractionId) {
       terminalBrandPreviewRefreshRef.current = null;
@@ -5125,7 +3894,7 @@ export function ProjectView({
             });
       const file = await writeProjectTextFile(project.id, fileName, artifactToPersist.html, {
         artifactManifest: manifest ?? undefined,
-      }, projectRunWorkspaceContext);
+      });
       // The server may have accepted the file before navigation, a new turn,
       // or access revocation. Do not apply that old response to the current UI.
       if (options.isCurrent && !options.isCurrent()) {
@@ -5166,7 +3935,7 @@ export function ProjectView({
         return { ok: false as const, error: message };
       }
     },
-    [project.id, projectDesignSystemId, project.skillId, projectRunWorkspaceContext, requestOpenFile],
+    [project.id, projectDesignSystemId, project.skillId, requestOpenFile],
   );
 
   const artifactFromStandaloneHtml = useCallback(
@@ -5246,27 +4015,13 @@ export function ProjectView({
     // can return its short-lived settled cache (or an already-joined response
     // that was captured before this event) and leave the restored project on
     // the old file snapshot.
-    invalidateProjectFilesCache(
-      project.id,
-      projectRunWorkspaceContextRef.current,
-    );
+    invalidateProjectFilesCache(project.id);
     bumpFilesRefresh();
     // Round 7 (mrcfps): file mutations are the dominant staleness signal
     // post-finalize — bump the refresh key so DESIGN.md staleness
     // recomputes against the new mtimes.
     setDesignMdRefreshKey((n) => n + 1);
-    // Team-share upload badge (recvqghymxqQQq): this fires on the SAME
-    // chokidar-backed `file-changed` event the daemon's collab-publish-watcher
-    // uses to flip `syncState` to 'pending_upload' (markLocalChangePending in
-    // apps/daemon/src/collab/runtime.ts), and that state typically reverts to
-    // 'synced' within one debounce window (~400ms) plus a publish — far
-    // shorter than CollabClient's 5s status-poll cadence. Without checking
-    // status right here, the owner's own tab almost never catches the
-    // transient and the file-tab "uploading" icon never appears to change.
-    // Mirrors the existing `project-metadata-changed` → `checkStatusNow()`
-    // hub-push pattern below, just triggered by the LOCAL watcher instead.
-    collabCheckStatusNow();
-  }, [collabCheckStatusNow, project.id]);
+  }, [project.id]);
   const reconcileFilesWhenProjectEventsBecomeReady = useCallback(async () => {
     // The initial file snapshot and the project-event stream are established
     // independently. Re-read once after the stream handshake to close the
@@ -5275,12 +4030,8 @@ export function ProjectView({
     // good first navigation and load the same document twice.
     const hadAcceptedSnapshot = projectFilesGenerationRef.current > 0;
     const previousFiles = projectFilesRef.current;
-    invalidateProjectFilesCache(
-      project.id,
-      projectRunWorkspaceContextRef.current,
-    );
+    invalidateProjectFilesCache(project.id);
     const nextFiles = await refreshProjectFiles({ fresh: true });
-    collabCheckStatusNow();
     if (
       !hadAcceptedSnapshot
       || projectFileContentSnapshotsEqual(previousFiles, nextFiles)
@@ -5294,7 +4045,6 @@ export function ProjectView({
     setDesignMdRefreshKey((n) => n + 1);
   }, [
     bumpFilesRefresh,
-    collabCheckStatusNow,
     project.id,
     refreshProjectFiles,
   ]);
@@ -5320,16 +4070,6 @@ export function ProjectView({
       iframeKeepAlivePool.evictProject(project.id);
       invalidateHtmlSourceSnapshotProject(project.id);
       coalescedFileChangedRefresh();
-      void recoverMaterializedConversations(project.id, projectRunAuthorityKey);
-      return;
-    }
-    if (evt.type === 'comment-changed') {
-      // Collab realtime hop-2 (reference path): the daemon merged a teammate's
-      // comment change into local storage and pushed this thin signal. Re-fetch
-      // the comment list so it appears without waiting for the fallback poll.
-      // `refreshPreviewComments` is defined later in this component, so reach it
-      // through a ref to avoid a temporal-dead-zone reference here.
-      if (evt.projectId === project.id) void refreshPreviewCommentsRef.current?.();
       return;
     }
     if (evt.type === 'chat-artifact-refs-changed') {
@@ -5355,75 +4095,6 @@ export function ProjectView({
       }
       return;
     }
-    if (evt.type === 'presence-changed') {
-      // Hub push channel: a teammate joined/left. Refresh the roster now
-      // instead of waiting for the next 10s heartbeat tick.
-      if (evt.projectId === project.id) collabRefreshPresence();
-      return;
-    }
-    if (evt.type === 'project-metadata-changed') {
-      // Hub push channel: rename or a fresh content publish landed. Run one
-      // status check now (drives the member auto-pull) instead of waiting for
-      // the next 5s status tick.
-      if (evt.projectId === project.id) {
-        invalidateHtmlSourceSnapshotProject(project.id);
-        collabCheckStatusNow();
-        void recoverMaterializedConversations(project.id, projectRunAuthorityKey);
-        // The daemon also pushes this signal when a pull just swapped the
-        // shared-project placeholder record for the real name
-        // (registerPulledProject → notifyProjectMetadataChanged). App.tsx's
-        // `projects` state never re-reads a project record on its own, so
-        // without this refetch a member's sidebar/tab title stays on the
-        // "共享项目" placeholder until a full page reload (recvqhwv6RPU1j).
-        // Thin-event model: re-fetch the record, propagate up only when a
-        // rendered field actually changed — an unconditional apply would
-        // re-render the whole App on every content-publish nudge.
-        const capturedProjectId = project.id;
-        const capturedAuthorizationKey = projectAuthorizationKey;
-        const capturedProjectWorkspaceContext = projectRunWorkspaceContext;
-        void Promise.all([
-          getProject(capturedProjectId, capturedProjectWorkspaceContext),
-          resolveAuthoritativeProjectName
-            ? resolveAuthoritativeProjectName(capturedProjectId, capturedAuthorizationKey)
-            : Promise.resolve<ProjectNameAuthorityResolution>({
-                kind: 'resolved',
-                name: authoritativeProjectName ?? null,
-              }),
-        ]).then(([fresh, authorityResolution]) => {
-          if (!fresh) return;
-          if (authorityResolution.kind === 'stale') return;
-          if (activeAuthorizationLifetimeRef.current !== capturedAuthorizationKey) return;
-          // User switched projects while the fetch was in flight.
-          if (projectIdRef.current !== capturedProjectId) return;
-          const current = projectRef.current;
-          const reconciled = reconcileProjectDetail(
-            current,
-            fresh,
-            authorityResolution.name,
-          );
-          if (
-            reconciled.name === current.name
-            && reconciled.skillId === current.skillId
-            && reconciled.designSystemId === current.designSystemId
-          ) {
-            return;
-          }
-          onProjectChange(reconciled);
-        });
-      }
-      return;
-    }
-    if (evt.type === 'project-content-transfer-state') {
-      if (evt.projectId === project.id) {
-        // The daemon intentionally emits no transfer payload here. A project
-        // id can be reused across workspace/owner/resource bindings, so direct
-        // application could let scope A's idle hide scope B's download.
-        // Re-read the exact-scoped status; CollabClient's request/tombstone
-        // fences reject stale responses.
-        collabCheckStatusNow();
-      }
-      return;
-    }
     if (evt.type === 'conversation-created') {
       // A new conversation was inserted into this project by a path the
       // open project view can't observe through its own state (currently:
@@ -5439,7 +4110,6 @@ export function ProjectView({
       void (async () => {
         try {
           const list = await listConversations(capturedProjectId, {
-            workspaceContext: projectRunWorkspaceContext,
           });
           // Bail if the user switched projects while this request was in
           // flight (#1361 review, Codex P1). The captured project id is the
@@ -5472,31 +4142,14 @@ export function ProjectView({
     // also imply the conversation transcript changed.
     setDesignMdRefreshKey((n) => n + 1);
   }, [
-    authoritativeProjectName,
     coalescedFileChangedRefresh,
-    collabCheckStatusNow,
-    collabRefreshPresence,
     iframeKeepAlivePool,
     onProjectChange,
     onProjectsRefresh,
     refreshLiveArtifacts,
-    recoverMaterializedConversations,
-    resolveAuthoritativeProjectName,
     project.id,
-    projectAuthorizationKey,
-    projectRunAuthorityKey,
-    projectRunWorkspaceContext,
   ]);
-  // A bound project must not open a headerless EventSource while its exact
-  // authority is unresolved or forbidden: that request can only fail and the
-  // EventSource reconnect loop would keep retrying a terminal response.
-  // Anonymous/local unbound projects intentionally keep their legacy stream
-  // after the daemon settles them as unbound. A missing local workspaceId is
-  // not sufficient: that project row can lag a hidden daemon-side Team mirror.
-  const projectEventsEnabled =
-    daemonLive
-    && projectWorkspaceScopeReady(projectWorkspaceScopeState.scope);
-  useProjectFileEvents(project.id, projectEventsEnabled, handleProjectEvent, {
+  useProjectFileEvents(project.id, daemonLive, handleProjectEvent, {
     onConnectedChange: setProjectEventsSseConnected,
     // Files or comments can change after their initial snapshots but before
     // SSE is listening. Reconcile both once the exact-scoped stream is ready:
@@ -5506,7 +4159,7 @@ export function ProjectView({
       void reconcileFilesWhenProjectEventsBecomeReady();
       void refreshPreviewCommentsRef.current?.();
     },
-  }, projectRunWorkspaceContext);
+  });
 
   const activePromptContextSignature = useMemo(() => {
     const skill = project.skillId
@@ -5626,10 +4279,9 @@ export function ProjectView({
       if (isPhantomDaemonRunMessage(m)) return;
       void saveMessage(project.id, activeConversationId, m, {
         ...options,
-        workspaceContext: projectRunWorkspaceContext,
       });
     },
-    [project.id, activeConversationId, projectRunWorkspaceContext],
+    [project.id, activeConversationId],
   );
 
   const persistMessageById = useCallback(
@@ -5640,13 +4292,12 @@ export function ProjectView({
         if (found && !isPhantomDaemonRunMessage(found)) {
           void saveMessage(project.id, activeConversationId, found, {
             ...options,
-            workspaceContext: projectRunWorkspaceContext,
           });
         }
         return curr;
       });
     },
-    [project.id, activeConversationId, projectRunWorkspaceContext],
+    [project.id, activeConversationId],
   );
 
   const updateMessageById = useCallback(
@@ -5671,39 +4322,13 @@ export function ProjectView({
         if (persist && saved && activeConversationId && !isPhantomDaemonRunMessage(saved)) {
           void saveMessage(project.id, activeConversationId, saved, {
             ...persistOptions,
-            workspaceContext: projectRunWorkspaceContext,
           });
         }
         return next;
       });
     },
-    [project.id, activeConversationId, projectRunWorkspaceContext],
+    [project.id, activeConversationId],
   );
-
-  /**
-   * 存档写入口的实体(声明在上面的余额补查那一段,见
-   * `archiveAmrBalanceReadingRef` 的注释)。放在这里是因为写回要走
-   * `updateMessageById` —— 落库那一半在它里面,而它在本组件里定义得比那条
-   * effect 晚。
-   *
-   * 走 `updateMessageById(..., true)` 而不是自己拼一次 PUT:那条失败事件本来
-   * 就是这条路写进去的(`appendAssistantErrorEvent`),存档只是同一条事件上
-   * **晚到的一个事实**,和 `chat-events.ts` 里 `failureCategory` / `retryable`
-   * 后补进同一条 error 事件是同一个形状。另起一条写路只会让「这条消息谁在写」
-   * 多出一个答案。
-   *
-   * **一轮只写一次**由调用方保证:补查那条 effect 只在「存档里还没有这一轮」
-   * 那条分支上调它,写完之后存档就有值了,effect 重跑会走另一条路。
-   * `stampAmrBalanceUsdOnFailure` 自己再兜一层幂等 —— 已经有数字就原样返回,
-   * 所以哪怕真被叫第二次,**记下来的那个数字也不会被改写**。
-   */
-  archiveAmrBalanceReadingRef.current = (messageId, balanceUsd) => {
-    updateMessageById(
-      messageId,
-      (prev) => stampAmrBalanceUsdOnFailure(prev, balanceUsd),
-      true,
-    );
-  };
 
   const appendConversationMessage = useCallback(
     (
@@ -5721,11 +4346,10 @@ export function ProjectView({
       if (persist) {
         void saveMessage(project.id, conversationId, message, {
           ...options,
-          workspaceContext: projectRunWorkspaceContext,
         });
       }
     },
-    [activeConversationId, project.id, projectRunWorkspaceContext],
+    [activeConversationId, project.id],
   );
 
   const readLocalBrowserPageArchiveSnapshot = useCallback(
@@ -5733,7 +4357,6 @@ export function ProjectView({
       const manifestText = await fetchProjectFileText(project.id, BROWSER_PAGE_ARCHIVE_INDEX_FILE, {
         cache: 'no-store',
         cacheBustKey: Date.now(),
-        workspaceContext: projectRunWorkspaceContext,
       });
       if (!manifestText) {
         return { status: 'unavailable', message: t('chat.brandBrowserLocalSnapshotMissing') };
@@ -5754,12 +4377,10 @@ export function ProjectView({
         fetchProjectFileText(project.id, parsed.htmlFile, {
           cache: 'no-store',
           cacheBustKey: parsed.capturedAt,
-          workspaceContext: projectRunWorkspaceContext,
         }),
         fetchProjectFileText(project.id, parsed.cssFile, {
           cache: 'no-store',
           cacheBustKey: parsed.capturedAt,
-          workspaceContext: projectRunWorkspaceContext,
         }),
       ]);
       if (!html?.trim()) {
@@ -5772,7 +4393,7 @@ export function ProjectView({
         baseUrl: parsed.baseUrl || parsed.url,
       };
     },
-    [project.id, projectRunWorkspaceContext, t],
+    [project.id, t],
   );
 
   const readBrandBrowserSnapshot = useCallback(
@@ -5997,7 +4618,6 @@ export function ProjectView({
   } = useMemoryWrittenCard(memoryExtractionRunActive, {
     projectId: project.id,
     conversationId: activeConversationId,
-    workspaceContext: projectRunWorkspaceContext,
     ...selectedAssistantIdentity,
   }, {
     projectId: project.id,
@@ -6035,9 +4655,7 @@ export function ProjectView({
       && messagesConversationIdRef.current === source.conversationId) {
       setMessages((current) => [...current, message]);
     }
-    void saveMessage(source.projectId, source.conversationId, message, {
-      workspaceContext: source.workspaceContext,
-    });
+    void saveMessage(source.projectId, source.conversationId, message);
     dismissMemoryWritten();
   }, [
     memoryWritten,
@@ -6061,11 +4679,10 @@ export function ProjectView({
       if (persist) {
         void saveMessage(project.id, conversationId, message, {
           ...options,
-          workspaceContext: projectRunWorkspaceContext,
         });
       }
     },
-    [activeConversationId, project.id, projectRunWorkspaceContext],
+    [activeConversationId, project.id],
   );
 
   const refreshConversationMessagesFromServer = useCallback(
@@ -6075,7 +4692,6 @@ export function ProjectView({
         const serverMessages = await listMessages(
           project.id,
           conversationId,
-          projectRunWorkspaceContext,
         );
         if (messagesConversationIdRef.current !== conversationId) return;
         setMessages((current) => mergeServerMessagesIntoConversation(current, serverMessages));
@@ -6086,7 +4702,7 @@ export function ProjectView({
         console.warn('Failed to refresh conversation messages after run completion', err);
       }
     },
-    [project.id, projectRunWorkspaceContext],
+    [project.id],
   );
 
   const scheduleConversationMessageRefresh = useCallback(
@@ -6208,10 +4824,10 @@ export function ProjectView({
           reasonCodes: change.reasonCodes ?? [],
           hasCustomReason: !!change.customReason,
           customReason: normalizeCustomReason(change.customReason),
-        }, projectRunWorkspaceContext);
+        });
       }
     },
-    [updateMessageById, activeConversationId, projectRunWorkspaceContext],
+    [updateMessageById, activeConversationId],
   );
 
   // `code` is the structured API error code (e.g. AGENT_AUTH_REQUIRED); it
@@ -6245,7 +4861,6 @@ export function ProjectView({
           const outcome = await finalizeBrandProject(
             designSystemBrandId,
             project.id,
-            projectRunWorkspaceContext,
           );
           if (outcome.ok) {
             await Promise.all([
@@ -6292,7 +4907,6 @@ export function ProjectView({
         }
         const audit = await fetchProjectDesignSystemPackageAudit(
           project.id,
-          projectRunWorkspaceContext,
         );
         if (!audit) return;
         const auditSummary = summarizeDesignSystemPackageAudit(audit);
@@ -6357,18 +4971,13 @@ export function ProjectView({
   const readPreviewCommentsOnce = useCallback(async () => {
     if (!activeConversationId) return;
     const commentsGeneration = ++previewCommentsGenerationRef.current;
-    const next = await fetchPreviewComments(
-      project.id,
-      activeConversationId,
-      projectRunWorkspaceContext,
-      true,
-    );
+    const next = await fetchPreviewComments(project.id, activeConversationId);
     if (previewCommentsGenerationRef.current !== commentsGeneration) return;
     // Unchanged comments keep their objects and an unchanged list keeps its
     // array, so a refresh that found nothing new does not re-render.
     setPreviewComments((current) => reconcilePreviewComments(current, next));
     setAttachedComments((current) => reconcileAttachedComments(current, next));
-  }, [project.id, activeConversationId, projectRunWorkspaceContext]);
+  }, [project.id, activeConversationId]);
   const refreshPreviewComments = useCallback(
     () => runPreviewCommentsRead(
       `${project.id}\u0000${activeConversationId ?? ''}`,
@@ -6403,12 +5012,11 @@ export function ProjectView({
   // slows to a safety-net cadence (30s) while the SSE is connected and runs at
   // the original ~5s cadence while the SSE is unavailable (packaged old shell /
   // tests), so a client whose stream never connects has zero regression.
-  // Gated on `projectCollab.enabled` so a personal / off-team project never
-  // polls. This only replaces the loaded comment LIST — the composer /
-  // create-form drafts are separate local state, so an in-flight comment the
-  // user is typing is never clobbered.
+  // This only replaces the loaded comment LIST — the composer / create-form
+  // drafts are separate local state, so an in-flight comment the user is
+  // typing is never clobbered.
   useEffect(() => {
-    if (!projectCollab.enabled || !activeConversationId) return undefined;
+    if (!activeConversationId) return undefined;
     const pollMs = projectEventsSseConnected ? 30_000 : 5_000;
     const interval = setInterval(() => {
       void refreshPreviewComments();
@@ -6421,7 +5029,7 @@ export function ProjectView({
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [projectCollab.enabled, activeConversationId, refreshPreviewComments, projectEventsSseConnected]);
+  }, [activeConversationId, refreshPreviewComments, projectEventsSseConnected]);
 
   const savePreviewComment = useCallback(
     async (
@@ -6441,7 +5049,6 @@ export function ProjectView({
         });
         return null;
       }
-      if (projectCollab.materializationPending) return null;
       // Upload any attached images first so the saved comment carries durable
       // file paths — this is what lets the comment list / re-opened popover
       // re-display the images instead of losing them on echo.
@@ -6451,7 +5058,6 @@ export function ProjectView({
           project.id,
           images,
           undefined,
-          projectRunWorkspaceContext,
         );
         if (result.uploaded.length !== images.length) {
           setProjectActionsToast({
@@ -6477,7 +5083,6 @@ export function ProjectView({
           note,
           ...(attachments.length > 0 ? { attachments } : {}),
         },
-        projectRunWorkspaceContext,
       );
       if (!saved) {
         // Do not fail silently (recvq5BVsolIxi follow-up): a missing/expired
@@ -6503,9 +5108,7 @@ export function ProjectView({
       routeConversationId,
       commitPreviewComments,
       previewComments,
-      projectRunWorkspaceContext,
       t,
-      projectCollab.materializationPending,
     ],
   );
 
@@ -6521,12 +5124,10 @@ export function ProjectView({
         });
         return false;
       }
-      if (projectCollab.materializationPending) return false;
       const ok = await deletePreviewComment(
         project.id,
         commentConversationId,
         commentId,
-        projectRunWorkspaceContext,
       );
       if (!ok) {
         setProjectActionsToast({
@@ -6546,9 +5147,7 @@ export function ProjectView({
       activeConversationId,
       routeConversationId,
       commitPreviewComments,
-      projectRunWorkspaceContext,
       t,
-      projectCollab.materializationPending,
     ],
   );
 
@@ -6576,7 +5175,6 @@ export function ProjectView({
         });
         return;
       }
-      if (projectCollab.materializationPending) return;
       commitPreviewComments((current) =>
         current.map((comment) => (comment.id === commentId ? { ...comment, sortKey } : comment)),
       );
@@ -6585,7 +5183,6 @@ export function ProjectView({
         commentConversationId,
         commentId,
         sortKey,
-        projectRunWorkspaceContext,
       );
       if (saved) {
         commitPreviewComments((current) => mergeSavedPreviewComment(current, saved));
@@ -6603,9 +5200,7 @@ export function ProjectView({
       activeConversationId,
       routeConversationId,
       commitPreviewComments,
-      projectRunWorkspaceContext,
       t,
-      projectCollab.materializationPending,
     ],
   );
 
@@ -6638,7 +5233,6 @@ export function ProjectView({
             activeConversationId,
             attachment.id,
             status,
-            projectRunWorkspaceContext,
           ),
         ),
       );
@@ -6649,7 +5243,6 @@ export function ProjectView({
       activeConversationId,
       commitPreviewComments,
       refreshPreviewComments,
-      projectRunWorkspaceContext,
     ],
   );
 
@@ -6676,12 +5269,11 @@ export function ProjectView({
             comment.conversationId,
             comment.id,
             'open',
-            projectRunWorkspaceContext,
           ),
         ),
       ).catch(() => {});
     },
-    [project.id, commitPreviewComments, projectRunWorkspaceContext],
+    [project.id, commitPreviewComments],
   );
 
   /**
@@ -6743,7 +5335,6 @@ export function ProjectView({
     if (config.mode !== 'daemon' || !daemonLive || !activeConversationId || streaming) return;
     let cancelled = false;
     const reattachConversationId = activeConversationId;
-    const reattachAccountGeneration = currentWorkspaceAccountGeneration();
 
     const attachRecoverableRuns = async () => {
       const missingRunIdMessages = messages.filter((m) => {
@@ -6755,11 +5346,10 @@ export function ProjectView({
         ? await listActiveChatRuns(
             project.id,
             reattachConversationId,
-            projectRunWorkspaceContext,
           )
         : [];
       const historicalRuns = missingRunIdMessages.length > 0
-        ? (await listProjectRuns(projectRunWorkspaceContext)).filter(
+        ? (await listProjectRuns()).filter(
             (run) => run.projectId === project.id && run.conversationId === reattachConversationId,
           )
         : [];
@@ -6863,7 +5453,7 @@ export function ProjectView({
         }
 
         const physicalStatus = fallbackRun
-          ?? await fetchChatRunStatus(runId, projectRunWorkspaceContext);
+          ?? await fetchChatRunStatus(runId);
         if (cancelled) return;
         if (!physicalStatus) {
           // A missing status response cannot invalidate persisted success.
@@ -6925,7 +5515,7 @@ export function ProjectView({
         // persisted. Read that physical Run: task `completed` does not say
         // whether production succeeded, failed, or was canceled.
         const status = taskRunAdvanced
-          ? await fetchChatRunStatus(reattachRunId, projectRunWorkspaceContext)
+          ? await fetchChatRunStatus(reattachRunId)
           : physicalStatus;
         if (!status) continue;
         const projectedRunAlreadyHydrated = Boolean(
@@ -7063,7 +5653,6 @@ export function ProjectView({
           const endedAt = await resolveTerminalEndedAt(
             runId,
             status,
-            projectRunWorkspaceContext,
           );
           updateMessageById(
             message.id,
@@ -7137,7 +5726,6 @@ export function ProjectView({
             const legacyReplayEndedAt = await resolveTerminalEndedAt(
               runId,
               status,
-              projectRunWorkspaceContext,
             );
             updateMessageById(
               message.id,
@@ -7492,11 +6080,6 @@ export function ProjectView({
           reattachTextBuffersRef.current.delete(textBuffer);
         };
 
-        const shouldPublishRunFinishedEvent =
-          isActiveRunStatus(message.runStatus)
-          || isActiveRunStatus(status.status)
-          || spuriouslyFailedPending
-          || recoverableGenericDisconnectFailed;
         // 组件 22 · 重连 · S29:重挂即将开始 ——「次数用尽、交回给人」这句话此刻
         // 已经不成立了,先把那一行撤掉。这次重挂的读数从 0 起,断不了就永远不会
         // 发 `cleared`,留着那一行会在正文重新流进来时挂着一句反话。
@@ -7506,12 +6089,10 @@ export function ProjectView({
           runId: reattachRunId,
           projectId: project.id,
           conversationId: reattachConversationId,
-          workspaceContext: projectRunWorkspaceContext,
           signal: controller.signal,
           cancelSignal: cancelController.signal,
           initialLastEventId:
             needsFullReplay || taskRunAdvanced ? null : message.lastRunEventId ?? null,
-          publishRunFinishedEvent: shouldPublishRunFinishedEvent,
           onArtifactPaths: (paths) => {
             authoritativeReattachArtifactPaths = paths;
           },
@@ -7663,7 +6244,6 @@ export function ProjectView({
               const endedAt = await resolveTerminalEndedAt(
                 activeReattachRunId,
                 activeReattachRunId === runId ? status : null,
-                projectRunWorkspaceContext,
               );
               updateMessageById(
                 message.id,
@@ -7828,13 +6408,6 @@ export function ProjectView({
               const runMayFinalize =
                 !supersededRunsRef.current.has(controller);
               keepManualFileWritesForRecovery = genericDisconnect && runMayFinalize;
-              if (runMayFinalize && isActiveRunStatus(status.status) && (message.agentId ?? status.agentId) === 'amr') {
-                showAmrFundingFailure({
-                  code: errorCode, runKey: message.id, conversationId: reattachConversationId,
-                  authorityKey: projectRunAuthorityKey,
-                  accountGeneration: reattachAccountGeneration,
-                });
-              }
               if (keepManualFileWritesForRecovery) manualFileWriteRegistration.release(true);
               textBuffer.flush();
               textBuffer.cancel();
@@ -7863,7 +6436,6 @@ export function ProjectView({
                     if (recoveredArtifactMessagesRef.current.has(message.id)) return;
                     const latestRunStatus = await fetchChatRunStatus(
                       runId,
-                      projectRunWorkspaceContext,
                     ).catch(() => null);
                     const artifactToPersist = parsedArtifact?.html
                       ? parsedArtifact
@@ -7922,21 +6494,6 @@ export function ProjectView({
                     });
                     if (producedArtifactToOpen) requestOpenFile(producedArtifactToOpen);
                     if (latestRunStatus?.status === 'succeeded') setError(null);
-                    if (
-                      shouldPublishRunFinishedEvent
-                      && latestRunStatus?.status === 'succeeded'
-                      && latestRunStatus.agentId === 'amr'
-                      && typeof latestRunStatus.artifactCount === 'number'
-                    ) {
-                      publishDaemonRunFinishedEvent({
-                        agentId: latestRunStatus.agentId,
-                        runId,
-                        projectId: project.id,
-                        conversationId: reattachConversationId,
-                        result: 'success',
-                        artifactCount: latestRunStatus.artifactCount,
-                      });
-                    }
                     // Unlike the recoverArtifacts sibling below, this row's
                     // endedAt was already stamped synchronously above (~4041)
                     // at disconnect time — `prev.endedAt` is never null here,
@@ -8008,7 +6565,6 @@ export function ProjectView({
                   }, 3000);
                   const latestRunStatus = await fetchChatRunStatus(
                     runId,
-                    projectRunWorkspaceContext,
                   ).catch(() => null);
                   if (!latestRunStatus || isActiveRunStatus(latestRunStatus.status)) {
                     // If the backoff elapsed while this probe was still in
@@ -8018,20 +6574,6 @@ export function ProjectView({
                     // unrelated state change.
                     shouldRefreshConversationAfterCleanup = false;
                   } else if (latestRunStatus.status === 'succeeded') {
-                    if (
-                      shouldPublishRunFinishedEvent
-                      && latestRunStatus.agentId === 'amr'
-                      && typeof latestRunStatus.artifactCount === 'number'
-                    ) {
-                      publishDaemonRunFinishedEvent({
-                        agentId: latestRunStatus.agentId,
-                        runId,
-                        projectId: project.id,
-                        conversationId: reattachConversationId,
-                        result: 'success',
-                        artifactCount: latestRunStatus.artifactCount,
-                      });
-                    }
                     clearProjectTimeout(backoffTimer);
                     setError(null);
                     // If the resumed stream already replayed some content/events
@@ -8296,7 +6838,6 @@ export function ProjectView({
     scheduleProjectTimeout,
     scheduleConversationMessageRefresh,
     recoveryTick,
-    showAmrFundingFailure,
   ]);
 
   useEffect(() => {
@@ -8330,7 +6871,6 @@ export function ProjectView({
         const serverMessages = await listMessages(
           project.id,
           activeConversationId,
-          projectRunWorkspaceContext,
         ).catch(() => null);
         if (cancelled) return;
         const recoveryMessages = serverMessages && serverMessages.length > 0
@@ -8343,7 +6883,6 @@ export function ProjectView({
           const runId = message.runId;
           if (!runId) continue;
           retainReceipt(runId);
-          const recoveryAuthority = canonicalProjectRunWorkspaceContextRef.current;
           const latestAssistantMessage = () => {
             for (let index = messagesRef.current.length - 1; index >= 0; index -= 1) {
               const item = messagesRef.current[index];
@@ -8362,8 +6901,6 @@ export function ProjectView({
             return mountedRef.current
               && projectIdRef.current === project.id
               && activeConversationIdRef.current === activeConversationId
-              && canonicalProjectRunWorkspaceContextRef.current === recoveryAuthority
-              && (projectResourceAuthorityRef.current === 'local' || projectResourceAuthorityRef.current === 'workspace')
               && latestAssistant?.id === latestAssistantAtStart?.id
               && latestAssistant?.runId === latestAssistantAtStart?.runId
               && messagesRef.current.some((item) => item.id === message.id && item.runId === runId);
@@ -8406,7 +6943,6 @@ export function ProjectView({
           if (!artifactToPersist?.html) continue;
           const latestRunStatus = await fetchChatRunStatus(
             runId,
-            projectRunWorkspaceContext,
           ).catch(() => null);
           if (cancelled || !recoveryTargetIsCurrent()) return;
           let nextFiles = await refreshProjectFiles();
@@ -8489,7 +7025,6 @@ export function ProjectView({
           const recoveredArtifactEndedAt = await resolveTerminalEndedAt(
             runId,
             latestRunStatus,
-            projectRunWorkspaceContext,
           );
           if (!recoveryTargetIsCurrent()) return;
           const strategyTask = latestRunStatus?.strategyTask;
@@ -8700,13 +7235,12 @@ export function ProjectView({
               input.conversationId,
               commentId,
               'applying',
-              projectRunWorkspaceContext,
             ),
           ),
         ).catch(() => {});
       }
     }
-  }, [commitPreviewComments, enqueueChatSend, project.id, projectRunWorkspaceContext]);
+  }, [commitPreviewComments, enqueueChatSend, project.id]);
 
   const handleSend = useCallback(
     async (
@@ -8716,11 +7250,9 @@ export function ProjectView({
       meta?: ProjectChatSendMeta,
       baseMessages?: ChatMessage[],
     ) => {
-      if (projectMutationReadOnly) return false;
       if (!activeConversationId) return false;
       if (messagesConversationIdRef.current !== activeConversationId) return false;
       const clientRequestId = meta?.clientRequestId ?? randomUUID();
-      const sendAccountGeneration = currentWorkspaceAccountGeneration();
       meta = {
         ...(meta ?? {}),
         clientRequestId,
@@ -8772,11 +7304,6 @@ export function ProjectView({
         attachments.length === 0 &&
         commentAttachments.length === 0
       ) return false;
-      // AMR must resolve this project's persisted billing principal before a
-      // run can start. Local CLI and BYOK runtimes do not consume the Vela
-      // wallet, so old daemons without this endpoint and directory outages
-      // must not disable those runtimes.
-      if (!projectRunHasBillableAmrPrincipal) return false;
       const effectiveAttachments = mergeChatAttachments(
         attachments,
         ...commentAttachments.map((attachment) =>
@@ -8841,45 +7368,6 @@ export function ProjectView({
         return true;
       }
       if (currentConversationBusy) {
-        queueChatSendForCurrentConversation({
-          conversationId: activeConversationId,
-          prompt,
-          attachments: effectiveAttachments,
-          commentAttachments,
-          meta: { ...(meta ?? {}), sessionMode: runSessionMode, taskAnalytics },
-        });
-        return meta?.acceptDurableQueue === true;
-      }
-      /*
-       * ── OPEND-2614 【不变量】本地数据画得出来的先画,要跟服务器说的话排后面 ──
-       *
-       * 「点击发送 → 消息上屏」这一段里唯一的 await 是下面那道 OpenDesign Cloud
-       * 预检。它在有工作区身份的项目上是**两条 HTTP 往返**,其中
-       * `/api/workspace/billing?…&freshness=authoritative` 会逼 daemon 向上游
-       * Vela 取一次新读数(daemon 侧翻成 `requireFresh: true`)。上屏排在它后面,
-       * 用户点完发送就要盯着 1–2 秒毫无反馈的界面 —— 报告里的「卡顿」是这一趟
-       * 网络,不是渲染慢。
-       *
-       * 预检**该不该拦这一次 run** 一个字都没变:它仍然在持久化和
-       * `POST /api/runs` 之前落定;拦下来时这一轮由 `retractPaintedTurn` 原样收回,
-       * 照旧落进发送队列,由余额卡 / 弹窗解释原因。
-       *
-       * 【前置条件】上屏之前必须走完所有**同步**的拒绝路(只排队、会话忙、预检
-       * 并发窗口)。同步就能拒的东西画出去再收回,那是白闪一下 —— 所以预检那道
-       * 并发窗口的守卫从 `try` 里提到了这里。
-       */
-      const amrGateApplies =
-        config.mode === 'daemon'
-        && config.agentId === 'amr'
-        && !meta?.amrGatePrechecked;
-      // The gate's await opens a window where the conversation is not yet
-      // marked busy. A second send arriving during that window behaves like
-      // a busy conversation: it queues instead of racing a duplicate run.
-      if (
-        amrGateApplies
-        && amrGateInFlightConversationsRef.current.has(activeConversationId)
-      ) {
-        if (retryTarget) return false;
         queueChatSendForCurrentConversation({
           conversationId: activeConversationId,
           prompt,
@@ -9027,287 +7515,6 @@ export function ProjectView({
         return nextVisibleMessages;
       });
       markStreamingConversation(runConversationId);
-      let fundingHintRelevant = true;
-      const retireFundingHint = () => {
-        if (!fundingHintRelevant) return;
-        fundingHintRelevant = false;
-        setAmrBalanceGateBlock((previous) => previous?.fundingSource === 'preflight'
-          && previous.fundingRunKey === assistantId ? null : previous);
-      };
-      if (config.mode === 'daemon' && assistantAgentId === 'amr') {
-        const modelId = effectiveAgentModelId(selectedAgent, selectedAgentChoice);
-        // Start alongside send preparation, before any agent spawn or run POST.
-        // A stalled/unsupported preflight has no effect on sending.
-        void checkAmrFundingFeedback(amrBalanceCardScope, modelId).then((result) => {
-          if (result !== 'insufficient' || !fundingHintRelevant ||
-            streamingConversationIdRef.current !== runConversationId ||
-            memoryTurnAssistantRef.current?.assistantId !== assistantId) return;
-          showAmrFundingFailure({
-            code: AMR_INSUFFICIENT_BALANCE_CODE, runKey: assistantId,
-            conversationId: runConversationId, authorityKey: projectRunAuthorityKey,
-            accountGeneration: sendAccountGeneration, source: 'preflight', modelId,
-          });
-        });
-      }
-      /**
-       * 把刚画出去的那一轮收回 —— 只有预检拒绝时才走这里。
-       *
-       * 会话在这期间被切走的话**一个字都不写回去**:`messages` 那份状态此刻属于
-       * 另一条会话,把上一条会话的快照盖上去就是覆盖别人的流水(跨 await 的老坑)。
-       * 进行中标记仍要清 —— 它是按会话 id 认领的,清的就是这一条。
-       */
-      const retractPaintedTurn = () => {
-        retireFundingHint();
-        const restore = paintedFrom.messages;
-        paintedFrom.messages = null;
-        clearStreamingMarker(runConversationId);
-        if (restore === null) return;
-        if (messagesConversationIdRef.current !== runConversationId) return;
-        setMessages(restore);
-      };
-      // The send check confirms sign-in only; funding is decided by Link as
-      // the run starts. Home sends that already checked the same identity skip
-      // the duplicate sign-in read here.
-      if (amrGateApplies) {
-        const gateConversationId = runConversationId;
-        amrGateInFlightConversationsRef.current.add(gateConversationId);
-        try {
-          // A persisted project Workspace is the spawn billing address even
-          // when the local membership/scope read is temporarily unavailable.
-          // In that state there is no trustworthy member-scoped wallet for a
-          // client preflight, so defer authorization and billing to the daemon
-          // and Vela backend. Passing `undefined` here would instead inspect
-          // the Personal/account wallet and could block a valid Team run (or
-          // present a Personal recharge prompt) before the backend sees the
-          // project's persisted Workspace id. An unbound project uses an exact
-          // Personal preflight only when runWorkspaceIdentity supplied the
-          // active Personal adoption witness. Team/absent witnesses skip the
-          // account preflight and let the daemon explicitly reject adoption.
-          // A resolved Personal or Team scope keeps its exact member-scoped
-          // preflight.
-          const persistedWorkspaceId = project.workspaceId?.trim() ?? '';
-          const deferAmrPreflightToDaemon =
-            !projectRunPreflightContext
-            && (
-              persistedWorkspaceId.length > 0
-              || projectWorkspaceScopeState.scope?.kind === 'unbound'
-            );
-          const amrModelId = effectiveAgentModelId(
-            agentsById.get('amr'),
-            config.agentModels?.amr,
-          );
-          const gate =
-            deferAmrPreflightToDaemon
-              ? { kind: 'allow' as const }
-              : await checkAmrBalanceGate(
-                  projectRunPreflightContext
-                    ? {
-                        workspaceType: projectRunPreflightContext.workspaceType,
-                        workspaceId: projectRunPreflightContext.workspaceId,
-                        workspaceMemberId:
-                          projectRunPreflightContext.workspaceMemberId,
-                      }
-                    : undefined,
-                  amrModelId,
-                );
-          // A send blocked by something that can still resolve on its own —
-          // a signed-out wallet, an unreadable billing read — parks in the
-          // conversation queue with its FULL payload (prompt, attachments,
-          // comment context), because those states clear and the parked send
-          // is then genuinely runnable. Retries keep their error card and
-          // queue drains already have their queue item, so both skip the
-          // re-queue. The pause keeps queued items from re-hitting the gate
-          // (and re-popping a dialog) on every unrelated state change; any
-          // later send that passes the gate lifts it, and a manual "run now"
-          // on a queued item bypasses it deliberately.
-          //
-          // ⚠️ An EXHAUSTED wallet is not one of those states — see
-          // `rejectBlockedSend` below (OPEND-2719).
-          const queueGateSend = (heldBeforeRun = false): boolean => {
-            // 判定拒绝 = 这一轮不会有 run。先把已经画出去的那一轮收回,再决定
-            // 它去哪儿 —— 三条拒绝路(会话切走 / 拦截 / 读不到)都经过这里,
-            // 所以收回只写一处。放行那两档(soft / allow)碰不到它。
-            retractPaintedTurn();
-            if (!retryTarget && !meta?.queueDrain) {
-              queueChatSendForCurrentConversation({
-                conversationId: gateConversationId,
-                prompt,
-                attachments: effectiveAttachments,
-                commentAttachments,
-                heldBeforeRun,
-                meta: { ...(meta ?? {}), sessionMode: runSessionMode, taskAnalytics },
-              });
-              return true;
-            }
-            return false;
-          };
-          const parkBlockedSend = (): boolean => {
-            const queued = queueGateSend(true);
-            amrGatePausedQueueConversationsRef.current.add(gateConversationId);
-            return queued;
-          };
-          /**
-           * 余额耗尽这一档**不代管**这一发(OPEND-2719)。
-           *
-           * 待发送队列说的是「等一等就能跑」——排在前面的那一轮跑完、或者用户
-           * 自己按〔立即发送〕。钱包空着的时候这两件事都不会发生:消息就那么躺
-           * 在队列里,而用户看到的是「没有触发额度不足提示,消息被加进了队列」。
-           *
-           * 所以这一档只做三件事:把画出去的那一轮收回、把队列暂停(免得队列里
-           * 早先的东西继续撞同一堵墙)、记下这一发的请求 id。正文由
-           * `handleComposerSend` 凭那个 id 认领回输入框 —— 队列不是保管处,输入框
-           * 才是,而且那样用户下一步该干什么(充值 / 换 agent / 改需求)都还看得见。
-           *
-           * ⚠️ 两道收窄,缺一不可:
-           * ① 只有 `insufficient`。`signed_out` 同样是硬拦,但它的出路是登录,
-           *    登录完那一发确实还能跑 —— 那一档保留原来的排队 + 恢复路径。
-           * ② 只有 `composerOwnedDraft` 打过标记的那一发,也就是**真的从输入框
-           *    发出来的**。别的调用方的正文不在输入框里,取消它们的排队等于
-           *    把消息弄丢(PR #7927 评审)。
-           */
-          const rejectBlockedSend = (): false => {
-            retractPaintedTurn();
-            amrGatePausedQueueConversationsRef.current.add(gateConversationId);
-            amrGateBlockedRequestRef.current = clientRequestId;
-            return false;
-          };
-          const acceptedDurableQueue = (queued: boolean): boolean => {
-            return queued && meta?.acceptDurableQueue === true;
-          };
-          // The await may have raced a conversation switch; re-run the entry
-          // guard before touching any state so this stale closure can't write
-          // the old conversation's messages into the now-visible view. The
-          // composer has already cleared, so keep the full payload queued for
-          // the original conversation instead of dropping it.
-          if (messagesConversationIdRef.current !== activeConversationId) {
-            return acceptedDurableQueue(queueGateSend());
-          }
-          if (gate.kind === 'hard') {
-            const recoveryActionInstanceId = `blocked:${taskAnalytics.taskExecutionId}`;
-            trackRunStartBlockedSurfaceView(analytics.track, {
-              page_name: 'chat_panel',
-              area: 'chat_composer',
-              element: 'run_start_blocked',
-              task_execution_id: taskAnalytics.taskExecutionId,
-              recovery_action_instance_id: recoveryActionInstanceId,
-              block_reason: gate.reason,
-              agent_provider_id: 'amr',
-              model_id: config.agentModels?.amr?.model?.trim() || 'default',
-            });
-            taskAnalytics = {
-              ...taskAnalytics,
-              recoveryActionType: 'manual_retry',
-              recoveryActionInstanceId,
-            };
-            // 「唤起哪张弹窗、它的主按钮去哪」是四组分支唯一的差别(规格 §6.V,
-            // 第三格见 T58)。两个问题必须问**同一个 branch 快照**,否则一次
-            // 工作区切换能让弹窗和它的按钮各说各话。
-            //
-            // 被登出不在这四组里:那一档说的是登录,不是钱,主按钮是应用内登录
-            // (`upgradeIntent` 那时根本用不上),所以它无条件走那张弹窗。
-            const blockedBranch = amrBalanceBranchRef.current;
-            setAmrBalanceGateBlock({
-              reason: gate.reason,
-              dialog:
-                gate.reason === 'signed_out'
-                  ? 'upgrade'
-                  : amrBalanceBlockedDialog(blockedBranch),
-              upgradeIntent:
-                gate.reason === 'signed_out'
-                  ? 'pricing'
-                  : amrBalanceDialogUpgradeIntent(blockedBranch),
-              snapshot: gate.snapshot,
-              modelId: amrModelId,
-              fundingScope: projectRunPreflightContext ? {
-                workspaceType: projectRunPreflightContext.workspaceType,
-                workspaceId: projectRunPreflightContext.workspaceId,
-                workspaceMemberId: projectRunPreflightContext.workspaceMemberId,
-              } : undefined,
-              conversationId: gateConversationId,
-            });
-            // 拦截档:把流水里那张卡点亮 —— 弹窗一关就什么都不剩,而人回到聊天
-            // 里仍然需要看到「为什么开不了」。
-            //
-            // 只对「余额耗尽」出卡。被登出也走这条硬拦截,但那张卡说的是钱的事,
-            // 摆一个 $0.00 去解释一次登录过期是在误导 —— 那一档交给弹窗。
-            if (gate.reason === 'insufficient') {
-              // This rejected composer Send has its own visible answer (the
-              // quota card). Restoring its pre-send transcript must not revive
-              // the previous failure's actions. Keep both history identities,
-              // including a folded task's displayed head and physical tail.
-              if (meta?.composerOwnedDraft && !retryTarget) {
-                const physicalFailure = trailingMessageIgnoringHostCards(historyBase);
-                const displayedFailure = trailingMessageIgnoringHostCards(foldStrategyTaskTurns(historyBase));
-                if (
-                  physicalFailure && displayedFailure
-                  && isRetryableAssistantTerminalFailure(physicalFailure)
-                  && isRetryableAssistantTerminalFailure(displayedFailure)
-                ) {
-                  supersedeRetriedError(runConversationId, displayedFailure.id, physicalFailure.id);
-                }
-              }
-              // **没有轮次可锚。** 这一档下面紧跟着 `rejectBlockedSend()`,而它会
-              // `retractPaintedTurn()` 把刚画出去的那一轮收回 —— 没有 run,也就
-              // 没有「那一轮」可挂。锚点给 `null`,读数照旧落在流水末尾(T61)。
-              setAmrBalanceCard(
-                amrBalanceCardCue(amrBalanceCardBalanceUsd(gate.snapshot), null),
-              );
-              setAmrBalanceCardProfile(gate.snapshot.profile ?? null);
-              // 余额耗尽 **且这一发的正文归输入框**:不进队列(OPEND-2719)。
-              // 弹窗 + 卡就是这一发的答复,正文回到输入框。别的调用方掉到
-              // 下面那条原来的排队路上,行为一个字不变。
-              if (meta?.composerOwnedDraft) return rejectBlockedSend();
-            }
-            return acceptedDurableQueue(parkBlockedSend());
-          }
-          if (gate.kind === 'unavailable') {
-            return acceptedDurableQueue(parkBlockedSend());
-          }
-          if (gate.kind === 'empty_not_blocked') {
-            /*
-             * 钱包**是空的**,但硬拦让了位(套餐档次读不出来,由 Vela 在入场时
-             * 兜底 —— T55)。让位说的只是「不拦」,不是「没事」:余额确实是 $0,
-             * 这张卡就该照说不误,只是没有弹窗、也不挡这一次发送。
-             *
-             * ⚠️ **这里不是原来的告警档换了个名字。** 告警档(余额 `> 0` 但低于
-             * 那条线)已经由产品 2026-09-07 整档撤掉 —— 原话「这个要不先不要了,
-             * 跟产品说了一下,不要这个了」,追问范围后「余额为零的那个卡片要显示
-             * 的,并且也要弹窗的」。余额 `> 0` 现在一律是 `allow`,走下面那一段
-             * 把读数撤掉,屏幕上什么都不出。见规格 **T66**。
-             */
-            /*
-             * 锚在**这一次要跑的那一轮**上(T61 ①②)。这份读数是它开跑前的余额,
-             * 卡要等它跑完才出现、出现之后就钉在它下面 —— 运行中不出现由
-             * `ChatPane.isFinishedTurn` 判,这里只负责说清「这钱是哪一轮的」。
-             *
-             * 给的是 `assistantId` 而不是「当前最后一条助手消息」:那一轮此刻已经
-             * 画出去了但还没跑完,拿「最后一条」去猜会在重试路径上指错人。
-             */
-            setAmrBalanceCard(
-              amrBalanceCardCue(amrBalanceCardBalanceUsd(gate.snapshot), assistantId),
-            );
-            setAmrBalanceCardProfile(gate.snapshot.profile ?? null);
-          }
-          /*
-           * 判定放行:撤掉读数 —— 余额已经不是问题了,**新的**轮次不该再出卡。
-           *
-           * **余额低但不为零的那一段也落在这里**(T66,产品 2026-09-07 整档撤掉
-           * 告警档)。所以「$1.20 什么都不出」不是靠哪个分支去写 `null`,而是靠
-           * 它根本就是 `allow` —— 判定层已经没有第二条线了。
-           *
-           * ⚠️ 撤的只是读数,不是已经存档的那几张卡。T61 ④:卡是「那一轮为什么
-           * 停下来」的凭据,历史不因为后来充了钱就被抹掉(产品原话「不能说我干个啥
-           * 把当时的失败态搞丢了」)。存档账本在 `ChatPane`,只增不删。
-           */
-          if (gate.kind === 'allow') {
-            setAmrBalanceCard(null);
-            setAmrBalanceCardProfile(null);
-          }
-          amrGatePausedQueueConversationsRef.current.delete(gateConversationId);
-        } finally {
-          amrGateInFlightConversationsRef.current.delete(gateConversationId);
-        }
-      }
       /*
        * 上屏提前带来的**新状态**:预检那一两秒里,这一轮已经在跑的样子摆在屏幕上,
        * 于是〔停止〕这颗按钮**第一次**在建出 run 之前可以按。按下去
@@ -9366,7 +7573,6 @@ export function ProjectView({
           void Promise.resolve(
             saveMessage(project.id, runConversationId, userMsg, {
               createOnly: true,
-              workspaceContext: projectRunWorkspaceContext,
             }),
           ).then((stored) => {
             if (!stored || stored.content === userMsg.content) return;
@@ -9414,7 +7620,6 @@ export function ProjectView({
             project.id,
             runConversationId,
             { title },
-            projectRunWorkspaceContext,
           );
         }
         const projectName = fallbackProjectName;
@@ -9436,7 +7641,7 @@ export function ProjectView({
           void patchProject(project.id, {
             name: projectName,
             ...(metadata ? { metadata } : {}),
-          }, projectRunWorkspaceContext);
+          });
         }
       }
       const canReplaceConversationTitle = (title: string | null | undefined) => {
@@ -9467,7 +7672,6 @@ export function ProjectView({
             project.id,
             runConversationId,
             { title: agentTitle },
-            projectRunWorkspaceContext,
           );
         }
         if (
@@ -9487,7 +7691,7 @@ export function ProjectView({
           void patchProject(project.id, {
             name: agentTitle,
             ...(metadata ? { metadata } : {}),
-          }, projectRunWorkspaceContext);
+          });
         }
       };
 
@@ -9559,7 +7763,6 @@ export function ProjectView({
             abortRef.current !== controller
             || projectIdRef.current !== project.id
             || activeConversationIdRef.current !== runConversationId
-            || projectResourceAuthorityRef.current === 'denied'
           ) {
             return curr;
           }
@@ -9822,7 +8025,6 @@ export function ProjectView({
       cancelRef.current = cancelController;
       const handlers = {
         onDelta: (delta: string) => {
-          if (delta.trim()) retireFundingHint();
           // See reattach-path comment above for rationale.  PR #4651 round 9.
           if (currentRunId) {
             transientFailedRetriesRef.current.delete(currentRunId);
@@ -9833,7 +8035,6 @@ export function ProjectView({
           textBuffer.appendContent(delta);
         },
         onAgentEvent: (ev: AgentEvent) => {
-          if (ev.kind === 'text' || ev.kind === 'thinking' || ev.kind === 'tool_use') retireFundingHint();
           if (currentRunId) {
             transientFailedRetriesRef.current.delete(currentRunId);
             genericDisconnectRetriesRef.current.delete(currentRunId);
@@ -9895,7 +8096,6 @@ export function ProjectView({
           });
         },
         onDone: (fullText = '') => {
-          retireFundingHint();
           liveFocusClosed = true;
           // The daemon delivers onDone even for a canceled run, so a run
           // superseded by a "send now" interrupt can still land here and must
@@ -9992,8 +8192,6 @@ export function ProjectView({
               && !supersededRunsRef.current.has(controller)
               && projectIdRef.current === project.id
               && activeConversationIdRef.current === runConversationId
-              && canonicalProjectRunWorkspaceContextRef.current.authorityKey === projectRunAuthorityKey
-              && projectResourceAuthorityRef.current !== 'denied'
               && latestRunMessage?.id === assistantId;
           };
           if (finalizingRunId) finalizingLocalRunIdsRef.current.add(finalizingRunId);
@@ -10209,8 +8407,6 @@ export function ProjectView({
           // this stale pre-probe timestamp.
           let endedAt = Date.now();
           const errorCode = (err as Error & { code?: string }).code;
-          if (errorCode !== AMR_INSUFFICIENT_BALANCE_CODE) retireFundingHint();
-          else fundingHintRelevant = false;
           const resumable = (err as Error & { resumable?: boolean }).resumable === true;
           let finalRunStatusAfterError: ChatMessage['runStatus'] = 'failed';
           let refreshConversationAfterError = false;
@@ -10231,13 +8427,6 @@ export function ProjectView({
           // tagged superseded. See the onDone above for the ownership rationale.
           const runMayFinalize =
             !supersededRunsRef.current.has(controller);
-          if (runMayFinalize && config.mode === 'daemon' && assistantAgentId === 'amr') {
-            showAmrFundingFailure({
-              code: errorCode, runKey: assistantId,
-              conversationId: runConversationId, authorityKey: projectRunAuthorityKey,
-              accountGeneration: sendAccountGeneration,
-            });
-          }
           if (currentRunId && runMayFinalize && isGenericDaemonDisconnect(err)) {
             manualFileWriteRegistration.release(true);
           }
@@ -10359,26 +8548,12 @@ export function ProjectView({
                 }, 3000);
                 const latestRunStatus = await fetchChatRunStatus(
                   runIdForGenericDisconnect,
-                  projectRunWorkspaceContext,
                 ).catch(() => null);
                 if (latestRunStatus?.artifactPaths) {
                   authoritativeArtifactPaths = latestRunStatus.artifactPaths;
                 }
                 if (!latestRunStatus || isActiveRunStatus(latestRunStatus.status)) {
                 } else if (latestRunStatus.status === 'succeeded') {
-                  if (
-                    latestRunStatus.agentId === 'amr'
-                    && typeof latestRunStatus.artifactCount === 'number'
-                  ) {
-                    publishDaemonRunFinishedEvent({
-                      agentId: latestRunStatus.agentId,
-                      runId: runIdForGenericDisconnect,
-                      projectId: project.id,
-                      conversationId: runConversationId,
-                      result: 'success',
-                      artifactCount: latestRunStatus.artifactCount,
-                    });
-                  }
                   clearProjectTimeout(backoffTimer);
                   // Advance the outer endedAt so updateConversationLatestRun()
                   // below adopts this same authoritative terminal timestamp,
@@ -10597,11 +8772,7 @@ export function ProjectView({
           ...(projectTurn ? { projectTurnIndex: projectTurn.projectTurnIndex } : {}),
           ...(meta?.dsEnrichment ? { dsEnrichment: true } : {}),
           hasExistingArtifact,
-          runtimeType: daemonByokOpenCode
-            ? ('byok' as const)
-            : config.agentId === 'amr'
-              ? ('amr_cloud' as const)
-              : ('local_cli' as const),
+          runtimeType: daemonByokOpenCode ? ('byok' as const) : ('local_cli' as const),
           taskExecutionId: taskAnalytics.taskExecutionId,
           initialRunId: taskAnalytics.initialRunId,
           sourceRunId: taskAnalytics.sourceRunId,
@@ -10624,7 +8795,6 @@ export function ProjectView({
           skillIds: Array.isArray(meta?.skillIds) ? meta.skillIds : [],
           context: runContext,
           designSystemId: runtimeDesignSystemId ?? null,
-          workspaceContext: projectRunWorkspaceContext,
           attachments: runAttachments.map((a) => a.path),
           commentAttachments: runCommentAttachments,
           sessionMode: runSessionMode,
@@ -10710,7 +8880,6 @@ export function ProjectView({
             // The view may already be on a different project/conversation;
             // pin the daemon run to the original row so returning can reattach.
             void saveMessage(project.id, runConversationId, pinnedAssistant, {
-              workspaceContext: projectRunWorkspaceContext,
             });
             updateMessageById(assistantId, (prev) => ({
               ...prev,
@@ -10847,7 +9016,6 @@ export function ProjectView({
           projectFiles,
           {
             omitNativeImageAttachments: usesAnthropicProxy(config),
-            workspaceContext: projectRunWorkspaceContext,
           },
         );
         // Session-dimension hints on the BYOK-OpenCode path too, so
@@ -10873,7 +9041,6 @@ export function ProjectView({
           skillIds: Array.isArray(meta?.skillIds) ? meta.skillIds : [],
           context: runContext,
           designSystemId: runtimeDesignSystemId ?? null,
-          workspaceContext: projectRunWorkspaceContext,
           attachments: runAttachments.map((a) => a.path),
           commentAttachments: runCommentAttachments,
           sessionMode: runSessionMode,
@@ -10951,7 +9118,6 @@ export function ProjectView({
             };
             latestAssistantMsg = pinnedAssistant;
             void saveMessage(project.id, runConversationId, pinnedAssistant, {
-              workspaceContext: projectRunWorkspaceContext,
             });
             updateMessageById(assistantId, (prev) => ({
               ...prev,
@@ -11061,13 +9227,6 @@ export function ProjectView({
       byokSpeechModelOptionsPV,
       projectRunAuthorityKey,
       registerManualFileWrites,
-      projectRunPreflightContext,
-      projectRunWorkspaceContext,
-      projectRunHasBillableAmrPrincipal,
-      projectMutationReadOnly,
-      projectWorkspaceScopeState.scope,
-      showAmrFundingFailure,
-      amrBalanceCardScope,
     ],
   );
 
@@ -11128,14 +9287,6 @@ export function ProjectView({
       commentAttachments: ChatCommentAttachment[],
       meta?: ChatSendMeta,
     ): Promise<ChatSendOutcome> => {
-      if (activeConversationId && cloudModelSelected) {
-        const decision = await requestAmrArtifactUpgrade({
-          projectId: project.id,
-          conversationId: activeConversationId,
-          source: 'chat_send',
-        });
-        if (decision === 'cancel') return 'restore-draft';
-      }
       /*
        * 等 `handleSend` 落定,好让**被余额拦下的那一发**把正文还回输入框
        * (OPEND-2719)。以前这里是 `void handleSend(...)`:输入框立刻清空,
@@ -11157,12 +9308,9 @@ export function ProjectView({
         composerOwnedDraft: true,
       });
       if (started) return;
-      // 认领必须按请求 id:同一条会话里可能有别的发送也在这段时间被拒。
-      if (amrGateBlockedRequestRef.current !== clientRequestId) return;
-      amrGateBlockedRequestRef.current = null;
       return 'restore-draft';
     },
-    [activeConversationId, cloudModelSelected, handleSend, project.id],
+    [handleSend],
   );
 
   // Cancel every in-flight run for the current conversation (the user's own
@@ -11344,17 +9492,6 @@ export function ProjectView({
     if (startingQueuedChatSendIdRef.current) return;
     if (!activeConversationId) return;
     if (messagesConversationIdRef.current !== activeConversationId) return;
-    // Queue paused by the balance gate: don't re-drain (and re-pop the
-    // dialog) on unrelated state churn while AMR is still the agent. The
-    // manual "run now" path below bypasses this deliberately, and switching
-    // agents makes the pause irrelevant.
-    if (
-      config.mode === 'daemon' &&
-      config.agentId === 'amr' &&
-      amrGatePausedQueueConversationsRef.current.has(activeConversationId)
-    ) {
-      return;
-    }
     const next = queuedChatSendsRef.current.find(
       (item) => item.conversationId === activeConversationId,
     );
@@ -11501,54 +9638,6 @@ export function ProjectView({
     [currentConversationActionDisabled, handleSend, messages],
   );
 
-  // OPEND-3205 supersedes the Settings-return automatic retry for this action.
-  // Preserve the failed turn; selecting Cloud does not submit another task.
-  const cloudSwitchInFlightRef = useRef(false);
-  const handleSwitchConversationToCloud = useCallback(async (
-    conversationId: string,
-    failedAssistant: ChatMessage,
-  ) => {
-    if (
-      cloudSwitchInFlightRef.current
-      || !onSwitchToCloud
-      || projectMutationReadOnly
-      || !projectRunHasBillableAmrPrincipal
-      || !conversations.some((conversation) =>
-        conversation.id === conversationId && conversation.projectId === project.id)
-      || !isRetryableAssistantTerminalFailure(failedAssistant)
-      || (conversationId === activeConversationId && currentConversationActionDisabled)
-    ) return;
-    const sourceProjectId = project.id;
-    const sourceAuthority = projectRunAuthorityKey;
-    const sourcePrimaryConversationId = activeConversationId;
-    const stillOwnsView = () => mountedRef.current
-      && projectIdRef.current === sourceProjectId
-      && projectRunAuthorityKeyRef.current === sourceAuthority
-      && activeConversationIdRef.current === sourcePrimaryConversationId;
-    cloudSwitchInFlightRef.current = true;
-    try {
-      await onSwitchToCloud();
-      if (!stillOwnsView()) return;
-      setProjectActionsToast({
-        message: t('chat.amrCard.switchedResend'), details: null, tone: 'success',
-      });
-    } catch {
-      if (!stillOwnsView()) return;
-      setProjectActionsToast({
-        message: t('settings.autosaveError'), details: null, tone: 'error',
-      });
-    } finally {
-      cloudSwitchInFlightRef.current = false;
-    }
-  }, [
-    activeConversationId, conversations, currentConversationActionDisabled,
-    onSwitchToCloud, project.id, projectMutationReadOnly, projectRunAuthorityKey,
-    projectRunHasBillableAmrPrincipal, t,
-  ]);
-  const handleSwitchToAmrAndRetry = useCallback((failedAssistant: ChatMessage) => {
-    if (!activeConversationId) return;
-    void handleSwitchConversationToCloud(activeConversationId, failedAssistant);
-  }, [activeConversationId, handleSwitchConversationToCloud]);
   // PR #3157: Antigravity's `agy -p` cannot complete OAuth on its own,
   // so the auth banner offers a one-click "Sign in via terminal"
   // button that POSTs to the daemon. The daemon opens a system
@@ -11627,7 +9716,6 @@ export function ProjectView({
           project.id,
           images,
           undefined,
-          projectRunWorkspaceContext,
         );
         if (result.uploaded.length !== images.length) {
           return finish({ status: 'rejected', commentIds: [] });
@@ -11663,7 +9751,7 @@ export function ProjectView({
       }
       return finish({ status: 'queued', commentIds: queuedCommentIds });
     },
-    [handleSend, project.id, project.metadata, analytics.track, currentConversationQueueDisabled, projectRunWorkspaceContext],
+    [handleSend, project.id, project.metadata, analytics.track, currentConversationQueueDisabled],
   );
   const commentQueueOnSend = currentConversationBusy && !currentConversationQueueDisabled;
 
@@ -11712,7 +9800,6 @@ export function ProjectView({
   const handlePluginFolderAgentAction = useCallback(
     async (relativePath: string, action: PluginFolderAgentAction) => {
       if (currentConversationActionDisabled || !activeConversationId) return;
-      const pluginWorkflowWorkspaceContext = projectRunWorkspaceContext;
       setHiddenAssistantPluginActionPaths((prev) => new Set(prev).add(relativePath));
       if (action === 'install') {
         setActivePluginActionPaths((prev) => new Set(prev).add(relativePath));
@@ -11721,7 +9808,6 @@ export function ProjectView({
           outcome = await installGeneratedPluginFolder(
             project.id,
             relativePath,
-            pluginWorkflowWorkspaceContext,
           );
         } finally {
           setActivePluginActionPaths((prev) => {
@@ -11747,7 +9833,6 @@ export function ProjectView({
           project.id,
           relativePath,
           shareAction,
-          pluginWorkflowWorkspaceContext,
         );
       } catch (error) {
         setActivePluginActionPaths((prev) => {
@@ -11811,7 +9896,6 @@ export function ProjectView({
             taskStart.taskId,
             since,
             25_000,
-            pluginWorkflowWorkspaceContext,
           );
           since = snapshot.nextSince;
           if (snapshot.progress.length > 0) {
@@ -11965,7 +10049,6 @@ export function ProjectView({
       currentConversationActionDisabled,
       pluginWorkflowAgentName,
       project.id,
-      projectRunWorkspaceContext,
       replaceConversationMessage,
     ],
   );
@@ -12015,8 +10098,8 @@ export function ProjectView({
       },
     };
     onProjectChange({ ...project, metadata });
-    void patchProject(project.id, { metadata }, projectRunWorkspaceContext);
-  }, [onProjectChange, project, projectRunWorkspaceContext]);
+    void patchProject(project.id, { metadata });
+  }, [onProjectChange, project]);
 
   const sendDesignSystemFeedback = useCallback((
     sectionTitle: string,
@@ -12107,7 +10190,6 @@ export function ProjectView({
   ]);
 
   const handleNewConversation = useCallback(async () => {
-    if (projectMutationReadOnly) return;
     if (creatingConversationRef.current) return;
     // Only block if we're sure the current conversation is empty:
     // messages must be loaded AND match the active conversation.
@@ -12122,7 +10204,6 @@ export function ProjectView({
     setConversationLoadFailure(null);
     try {
       const fresh = await createConversation(project.id, undefined, {
-        workspaceContext: projectRunWorkspaceContext,
       });
       if (!fresh) throw new Error('Could not create a conversation for this project.');
       // Eagerly clear messages and update ref so rapid clicks don't create
@@ -12170,9 +10251,7 @@ export function ProjectView({
     messages.length,
     navigate,
     openTabsState.active,
-    projectRunWorkspaceContext,
     projectRunAuthorityKey,
-    projectMutationReadOnly,
   ]);
 
   const handleSelectConversation = useCallback((id: string, measureNavigation = true) => {
@@ -12222,7 +10301,6 @@ export function ProjectView({
       const myToken = ++conversationsRefreshTokenRef.current;
       try {
         const list = await listConversations(capturedProjectId, {
-          workspaceContext: projectRunWorkspaceContext,
         });
         if (projectIdRef.current !== capturedProjectId) return false;
         if (conversationsRefreshTokenRef.current !== myToken) return false;
@@ -12238,16 +10316,14 @@ export function ProjectView({
         return true;
       }
     },
-    [project.id, projectRunWorkspaceContext],
+    [project.id],
   );
 
   const handleDeleteConversation = useCallback(
     async (id: string) => {
-      if (projectMutationReadOnly) return;
       const ok = await deleteConversationApi(
         project.id,
         id,
-        projectRunWorkspaceContext,
       );
       if (!ok) return;
       // The deleted conversation may have owned an unanswered
@@ -12263,7 +10339,6 @@ export function ProjectView({
           // Re-seed so the project always has at least one conversation
           // to write into.
           void createConversation(project.id, undefined, {
-            workspaceContext: projectRunWorkspaceContext,
           }).then((fresh) => {
             if (fresh) {
               setConversations([fresh]);
@@ -12280,14 +10355,11 @@ export function ProjectView({
       project.id,
       activeConversationId,
       onProjectsRefresh,
-      projectRunWorkspaceContext,
-      projectMutationReadOnly,
     ],
   );
 
   const handleRenameConversation = useCallback(
     async (id: string, title: string) => {
-      if (projectMutationReadOnly) return;
       const trimmed = title.trim() || null;
       setConversations((curr) =>
         curr.map((c) => (c.id === id ? { ...c, title: trimmed } : c)),
@@ -12296,15 +10368,13 @@ export function ProjectView({
         project.id,
         id,
         { title: trimmed },
-        projectRunWorkspaceContext,
       );
     },
-    [project.id, projectRunWorkspaceContext, projectMutationReadOnly],
+    [project.id],
   );
 
   const handleConversationSessionModeChange = useCallback(
     async (id: string, sessionMode: ChatSessionMode) => {
-      if (projectMutationReadOnly) return;
       setConversations((curr) =>
         curr.map((conversation) =>
           conversation.id === id ? { ...conversation, sessionMode } : conversation,
@@ -12314,7 +10384,6 @@ export function ProjectView({
         project.id,
         id,
         { sessionMode },
-        projectRunWorkspaceContext,
       );
       if (updated) {
         setConversations((curr) =>
@@ -12324,7 +10393,7 @@ export function ProjectView({
         );
       }
     },
-    [project.id, projectRunWorkspaceContext, projectMutationReadOnly],
+    [project.id],
   );
 
   const handleActiveConversationSessionModeChange = useCallback(
@@ -12337,7 +10406,7 @@ export function ProjectView({
 
   const handleForkFromMessage = useCallback(
     async (assistantMessage: ChatMessage) => {
-      if (!activeConversationId || forkingMessageId || projectMutationReadOnly) return;
+      if (!activeConversationId || forkingMessageId) return;
       const requestId = analytics.newRequestId();
       const startedAt = Date.now();
       /*
@@ -12400,7 +10469,6 @@ export function ProjectView({
               ? undefined
               : (forkBoundaryMessage ?? assistantMessage),
           forkFallbackPredecessorMessageId,
-          workspaceContext: projectRunWorkspaceContext,
           throwOnError: true,
         });
         if (!fresh) {
@@ -12486,7 +10554,6 @@ export function ProjectView({
       openTabsState.active,
       project.id,
       project.metadata,
-      projectMutationReadOnly,
       t,
       updateMessageById,
     ],
@@ -12549,7 +10616,6 @@ export function ProjectView({
 
   const handleChangeDesignSystemId = useCallback(
     (nextId: string | null) => {
-      if (projectMutationReadOnly) return;
       if ((projectDesignSystemId ?? null) === nextId) return;
       // `design_system_apply_result` studio variant. The existing
       // NewProjectPanel picker fires the same event under
@@ -12621,7 +10687,7 @@ export function ProjectView({
         updatedAt: Date.now(),
       };
       onProjectChange(updated);
-      void patchProject(project.id, { designSystemId: nextId }, projectRunWorkspaceContext);
+      void patchProject(project.id, { designSystemId: nextId });
     },
     [
       project,
@@ -12629,8 +10695,6 @@ export function ProjectView({
       onProjectChange,
       designSystems,
       analytics.track,
-      projectMutationReadOnly,
-      projectRunWorkspaceContext,
     ],
   );
 
@@ -12653,25 +10717,15 @@ export function ProjectView({
     if (!projectIsDesignSystemProject || !projectDesignSystemId) return null;
     return designSystems.find((d) => d.id === projectDesignSystemId) ?? null;
   }, [designSystems, projectDesignSystemId, projectIsDesignSystemProject]);
-  // recvqb6mfyqXLD: `designSystemProject.teamSynced`/`canMutate` come off the
-  // exact same `GET /api/design-systems` list this project's design-system
-  // tab already reads (via the `designSystems` prop) — this is a genuinely
-  // separate signal from `projectCollab.viewerOnly` above. Team-sharing a
-  // design system does NOT also register its backing project with the
-  // project-level collab/hub (`/api/projects/:id/collab/status` stays
-  // `local_only` for a teammate's synced copy), so `viewerOnly` alone never
-  // catches this: a plain member opening a teammate's team-synced design
-  // system through this in-project tab (reachable once `DesignSystemFlow`'s
-  // `ensureUserDesignSystemWorkspaceProject` materializes a local project for
-  // it) used to see a fully-live Publish toggle, DESIGN.md editor, and the
-  // logo/image/color edit + delete-project affordances below with no
-  // ownership check at all. `canMutate` mirrors the daemon's own
-  // `canMutateUserDesignSystem` PATCH/DELETE verdict, so this stays in
-  // lockstep with whatever the backend actually allows; `undefined` (not
-  // `teamSynced`, i.e. the caller's own system or a built-in preset) reads as
-  // editable, matching every other consumer of this field.
+  // recvqb6mfyqXLD: `designSystemProject.canMutate` comes off the exact same
+  // `GET /api/design-systems` list this project's design-system tab already
+  // reads (via the `designSystems` prop). It mirrors the daemon's own
+  // `canMutateUserDesignSystem` PATCH/DELETE verdict, so the Publish toggle,
+  // DESIGN.md editor, and the logo/image/color edit + delete-project
+  // affordances below stay in lockstep with whatever the backend actually
+  // allows; `undefined` (the caller's own system or a built-in preset) reads
+  // as editable, matching every other consumer of this field.
   const designSystemEditable =
-    !projectCollab.materializationPending &&
     designSystemProject?.canMutate !== false &&
     (
       !projectIsProgrammaticBrandExtraction ||
@@ -12813,7 +10867,7 @@ export function ProjectView({
       requestOpenFile(fileName);
       setShareRequest((previous) => ({
         name: fileName,
-        nonce: nextShareRequestNonce(previous?.nonce, Date.now()),
+        nonce: Math.max(Date.now(), (previous?.nonce ?? 0) + 1),
         ...(anchorId ? { anchorId } : {}),
       }));
     },
@@ -13133,12 +11187,8 @@ export function ProjectView({
   const autoSendAttachmentsRef = useRef<ChatAttachment[] | null>(null);
   const autoSendContextRef = useRef<RunContextSelection | null>(null);
   const autoSendFirstMessageRef = useRef(false);
-  const autoSendAmrGateWitnessRef = useRef<AmrBalanceGateScope | undefined>(
-    undefined,
-  );
   if (autoSendSeedRef.current === null) {
     let isAutoSend = false;
-    let amrGateWitness: AmrBalanceGateScope | undefined;
     try {
       // A Home send mounts this view before App has written the auto-send
       // keys (they follow the create and the uploads, OPEND-3334). Its prompt
@@ -13147,14 +11197,10 @@ export function ProjectView({
       isAutoSend = creationHandoff !== null || Boolean(
         window.sessionStorage.getItem(autoSendFirstMessageKey(project.id)),
       );
-      amrGateWitness = readAutoSendAmrGateWitness(project.id);
     } catch {
       /* sessionStorage may be unavailable; treat as manual flow. */
     }
     autoSendFirstMessageRef.current = isAutoSend;
-    autoSendAmrGateWitnessRef.current = isAutoSend
-      ? amrGateWitness
-      : undefined;
     autoSendSeedRef.current = isAutoSend
       ? (readAutoSendPrompt(project.id) ?? creationHandoff?.prompt ?? project.pendingPrompt ?? '')
       : '';
@@ -13718,7 +11764,7 @@ export function ProjectView({
     try {
       const result = await duplicatePluginAsProject(record.id, {
         name: localizePluginTitle(locale, record),
-      }, resolvedWorkspaceContextForWrite(workspaceContextState));
+      });
       setContextPluginDetails(null);
       navigate({
         kind: 'project',
@@ -13734,7 +11780,7 @@ export function ProjectView({
         ttlMs: 3000,
       });
     }
-  }, [locale, t, workspaceContextState]);
+  }, [locale, t]);
   const handleOpenContextDesignSystemDetails = useCallback((system: DesignSystemSummary) => {
     setContextDesignSystemDetails(system);
   }, []);
@@ -13901,7 +11947,6 @@ export function ProjectView({
     // render where the state is ready but the ref has already been invalidated
     // for a fresh scoped reload.
     if (messagesConversationIdRef.current !== activeConversationId) return;
-    if (!projectRunHasBillableAmrPrincipal) return;
     // Wait for the initial listMessages DB read to land. Without this gate
     // the auto-send fires before the in-flight DB response, which then
     // arrives with `setMessages([])` and wipes the freshly-pushed user +
@@ -13954,29 +11999,11 @@ export function ProjectView({
     if (!seed && attachments.length === 0) {
       return;
     }
-    // A view mounted from the click read no witness (App writes it after the
-    // create); read it now so Home's gate decision is still reused.
-    if (autoSendAmrGateWitnessRef.current === undefined) {
-      try {
-        autoSendAmrGateWitnessRef.current = readAutoSendAmrGateWitness(project.id);
-      } catch {
-        /* sessionStorage may be unavailable; handleSend runs its own gate. */
-      }
-    }
-    const autoSendGateStillMatches =
-      autoSendAmrGateWitnessRef.current !== undefined &&
-      amrBalanceGateScopesMatch(
-        autoSendAmrGateWitnessRef.current,
-        amrBalanceGateScopeForWorkspaceContext(projectRunPreflightContext),
-      );
     autoSendInFlightRef.current = true;
     void handleSend(seed, attachments, [], {
         ...(context ? { context } : {}),
         ...homeAutoSendIdentity(project.id),
         acceptDurableQueue: true,
-        // Only reuse Home's decision for the exact persisted project scope.
-        // A workspace/member mismatch falls through to handleSend's normal gate.
-        ...(autoSendGateStillMatches ? { amrGatePrechecked: true } : {}),
       })
       .then((accepted) => {
         if (!accepted) {
@@ -14017,9 +12044,6 @@ export function ProjectView({
     project.metadata,
     initialDraft,
     project.pendingPrompt,
-    projectRunHasBillableAmrPrincipal,
-    projectRunBillingContext,
-    projectRunPreflightContext,
     handleSend,
   ]);
 
@@ -14096,7 +12120,6 @@ export function ProjectView({
         onRefreshAgents={onRefreshAgents}
         openSignal={modelPickerOpenSignal}
         placement="up"
-        projectWorkspaceScope={projectWorkspaceScopeState}
       />
     </>
   );
@@ -14105,11 +12128,10 @@ export function ProjectView({
   // owns the `div.app` around every project-route surface, so switching
   // between them never replays the `.app` entrance animation.
   return (
-    <CollabProvider value={collabValue}>
+    <>
       <CritiqueTheaterMount
         projectId={project.id}
         enabled={critiqueTheaterEnabled}
-        workspaceContext={projectRunWorkspaceContext}
       />
       {/* ProjectActionsToolbar removed per 00efdcba — hide finalize-design
           toolbar from project header. Restore from cf1cd9bb if product
@@ -14166,7 +12188,7 @@ export function ProjectView({
               </button>
             </div>
           ) : null}
-          {activeConversationId || conversationLoadError || emptyConversationReadOnlySettled || seedConversationId !== null ? (
+          {activeConversationId || conversationLoadError || seedConversationId !== null ? (
             <ChatPane
               historyPortalTarget={historyPortalTarget}
               // The conversation id is part of the key so switching conversations
@@ -14199,18 +12221,7 @@ export function ProjectView({
               // uploads do.
               sendDisabled={
                 currentConversationSendDisabled
-                || projectMutationReadOnly
                 || homeAttachmentUploads.length > 0
-              }
-              viewerOnly={projectMutationReadOnly}
-              composerPlaceholder={
-                projectCollab.materializationPending
-                  ? t('designFiles.syncing')
-                  // Placeholder only EXPLAINS; `sendDisabled` above still keeps
-                  // the composer inert from the fail-closed flag. Undefined
-                  // here means "disabled, reason not yet known" -- the default
-                  // placeholder, not a claim about who owns this project.
-                  : readonlyNoticeText
               }
               queuedItems={currentConversationQueuedItems}
               error={conversationLoadError ?? error}
@@ -14249,15 +12260,6 @@ export function ProjectView({
                   : null
               }
               onSwitchModel={handleSwitchModel}
-              amrAuthRetryContinuation={amrAuthRetryContinuation}
-              amrAuthRetryMountId={amrAuthRetryMountIdRef.current}
-              amrAuthRetryWorkspaceIdentityKey={projectRunAuthorityKey}
-              amrAuthRetryAuthorityPending={amrAuthRetryAuthorityPending}
-              amrAuthRetryReady={amrAuthRetryReady}
-              amrAuthRetryPersonalAdoptionWitness={amrAuthRetryPersonalAdoptionWitness}
-              onArmAmrAuthRetryContinuation={onArmAmrAuthRetryContinuation}
-              onConsumeAmrAuthRetryContinuation={onConsumeAmrAuthRetryContinuation}
-              onDiscardAmrAuthRetryContinuation={onDiscardAmrAuthRetryContinuation}
               onResumeRun={handleResumeRun}
               onStop={creationHandoffTurnShown ? ignoreStopBeforeFirstRun : handleStop}
               // 组件 22 · 重连 · S29:掉线时流水的最后一行。按当前会话过一道 ——
@@ -14292,7 +12294,6 @@ export function ProjectView({
                   ...(sourceAssistant?.runId ? { sourceRunId: sourceAssistant.runId } : {}),
                   fetchRunStatus: (runId) => fetchChatRunStatus(
                     runId,
-                    projectRunWorkspaceContext,
                   ),
                 });
                 if (sourceAssistant && strategyTaskExecutionId) {
@@ -14349,7 +12350,7 @@ export function ProjectView({
               onArtifactShare={handleArtifactShare}
               onArtifactDownload={handleArtifactDownload}
               onForkFromMessage={
-                projectMutationReadOnly ? undefined : handleForkFromMessage
+                handleForkFromMessage
               }
               forkingMessageId={forkingMessageId}
               onNewConversation={handleNewConversation}
@@ -14361,11 +12362,6 @@ export function ProjectView({
               onDeleteConversation={handleDeleteConversation}
               config={config}
               onOpenSettings={onOpenSettings}
-              amrBalanceCardUsd={amrBalanceCardUsd}
-              amrBalanceCardAnchorMessageId={amrBalanceCardAnchorId}
-              amrBalanceAudience={amrBalanceBranch.audience}
-              amrBalanceCardUnavailable={amrBalanceFailureWalletUnavailable}
-              onAmrBalanceUpgrade={handleAmrBalanceCardUpgrade}
               showByokRecoveryAction={
                 config.mode === 'api' &&
                 daemonLive &&
@@ -14379,8 +12375,6 @@ export function ProjectView({
                 setError(null);
                 onModeChange('daemon');
               }}
-              onOpenAmrSettings={onOpenAmrSettings}
-              onSwitchToAmrAndRetry={handleSwitchToAmrAndRetry}
               onLaunchAntigravityOauth={handleLaunchAntigravityOauth}
               onOpenMcpSettings={onOpenMcpSettings}
               onBrowsePlugins={onBrowsePlugins}
@@ -14460,8 +12454,6 @@ export function ProjectView({
                   variant="home"
                   designSystems={designSystems}
                   selectedId={projectDesignSystemId ?? null}
-                  workspaceContext={projectRunWorkspaceContext}
-                  disabled={projectMutationReadOnly}
                   onChange={handleChangeDesignSystemId}
                 />
               )}
@@ -14502,23 +12494,11 @@ export function ProjectView({
           />
         ) : null}
         <FileWorkspace
-          headerActions={projectCollab.enabled && projectCollab.isOwner && projectCollab.requestContentUpdate ? (
-            <OwnedContentUpdate key={`${project.id}:${projectRunWorkspaceContext?.workspaceId}:${projectRunWorkspaceContext?.workspaceMemberId}`}
-              update={projectCollab.ownedContentUpdate ?? null} request={projectCollab.requestContentUpdate} />
-          ) : null}
           projectId={project.id}
           projectName={currentProject.name}
-          viewerOnly={projectMutationReadOnly}
-          materializationPending={projectCollab.materializationPending}
           filesAuthoritative={committedFilesGeneration > 0}
           emptyLookBeforeFirstListing={emptyLookBeforeFirstListing}
           projectReadsHeld={projectReadsHeld}
-          readonlyNotice={
-            projectCollab.materializationPending
-              ? t('designFiles.syncing')
-              : readonlyNoticeText
-          }
-          fileSyncBadge={fileSyncBadge}
           projectKind={projectKindFromMetadataToTrackingOrLegacyDefault(currentProject.metadata)}
           rootDirName={(() => {
             const baseDir = currentProject.metadata?.baseDir;
@@ -14534,12 +12514,6 @@ export function ProjectView({
           filesGeneration={committedFilesGeneration}
           onRefreshFiles={refreshFileWorkspace}
           onManualFileWritten={recordManualFileWrite}
-          onObservedPublicShareLink={onObservedPublicShareLink}
-          observedPublicShareLink={observedPublicShareLink}
-          loginUpdateRequest={loginUpdateRequest}
-          onLoginUpdateRequestHandled={onLoginUpdateRequestHandled}
-          shareLoginReturn={shareLoginReturn}
-          onShareLoginReturnChange={onShareLoginReturnChange}
           isDeck={isDeck}
           streaming={currentConversationActionDisabled}
           // The building preview needs a real run, not the disabled-actions
@@ -14594,14 +12568,6 @@ export function ProjectView({
           githubConnected={githubConnected}
           commentPortalId={commentInspectorPortalId}
           onCommentModeChange={setCommentInspectorActive}
-          fileActionsBefore={projectCollab.enabled ? (
-            <PresenceBar
-              members={projectCollab.present}
-              selfMember={projectCollab.member}
-              resolveMember={resolvePresenceMember}
-              {...(projectCollab.member ? { selfMemberId: projectCollab.member.memberId } : {})}
-            />
-          ) : null}
           chatConfig={config}
           chatAgentsById={agentsById}
           handoffAgents={agents}
@@ -14618,13 +12584,10 @@ export function ProjectView({
           onConversationSessionModeChange={handleConversationSessionModeChange}
           onNewConversation={handleNewConversation}
           activeConversationChat={activeConversationChatState}
-          onSwitchConversationToCloud={
-            onSwitchToCloud ? handleSwitchConversationToCloud : undefined
-          }
           chatRecoveryActionsBlockedReason={resolveRecoveryActionBlockReason({
-            readOnly: Boolean(projectMutationReadOnly),
+            readOnly: false,
             messagesUnavailable: false,
-            billingPrincipalResolved: Boolean(projectRunHasBillableAmrPrincipal),
+            billingPrincipalResolved: true,
             conversationBusy: false,
           })}
           onActiveContextChange={handleActiveWorkspaceContextChange}
@@ -14632,7 +12595,6 @@ export function ProjectView({
           messages={messages}
           artifactHtml={artifact?.html}
           conversationError={error}
-          onAuthorizeAndRetry={handleSwitchToAmrAndRetry}
           onLaunchTerminalAuth={handleLaunchAntigravityOauth}
           conversationId={activeConversationId}
         />
@@ -14640,7 +12602,6 @@ export function ProjectView({
       {contextPluginDetails ? (
         <PluginDetailsModal
           record={contextPluginDetails}
-          workspaceContext={projectRunWorkspaceContext}
           onClose={() => setContextPluginDetails(null)}
           onUse={() => setContextPluginDetails(null)}
           onDuplicate={(record) => void handleDuplicateContextPlugin(record)}
@@ -14651,7 +12612,6 @@ export function ProjectView({
       {contextDesignSystemDetails ? (
         <DesignSystemPreviewModal
           system={contextDesignSystemDetails}
-          workspaceContext={projectRunWorkspaceContext}
           initialViewId="kit"
           onClose={() => setContextDesignSystemDetails(null)}
         />
@@ -14663,49 +12623,6 @@ export function ProjectView({
           and burn its once-ever localStorage budget outside the intended flow. */}
       {onboardingEntryRef.current && hasPreviewableArtifact && !currentConversationStreaming ? (
         <FirstArtifactHint />
-      ) : null}
-      {amrBalanceGateBlock?.dialog === 'ask_owner' || amrOwnerTopUpFromCard ? (
-        /*
-         * 非 owner 的成员。他拿不到账单动作,所以这张弹窗不外跳,而是给他一句
-         * 可以直接发给所有者的话 —— 在此之前这一档只有一颗「暂不需要」(§6.Y)。
-         */
-        <AmrOwnerTopUpDialog
-          onClose={() => {
-            setAmrOwnerTopUpFromCard(false);
-            // 和现有弹窗的「暂不需要」同义:任务留在队列里,只是不再是唯一选项。
-            setAmrBalanceGateBlock(null);
-          }}
-        />
-      ) : null}
-      {amrBalanceGateBlock?.dialog === 'upgrade' ? (
-        <AmrBalanceDialog
-          reason={amrBalanceGateBlock.reason}
-          modelId={amrBalanceGateBlock.modelId}
-          fundingScope={amrBalanceGateBlock.fundingScope}
-          balanceUsd={amrBalanceGateBlock.snapshot?.balanceUsd ?? null}
-          profile={amrBalanceGateBlock.snapshot?.profile ?? null}
-          entrySource="chat_balance_gate_upgrade"
-          upgradeIntent={amrBalanceGateBlock.upgradeIntent}
-          // 弹窗和卡上那颗必须从**同一份**上下文算落点。默认那条(环境里选中
-          // 的工作区)对首页是对的,对项目页不是:这一笔钱是项目那个工作区出的,
-          // 环境里未必就是它。两处不同源正是产品文档说的「卡和弹窗跳去不同的
-          // 地方是缺陷而不是特性」。
-          workspaceContext={amrBalanceGateBlock.workspaceContext === undefined
-            ? projectRunBillingAuthorityContext : amrBalanceGateBlock.workspaceContext}
-          metricsConsent={config.telemetry?.metrics === true}
-          installationId={config.installationId}
-          onClose={() => setAmrBalanceGateBlock(null)}
-          onResolved={() => {
-            // Resume pending sends after sign-in or funding recovery. A run
-            // that already failed remains in history for an explicit retry;
-            // this only releases other sends waiting in the queue. Link still
-            // makes the final funding decision for each new run.
-            const conversationId = amrBalanceGateBlock.conversationId;
-            setAmrBalanceGateBlock(null);
-            amrGatePausedQueueConversationsRef.current.delete(conversationId);
-            setQueuedAutoStartTick((tick) => tick + 1);
-          }}
-        />
       ) : null}
       <AnimatePresence>
         {projectActionsToast && !projectActionsToastInChatPane ? projectActionsToastNode : null}
@@ -14738,7 +12655,7 @@ export function ProjectView({
           />
         ) : null}
       </AnimatePresence>
-    </CollabProvider>
+    </>
   );
 }
 
@@ -15027,12 +12944,11 @@ type RunStatusSnapshot = Awaited<ReturnType<typeof fetchChatRunStatus>>;
 async function resolveTerminalEndedAt(
   runId: string,
   candidate: RunStatusSnapshot | null | undefined,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<number> {
   if (candidate && !isActiveRunStatus(candidate.status)) {
     return candidate.updatedAt;
   }
-  const probed = await fetchChatRunStatus(runId, workspaceContext).catch(() => null);
+  const probed = await fetchChatRunStatus(runId).catch(() => null);
   if (probed && !isActiveRunStatus(probed.status)) {
     return probed.updatedAt;
   }
@@ -15825,127 +13741,6 @@ export function shouldClearActiveRunRefs(
   completedConversationId: string,
 ): boolean {
   return currentConversationId === completedConversationId;
-}
-
-/**
- * 升级卡要显示的余额。读数拿不准就返回 `null` —— 这张卡把数字念给用户听,
- * 念错比不念更糟(付费档的 $0.00 本来就常态,见 #7190)。
- *
- * 判定用的是 `amrWalletBalanceUsd` 同一条解析规则,两处不另算。
- */
-export function amrBalanceCardBalanceUsd(
-  snapshot: AmrWalletSnapshot | null | undefined,
-): number | null {
-  const balance = amrWalletBalanceUsd(snapshot);
-  if (balance == null) return null;
-  return Math.max(0, balance);
-}
-
-/**
- * 一份「要出升级卡」的读数,连同它属于哪一轮 —— 读不出数字就是**没有读数**。
- *
- * 数字和锚点在一个对象里,是为了让「只写了一半」在语法上不成立(T61)。读数缺席
- * 时连对象都不建:一个 `{ balanceUsd: null }` 会诱使后来人给它补一条「没有数字
- * 但有锚点」的分支,而那一格该说话的是白色报错卡,不是这张。
- */
-export function amrBalanceCardCue(
-  balanceUsd: number | null,
-  anchorMessageId: string | null,
-): { balanceUsd: number; anchorMessageId: string | null } | null {
-  if (balanceUsd == null) return null;
-  return { balanceUsd, anchorMessageId };
-}
-
-/**
- * daemon 在 run 里判定的「余额不足」错误码。写在这里而不是从 `amr-guidance`
- * 里借:那个模块导出的是**卡面映射**,不是错误码本身,而这一条要回答的是
- * 「这一轮是不是死在钱上」。
- */
-const AMR_INSUFFICIENT_BALANCE_CODE = 'AMR_INSUFFICIENT_BALANCE';
-
-/**
- * **最后一轮是不是跑到一半死在余额上** —— 是就返回那一轮,不是就 `null`。
- *
- * 这是升级卡在「跑到一半」那条路上的唯一触发点(用户 2026-09-02 裁决:钱的事
- * 只有升级卡一张,没有第二张白色通用报错卡)。发送前那道闸门是另一个触发点,
- * 两者写的是同一个 `amrBalanceCard`。
- *
- * **id 和存档读数一起返回,不分两次走。** 两者读的是**同一条失败事件**,分两个
- * 函数各走一遍这条链就给「id 取自这一条、数字取自那一条」留了缝 —— 和
- * `amrBalanceCardCue` 把数字和锚点装进同一个对象是同一条理由。
- *
- * 三条刻意的窄化:
- *
- * - **只看最后一条助手消息。** 它回答的是「**现在**要不要替某一轮把余额说出来」,
- *   不是「屏幕上该留几张卡」。上一轮缺钱、这一轮跑通了,就不再管了。
- *   ⚠️ 这不再等于「旧卡下去」—— T61 之后已经出过的卡由 `ChatPane` 按轮次存档,
- *   只增不删(产品 2026-09-07:卡是「那一轮为什么停」的凭据,是历史记录)。
- * - **只认结构化错误码**,不去猜原文。错误码由 daemon 的
- *   `classifyAmrAccountFailure` 判定,那是唯一的判据来源;web 再猜一遍就是
- *   两处各说各话。这条码本身只对 AMR 发出,所以不另加 agent 判据 ——
- *   多一道会在 agentId 没落盘的历史消息上把卡吃掉。
- * - **只认终态失败。** 还在跑的一轮不谈余额。
- */
-export function amrInsufficientBalanceFailure(
-  messages: ChatMessage[],
-): { messageId: string; archivedBalanceUsd: number | null } | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i];
-    if (!message || message.role !== 'assistant') continue;
-    if (message.runStatus !== 'failed') return null;
-    const events = message.events ?? [];
-    for (let j = events.length - 1; j >= 0; j--) {
-      const event = events[j];
-      if (event?.kind !== 'status' || event.label !== 'error') continue;
-      if (event.code !== AMR_INSUFFICIENT_BALANCE_CODE) return null;
-      return {
-        messageId: message.id,
-        archivedBalanceUsd:
-          typeof event.amrBalanceUsd === 'number' && Number.isFinite(event.amrBalanceUsd)
-            ? event.amrBalanceUsd
-            : null,
-      };
-    }
-    return null;
-  }
-  return null;
-}
-
-/**
- * 把「这一轮停下来时的余额」写进那条失败事件 —— **存档的唯一写入口**(T61 ④)。
- *
- * 失败事件本身不带余额(daemon 的 `classifyAmrAccountFailure` 只给出错误码),
- * 所以第一次得现查一次;写下来是为了**从此不必再查**。不写的话每次重开都重新
- * 报价,那一轮的卡就会念今天的数字去解释几天前的失败 —— 充完值之后写着
- * 「剩余额度 $20.00」,比卡直接消失更误导。
- *
- * 三条不变量,都是这次写回**能不能活下来**的前提:
- *
- * - **就地改那一条,不追加、不删。** 事件数组长度一个不变。daemon 的
- *   `mergeMessageWriteForDaemonBacked`(`routes/project/conversations.ts:543`)
- *   按**长度**判「这次写是不是在缩短事件」,短了就整份退回 stored。
- * - **只碰 `events`,不碰 `runStatus` / `endedAt`。** 同一处守卫按终态判回退
- *   (`:549`),状态动一下这次写就白写。
- * - **写过就不再写。** 已经有数字的那一条原样返回,连新对象都不建:
- *   调用方靠「返回的是不是同一个引用」判要不要落库,重复写只会把同一份读数
- *   反复 PUT 回去。
- */
-export function stampAmrBalanceUsdOnFailure(
-  message: ChatMessage,
-  balanceUsd: number,
-): ChatMessage {
-  if (!Number.isFinite(balanceUsd)) return message;
-  const events = message.events ?? [];
-  for (let j = events.length - 1; j >= 0; j--) {
-    const event = events[j];
-    if (event?.kind !== 'status' || event.label !== 'error') continue;
-    if (event.code !== AMR_INSUFFICIENT_BALANCE_CODE) return message;
-    if (typeof event.amrBalanceUsd === 'number') return message;
-    const nextEvents = events.slice();
-    nextEvents[j] = { ...event, amrBalanceUsd: balanceUsd };
-    return { ...message, events: nextEvents };
-  }
-  return message;
 }
 
 export function finalizeActiveAssistantMessagesOnStop(

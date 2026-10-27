@@ -11,7 +11,6 @@ type StartedServer = {
 };
 
 const originalDataDir = process.env.OD_DATA_DIR;
-const originalWorkspaceContextSource = process.env.OD_WORKSPACE_CONTEXT_SOURCE;
 let dataDir: string | null = null;
 let started: StartedServer | null = null;
 
@@ -32,19 +31,13 @@ afterEach(async () => {
   dataDir = null;
   if (originalDataDir === undefined) delete process.env.OD_DATA_DIR;
   else process.env.OD_DATA_DIR = originalDataDir;
-  if (originalWorkspaceContextSource === undefined) {
-    delete process.env.OD_WORKSPACE_CONTEXT_SOURCE;
-  } else {
-    process.env.OD_WORKSPACE_CONTEXT_SOURCE = originalWorkspaceContextSource;
-  }
   vi.resetModules();
 }, 30_000);
 
-it('allows headerless deletion but rejects malformed workspace metadata in workspace-less local mode', async () => {
-  // Given a workspace-less local daemon with a user-created design system
+it('deletes a user design system without any workspace identity', async () => {
+  // Given a local daemon with a user-created design system
   dataDir = await mkdtemp(join(tmpdir(), 'od-design-system-workspaceless-delete-'));
   process.env.OD_DATA_DIR = dataDir;
-  delete process.env.OD_WORKSPACE_CONTEXT_SOURCE;
   vi.resetModules();
   const { startServer } = await import('../src/server.js');
   started = await startServer({ port: 0, returnServer: true }) as StartedServer;
@@ -70,32 +63,9 @@ it('allows headerless deletion but rejects malformed workspace metadata in works
     ? null
     : await deleteResponse.json();
 
-  // Then the local delete proceeds instead of requiring Team workspace context
+  // Then the local delete proceeds without any workspace context
   expect({ status: deleteResponse.status, body: deleteBody }).toEqual({
     status: 204,
     body: null,
-  });
-
-  const malformedCreateResponse = await fetch(`${started.url}/api/design-systems`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ title: 'Malformed Workspace Delete' }),
-  });
-  expect(malformedCreateResponse.status).toBe(201);
-  const malformedCreated = await malformedCreateResponse.json() as {
-    designSystem: { id: string };
-  };
-
-  const malformedDeleteResponse = await fetch(
-    `${started.url}/api/design-systems/${encodeURIComponent(malformedCreated.designSystem.id)}`,
-    {
-      method: 'DELETE',
-      headers: { 'x-od-workspace-type': 'team' },
-    },
-  );
-
-  expect(malformedDeleteResponse.status).toBe(400);
-  await expect(malformedDeleteResponse.json()).resolves.toMatchObject({
-    error: 'WORKSPACE_CONTEXT_REQUIRED',
   });
 }, 60_000);

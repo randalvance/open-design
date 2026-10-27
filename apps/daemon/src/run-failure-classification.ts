@@ -16,16 +16,6 @@ import type {
   TrackingRunRepairOwner,
   TrackingRunTerminalTrigger,
 } from '@open-design/contracts/analytics';
-import {
-  AMR_CONTINUATION_ERROR_CODE,
-  isMembershipConcurrencyLimitFailure,
-  isModelWindowLimitFailure,
-} from '@open-design/contracts';
-
-import {
-  classifyAmrAccountFailure,
-  reportsPlatformProviderCredentialFault,
-} from './integrations/vela-errors.js';
 import { runFailureEvidence } from './services/run-failure-evidence.js';
 import { summarizeRunToolProgress } from './run-diagnostics.js';
 import { isAcpHandshakeRpcErrorText } from './runtimes/acp-handshake-id.js';
@@ -910,8 +900,6 @@ function classification(
     'model_window_limit',
     'membership_concurrency_limit',
     'workspace_credits_exhausted',
-    'amr_insufficient_balance',
-    'amr_tier_upgrade_required',
   ].includes(failure_detail) || failure_category === 'entitlement_required';
   const localModel = [
     'cli_version_incompatible',
@@ -1069,16 +1057,6 @@ function classifyRunFailureBase(
   // signal guard below (a watchdog kill IS a signal, and the reason it was
   // killed outranks the bare signal) and the timeout branch itself.
   const daemonTimeoutVerdict = hasDaemonTimeoutVerdict(events);
-  if (input.agentId === 'amr' && events.some((event) => {
-    if (event.event !== 'error') return false;
-    const data = asObject(event.data);
-    const details = asObject(asObject(data?.error)?.details);
-    return details?.code === AMR_CONTINUATION_ERROR_CODE;
-  })) {
-    return classification('process_exit', 'continuation_incomplete',
-      inferFailureStageFromEvents(events, 'post_tool_resume'), false, 'none');
-  }
-  const amrFailure = classifyAmrAccountFailure(text);
   const byokOpenCodeProviderNotFound = isByokOpenCodeProviderNotFoundText(
     input.agentId,
     text,
@@ -1114,42 +1092,8 @@ function classifyRunFailureBase(
   }
 
   if (
-    errorCode === 'AMR_INSUFFICIENT_BALANCE' ||
-    amrFailure?.code === 'AMR_INSUFFICIENT_BALANCE'
-  ) {
-    return classification(
-      'insufficient_balance',
-      'amr_insufficient_balance',
-      'session_init',
-      false,
-      'recharge',
-      errorCode === 'AMR_INSUFFICIENT_BALANCE'
-        ? { evidenceLevel: 'structured_code' }
-        : {},
-    );
-  }
-
-  if (
-    errorCode === 'AMR_TIER_UPGRADE_REQUIRED' ||
-    amrFailure?.code === 'AMR_TIER_UPGRADE_REQUIRED'
-  ) {
-    return classification(
-      'entitlement_required',
-      'amr_tier_upgrade_required',
-      'session_init',
-      false,
-      'upgrade',
-      errorCode === 'AMR_TIER_UPGRADE_REQUIRED'
-        ? { evidenceLevel: 'structured_code' }
-        : {},
-    );
-  }
-
-  if (
-    errorCode === 'AMR_AUTH_REQUIRED' ||
     errorCode === 'AGENT_AUTH_REQUIRED' ||
-    errorCode === 'UNAUTHORIZED' ||
-    amrFailure?.code === 'AMR_AUTH_REQUIRED'
+    errorCode === 'UNAUTHORIZED'
   ) {
     return classification(
       'auth',
@@ -1158,31 +1102,11 @@ function classifyRunFailureBase(
       false,
       'login',
       [
-        'AMR_AUTH_REQUIRED',
         'AGENT_AUTH_REQUIRED',
         'UNAUTHORIZED',
       ].includes(errorCode ?? '')
         ? { evidenceLevel: 'structured_code' }
         : {},
-    );
-  }
-
-  // R-053. Claimed here, immediately after the AMR account branches, because
-  // this is the failure that spent the longest being mistaken for one of them.
-  // vela's link gateway turns an upstream 401/403 into an HTTP 500 under its
-  // own code (`services/link/internal/handlers/openai.go:2074`) and words it
-  // "Upstream provider credentials are missing or invalid." — a sentence
-  // `isAuthDetailText` reads as the caller's missing credentials. The
-  // credentials are the platform's, held in the gateway's configuration, so
-  // there is no sign-in for the user to perform and no retry that changes the
-  // answer: the run failed because the service is misconfigured.
-  if (reportsPlatformProviderCredentialFault(text)) {
-    return classification(
-      'upstream_unavailable',
-      'upstream_5xx',
-      inferFailureStageFromEvents(events, 'first_token_wait'),
-      false,
-      'none',
     );
   }
 
@@ -1230,9 +1154,7 @@ function classifyRunFailureBase(
     );
   }
 
-  const modelDetail = errorCode === 'AMR_MODEL_UNAVAILABLE'
-    ? 'model_not_found'
-    : modelUnavailableDetail(text);
+  const modelDetail = modelUnavailableDetail(text);
   if (modelDetail) {
     return classification(
       'model_unavailable',
@@ -1243,7 +1165,6 @@ function classifyRunFailureBase(
         : 'model_select',
       false,
       'switch_model',
-      { structuredProviderEvidence: errorCode === 'AMR_MODEL_UNAVAILABLE' },
     );
   }
 
@@ -1442,34 +1363,7 @@ function classifyRunFailureBase(
     );
   }
 
-  // Vela reports a full membership concurrency policy through an ACP fatal
-  // envelope. Claim the named policy limit before fatal close promotion. Even
-  // when the envelope says retryable, an immediate automatic replay only hits
-  // the same occupied slots, so leave retry to the user after the reset time.
-  if (input.agentId === 'amr' && isMembershipConcurrencyLimitFailure(text)) {
-    return classification(
-      'rate_limit',
-      'membership_concurrency_limit',
-      'session_init',
-      false,
-      'none',
-    );
-  }
-
   if (errorCode === 'RATE_LIMITED' || serviceFailure === 'RATE_LIMITED' || isHardQuotaText(text) || isRateLimitText(text)) {
-    // Checked BEFORE the hard-quota reading: vela phrases its rolling per-model
-    // window as "…usage limit…", which `isHardQuotaText` matches, so without
-    // this branch a self-resetting window is reported as an exhausted quota —
-    // non-retryable, and counted against reliability as a real failure.
-    if (isModelWindowLimitFailure(text)) {
-      return classification(
-        'rate_limit',
-        'model_window_limit',
-        'session_init',
-        true,
-        'retry',
-      );
-    }
     const hardQuota = isHardQuotaText(text);
     const workspaceCredits = isWorkspaceCreditsText(text);
     const retryable = hardQuota ? false : (retryableHint ?? true);

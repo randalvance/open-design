@@ -27,8 +27,8 @@ export function byokProviderRequiresApiKey(
  * `apiProtocolAgentId(config.apiProtocol)` 写上去)。
  *
  * 住在这里而不是 `utils/apiProtocol.ts`:这张表是 BYOK 这一档的**身份**,
- * `runtime/amr-guidance.ts` 要在报错卡上读它,而 `apiProtocol.ts` 会把
- * `providers/openai-compatible` 整条链拖进来 —— amr-guidance 刻意不带运行时依赖
+ * `runtime/run-failure-ui.ts` 要在报错卡上读它,而 `apiProtocol.ts` 会把
+ * `providers/openai-compatible` 整条链拖进来 —— run-failure-ui 刻意不带运行时依赖
  * (见该文件头注释)。本模块只有 `import type`,运行时是空的。
  */
 export const API_PROTOCOL_AGENT_IDS: Record<ApiProtocol, string> = {

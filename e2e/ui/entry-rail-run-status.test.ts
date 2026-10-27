@@ -10,31 +10,9 @@ import { T } from '@/timeouts';
 // painting, whether a glyph ever flashes away, and whether the same project
 // reads the same in the rail and the project switcher.
 //
-// The daemon is real; the signed-in Workspace, its project list and the
-// per-project runs feed are route mocks so each status is a known fixture and
-// the runs feed has a visible, controlled latency.
-
-const WORKSPACE = {
-  workspaceId: 'ui-ws-run-status',
-  workspaceName: 'Run status workspace',
-  workspaceType: 'personal',
-  workspaceMemberId: 'ui-wm-run-status',
-  role: 'owner',
-  memberStatus: 'active',
-  lifecycleState: 'active',
-  billingState: 'free',
-  planId: null,
-  seatSummary: { seatLimit: 1, usedSeats: 1, availableSeats: 0, isSeatFull: true },
-  permissions: {
-    canInviteMembers: false,
-    canManageBilling: true,
-    canViewWorkspaceSettings: true,
-    canManageSharedResources: false,
-    canShareProjects: false,
-    canWriteSyncedFiles: true,
-  },
-  workspaceSettingsUrl: 'https://console.example.test/settings?workspaceId=ui-ws-run-status',
-} as const;
+// The daemon is real; the project list and the per-project runs feed are route
+// mocks so each status is a known fixture and the runs feed has a visible,
+// controlled latency.
 
 type RunStatus = 'running' | 'succeeded' | 'failed';
 
@@ -55,7 +33,7 @@ const PROJECTS: ReadonlyArray<{
 const RUNS_LATENCY_MS = 300;
 
 function projectRow(project: (typeof PROJECTS)[number]) {
-  const base = {
+  return {
     id: project.id,
     name: project.name,
     skillId: null,
@@ -63,33 +41,10 @@ function projectRow(project: (typeof PROJECTS)[number]) {
     createdAt: 1_720_000_000_000,
     updatedAt: 1_720_000_000_000 + PROJECTS.length - PROJECTS.indexOf(project),
     metadata: { kind: 'prototype', nameSource: 'user' },
-    workspaceId: WORKSPACE.workspaceId,
-  };
-  return {
-    ...base,
-    visibility: 'personal',
-    resourceState: 'active',
-    createdByWorkspaceMemberId: WORKSPACE.workspaceMemberId,
-    updatedByWorkspaceMemberId: WORKSPACE.workspaceMemberId,
-    resourceHubResourceId: null,
-    cloudTombstonedAt: null,
-    syncState: 'local_only',
-    currentUserAccess: {
-      canOpen: true,
-      canRename: true,
-      canDelete: true,
-      canDuplicate: true,
-      canMoveToTeam: false,
-      canMoveToPersonal: false,
-      canExport: true,
-      canSendTo: true,
-      canRestoreVersion: true,
-    },
-    project: base,
   };
 }
 
-async function wireSignedInWorkspace(page: Page): Promise<{
+async function wireLocalProjects(page: Page): Promise<{
   runsRequests: string[];
   /** A NEW run finished in this project: the feed starts naming a fresh run
    *  id, which is what makes a spent ✓ come back. */
@@ -98,89 +53,12 @@ async function wireSignedInWorkspace(page: Page): Promise<{
   const runsRequests: string[] = [];
   const runGeneration = new Map<string, number>();
 
-  await page.route('**/api/integrations/vela/status', async (route) => {
-    await route.fulfill({
-      json: {
-        loggedIn: true,
-        loginInFlight: false,
-        profile: 'test',
-        user: { id: 'ui-run-status-user', email: 'run-status@example.com', name: 'Run Status', plan: 'free' },
-        account: { plan: 'free', balanceUsd: '0.00' },
-        configPath: '/tmp/.amr/config.json',
-      },
-    });
-  });
-
-  await page.route('**/api/workspace/**', async (route) => {
-    const request = route.request();
-    const { pathname } = new URL(request.url());
-    const method = request.method();
-    if (pathname === '/api/workspace/context' && method === 'GET') {
-      await route.fulfill({ json: { context: WORKSPACE } });
-      return;
-    }
-    if (pathname === '/api/workspace/directory' && method === 'GET') {
-      await route.fulfill({
-        json: {
-          items: [{
-            workspaceId: WORKSPACE.workspaceId,
-            workspaceName: WORKSPACE.workspaceName,
-            workspaceType: WORKSPACE.workspaceType,
-            workspaceMemberId: WORKSPACE.workspaceMemberId,
-            role: WORKSPACE.role,
-            memberStatus: WORKSPACE.memberStatus,
-            lifecycleState: WORKSPACE.lifecycleState,
-          }],
-          activeWorkspaceId: WORKSPACE.workspaceId,
-        },
-      });
-      return;
-    }
-    if (pathname === '/api/workspace/billing' && method === 'GET') {
-      await route.fulfill({
-        json: {
-          summary: null,
-          workspaceBalance: {
-            workspaceId: WORKSPACE.workspaceId,
-            workspaceMemberId: WORKSPACE.workspaceMemberId,
-            balanceUsd: '0.00',
-            billingScopeVersion: 2,
-            expiresAt: null,
-            updatedAt: '2026-07-31T00:00:00.000Z',
-          },
-        },
-      });
-      return;
-    }
-    if (pathname === '/api/workspace/projects/team' && method === 'GET') {
-      await route.fulfill({ json: { projects: [] } });
-      return;
-    }
-    await route.fallback();
-  });
-
-  await page.route('**/api/workspaces/*/projects**', async (route) => {
-    const request = route.request();
-    if (request.method() !== 'GET') {
+  await page.route('**/api/projects', async (route) => {
+    if (route.request().method() !== 'GET') {
       await route.fallback();
       return;
     }
     await route.fulfill({ json: { projects: PROJECTS.map(projectRow) } });
-  });
-
-  await page.route('**/api/projects/*/workspace-scope', async (route) => {
-    const projectId = decodeURIComponent(new URL(route.request().url()).pathname.split('/').at(-2) ?? '');
-    await route.fulfill({
-      json: {
-        scope: {
-          kind: 'personal',
-          projectId,
-          workspaceId: WORKSPACE.workspaceId,
-          visibility: 'personal',
-          context: WORKSPACE,
-        },
-      },
-    });
   });
   await page.route('**/api/projects/*/files**', async (route) => {
     await route.fulfill({ json: { files: [] } });
@@ -200,7 +78,7 @@ async function wireSignedInWorkspace(page: Page): Promise<{
       await route.fallback();
       return;
     }
-    await route.fulfill({ json: { project: projectRow(project).project } });
+    await route.fulfill({ json: { project: projectRow(project) } });
   });
 
   await page.route('**/api/runs?projectId=*', async (route) => {
@@ -330,7 +208,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('[P1] first paint asks for every visible row\'s status once and never flashes a glyph away', async ({ page }) => {
-  const { runsRequests } = await wireSignedInWorkspace(page);
+  const { runsRequests } = await wireLocalProjects(page);
   await gotoHome(page);
   await expectRailStatuses(page);
 
@@ -353,7 +231,7 @@ test('[P1] first paint asks for every visible row\'s status once and never flash
 });
 
 test('[P1] returning from a project paints the rows and their statuses together', async ({ page }) => {
-  await wireSignedInWorkspace(page);
+  await wireLocalProjects(page);
   await gotoHome(page);
   await expectRailStatuses(page);
 
@@ -383,7 +261,7 @@ test('[P1] returning from a project paints the rows and their statuses together'
 });
 
 test('[P1] the project switcher and the rail tell one story about a finished project', async ({ page }) => {
-  await wireSignedInWorkspace(page);
+  await wireLocalProjects(page);
   await gotoHome(page);
   await expectRailStatuses(page);
 
@@ -421,7 +299,7 @@ test('[P1] the project switcher and the rail tell one story about a finished pro
 // dot at the row's end until it is opened. Both surfaces read that from the
 // one shared store, so the dot leaves the rail and the switcher together.
 test('[P1] a finished project keeps its folder and carries an unread dot until it is opened, in the rail and the switcher', async ({ page }) => {
-  const { finishAnotherRun } = await wireSignedInWorkspace(page);
+  const { finishAnotherRun } = await wireLocalProjects(page);
   await gotoHome(page);
   await expectRailStatuses(page);
 

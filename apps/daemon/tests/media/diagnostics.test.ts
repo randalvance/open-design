@@ -10,7 +10,7 @@ describe('formatMediaTaskDiagnostic', () => {
       runId: 'run-456',
       projectId: 'project-789',
       surface: 'image',
-      model: 'vela/gpt-image-2',
+      model: 'gpt-image-2',
       providerId: 'vela',
       status: 503,
       code: 'provider_error',
@@ -22,7 +22,7 @@ describe('formatMediaTaskDiagnostic', () => {
 
     expect(line).toContain('"task_id":"media-task-123"');
     expect(line).toContain('"run_id":"run-456"');
-    expect(line).toContain('"model_id":"vela/gpt-image-2"');
+    expect(line).toContain('"model_id":"gpt-image-2"');
     expect(line).toContain('"provider_id":"vela"');
     expect(line).toContain('"code":"provider_error"');
     expect(line).toContain('"elapsed_ms":1234');

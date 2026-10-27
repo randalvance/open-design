@@ -171,7 +171,7 @@ function renderStrip(
       projects={projects}
       heading="All projects"
       onOpen={onOpen}
-      space="team"
+      space="drafts"
       limit={1000}
     />,
   );
@@ -196,19 +196,6 @@ async function settleLoadedIframes(fired: Set<Element>): Promise<void> {
 describe('RecentProjectsStrip thumbnail request budget (Batch A §4.2)', () => {
   it('starts no cover work for cards that never come near the viewport', async () => {
     renderStrip(range(12).map((i) => makeProject(`offscreen-${i}`)));
-    await flush(20);
-
-    expect(registryMocks.fetchProjectFiles).not.toHaveBeenCalled();
-    expect(headCalls).toHaveLength(0);
-    expect(mountedCoverIframes()).toHaveLength(0);
-  });
-
-  it('does not probe local files for an unmaterialized shared-project placeholder', async () => {
-    const placeholder = makeProject('remote-placeholder');
-    placeholder.metadata = { kind: 'prototype', sharedProjectPlaceholderAt: 20 };
-    renderStrip([placeholder]);
-    await flush();
-    intersectAll();
     await flush(20);
 
     expect(registryMocks.fetchProjectFiles).not.toHaveBeenCalled();

@@ -29,13 +29,6 @@ function registerRoutes(app: express.Express, staticHtml: string | null) {
     } as never,
     projectFiles: {} as never,
     projectStore: {} as never,
-    verifyWorkspaceRequestAuthority: async () => {
-      throw new Error('unbound fixture must not verify Workspace authority');
-    },
-    workspaceResources: {
-      getWorkspaceResource: () => undefined,
-      getWorkspaceResourceByResourceId: () => undefined,
-    },
     designSystems: {
       buildUserDesignSystemArchive: async () => null,
       canMutateUserDesignSystem: async () => true,
@@ -62,7 +55,6 @@ function registerRoutes(app: express.Express, staticHtml: string | null) {
       renderDesignSystemShowcase: (id: string, body: string) =>
         `<!doctype html><title>${id} synthetic</title><main>${body}</main>`,
       syncUserDesignSystemAssetsFromWorkspace: async () => ({ ok: false, reason: 'not-found' }),
-      unshareTeamDesignSystemIfShared: async () => false,
       updateUserDesignSystem: async () => null,
       updateUserDesignSystemRevisionStatus: async () => null,
     },

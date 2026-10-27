@@ -12,57 +12,6 @@ import {
   projectKindFilterCategory,
 } from '../../src/components/RecentProjectsStrip';
 import type { Project } from '../../src/types';
-import type { WorkspaceProjectSummary, WorkspaceCollabContext } from '@open-design/contracts';
-import { workspaceContextFixture } from '../helpers/workspace-context';
-
-// Typed on the argument the component actually passes, so `.mock.calls`
-// destructures instead of widening to the empty tuple.
-interface MoveCall { projectId: string; visibility: string }
-function movedProject(input: MoveCall): WorkspaceProjectSummary {
-  return {
-    id: input.projectId,
-    name: input.projectId,
-    workspaceId: 'ws-1',
-    visibility: input.visibility === 'team' ? 'team' : 'personal',
-    resourceState: 'active',
-    createdByWorkspaceMemberId: 'wm-1',
-    currentUserAccess: {
-      canOpen: true,
-      canRename: true,
-      canDelete: true,
-      canDuplicate: true,
-      canMoveToTeam: input.visibility !== 'team',
-      canMoveToPersonal: input.visibility === 'team',
-      canExport: true,
-      canSendTo: true,
-      canRestoreVersion: true,
-    },
-    createdAt: 1,
-    updatedAt: 2,
-    project: {
-      id: input.projectId,
-      name: input.projectId,
-      skillId: null,
-      designSystemId: null,
-      createdAt: 1,
-      updatedAt: 2,
-    },
-  };
-}
-const moveWorkspaceProject = vi.fn(async (input: MoveCall) => movedProject(input));
-
-vi.mock('../../src/state/projects', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  moveWorkspaceProject: (...args: unknown[]) => moveWorkspaceProject(args[0] as MoveCall),
-}));
-
-let shareReadContext: WorkspaceCollabContext | null = null;
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>();
-  return { ...actual, useWorkspaceContext: () => shareReadContext
-    ? { context: shareReadContext, loading: false }
-    : actual.useWorkspaceContext() };
-});
 
 vi.mock('../../src/providers/registry', () => ({
   fetchProjectFileText: vi.fn(async () => null),
@@ -73,21 +22,8 @@ vi.mock('../../src/providers/registry', () => ({
 
 afterEach(() => {
   cleanup();
-  moveWorkspaceProject.mockClear();
-  shareReadContext = null;
   vi.restoreAllMocks();
 });
-
-function provideVerifiedZeroShareCount() {
-  shareReadContext = workspaceContextFixture({
-    workspaceId: 'ws-1', workspaceMemberId: 'wm-1', workspaceType: 'personal', role: 'owner',
-  });
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
-    const match = String(url).match(/^\/api\/projects\/([^/]+)\/share-state$/);
-    if (!match) return new Response('', { status: 200 });
-    return Response.json({ projectId: decodeURIComponent(match[1]!), bindingExists: false, hasEverShared: false, publications: [] });
-  });
-}
 
 function project(overrides: Partial<Project>): Project {
   return {
@@ -204,8 +140,8 @@ function renderGrid(props: Partial<React.ComponentProps<typeof RecentProjectsStr
 
 function openKindMenu(container: HTMLElement): HTMLElement {
   const filters = container.querySelectorAll('.recent-projects__filter');
-  // [0] is the owner filter, [1] the type filter.
-  fireEvent.click(filters[1]!);
+  // The type filter is the row's only trigger now that there is no owner filter.
+  fireEvent.click(filters[0]!);
   return container.querySelectorAll('.recent-projects__filter-menu')[0] as HTMLElement;
 }
 
@@ -300,7 +236,7 @@ describe('projectKindFilterCategory (OPEND-3107)', () => {
 });
 
 describe('RecentProjectsStrip type filter (#77)', () => {
-  it('omits the redundant owner filter from the drafts space', () => {
+  it('shows only the type filter in the drafts space', () => {
     const { container } = renderGrid({ heading: 'Drafts', space: 'drafts' });
 
     const filters = [...container.querySelectorAll('.recent-projects__filter')].map(
@@ -308,16 +244,6 @@ describe('RecentProjectsStrip type filter (#77)', () => {
     );
 
     expect(filters).toEqual(['Any type']);
-  });
-
-  it("keeps the owner filter in spaces that can contain other members' projects", () => {
-    const { container } = renderGrid({ space: 'team' });
-
-    const filters = [...container.querySelectorAll('.recent-projects__filter')].map(
-      (node) => node.textContent?.trim(),
-    );
-
-    expect(filters).toEqual(['All', 'Any type']);
   });
 
   it('offers the twelve entries in the product order, labelled with the Home chip copy (OPEND-3107)', () => {
@@ -351,7 +277,7 @@ describe('RecentProjectsStrip type filter (#77)', () => {
   it('filters the grid down to the projects in the picked bucket', () => {
     const { container } = renderGrid();
 
-    const kindTrigger = () => container.querySelectorAll('.recent-projects__filter')[1]!;
+    const kindTrigger = () => container.querySelectorAll('.recent-projects__filter')[0]!;
 
     fireEvent.click(within(openKindMenu(container)).getByText('Slide deck'));
     expect(cardNames(container)).toEqual(['Deck project']);
@@ -412,11 +338,7 @@ describe('RecentProjectsStrip bulk selection bar (#75)', () => {
   }
 
   it('renders the batch actions next to the selected count', () => {
-    const { container } = renderGrid({
-      canManageProjectCollection: true,
-      collaborationEnabled: true,
-      onDelete: () => true,
-    });
+    const { container } = renderGrid({ onDelete: () => true });
 
     const bar = enterSelectionMode(container, ['Deck project']);
 
@@ -426,21 +348,13 @@ describe('RecentProjectsStrip bulk selection bar (#75)', () => {
     const actions = [...bar.querySelectorAll('.recent-projects__bulkbar-actions button')].map(
       (node) => node.textContent?.trim(),
     );
-    expect(actions).toEqual([
-      'Move to team space',
-      'Move out of team space',
-      'Delete selected',
-      'Cancel',
-    ]);
+    expect(actions).toEqual(['Delete selected', 'Cancel']);
   });
 
   it('only offers batch actions backed by a real capability', () => {
-    // No delete handler and no collaboration: the bar keeps its exit affordance
-    // rather than showing buttons that would do nothing.
-    const { container } = renderGrid({
-      canManageProjectCollection: true,
-      collaborationEnabled: false,
-    });
+    // No delete handler: the bar keeps its exit affordance rather than showing
+    // a button that would do nothing.
+    const { container } = renderGrid();
 
     const bar = enterSelectionMode(container, ['Deck project']);
     const actions = [...bar.querySelectorAll('.recent-projects__bulkbar-actions button')].map(
@@ -449,72 +363,9 @@ describe('RecentProjectsStrip bulk selection bar (#75)', () => {
     expect(actions).toEqual(['Cancel']);
   });
 
-  it('moves every selected project through the workspace move endpoint', async () => {
-    const onProjectShared = vi.fn();
-    const { container } = renderGrid({
-      canManageProjectCollection: true,
-      collaborationEnabled: true,
-      onDelete: () => true,
-      onProjectShared,
-    });
-
-    const bar = enterSelectionMode(container, ['Deck project', 'Media project']);
-    expect(within(bar).getByText('2 selected')).toBeTruthy();
-
-    fireEvent.click(within(bar).getByText('Move to team space'));
-    fireEvent.click(screen.getByText('Confirm move'));
-
-    await waitFor(() => {
-      expect(moveWorkspaceProject).toHaveBeenCalledTimes(2);
-    });
-    expect(
-      moveWorkspaceProject.mock.calls.map(([input]) => [
-        input.projectId,
-        input.visibility,
-      ]),
-    ).toEqual([
-      ['p-deck', 'team'],
-      ['p-media', 'team'],
-    ]);
-    await waitFor(() => {
-      expect(onProjectShared.mock.calls.map(([project]) => project.id)).toEqual(['p-deck', 'p-media']);
-    });
-    // Selection mode closes once the batch is dispatched.
-    expect(container.querySelector('.recent-projects__bulkbar')).toBeNull();
-  });
-
-  it('preserves the main no-share batch dialog DOM and cancel does not delete', async () => {
-    provideVerifiedZeroShareCount();
-    // Production markup/copy verified byte-identical to main 8e372744dda5
-    // before recording; do not regenerate this baseline for share warnings.
-    const onDelete = vi.fn();
-    const { container } = renderGrid({
-      canManageProjectCollection: true,
-      collaborationEnabled: true,
-      onDelete,
-    });
-    const bar = enterSelectionMode(container, ['Deck project', 'Media project']);
-    fireEvent.click(within(bar).getByText('Delete selected'));
-    const dialog = screen.getByRole('alertdialog');
-    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Delete selected' })).toBeEnabled());
-    const titleId = dialog.getAttribute('aria-labelledby')!;
-    expect(dialog.outerHTML.replaceAll(titleId, 'delete-title')).toBe(
-      `<div class="_dialog_8e4a21 modal modal-confirm" role="alertdialog" aria-modal="true" aria-labelledby="delete-title"><h2 class="_title_8e4a21" id="delete-title">Delete project</h2><p class="_description_8e4a21">Delete 2 project(s)?</p><div class="_footer_8e4a21 row"><button type="button">Cancel</button><button type="button" class="primary danger">Delete selected</button></div></div>`,
-    );
-    expect(onDelete).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
-    expect(screen.queryByRole('alertdialog')).toBeNull();
-    expect(onDelete).not.toHaveBeenCalled();
-  });
-
   it('confirms before deleting the whole selection', async () => {
-    provideVerifiedZeroShareCount();
     const onDelete = vi.fn((_id: string) => true);
-    const { container } = renderGrid({
-      canManageProjectCollection: true,
-      collaborationEnabled: true,
-      onDelete,
-    });
+    const { container } = renderGrid({ onDelete });
 
     const bar = enterSelectionMode(container, ['Deck project', 'Media project']);
     fireEvent.click(within(bar).getByText('Delete selected'));
@@ -531,37 +382,14 @@ describe('RecentProjectsStrip bulk selection bar (#75)', () => {
     });
   });
 
-  it('blocks batch mutations when the selection contains another member’s project', () => {
-    const { container } = renderGrid({
-      canManageProjectCollection: true,
-      collaborationEnabled: true,
-      onDelete: () => true,
-      projectOwnerMemberIds: new Map([['p-deck', 'someone-else']]),
-    });
-
-    const bar = enterSelectionMode(container, ['Deck project']);
-    const mutations = [...bar.querySelectorAll('.recent-projects__bulkbar-actions button')].filter(
-      (node) => node.textContent?.trim() !== 'Cancel',
-    );
-    expect(mutations).toHaveLength(3);
-    for (const button of mutations) {
-      expect((button as HTMLButtonElement).disabled).toBe(true);
-    }
-  });
-
   it('cancel leaves selection mode without touching anything', () => {
     const onDelete = vi.fn((_id: string) => true);
-    const { container } = renderGrid({
-      canManageProjectCollection: true,
-      collaborationEnabled: true,
-      onDelete,
-    });
+    const { container } = renderGrid({ onDelete });
 
     const bar = enterSelectionMode(container, ['Deck project']);
     fireEvent.click(within(bar).getByText('Cancel'));
 
     expect(container.querySelector('.recent-projects__bulkbar')).toBeNull();
     expect(onDelete).not.toHaveBeenCalled();
-    expect(moveWorkspaceProject).not.toHaveBeenCalled();
   });
 });

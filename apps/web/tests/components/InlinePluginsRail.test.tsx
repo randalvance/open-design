@@ -11,26 +11,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
-const workspaceContextState = vi.hoisted(() => ({
-  current: {
-    context: null,
-    loading: false,
-    failure: 'unsupported' as const,
-  } as {
-    context: null;
-    loading: boolean;
-    failure?: 'unsupported' | 'unavailable';
-  },
-}));
-
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>();
-  return {
-    ...actual,
-    useWorkspaceContext: () => workspaceContextState.current,
-  };
-});
-
 import { InlinePluginsRail } from '../../src/components/InlinePluginsRail';
 
 const PLUGIN_ROW = {
@@ -81,11 +61,6 @@ const APPLY_RESULT = {
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
-  workspaceContextState.current = {
-    context: null,
-    loading: false,
-    failure: 'unsupported',
-  };
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
 });
@@ -96,18 +71,6 @@ afterEach(() => {
 });
 
 describe('InlinePluginsRail', () => {
-  it('does not issue a headerless read while Workspace identity is unresolved', () => {
-    workspaceContextState.current = {
-      context: null,
-      loading: true,
-    };
-
-    expect(() =>
-      render(<InlinePluginsRail onApplied={() => undefined} />),
-    ).not.toThrow();
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
   it('renders a card for each installed plugin and fires onApplied on click', async () => {
     fetchMock.mockImplementation(async (url) => {
       if (typeof url === 'string' && url === '/api/plugins') {

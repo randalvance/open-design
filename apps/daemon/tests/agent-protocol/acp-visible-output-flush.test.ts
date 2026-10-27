@@ -82,21 +82,6 @@ describe('ACP consumes legitimate residual text before judging visible output', 
     expectClean(turn, literal);
   });
 
-  it('keeps the existing truly-empty AMR failure distinct from buffered content', async () => {
-    const prompt = 'Answer the question.';
-    const turn = await runMemoryAcpTurn({ amr: true, prompt, updates: [], outputTokens: 0 });
-    expectHandshake(turn, true, prompt);
-    expect(turn.visibleText).toBe('');
-    expect(turn.tools).toEqual([]);
-    expect(turn.fatal).toBe(true);
-    expect(turn.completed).toBe(false);
-    expect(turn.promptCompleteCount).toBe(0);
-    expect(turn.terminals).toEqual(['fatal']);
-    expect(turn.errors).toEqual([expect.objectContaining({
-      code: 'AMR_MODEL_UNAVAILABLE', retryable: false, kind: 'amr_model', action: 'choose_model',
-    })]);
-  });
-
   it('keeps the existing generic ACP empty completion policy', async () => {
     const prompt = 'Use the configured agent.';
     const turn = await runMemoryAcpTurn({ amr: false, prompt, updates: [], outputTokens: 0 });
@@ -105,19 +90,4 @@ describe('ACP consumes legitimate residual text before judging visible output', 
     expectClean(turn, '');
   });
 
-  it('does not count thought-only activity as visible output or a concrete tool', async () => {
-    const turn = await runMemoryAcpTurn({
-      amr: true, prompt: 'Generate the requested video.',
-      updates: [{ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Planning the work.' } }],
-    });
-    expect(turn.visibleText).toBe('');
-    expect(turn.tools).toEqual([]);
-    expect(turn.fatal).toBe(true);
-    expect(turn.completed).toBe(false);
-    expect(turn.promptCompleteCount).toBe(0);
-    expect(turn.terminals).toEqual(['fatal']);
-    expect(turn.errors).toEqual([expect.objectContaining({
-      code: 'AGENT_EXECUTION_FAILED', retryable: true, kind: 'acp_no_visible_output',
-    })]);
-  });
 });

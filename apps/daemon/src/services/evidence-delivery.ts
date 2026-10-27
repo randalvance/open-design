@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, chmod } from 'node:fs/promises';
 import path from 'node:path';
 import { TelemetryOutbox, type DeliveryAttempt, type OutboxJob } from '../storage/telemetry-outbox.js';
-import { agentCliEnvForAgent, readAppConfig } from '../app-config.js';
+import { readAppConfig } from '../app-config.js';
 import { buildFeedbackPayload, postLegacyTelemetryBatch, readFeedbackTelemetrySinkConfig, readRunTelemetrySinkConfig, reportRunCompleted, type FeedbackReportContext, type ReportContext, type LangfuseDeliveryState } from '../langfuse-trace.js';
 import { buildTraceObjectManifests, type TraceObjectSource, type TraceObjectUploadManifests } from '../trace-object-manifest.js';
 import { readTelemetryEnvironment } from '../telemetry-environment.js';
@@ -102,7 +102,7 @@ export async function enqueueFeedbackEvidence(dataDir: string, context: Feedback
 
 function deliveryAttempt(result: LangfuseDeliveryState): DeliveryAttempt {
   if (result.langfuse_delivery_status === 'accepted') return { status: 'accepted', reason: 'receipt_pending' };
-  const terminal = new Set(['payload_too_large', 'payload_build_error', 'langfuse_4xx', 'vela_400', 'vela_403', 'vela_413', 'relay_413']);
+  const terminal = new Set(['payload_too_large', 'payload_build_error', 'langfuse_4xx', 'relay_413']);
   return { status: terminal.has(result.langfuse_drop_reason ?? '') ? 'terminal' : 'retry', reason: result.langfuse_drop_reason ?? 'network_error' };
 }
 
@@ -118,7 +118,7 @@ export function reconcileTaskObjectReasons(store: TelemetryOutbox, taskTraceId: 
 async function publishTaskObjectManifests(store: TelemetryOutbox, payload: ObjectJob, dataDir: string, fetchImpl?: typeof fetch): Promise<DeliveryAttempt> {
   const cfg = await readAppConfig(dataDir);
   const sink = payload.taskTraceId
-    ? taskUpdateSink(dataDir, payload.taskTraceId, process.env, agentCliEnvForAgent(cfg.agentCliEnv, 'amr'))
+    ? taskUpdateSink(dataDir, payload.taskTraceId, process.env)
     : null;
   if (!sink || !payload.taskTraceId) return { status: 'retry', reason: 'task_sink_unavailable' };
   const manifests: TraceObjectUploadManifests[] = [];
@@ -189,15 +189,15 @@ export async function drainEvidence(dataDir: string, fetchImpl?: typeof fetch): 
   if (!taskObjectDeliveryEnabled(process.env.OPEN_DESIGN_OBJECT_OUTBOX_MODE)) return;
   const cfg = await readAppConfig(dataDir);
   if (cfg.telemetry?.metrics !== true || cfg.telemetry.content !== true) return;
-  const sink = readRunTelemetrySinkConfig(process.env, agentCliEnvForAgent(cfg.agentCliEnv, 'amr'));
+  const sink = readRunTelemetrySinkConfig(process.env);
   if (!sink) return;
   const store = await evidenceStore(dataDir);
   await store.drain(async (job: OutboxJob): Promise<DeliveryAttempt> => {
     if (job.kind === 'feedback') {
       const payload = JSON.parse(job.payload) as FeedbackJob;
       const feedbackSink = payload.context.traceId
-        ? taskUpdateSink(dataDir, payload.context.traceId, process.env, agentCliEnvForAgent(cfg.agentCliEnv, 'amr'))
-        : readFeedbackTelemetrySinkConfig(process.env, agentCliEnvForAgent(cfg.agentCliEnv, 'amr'));
+        ? taskUpdateSink(dataDir, payload.context.traceId, process.env)
+        : readFeedbackTelemetrySinkConfig(process.env);
       if (!feedbackSink) return { status: 'retry', reason: 'feedback_sink_unavailable' };
       const result = await postLegacyTelemetryBatch(feedbackSink, payload.batch, {
         allowAnonymousAuthFallback: false,
@@ -222,31 +222,6 @@ export async function drainEvidence(dataDir: string, fetchImpl?: typeof fetch): 
       frozenSources: frozenSources.filter(source => !objectManifestEntries(previous).some(entry => entry.object_class === source.objectClass && ('attachment_id' in entry ? entry.attachment_id : 'artifact_id' in entry ? entry.artifact_id : entry.input_text_snapshot_id) === source.id && entry.status === 'ok')), now: () => new Date(payload.capturedAt), ...(fetchImpl ? { fetchImpl } : {}),
     };
     const registration = await buildTraceObjectManifests({ ...options, uploadMode: 'manifest-only' });
-    if (registration && sink.kind === 'vela') {
-      const result = await reportRunCompleted({ ...context, ...registration }, { config: sink, deliveryPurpose: 'object-registration', ...(fetchImpl ? { fetchImpl } : {}) });
-      if (result.langfuse_delivery_status !== 'accepted') return { status: 'retry', reason: result.langfuse_drop_reason ?? 'registration_failed' };
-      const next = await buildTraceObjectManifests(options);
-      const uploaded = next ? mergeObjectUploadReceipts(previous, next) : previous;
-      if (uploaded) {
-        context.attachmentManifest = uploaded.attachmentManifest ?? [];
-        context.artifactManifest = uploaded.artifactManifest ?? [];
-        context.manifestCompleteness = uploaded.completeness;
-        context.inputTextSnapshotManifest = uploaded.inputTextSnapshotManifest ?? [];
-        if (payload.taskTraceId) {
-          const entries = [...(uploaded.attachmentManifest ?? []), ...(uploaded.artifactManifest ?? []), ...(uploaded.inputTextSnapshotManifest ?? [])];
-          // Checkpoint each successful object before publishing or retrying siblings.
-          store.checkpointReceipt('object', job.key, uploaded);
-          const publication = await publishTaskObjectManifests(store, payload, dataDir, fetchImpl);
-          const incomplete = entries.find(entry => entry.status !== 'ok');
-          if (incomplete) return { status: 'retry', reason: incomplete.reason ?? 'object_upload_incomplete' };
-          return publication;
-        }
-        if (context.evalContextV2) {
-          const collisions = new Set(context.evalContextV2.artifacts.entries.filter(e => e.reason === 'cross_ledger_collision').map(e => e.artifact_id));
-          context.evalContextV2.artifacts.entries = (uploaded.artifactManifest ?? []).map(e => collisions.has(e.artifact_id) ? { ...e, status: 'partial', reason: 'cross_ledger_collision' } : e);
-        }
-      }
-    }
     if (payload.taskTraceId) return { status: 'retry', reason: 'object_authority_unavailable' };
     const result = await reportRunCompleted(context, { config: sink, deliveryIdempotencyKey: job.key, ...(fetchImpl ? { fetchImpl } : {}) });
     // Readback belongs to the receiver. The persistent accepted state remains visibly incomplete.

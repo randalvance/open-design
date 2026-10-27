@@ -86,7 +86,6 @@ vi.mock('../../src/providers/daemon', () => ({
   fetchChatRunStatus: (...args: unknown[]) => fetchChatRunStatus(...args),
   listActiveChatRuns: (...args: unknown[]) => listActiveChatRuns(...args),
   listProjectRuns: (...args: unknown[]) => listProjectRuns(...args),
-  publishDaemonRunFinishedEvent: vi.fn(),
   reattachDaemonRun: (...args: unknown[]) => reattachDaemonRun(...args),
   streamViaDaemon: vi.fn(),
 }));
@@ -159,6 +158,7 @@ vi.mock('../../src/components/FileWorkspace', () => ({
 
 vi.mock('../../src/components/Loading', () => ({
   CenteredLoader: () => null,
+  Spinner: () => null,
 }));
 
 const TASK_EXECUTION_ID = 'odnext_d56fa27247794fe6a7f2e46156f0dee0';

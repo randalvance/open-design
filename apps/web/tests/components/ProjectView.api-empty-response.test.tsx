@@ -58,7 +58,6 @@ vi.mock('../../src/providers/daemon', () => ({
   fetchChatRunStatus: vi.fn(),
   listActiveChatRuns: vi.fn().mockResolvedValue([]),
   listProjectRuns: vi.fn().mockResolvedValue([]),
-  publishDaemonRunFinishedEvent: vi.fn(),
   reattachDaemonRun: vi.fn(),
   streamViaDaemon: vi.fn(),
 }));
@@ -180,6 +179,7 @@ vi.mock('../../src/components/FileWorkspace', () => ({
 
 vi.mock('../../src/components/Loading', () => ({
   CenteredLoader: () => <div data-testid="loader" />,
+  Spinner: () => null,
 }));
 
 vi.mock('../../src/components/ChatPane', () => ({
@@ -442,7 +442,7 @@ describe('ProjectView API empty response handling', () => {
     let result;
     await act(async () => { result = await chatPaneMockState.boardSend!([], [image]); });
     expect(result).toEqual({ status: 'rejected', commentIds: [] });
-    expect(uploadProjectFiles).toHaveBeenCalledWith(project.id, [image], undefined, null);
+    expect(uploadProjectFiles).toHaveBeenCalledWith(project.id, [image], undefined);
     expect(mockedStreamViaDaemon).not.toHaveBeenCalled();
     const eventsBeforeThrow = chatPaneMockState.track.mock.calls.filter(([event]) => event === 'project_comment_send_result').length;
     const originalError = new Error('business upload failure');
@@ -615,17 +615,11 @@ describe('ProjectView API empty response handling', () => {
 
     async function expectCommentReleasedToOpen() {
       await waitFor(() => {
-        // `patchPreviewCommentStatus` takes the acting workspace context as a
-        // fifth argument (1c15574c2), so the daemon can authorize the comment
-        // mutation. This harness has no cloud identity, so it is `null` — but
-        // the argument must still be matched: a four-argument matcher cannot
-        // match a five-argument call at all.
         expect(mockedPatchPreviewCommentStatus).toHaveBeenLastCalledWith(
           project.id,
           'conv-project-1',
           'comment-1',
           'open',
-          null,
         );
       });
       await waitFor(() => expect(listedComments()).toBe('comment-1:open'));
@@ -1269,7 +1263,7 @@ async function waitForBoardSendReady() {
 
 async function sendTestPrompt() {
   await waitFor(() => {
-    expect(mockedListMessages).toHaveBeenCalledWith(project.id, 'conv-project-1', null, expect.any(AbortSignal));
+    expect(mockedListMessages).toHaveBeenCalledWith(project.id, 'conv-project-1', expect.any(AbortSignal));
   });
   await new Promise((resolve) => setTimeout(resolve, 0));
   await waitFor(() => expect(screen.getByRole('button', { name: 'send' })).toBeTruthy());

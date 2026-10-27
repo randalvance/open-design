@@ -217,10 +217,10 @@ const packagedOnboardingExpression = `
     const onboardingShell = document.querySelector('.entry-shell--onboarding');
     const onboardingModal = document.querySelector('.entry-onboarding-modal');
     // Identity is the first gate; runtime selection follows Cloud sign-in.
-    const cloudSignIn = document.querySelector('.onboarding-cloud__primary');
+    const primaryCta = document.querySelector('[data-testid="onboarding-landing-primary"]');
 
     return {
-      cloudSignInVisible: cloudSignIn instanceof HTMLElement,
+      primaryCtaVisible: primaryCta instanceof HTMLElement,
       href: location.href,
       onboardingVisible: onboardingShell instanceof HTMLElement && onboardingModal instanceof HTMLElement,
       text: onboardingModal?.textContent?.trim().slice(0, 2000) ?? null,
@@ -416,7 +416,7 @@ type UpdaterRecoverySummary = {
 };
 
 type PackagedOnboardingEvalValue = {
-  cloudSignInVisible: boolean;
+  primaryCtaVisible: boolean;
   href: string;
   onboardingVisible: boolean;
   text: string | null;
@@ -1235,11 +1235,11 @@ macOnboardingDescribe('packaged mac onboarding AMR smoke', () => {
       expect(health.health.ok).toBe(true);
 
       const initial = await waitForPackagedOnboarding((snapshot) =>
-        snapshot.onboardingVisible && snapshot.cloudSignInVisible,
-        'fresh packaged onboarding Cloud identity gate',
+        snapshot.onboardingVisible && snapshot.primaryCtaVisible,
+        'fresh packaged onboarding landing',
       );
       expect(initial.href).toMatch(/^(od:\/\/app\/|http:\/\/127\.0\.0\.1:\d+\/)/);
-      expect(initial.cloudSignInVisible).toBe(true);
+      expect(initial.primaryCtaVisible).toBe(true);
 
       const onboardingScreenshotPath = join(toolsPackDir, 'screenshots', `${namespace}-onboarding.png`);
       await mkdir(dirname(onboardingScreenshotPath), { recursive: true });
@@ -2903,7 +2903,7 @@ function asHealthEvalValue(value: unknown): HealthEvalValue | null {
 
 function asPackagedOnboardingEvalValue(value: unknown): PackagedOnboardingEvalValue | null {
   if (!isRecord(value)) return null;
-  if (typeof value.cloudSignInVisible !== 'boolean') return null;
+  if (typeof value.primaryCtaVisible !== 'boolean') return null;
   if (typeof value.href !== 'string') return null;
   if (typeof value.onboardingVisible !== 'boolean') return null;
   if (value.text != null && typeof value.text !== 'string') return null;

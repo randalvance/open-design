@@ -6,7 +6,7 @@ import { AUDIO_MODELS_BY_KIND, IMAGE_MODELS, VIDEO_MODELS } from '../../src/medi
 describe('NewProjectPanel image provider visibility', () => {
   it('shows Vela image models without exposing Codex image models', () => {
     const imageModels = supportedModels('image', IMAGE_MODELS);
-    expect(imageModels.some((model) => model.provider === 'vela')).toBe(true);
+    expect(imageModels.some((model) => model.provider === 'openai')).toBe(true);
     expect(imageModels.map((model) => String(model.provider))).not.toContain('codex');
   });
 

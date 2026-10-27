@@ -28,9 +28,6 @@ describe('Task-owned feedback', () => {
     config.telemetry.content = true;
     vi.stubEnv('OPEN_DESIGN_TELEMETRY_RELAY_URL', 'https://relay.example/api/langfuse');
     vi.stubEnv('OPEN_DESIGN_TELEMETRY_RETRIES', '0');
-    vi.stubEnv('OPEN_DESIGN_VELA_TELEMETRY', '1');
-    vi.stubEnv('VELA_CONTROL_KEY', 'synthetic-control-key');
-    vi.stubEnv('VELA_API_URL', 'https://vela.example');
   });
   afterEach(() => vi.unstubAllEnvs());
 
@@ -43,35 +40,22 @@ describe('Task-owned feedback', () => {
     expect(repeated).toEqual(bodies.map(body => body.id));
   });
 
-  it.each(['relay', 'vela'] as const)('keeps feedback on its accepted %s Task transport', async (transport) => {
-    expect(readFeedbackTelemetrySinkConfig()?.kind).toBe('vela');
+  it.each(['relay'] as const)('keeps feedback on its accepted %s Task transport', async (transport) => {
+    expect(readFeedbackTelemetrySinkConfig()?.kind).toBe('relay');
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response('{}', { status: 202 }));
     const dataDir = await mkdtemp(path.join(os.tmpdir(), 'od-task-feedback-'));
     try {
-    taskTraceReceipts(dataDir).write({ taskExecutionId: 'synthetic-feedback-task', idempotencyKey: 'root-key', traceId: transport === 'vela' ? 'a'.repeat(64) : taskId, protocol: 'legacy-v1', transport });
+    taskTraceReceipts(dataDir).write({ taskExecutionId: 'synthetic-feedback-task', idempotencyKey: 'root-key', traceId: taskId, protocol: 'legacy-v1', transport });
     expect(await reportRunFeedbackFromDaemon({ dataDir, ...context(), fetchImpl })).toMatchObject({ deliveryStatus: 'queued' });
     await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
-    expect(fetchImpl.mock.calls[0]?.[0]).toBe(transport === 'vela' ? 'https://vela.example/api/v1/open-design/telemetry' : 'https://relay.example/api/langfuse');
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe('https://relay.example/api/langfuse');
     const payload = JSON.parse(String(fetchImpl.mock.calls[0]?.[1]?.body));
-    expect(transport === 'vela' ? payload.events[0].data.traceId : payload.batch[0].body.traceId).toBe(taskId);
+    expect(payload.batch[0].body.traceId).toBe(taskId);
     } finally { (await evidenceStore(dataDir)).close(); await rm(dataDir, { recursive: true, force: true }); }
   });
-
 
   it('does not choose a new transport when the root receipt is missing', () => {
     expect(taskUpdateSink('/synthetic-missing-receipt', taskId)).toBeNull();
-  });
-
-  it('does not anonymously publish feedback when Vela authentication expires', async () => {
-    const dataDir = await mkdtemp(path.join(os.tmpdir(), 'od-task-auth-'));
-    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(new Response('{}', { status: 401 }));
-    try {
-      taskTraceReceipts(dataDir).write({ taskExecutionId: 'synthetic-feedback-task', idempotencyKey: 'root-key', traceId: 'a'.repeat(64), protocol: 'legacy-v1', transport: 'vela' });
-      await enqueueFeedbackEvidence(dataDir, context());
-      await drainEvidence(dataDir, fetchImpl);
-      expect(fetchImpl).toHaveBeenCalledTimes(1);
-      expect(fetchImpl.mock.calls[0]?.[0]).toBe('https://vela.example/api/v1/open-design/telemetry');
-    } finally { (await evidenceStore(dataDir)).close(); await rm(dataDir, { recursive: true, force: true }); }
   });
 
   it('keeps legacy Run feedback IDs and respects content consent', async () => {

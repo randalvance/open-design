@@ -29,7 +29,6 @@ const fetchChatRunStatus = vi.fn();
 const listActiveChatRuns = vi.fn();
 const listProjectRuns = vi.fn();
 const reattachDaemonRun = vi.fn();
-const publishDaemonRunFinishedEvent = vi.fn();
 const streamViaDaemon = vi.fn();
 const saveMessage = vi.fn();
 const createConversation = vi.fn();
@@ -73,10 +72,8 @@ vi.mock('../../src/providers/daemon', () => ({
   // 一轮死在 `AMR_INSUFFICIENT_BALANCE` 上之后,`ProjectView` 会去查一次钱包读数
   // 来点亮升级卡(用户 2026-09-02 裁决:钱的事只有那一张卡)。这一页不测那张卡,
   // 只是要让那条路走得通 —— 少了这个 mock 会变成一条 unhandled rejection。
-  fetchAmrWalletSnapshot: vi.fn().mockResolvedValue(null),
   listActiveChatRuns: (...args: unknown[]) => listActiveChatRuns(...args),
   listProjectRuns: (...args: unknown[]) => listProjectRuns(...args),
-  publishDaemonRunFinishedEvent: (...args: unknown[]) => publishDaemonRunFinishedEvent(...args),
   reattachDaemonRun: (...args: unknown[]) => reattachDaemonRun(...args),
   streamViaDaemon: (...args: unknown[]) => streamViaDaemon(...args),
 }));
@@ -174,6 +171,7 @@ vi.mock('../../src/components/FileWorkspace', () => ({
 
 vi.mock('../../src/components/Loading', () => ({
   CenteredLoader: () => null,
+  Spinner: () => null,
 }));
 
 function renderProjectView(options?: {
@@ -912,7 +910,6 @@ describe('ProjectView daemon reattach restore', () => {
     await waitFor(() => expect(reattachDaemonRun).toHaveBeenCalledTimes(1));
     expect(reattachDaemonRun).toHaveBeenCalledWith(expect.objectContaining({
       agentId: 'kimi',
-      publishRunFinishedEvent: true,
     }));
     expect(capturedHandlers).not.toBeNull();
 
@@ -1134,11 +1131,10 @@ describe('ProjectView daemon reattach restore', () => {
     renderProjectView();
 
     await waitFor(() => expect(reattachDaemonRun).toHaveBeenCalledTimes(1));
-    expect(fetchChatRunStatus).toHaveBeenCalledWith('run-production', null);
+    expect(fetchChatRunStatus).toHaveBeenCalledWith('run-production');
     expect(reattachDaemonRun).toHaveBeenCalledWith(expect.objectContaining({
       runId: 'run-production',
       initialLastEventId: null,
-      publishRunFinishedEvent: true,
     }));
     await waitFor(() => {
       const normalized = saveMessage.mock.calls
@@ -1215,7 +1211,7 @@ describe('ProjectView daemon reattach restore', () => {
 
     renderProjectView();
 
-    await waitFor(() => expect(fetchChatRunStatus).toHaveBeenCalledWith('run-production', null));
+    await waitFor(() => expect(fetchChatRunStatus).toHaveBeenCalledWith('run-production'));
     await waitFor(() => {
       const saved = saveMessage.mock.calls
         .map((call) => call[2] as ChatMessage)
@@ -1640,48 +1636,6 @@ describe('ProjectView daemon reattach restore', () => {
             && message.content !== finalContent,
         ),
     ).toBe(false);
-  });
-
-  it('does not publish a run-finished event while replaying a historical success', async () => {
-    const startedAt = Date.now() - 10_000;
-    listConversations.mockResolvedValue([{ id: 'conv-1', title: 'Conversation' }]);
-    listMessages.mockResolvedValue([
-      {
-        id: 'msg-historical-replay',
-        role: 'assistant',
-        content: '',
-        createdAt: startedAt,
-        startedAt,
-        runId: 'run-historical-replay',
-        runStatus: 'succeeded',
-        preTurnFileNames: [],
-      } satisfies ChatMessage,
-    ]);
-    fetchPreviewComments.mockResolvedValue([]);
-    loadTabs.mockResolvedValue({ tabs: [], activeTabId: null });
-    fetchProjectFiles.mockResolvedValue([]);
-    fetchLiveArtifacts.mockResolvedValue([]);
-    fetchSkill.mockResolvedValue(null);
-    fetchDesignSystem.mockResolvedValue(null);
-    getTemplate.mockResolvedValue(null);
-    fetchChatRunStatus.mockResolvedValue({
-      id: 'run-historical-replay',
-      status: 'succeeded',
-      createdAt: startedAt,
-      updatedAt: startedAt + 1_000,
-      exitCode: 0,
-      signal: null,
-      artifactCount: 1,
-    });
-    reattachDaemonRun.mockImplementation(async () => new Promise<void>(() => {}));
-
-    renderProjectView();
-
-    await waitFor(() => expect(reattachDaemonRun).toHaveBeenCalledTimes(1));
-    expect(reattachDaemonRun).toHaveBeenCalledWith(expect.objectContaining({
-      publishRunFinishedEvent: false,
-    }));
-    expect(publishDaemonRunFinishedEvent).not.toHaveBeenCalled();
   });
 
   it('finalizes reattached telemetry only after trace object files are restored', async () => {

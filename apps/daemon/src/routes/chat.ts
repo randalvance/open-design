@@ -38,7 +38,7 @@ import { isKnownReasoningEffort, resolveModelForServiceTier } from '../runtimes/
 import { googleStreamGenerateContentUrl } from '../integrations/google-models.js';
 import { createRoleMarkerGuard } from '../role-marker-guard.js';
 import { authorizeReasoningEgress, sendReasoningEgressDenial } from '../reasoning-egress.js';
-import type { AuthorizeProjectRequest } from '../collab/project-request-authority.js';
+import type { AuthorizeProjectRequest } from '../project-authority.js';
 
 // Allowlist for the `/feedback` route. Mirrors the
 // ChatMessageFeedbackReasonCode union in packages/contracts/src/api/chat.ts.

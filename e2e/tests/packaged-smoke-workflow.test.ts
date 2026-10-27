@@ -1874,21 +1874,14 @@ process.stdin.on("end", () => {
     expect(preflight).toContain("fromJSON(needs.runners.outputs.runs_on).general_medium");
     expect(preflight).toContain("toJSON(fromJSON(needs.runners.outputs.runs_on).general_medium)");
     expect(uiP0).toContain("fromJSON(needs.runners.outputs.runs_on).ui_p0");
-    expect(uiP0).toContain("fromJSON(needs.runners.outputs.runs_on).ui_p0_heavy");
-    expect(uiP0).toContain("matrix.shard == 'project-collab'");
+    expect(uiP0).toContain("toJSON(fromJSON(needs.runners.outputs.runs_on).ui_p0)");
+    expect(uiP0).not.toContain("ui_p0_heavy");
     expect(uiP0).toContain("matrix: ${{ fromJSON(needs.plan.outputs.ui_p0_matrix) }}");
     expect(uiP0).toContain("if: ${{ needs.plan.outputs.ui_p0_count != '0' }}");
-    expect(uiP0).toContain("fromJSON(needs.runners.outputs.runs_on).ui_p0_heavy");
-    expect(uiP0).toContain("matrix.shard == 'project-collab'");
-    expect(uiP0).toContain(
-      "toJSON(matrix.shard == 'project-collab' && fromJSON(needs.runners.outputs.runs_on).ui_p0_heavy || fromJSON(needs.runners.outputs.runs_on).ui_p0)",
-    );
-    expect(uiP0).toContain("matrix: ${{ fromJSON(needs.plan.outputs.ui_p0_matrix) }}");
     expect(uiP0CiMatrix.map((entry) => entry.name)).toEqual([
       "entry-settings",
       "project-workspace",
       "project-workspace-editor",
-      "project-collab",
       "project-runtime",
       "workspace-restoration",
     ]);
@@ -1908,13 +1901,8 @@ process.stdin.on("end", () => {
       files: [
         "ui/app-design-files.test.ts",
         "ui/app-manual-edit.test.ts",
-        "ui/workspace-team-design-system-picker.test.ts",
       ],
     });
-    expect(uiP0Groups["project-collab"].files).toEqual([
-      "ui/workspace-multi-client-collab.test.ts",
-    ]);
-    expect(uiP0Groups["project-collab"].workers).toBe(1);
     expect(uiP0Groups["critical-extras"]).toEqual({
       grep: "@merge-extra",
       workers: 1,
@@ -2952,8 +2940,6 @@ process.stdin.on("end", () => {
     expect(canary).toContain("ref: main");
     expect(canary).not.toContain("inputs.ref");
     expect(canary).toContain("runs-on: windows-latest");
-    expect(canary).toContain("OPEN_DESIGN_AMR_PROFILE: prod");
-    expect(canary).toContain("OD_VELA_WEB_URL: ${{ secrets.VELA_WEB_URL_PROD }}");
     expect(canary).toContain("--namespace release-prerelease-canary-win");
     expect(canary).toContain('OD_PACKAGED_E2E_RELEASE_CHANNEL: prerelease');
     expect(canary).toContain("OD_PACKAGED_E2E_WIN_SMOKE_PROFILE: ${{ inputs.smoke_profile || 'core' }}");

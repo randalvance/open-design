@@ -1006,33 +1006,6 @@ export interface DeepSeekCampaignBadgeClickProps {
   user_state: TrackingCampaignUserState;
 }
 
-// Terminal outcome of one AMR (vela) sign-in attempt, fired exactly once
-// per attempt when the login poll loop settles. This is the main-app-side
-// completion signal that pairs with the amr_entry click: dashboards count
-// AMR-authorized users from this event without joining the separate AMR
-// PostHog project. `result` semantics:
-//   success   — poll observed loggedIn=true within the budget
-//   failed    — `vela login` failed to spawn or exited before sign-in
-//   cancelled — the user clicked Cancel (or backed out mid-start)
-//   timeout   — the 5-minute poll budget elapsed
-export interface AmrAuthResultProps {
-  page_name: TrackingPageName;
-  area: 'amr_auth';
-  result: 'success' | 'failed' | 'cancelled' | 'timeout';
-  error_code?: string;
-  duration_ms: number;
-  // Attribution carried over from the amr_entry click that started this
-  // attempt; absent when login was started without a recorded entry.
-  entry_id?: string;
-  source_detail?: TrackingAmrEntrySource;
-  auth_attempt_id?: string;
-  last_stage?: import('./amr-auth.js').AmrAuthStage;
-  last_stage_result?: import('./amr-auth.js').AmrAuthStageResult;
-  last_error_kind?: import('./amr-auth.js').AmrAuthErrorKind;
-  network_path?: import('./amr-auth.js').AmrAuthNetworkPath;
-  fallback_used?: boolean;
-}
-
 export interface ChatPanelResourcesPopoverClickProps {
   page_name: 'chat_panel';
   area: 'resources_popover';

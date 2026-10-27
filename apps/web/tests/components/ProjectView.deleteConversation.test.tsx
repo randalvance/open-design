@@ -85,7 +85,6 @@ vi.mock('../../src/providers/daemon', () => ({
   fetchChatRunStatus: (...args: unknown[]) => fetchChatRunStatus(...args),
   listActiveChatRuns: (...args: unknown[]) => listActiveChatRuns(...args),
   listProjectRuns: (...args: unknown[]) => listProjectRuns(...args),
-  publishDaemonRunFinishedEvent: vi.fn(),
   reattachDaemonRun: (...args: unknown[]) => reattachDaemonRun(...args),
   streamViaDaemon: (...args: unknown[]) => streamViaDaemon(...args),
 }));
@@ -172,6 +171,7 @@ vi.mock('../../src/components/FileWorkspace', () => ({
 
 vi.mock('../../src/components/Loading', () => ({
   CenteredLoader: () => null,
+  Spinner: () => null,
 }));
 
 function renderProjectView(onProjectsRefresh: () => void) {
@@ -249,18 +249,13 @@ describe('ProjectView conversation delete', () => {
 
     renderProjectView(onProjectsRefresh);
 
-    // ChatPane can expose its callback before workspace scope settles.
-    // Wait for the real permission state to permit deletion as well.
-    await waitFor(() => {
-      expect(chatPaneProps.onDeleteConversation).toBeDefined();
-      expect(chatPaneProps.viewerOnly).toBe(false);
-    });
+    await waitFor(() => expect(chatPaneProps.onDeleteConversation).toBeDefined());
 
     await act(async () => {
       await chatPaneProps.onDeleteConversation!('conv-1');
     });
 
-    expect(deleteConversation).toHaveBeenCalledWith('project-1', 'conv-1', null);
+    expect(deleteConversation).toHaveBeenCalledWith('project-1', 'conv-1');
     expect(onProjectsRefresh).toHaveBeenCalledTimes(1);
   });
 
@@ -293,7 +288,7 @@ describe('ProjectView conversation delete', () => {
       await chatPaneProps.onDeleteConversation!('conv-1');
     });
 
-    expect(deleteConversation).toHaveBeenCalledWith('project-1', 'conv-1', null);
+    expect(deleteConversation).toHaveBeenCalledWith('project-1', 'conv-1');
     expect(onProjectsRefresh).not.toHaveBeenCalled();
   });
 
@@ -357,7 +352,7 @@ describe('ProjectView conversation delete', () => {
       expect(createConversation).toHaveBeenCalledWith(
         'project-1',
         undefined,
-        { workspaceContext: null },
+        {},
       ),
     );
     await waitFor(() => expect(chatPaneProps.activeConversationId).toBe('conv-fresh'));

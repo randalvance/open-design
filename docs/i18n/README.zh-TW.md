@@ -1,7 +1,5 @@
 <h1 align="center">OpenDesign：首個協作式 AI 設計 Agent 工作台</h1>
 
-> ✨ **[慶祝 GitHub 100K Star，OpenDesign Go 額度翻倍](https://open-design.ai/pricing/)**。**首月僅需 8 美元，指定 Design Plan 模型每月最高可享 120 美元使用額度**，可用於 GPT-6 Luna、DeepSeek V4.1 Flash、GLM-5.3 Flash-X、MiMo V2.6 Flash 等 10 多款模型。 所有個人方案均提供 API 存取，可用於 Codex、Claude Code、DSH、OpenCode 等工具。
-
 <p align="center">
   <img src="../../docs/assets/readme-hero-design-agent.webp" alt="OpenDesign：首個協作式 AI 設計 Agent 工作台" width="100%" />
 </p>
@@ -9,7 +7,6 @@
 <p align="center">
   <a href="https://open-design.ai/?utm_source=github&utm_medium=referral&utm_content=readme_website">官方網站</a> ·
   <a href="https://open-design.ai/?utm_source=github&utm_medium=referral&utm_content=readme_download">下載</a> ·
-  <a href="https://open-design.ai/cloud/?utm_source=github&utm_medium=referral&utm_content=readme_cloud">OpenDesign Cloud</a> ·
   <a href="https://discord.gg/mHAjSMV6gz">Discord</a> ·
   <a href="https://x.com/OpenDesignHQ">追蹤 @OpenDesignHQ</a>
 </p>
@@ -27,7 +24,7 @@
 
 ## 什麼是 OpenDesign
 
-OpenDesign 是**首個協作式 AI 設計 Agent 工作台**。從需求簡述開始，使用你熟悉的程式設計 Agent 或 OpenDesign Cloud，建立符合設計系統的原型。與團隊分享並蒐集回饋，再讓 Agent 在同一個專案中繼續完善。
+OpenDesign 是**首個協作式 AI 設計 Agent 工作台**。從需求簡述開始，使用你熟悉的程式設計 Agent，建立符合設計系統的原型。審閱並加上評論，再讓 Agent 在同一個專案中繼續完善。
 
 這套工作流程開放且可擴充。OpenDesign 採用 Apache 2.0 授權；團隊可以檢視並依自身流程調整技能、設計範本、設計系統與外掛。
 
@@ -115,7 +112,7 @@ OpenDesign 是**首個協作式 AI 設計 Agent 工作台**。從需求簡述開
 `od mcp install <agent> --print` 可預覽 dry-run · `--uninstall` 可移除 · 完整清單請執行 `od mcp install --help`。
 
 <p align="center">
-  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="The 25 coding-agent CLIs OpenDesign supports — Claude Code · Codex · OpenCode · Hermes · Antigravity · Vela · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
+  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="The 24 coding-agent CLIs OpenDesign supports — Claude Code · Codex · OpenCode · Hermes · Antigravity · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
 </p>
 
 **沒有安裝任何 CLI？** 位於 `POST /api/proxy/{anthropic,openai,azure,google,ollama,senseaudio}/stream` 的 BYOK 代理可提供相同的迴圈（不需衍生程序）——貼上 `baseUrl` + `apiKey` + `model` 即可，支援 OpenAI、Anthropic、Azure OpenAI、Google Gemini、Ollama、LM Studio、vLLM，或任何相容 OpenAI 的端點。逐目標的 SSRF 防護會在 daemon 邊界阻擋內部 IP／link-local／CGNAT。
@@ -235,7 +232,7 @@ Runtime 定義位於 [`apps/daemon/src/runtimes/defs/`](../../apps/daemon/src/ru
 - 🖥️ **本地優先、每一層都可 BYOK。** 原生桌面應用程式保持本地優先。產品分析與工作階段重播需經使用者同意；經清理的安全與可靠性遙測始終開啟。在描述 daemon 資料路徑之前，必須閱讀儲存庫根目錄 `AGENTS.md` 中的 **Daemon data directory contract**。
 - 🌍 **在四個平面上可組合。** **外掛**承載可執行的工作流程 · 功能 **skills** 承載 agent 行為 · **設計範本**承載渲染藍圖 · **設計系統**承載品牌。四者都採用可攜、可版控的目錄，任何人都能撰寫與發布。
 - 🔁 **翻新既有的程式碼庫。** 把一個 `git` 儲存庫 + `DESIGN.md` 交給 agent，它就會把你真實的元件重構至品牌規格。
-- 🔒 **出於信念的隱私。** 專案可在本機或自行部署的環境中執行。使用雲端模型或 OpenDesign Cloud 時，相關請求會傳送至對應服務。BYOK 代理包含 SSRF 防護。
+- 🔒 **出於信念的隱私。** 專案可在本機或自行部署的環境中執行。使用雲端模型時，相關請求會傳送至對應服務。BYOK 代理包含 SSRF 防護。
 
 ---
 
@@ -546,7 +543,6 @@ pnpm guard && pnpm --filter @open-design/plugin-runtime typecheck
 - [x] Sidecar 協定 + Electron 桌面 + IPC 自動化
 - [x] Artifact lint API + 5 維自我評析的發出前閘門
 - [x] **0.8.0**——外掛市集基礎建設（261 個官方外掛、manifest 規格、各 agent 安裝腳本）
-- [x] **0.9.0**——OpenDesign Cloud（內建於應用程式的官方 Model Router：零設定、一鍵登入）
 - [x] 打包的 Electron 建置——macOS（Apple Silicon + Intel）+ Windows（x64）+ Linux AppImage（選用通道）
 - [ ] 註解模式的精準編輯——部分完成；可靠的定點修補開發中
 - [ ] AI 發出的 tweaks 面板 UX——尚未實作

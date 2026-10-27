@@ -17,9 +17,7 @@ import type {
   InputFieldSpec,
   McpServerConfig,
   InstalledPluginRecord,
-  LocalCatalogScope,
   ProjectKind,
-  WorkspaceCollabContext,
   AudioVoiceOption,
   WorkspaceContextItem,
 } from '@open-design/contracts';
@@ -45,10 +43,8 @@ import {
   duplicatePluginAsProject,
   listPlugins,
   listPluginsFresh,
-  pluginCatalogCacheKey,
   readCachedVisiblePlugins,
   patchProject,
-  resolvedWorkspaceContextForWrite,
   ProjectCreateError,
   renderPluginBriefTemplate,
   resolvePluginQueryFallback,
@@ -62,10 +58,6 @@ import { FigmaImportModal } from './FigmaImportModal';
 import { fetchMcpServers } from '../state/mcp';
 import { takeHomeComposerAssetSeed } from '../state/libraryHandoff';
 import { useI18n, useT } from '../i18n';
-import {
-  formatModelWindowRetryAt,
-  modelWindowLimitCopy,
-} from '../runtime/amr-guidance';
 import {
   localizeSkillName,
   localizeSkillPrompt,
@@ -113,13 +105,6 @@ import { navigate } from '../router';
 import { setPendingDesignSystemCreateEntry } from '../analytics/ds-create-entry';
 import { workspaceContextLinkedDirs } from './workspace-context';
 import {
-  currentWorkspaceAccountGeneration,
-  useWorkspaceContext,
-  workspaceResourceReadContext,
-} from '../collab/useWorkspaceContext';
-import { useWorkspaceInvalidation } from '../collab/workspace-events';
-import { useWorkspaceSnapshotActivation } from '../collab/workspace-snapshot-activation';
-import {
   buildHomeMediaComposer,
   homeMediaSurfaceForChipId,
   metadataForHomeMediaComposer,
@@ -149,8 +134,6 @@ import { localizePluginDescription } from './plugins-home/localization';
 import type { Recommendation } from '../onboarding/recommendation';
 import type { OnboardingEntry } from '../onboarding/onboarding-entry';
 import { AnimatePresence } from 'motion/react';
-import { DeepSeekV4FlashCampaign } from './DeepSeekV4FlashCampaign';
-import type { DeepSeekV4FlashCampaignAudience } from '../campaigns/deepseek-v4-flash';
 
 export interface ActivePlugin {
   record: InstalledPluginRecord;
@@ -274,11 +257,9 @@ interface Props {
   designSystems?: DesignSystemSummary[];
   designSystemsLoading?: boolean;
   defaultDesignSystemId?: string | null;
-  // `'blocked'` means the shell refused the submit but already surfaced its
-  // own UI (e.g. the AMR balance gate dialog): keep the draft, show no error.
   onSubmit: (
     payload: PluginLoopSubmit,
-  ) => Promise<boolean | 'blocked' | void> | boolean | 'blocked' | void;
+  ) => Promise<boolean | void> | boolean | void;
   onOpenProject: (id: string, fileName?: string) => void;
   onBrowseRegistry?: () => void;
   onOpenIntegrations?: () => void;
@@ -310,19 +291,9 @@ interface Props {
   }) => boolean | void | Promise<boolean | void>;
   onRecommendationDismiss?: () => void;
   executionSwitcher?: ReactNode;
-  artifactUpgradeSlot?: ReactNode;
-  deepSeekV4FlashCampaignAudience?: DeepSeekV4FlashCampaignAudience;
-  /** Real model switch for the campaign modal's paid 立即使用 CTA (D5).
-   *  EntryShell owns the agent/model persistence callbacks; HomeView only
-   *  threads them through, like the audience above. */
-  onDeepSeekV4FlashCampaignUseNow?: (agentId: string, modelId: string) => void;
-  /** Telemetry opt-in + install id for the modal's consent-gated AMR
-   *  attribution — EntryShell reads them off config, HomeView threads. */
-  deepSeekV4FlashCampaignMetricsConsent?: boolean;
-  deepSeekV4FlashCampaignInstallationId?: string | null;
   /**
-   * `page` is Home itself. `dock` renders the composer ALONE — no campaign
-   * modal, no recent-projects strip — for hosts that want Home's input bar
+   * `page` is Home itself. `dock` renders the composer ALONE — no
+   * recent-projects strip — for hosts that want Home's input bar
    * somewhere else (the community view docks one at the bottom). The submit
    * path, the mention pickers and every prop below are shared: a docked
    * instance is a second HomeView, so it keeps its own draft rather than
@@ -349,8 +320,8 @@ const EMPTY_PROMPT_TEMPLATES: PromptTemplateSummary[] = [];
 // File handles / a desktop auth token that cannot round-trip through JSON
 // safely.
 const HOME_COMPOSER_PROMPT_KEY = 'open-design:home-composer:prompt';
+const LOCAL_PLUGIN_CATALOG_KEY = 'local';
 const HOME_COMPOSER_DESIGN_SYSTEM_KEY = 'open-design:home-composer:design-system';
-const HOME_COMPOSER_DESIGN_SYSTEM_SCOPE_KEY = 'open-design:home-composer:design-system-scope';
 // The active type-chip + bound plugin (the "创作类型" + "示例提示词" pick) is a
 // third piece of composer state that used to fall through this same crack:
 // `active` (below) held only a live `InstalledPluginRecord` + resolved apply
@@ -407,31 +378,6 @@ function writeHomeComposerDraft(key: string, value: string | null): void {
   }
 }
 
-function localCatalogScopeFromWorkspaceContext(
-  context: WorkspaceCollabContext | null,
-): LocalCatalogScope | null {
-  if (!context?.workspaceId?.trim() || !context.workspaceMemberId?.trim()) return null;
-  return {
-    workspaceId: context.workspaceId.trim(),
-    workspaceMemberId: context.workspaceMemberId.trim(),
-  };
-}
-
-function readLocalCatalogScopeDraft(key: string): LocalCatalogScope | null {
-  const raw = readHomeComposerDraft(key);
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as Partial<LocalCatalogScope> | null;
-    if (!parsed?.workspaceId?.trim() || !parsed.workspaceMemberId?.trim()) return null;
-    return {
-      workspaceId: parsed.workspaceId.trim(),
-      workspaceMemberId: parsed.workspaceMemberId.trim(),
-    };
-  } catch {
-    return null;
-  }
-}
-
 function readHomeComposerChipDraft(): HomeComposerChipDraft | null {
   const raw = readHomeComposerDraft(HOME_COMPOSER_CHIP_KEY);
   if (!raw) return null;
@@ -472,7 +418,6 @@ function writeHomeComposerChipDraft(draft: HomeComposerChipDraft | null): void {
 function clearHomeComposerDraft(): void {
   writeHomeComposerDraft(HOME_COMPOSER_PROMPT_KEY, null);
   writeHomeComposerDraft(HOME_COMPOSER_DESIGN_SYSTEM_KEY, null);
-  writeHomeComposerDraft(HOME_COMPOSER_DESIGN_SYSTEM_SCOPE_KEY, null);
   writeHomeComposerChipDraft(null);
 }
 
@@ -519,11 +464,6 @@ export function HomeView({
   onRecommendationStart,
   onRecommendationDismiss,
   executionSwitcher,
-  artifactUpgradeSlot,
-  deepSeekV4FlashCampaignAudience = 'unknown',
-  onDeepSeekV4FlashCampaignUseNow,
-  deepSeekV4FlashCampaignMetricsConsent = false,
-  deepSeekV4FlashCampaignInstallationId = null,
   variant = 'page',
 }: Props) {
   const { locale, t } = useI18n();
@@ -534,29 +474,9 @@ export function HomeView({
   // clobbering each other on every keystroke, and a send from either would
   // wipe the other's half-written prompt.
   const ownsComposerDraft = variant === 'page';
-  const workspaceContextState = useWorkspaceContext();
-  const { context: workspaceContext } = workspaceContextState;
-  const pluginCatalogWorkspaceContext = workspaceResourceReadContext(workspaceContextState);
-  const lastSettledLocalCatalogScopeRef = useRef<LocalCatalogScope | null>(
-    localCatalogScopeFromWorkspaceContext(workspaceContext),
-  );
-  if (!workspaceContextState.identityChangePending) {
-    lastSettledLocalCatalogScopeRef.current =
-      localCatalogScopeFromWorkspaceContext(workspaceContext);
-  }
-  const pluginAccountGeneration = currentWorkspaceAccountGeneration();
-  const pluginCatalogOptions = {
-    workspaceContext: pluginCatalogWorkspaceContext,
-    accountGeneration: pluginAccountGeneration,
-  };
-  // Keep the provisional local catalogue available for default-template
-  // routing while Workspace discovery runs, but never expose that provisional
-  // projection in HomeHero. The prop below keeps the Examples rail in its
-  // stable loading shell until the Workspace identity and its exact cache
-  // partition have both settled.
-  const desiredPluginCatalogKey = workspaceContextState.identityChangePending
-    ? null
-    : pluginCatalogCacheKey(pluginCatalogOptions);
+  // The plugin catalogue has a single local partition; the key only exists so
+  // an in-flight read can be told apart from a superseding one.
+  const desiredPluginCatalogKey: string | null = LOCAL_PLUGIN_CATALOG_KEY;
   // P0 page_view page_name=home — fire once on mount. ref-keyed to survive
   // re-renders that flip parent state without remounting HomeView.
   const homePageViewFiredRef = useRef(false);
@@ -571,7 +491,7 @@ export function HomeView({
   // the user was in a project. The effect below still revalidates an expired
   // catalog; only a true cold start (no successful catalog yet) stays guarded.
   const initialPluginsRef = useRef<InstalledPluginRecord[] | null>(
-    desiredPluginCatalogKey ? readCachedVisiblePlugins(pluginCatalogOptions) : null,
+    desiredPluginCatalogKey ? readCachedVisiblePlugins() : null,
   );
   const [pluginCatalogKey, setPluginCatalogKey] = useState<string | null>(
     desiredPluginCatalogKey,
@@ -582,13 +502,9 @@ export function HomeView({
   const [pluginsLoading, setPluginsLoading] = useState(
     () => initialPluginsRef.current === null,
   );
-  // Home stays mounted while entry-shell views and Workspaces change. Never
-  // commit one render with the previous identity's plugin catalogue: switch to
-  // the exact new cache partition synchronously, or mask the old rows while a
-  // deliberate identity change is unresolved.
   if (pluginCatalogKey !== desiredPluginCatalogKey) {
     const cached = desiredPluginCatalogKey
-      ? readCachedVisiblePlugins(pluginCatalogOptions)
+      ? readCachedVisiblePlugins()
       : null;
     setPluginCatalogKey(desiredPluginCatalogKey);
     setPlugins(cached ?? []);
@@ -615,7 +531,6 @@ export function HomeView({
     useState<ProjectMetadata | null>(null);
   const [active, setActive] = useState<ActivePlugin | null>(null);
   const reconciledPluginCatalogKeyRef = useRef<string | null>(null);
-  const previousWorkspaceNameRef = useRef<string | null>(null);
   // A placeholder-carousel scenario the user submitted on an empty composer.
   // We seed the prompt + bind the template synchronously, then let an effect
   // fire submit() once both have committed (submit() reads state, not args).
@@ -634,8 +549,6 @@ export function HomeView({
     ? automaticStrategyTaskProfileForRouteId(active?.chipId ?? null)
     : null;
   const [activeSkill, setActiveSkill] = useState<SkillSummary | null>(null);
-  const [activeSkillCatalogScope, setActiveSkillCatalogScope] =
-    useState<LocalCatalogScope | null>(null);
   const [selectedPluginContexts, setSelectedPluginContexts] = useState<SelectedPluginContext[]>([]);
   const [selectedMcpContexts, setSelectedMcpContexts] = useState<SelectedMcpContext[]>([]);
   const [selectedConnectorContexts, setSelectedConnectorContexts] = useState<SelectedConnectorContext[]>([]);
@@ -669,30 +582,20 @@ export function HomeView({
   const restoredDraftRef = useRef<{
     prompt: string;
     designSystemId: string | null;
-    designSystemCatalogScope: LocalCatalogScope | null;
   } | null>(null);
   if (restoredDraftRef.current === null) {
     restoredDraftRef.current = ownsComposerDraft
       ? {
           prompt: readHomeComposerDraft(HOME_COMPOSER_PROMPT_KEY) ?? '',
           designSystemId: readHomeComposerDraft(HOME_COMPOSER_DESIGN_SYSTEM_KEY),
-          designSystemCatalogScope: readLocalCatalogScopeDraft(
-            HOME_COMPOSER_DESIGN_SYSTEM_SCOPE_KEY,
-          ),
         }
-      : { prompt: '', designSystemId: null, designSystemCatalogScope: null };
+      : { prompt: '', designSystemId: null };
   }
   const restoredDraft = restoredDraftRef.current;
   const [designSystemId, setDesignSystemId] = useState<string | null>(() =>
     restoredDraft.designSystemId ??
     homeDefaultDesignSystemId(designSystems, defaultDesignSystemId),
   );
-  const [designSystemCatalogScope, setDesignSystemCatalogScope] =
-    useState<LocalCatalogScope | null>(() =>
-      restoredDraft.designSystemId
-        ? restoredDraft.designSystemCatalogScope
-        : localCatalogScopeFromWorkspaceContext(workspaceContext),
-    );
   // A restored pick counts as user-touched so the async default re-seed effect
   // below does not overwrite it once the catalogue resolves.
   const designSystemTouchedRef = useRef(restoredDraft.designSystemId != null);
@@ -741,15 +644,6 @@ export function HomeView({
     if (!ownsComposerDraft) return;
     writeHomeComposerDraft(HOME_COMPOSER_DESIGN_SYSTEM_KEY, designSystemId);
   }, [designSystemId, ownsComposerDraft]);
-  useEffect(() => {
-    if (!ownsComposerDraft) return;
-    writeHomeComposerDraft(
-      HOME_COMPOSER_DESIGN_SYSTEM_SCOPE_KEY,
-      designSystemId && designSystemCatalogScope
-        ? JSON.stringify(designSystemCatalogScope)
-        : null,
-    );
-  }, [designSystemCatalogScope, designSystemId, ownsComposerDraft]);
   // Persist the active chip/plugin identity the same way — only the
   // serializable fields, not `active` itself (see the module note above).
   // Clearing on `active === null` covers the explicit-clear (×) and the
@@ -857,10 +751,10 @@ export function HomeView({
   const detailsTemplate = useMemo(() => {
     if (!detailsRecord) return null;
     return (
-      buildCommunityTemplates(plugins, locale, t, workspaceContext)
+      buildCommunityTemplates(plugins, locale, t)
         .find((template) => template.id === detailsRecord.id) ?? null
     );
-  }, [detailsRecord, plugins, locale, t, workspaceContext]);
+  }, [detailsRecord, plugins, locale, t]);
   // Same synchronous single-flight gate the Community remix path uses: the
   // lightweight preview's Remix kicks off one project create; clicks landing
   // before React re-renders must all see the lock immediately, so a plain
@@ -957,8 +851,8 @@ export function HomeView({
       if (!supersede && current?.key === issuedCatalogKey) return current.promise;
       const requestGeneration = ++pluginCatalogRequestGenerationRef.current;
       const promise = (force
-        ? listPlugins(pluginCatalogOptions)
-        : listPluginsFresh(pluginCatalogOptions)).then((rows) => {
+        ? listPlugins()
+        : listPluginsFresh()).then((rows) => {
         if (
           cancelled
           || requestGeneration !== pluginCatalogRequestGenerationRef.current
@@ -977,7 +871,7 @@ export function HomeView({
       return promise;
     };
     pluginCatalogReloadRef.current = load;
-    if (homeActiveRef.current && pluginCatalogWorkspaceContext?.workspaceType !== 'team') load();
+    if (homeActiveRef.current) load();
     else pluginCatalogStaleRef.current = true;
     const onChanged = () => {
       // A mutation event is newer than any pending snapshot and must supersede
@@ -988,12 +882,11 @@ export function HomeView({
     window.addEventListener('open-design:plugins-changed', onChanged);
     return () => {
       cancelled = true;
-      // A Workspace-directory refresh can briefly mask the catalog identity
-      // (K -> null -> K). Do not let the remounted K effect join this effect's
-      // cancelled promise: its response is intentionally prevented from
-      // committing, so reusing it would leave the new surface in the cold
-      // `pluginsLoading` state forever even though `/api/plugins` succeeded.
-      // A newer request has a different promise and must remain registered.
+      // Do not let a remounted effect join this effect's cancelled promise:
+      // its response is intentionally prevented from committing, so reusing it
+      // would leave the new surface in the cold `pluginsLoading` state forever
+      // even though `/api/plugins` succeeded. A newer request has a different
+      // promise and must remain registered.
       const inFlight = pluginCatalogReloadInFlightRef.current;
       if (ownedPromise && inFlight?.promise === ownedPromise) {
         pluginCatalogReloadInFlightRef.current = null;
@@ -1003,34 +896,13 @@ export function HomeView({
       }
       window.removeEventListener('open-design:plugins-changed', onChanged);
     };
-  }, [desiredPluginCatalogKey, pluginCatalogWorkspaceContext?.workspaceType]);
+  }, [desiredPluginCatalogKey]);
 
   useEffect(() => {
     if (!isActive || !desiredPluginCatalogKey || !pluginCatalogStaleRef.current) return;
-    if (pluginCatalogWorkspaceContext?.workspaceType === 'team') return;
     pluginCatalogStaleRef.current = false;
     pluginCatalogReloadRef.current(true);
-  }, [desiredPluginCatalogKey, isActive, pluginCatalogWorkspaceContext?.workspaceType]);
-
-  const handlePluginStreamActive = useWorkspaceSnapshotActivation({
-    enabled: isActive && pluginCatalogWorkspaceContext?.workspaceType === 'team',
-    identity: desiredPluginCatalogKey ?? 'no-plugin-catalog',
-    refresh: () => { void pluginCatalogReloadRef.current(true, true); },
-  });
-
-  useWorkspaceInvalidation({}, {
-    workspaceContext:
-      isActive && pluginCatalogWorkspaceContext?.workspaceType === 'team'
-        ? pluginCatalogWorkspaceContext
-        : null,
-    enabled: isActive && pluginCatalogWorkspaceContext?.workspaceType === 'team',
-    // App owns the global Skill/Design System catch-up. Home only refreshes
-    // its plugin projection.
-    onActive: () => {
-      pluginCatalogStaleRef.current = false;
-      handlePluginStreamActive();
-    },
-  });
+  }, [desiredPluginCatalogKey, isActive]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1165,7 +1037,6 @@ export function HomeView({
 
     setActive(null);
     setActiveSkill(null);
-    setActiveSkillCatalogScope(null);
     setSelectedPluginContexts([]);
     setSelectedMcpContexts([]);
     setSelectedConnectorContexts([]);
@@ -1284,16 +1155,15 @@ export function HomeView({
     if (pluginsLoading) return;
     const pluginById = new Map(plugins.map((record) => [record.id, record]));
 
-    // Catalogue reads are already partitioned by Workspace. Reconcile staged
-    // choices here when that partition settles: same ids bind to the CURRENT
-    // catalogue record; missing ids lose only their selection. Keep the prompt,
-    // attachments and the rest of the draft intact. Do not move this policy to
-    // project creation or turn it into remote authorization — local catalogue
-    // refresh/SSE is the product boundary for plugin availability.
+    // Reconcile staged choices when the catalogue settles: same ids bind to
+    // the CURRENT catalogue record; missing ids lose only their selection. Keep
+    // the prompt, attachments and the rest of the draft intact. Do not move
+    // this policy to project creation or turn it into remote authorization —
+    // local catalogue refresh is the product boundary for plugin availability.
     if (reconciledPluginCatalogKeyRef.current !== pluginCatalogKey) {
-      // An apply started against the prior Workspace must not commit after the
-      // catalogue partition changes. Ordinary same-Workspace SSE refreshes do
-      // not cancel an in-flight local apply.
+      // An apply started against a prior catalogue partition must not commit
+      // after the partition changes. Ordinary refreshes do not cancel an
+      // in-flight local apply.
       activePluginApplyRequestRef.current += 1;
       reconciledPluginCatalogKeyRef.current = pluginCatalogKey;
     }
@@ -1334,27 +1204,19 @@ export function HomeView({
     if (skillsLoading) return;
     setActiveSkill((current) => {
       if (!current) return current;
-      const rebound = selectableSkills.find((skill) => skill.id === current.id) ?? null;
-      setActiveSkillCatalogScope(
-        rebound ? localCatalogScopeFromWorkspaceContext(workspaceContext) : null,
-      );
-      return rebound;
+      return selectableSkills.find((skill) => skill.id === current.id) ?? null;
     });
     setDetailsSkill((current) => {
       if (!current) return current;
       return selectableSkills.find((skill) => skill.id === current.id) ?? null;
     });
-  }, [selectableSkills, skillsLoading, workspaceContext]);
+  }, [selectableSkills, skillsLoading]);
 
   useEffect(() => {
     if (designSystemsLoading || !designSystemId) return;
-    if (designSystemPickerSystems.some((system) => system.id === designSystemId)) {
-      setDesignSystemCatalogScope(localCatalogScopeFromWorkspaceContext(workspaceContext));
-      return;
-    }
+    if (designSystemPickerSystems.some((system) => system.id === designSystemId)) return;
     setDesignSystemId(null);
-    setDesignSystemCatalogScope(null);
-  }, [designSystemId, designSystemPickerSystems, designSystemsLoading, workspaceContext]);
+  }, [designSystemId, designSystemPickerSystems, designSystemsLoading]);
 
   // Re-seed the default selection when the catalogue or the user's default
   // resolves after mount (async load), unless the user already picked one.
@@ -1362,10 +1224,7 @@ export function HomeView({
     if (designSystemTouchedRef.current) return;
     const nextId = homeDefaultDesignSystemId(designSystems, defaultDesignSystemId);
     setDesignSystemId(nextId);
-    setDesignSystemCatalogScope(
-      nextId ? localCatalogScopeFromWorkspaceContext(workspaceContext) : null,
-    );
-  }, [designSystems, defaultDesignSystemId, workspaceContext]);
+  }, [designSystems, defaultDesignSystemId]);
   // Title of the globally-selected design system (or the "No design system"
   // label). Seeds the active plugin's `designSystem` input — the apply-template
   // hint the rendered brief references — so it mirrors the persistent picker.
@@ -1377,53 +1236,6 @@ export function HomeView({
         : t('designSystemPicker.noneTitle'),
     [designSystemId, designSystemPickerSystems, t],
   );
-
-  // A preset can bind while one Workspace is selected, then remain mounted as
-  // this tab switches to another Workspace. `usePlugin` seeds workspace_name
-  // at bind time, but that snapshot must not outlive the request-local
-  // Workspace context. Refresh only a missing value or the value previously
-  // supplied by context, preserving an explicit plugin input when one exists.
-  // This reads the exact context selected for this tab; it never consults or
-  // writes Vela/daemon account-level active-workspace state. That model cannot
-  // represent two clients of one account open in different Workspaces.
-  useEffect(() => {
-    const nextWorkspaceName = workspaceContext?.workspaceName?.trim() || null;
-    const previousWorkspaceName = previousWorkspaceNameRef.current;
-    previousWorkspaceNameRef.current = nextWorkspaceName;
-
-    setActive((currentActive) => {
-      if (!currentActive) return currentActive;
-      const workspaceField = currentActive.inputFields.find(
-        (field) => field.name === 'workspace_name',
-      );
-      if (!workspaceField || workspaceField.default !== undefined) return currentActive;
-
-      const currentValue = currentActive.inputs.workspace_name;
-      const currentWorkspaceName =
-        currentValue === undefined || currentValue === null
-          ? ''
-          : String(currentValue).trim();
-      const contextOwnsCurrentValue =
-        currentWorkspaceName.length === 0
-        || (previousWorkspaceName !== null
-          && currentWorkspaceName === previousWorkspaceName);
-      if (!contextOwnsCurrentValue || currentWorkspaceName === (nextWorkspaceName ?? '')) {
-        return currentActive;
-      }
-
-      const inputs = { ...currentActive.inputs };
-      if (nextWorkspaceName) inputs.workspace_name = nextWorkspaceName;
-      else delete inputs.workspace_name;
-      return {
-        ...currentActive,
-        inputs,
-        inputsValid: pluginInputsAreValid(currentActive.inputFields, inputs),
-        // The pinned apply snapshot belongs to the old inputs. Force submit to
-        // resolve a new snapshot for the newly selected Workspace.
-        result: null,
-      };
-    });
-  }, [workspaceContext?.workspaceName]);
 
   /* Applying a chip focuses the composer — right for a chip the USER picked,
      wrong for one the HOST bound. The community gallery binds a chip into the
@@ -1499,7 +1311,6 @@ export function HomeView({
         options?.inputs,
         inputFields,
         selectedDesignSystemTitle,
-        workspaceContext?.workspaceName,
       ),
     );
     const inputsValid = pluginInputsAreValid(inputFields, optimisticInputs);
@@ -1665,22 +1476,10 @@ export function HomeView({
         setPendingChipId(null);
       }
     }
-    // Applying a record that the local, Workspace-scoped catalogue already
-    // returned is local composition work. Do not add a second identity wait or
-    // membership probe here: directory refresh/SSE owns catalogue freshness,
-    // while remote install/share/sync mutations enforce current authority.
-    // During an identity transition, omit attribution instead of blocking Send.
-    const writeWorkspaceContext = workspaceContextState.identityChangePending
-      ? null
-      : resolvedWorkspaceContextForWrite(
-          workspaceContextState,
-          { unavailablePolicy: 'unscoped' },
-        );
     const result = await applyPlugin(record.id, {
       locale,
       inputs,
       pluginSource: record.source,
-      workspaceContext: writeWorkspaceContext,
     });
     clearPendingApply();
     return result;
@@ -1716,7 +1515,6 @@ export function HomeView({
         options?.inputs,
         inputFields,
         selectedDesignSystemTitle,
-        workspaceContext?.workspaceName,
       ),
       inputFields: options?.inputFields,
       queryTemplate: options?.queryTemplate,
@@ -2053,7 +1851,7 @@ export function HomeView({
     try {
       const result = await duplicatePluginAsProject(record.id, {
         name: localizePluginTitle(locale, record),
-      }, resolvedWorkspaceContextForWrite(workspaceContextState));
+      });
       onOpenProject(result.projectId, result.relPath);
     } catch {
       setError(t('pluginCard.duplicateFailed'));
@@ -2078,14 +1876,6 @@ export function HomeView({
         // agent title arrives — see the matching note in
         // EntryShell.startBlankProjectFromRail.
         metadata: { kind: 'other', nameSource: 'generated' },
-        // Blank project creation is local too. During an identity transition,
-        // omit stale attribution instead of blocking on Workspace discovery.
-        workspaceContext: workspaceContextState.identityChangePending
-          ? null
-          : resolvedWorkspaceContextForWrite(
-              workspaceContextState,
-              { unavailablePolicy: 'unscoped' },
-            ),
       });
       onOpenProject(project.id);
     } catch {
@@ -2268,9 +2058,6 @@ export function HomeView({
   function handleDesignSystemChange(id: string | null) {
     designSystemTouchedRef.current = true;
     setDesignSystemId(id);
-    setDesignSystemCatalogScope(
-      id ? localCatalogScopeFromWorkspaceContext(workspaceContext) : null,
-    );
     if (active && active.inputFields.some((field) => field.name === 'designSystem')) {
       const title = id
         ? designSystemPickerSystems.find((system) => system.id === id)?.title
@@ -2394,7 +2181,6 @@ export function HomeView({
   // to be discarded to keep the rule defined.
   function useSkill(skill: SkillSummary, nextPrompt: string | null) {
     setActiveSkill(skill);
-    setActiveSkillCatalogScope(localCatalogScopeFromWorkspaceContext(workspaceContext));
     setError(null);
     const replacement = nextPrompt ?? localizeSkillPrompt(locale, skill) ?? '';
     if (replacement.trim().length > 0) {
@@ -2457,7 +2243,6 @@ export function HomeView({
     runWithReplacementConfirmation('Plugin authoring', nextPrompt, async () => {
       setActive(null);
       setActiveSkill(null);
-      setActiveSkillCatalogScope(null);
       setFallbackProjectKind('other');
       setFallbackProjectMetadata(null);
       setError(null);
@@ -2995,11 +2780,6 @@ export function HomeView({
           ? null
           : submittedActive?.record.marketplaceTrust ?? (routedPluginId ? 'official' : null),
         skillId: resolvedSkillId,
-        ...(resolvedSkillId && activeSkillCatalogScope
-          ? { skillCatalogScope: activeSkillCatalogScope }
-          : resolvedSkillId && lastSettledLocalCatalogScopeRef.current
-            ? { skillCatalogScope: lastSettledLocalCatalogScopeRef.current }
-          : {}),
         appliedPluginSnapshotId: automaticStrategyTaskProfile
           ? null
           : submittedActive?.result?.appliedPlugin?.snapshotId ?? null,
@@ -3011,11 +2791,6 @@ export function HomeView({
         projectKind: submittedProjectKind,
         projectMetadata: submittedProjectMetadata,
         designSystemId: submittedDesignSystemId,
-        ...(submittedDesignSystemId && designSystemCatalogScope
-          ? { designSystemCatalogScope }
-          : submittedDesignSystemId && lastSettledLocalCatalogScopeRef.current
-            ? { designSystemCatalogScope: lastSettledLocalCatalogScopeRef.current }
-          : {}),
         contextPlugins,
         contextMcpServers,
         contextConnectors,
@@ -3033,9 +2808,6 @@ export function HomeView({
         setError(t('home.createFailed'));
         return;
       }
-      // Blocked-and-handled (AMR balance gate): the shell already shows its
-      // dialog. Keep the composer draft and staged contexts for the retry.
-      if (accepted === 'blocked') return;
       // Create accepted — now it is safe to spend the one-shot marker.
       if (examplePromptToSend) localStorage.setItem(examplePromptKey, '1');
       // The draft has become a real run; drop it synchronously (before the
@@ -3058,32 +2830,11 @@ export function HomeView({
       if (isTransportFailure) {
         setDaemonRecoveryActive(true);
         setError(t('home.daemonRecovering'));
-      } else if (
-        err instanceof ProjectCreateError
-        && err.code === 'AMR_AUTH_REQUIRED'
-      ) {
-        setError(t('entry.authExpiredBody'));
       } else {
-        // A rolling model window is the one upstream failure whose own wording
-        // must not reach the user: the gateway writes it in English for API
-        // callers, and read literally it sounds like a charged failure rather
-        // than a wait. Everything else keeps the verbatim path, where the
-        // daemon's message IS the specific thing to say.
-        const windowLimit = modelWindowLimitCopy(
-          err instanceof Error ? err.message : null,
-        );
-        if (windowLimit) {
-          setError(t(
-            windowLimit.messageKey,
-            windowLimit.retryAt
-              ? { retryAt: formatModelWindowRetryAt(windowLimit.retryAt, locale) }
-              : undefined,
-          ));
-        } else {
-          setError(err instanceof Error && err.message.trim()
-            ? err.message
-            : t('home.createFailed'));
-        }
+        // The daemon's message IS the specific thing to say.
+        setError(err instanceof Error && err.message.trim()
+          ? err.message
+          : t('home.createFailed'));
       }
     } finally {
       setSending(false);
@@ -3103,24 +2854,9 @@ export function HomeView({
       data-variant={variant}
       ref={homeViewRef}
     >
-      {/* `active` gates the portal-escaping campaign dialog to the ACTIVE home
-          view: EntryShell only hides inactive views with display:none, which a
-          document.body portal ignores. A docked composer never runs it at all —
-          it is a Home-page moment, and a second copy of the modal would fight
-          the page one over the same dismissal state. */}
-      {variant === 'dock' ? null : (
-        <DeepSeekV4FlashCampaign
-          audience={deepSeekV4FlashCampaignAudience}
-          active={isActive}
-          onUseCampaignModel={onDeepSeekV4FlashCampaignUseNow}
-          metricsConsent={deepSeekV4FlashCampaignMetricsConsent}
-          installationId={deepSeekV4FlashCampaignInstallationId}
-        />
-      )}
       <HomeHero
         variant={variant}
         collapseSignal={collapseSignal}
-        workspaceContext={workspaceContext}
         ref={inputRef}
         active={isActive}
         firstRunGuide={projectsLoading ? undefined : projects.length === 0}
@@ -3140,10 +2876,7 @@ export function HomeView({
         showActivePluginChip={showActivePluginChip}
         onClearActivePlugin={clearActivePlugin}
         onClearActiveChip={clearActiveChipSelection}
-        onClearActiveSkill={() => {
-          setActiveSkill(null);
-          setActiveSkillCatalogScope(null);
-        }}
+        onClearActiveSkill={() => setActiveSkill(null)}
         selectedPluginContexts={selectedPluginContexts.map((item) => item.record)}
         selectedMcpContexts={selectedMcpContexts.map((item) => item.server)}
         selectedConnectorContexts={selectedConnectorContexts.map((item) => item.connector)}
@@ -3177,11 +2910,7 @@ export function HomeView({
         onRemoveFile={removeStagedFile}
         onImportFigma={() => setFigmaModalOpen(true)}
         pluginOptions={plugins}
-        pluginsLoading={
-          pluginsLoading
-          || workspaceContextState.loading
-          || workspaceContextState.identityChangePending === true
-        }
+        pluginsLoading={pluginsLoading}
         skillOptions={selectableSkills}
         skillsLoading={skillsLoading}
         mcpOptions={enabledMcpServers}
@@ -3242,7 +2971,6 @@ export function HomeView({
         // third way to say the same thing, wedged between the two. The
         // recommendation engine and `RecommendedStartRegion` are left intact;
         // only this mount point is gone.
-        recommendationSlot={artifactUpgradeSlot}
       />
 
       {/* No 最近项目 grid under the hero on EITHER branch (OPEND-2683, per
@@ -3291,7 +3019,6 @@ export function HomeView({
         ) : detailsRecord ? (
           <PluginDetailsModal
             record={detailsRecord}
-            workspaceContext={workspaceContext}
             onClose={() => {
               // Covers the close button, Esc and the backdrop — every
               // variant funnels dismissal through this single onClose.
@@ -3342,7 +3069,6 @@ export function HomeView({
         {figmaModalOpen ? (
           <FigmaImportModal
             onClose={() => setFigmaModalOpen(false)}
-            workspaceContext={workspaceContext}
             resolveProjectId={async () => {
               // The homepage has no project yet; create a bare one to decode
               // the Figma file into, then navigate into it.
@@ -3351,7 +3077,6 @@ export function HomeView({
                   name: 'Imported from Figma',
                   skillId: null,
                   designSystemId: null,
-                  workspaceContext: resolvedWorkspaceContextForWrite(workspaceContextState),
                 });
                 return project.id;
               } catch {
@@ -3360,7 +3085,7 @@ export function HomeView({
             }}
             onImported={(result, projectId) => {
               void (async () => {
-                await patchProject(projectId, { pendingPrompt: result.suggestedPrompt }, workspaceContext);
+                await patchProject(projectId, { pendingPrompt: result.suggestedPrompt });
                 setFigmaModalOpen(false);
                 onOpenProject(projectId);
               })();
@@ -3374,7 +3099,6 @@ export function HomeView({
                     skillId: null,
                     designSystemId: null,
                     pendingPrompt: reshapePrompt,
-                    workspaceContext: resolvedWorkspaceContextForWrite(workspaceContextState),
                   });
                   setFigmaModalOpen(false);
                   onOpenProject(project.id);
@@ -3709,30 +3433,8 @@ function withHomePluginContextDefaults(
   provided: Record<string, unknown> | undefined,
   fields: InputFieldSpec[],
   defaultDesignSystemTitle: string,
-  workspaceName: string | undefined,
 ): Record<string, unknown> | undefined {
-  const withDesignSystem = withHomeDesignSystemDefault(
-    provided,
-    fields,
-    defaultDesignSystemTitle,
-  );
-  const workspaceField = fields.find((field) => field.name === 'workspace_name');
-  const normalizedWorkspaceName = workspaceName?.trim();
-  if (
-    !workspaceField
-    || workspaceField.default !== undefined
-    || !normalizedWorkspaceName
-  ) {
-    return withDesignSystem;
-  }
-  const current = withDesignSystem?.workspace_name;
-  if (current !== undefined && current !== null && String(current).trim().length > 0) {
-    return withDesignSystem;
-  }
-  return {
-    ...(withDesignSystem ?? {}),
-    workspace_name: normalizedWorkspaceName,
-  };
+  return withHomeDesignSystemDefault(provided, fields, defaultDesignSystemTitle);
 }
 
 function estimatePluginContextItemCount(

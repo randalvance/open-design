@@ -6,7 +6,6 @@ import type {
   ConnectorStatusResponse,
   DesignSystemSummary,
   LibraryAsset,
-  WorkspaceCollabContext,
 } from '@open-design/contracts';
 import { streamViaDaemon } from '../providers/daemon';
 import {
@@ -131,8 +130,6 @@ import type {
   TrackingDesignSystemsEntryFrom,
 } from '@open-design/contracts/analytics';
 import { useI18n } from '../i18n';
-import { useWorkspaceContext } from '../collab/useWorkspaceContext';
-import { workspaceIdentityCacheKey } from '../collab/workspace-identity';
 
 // Source counts the embedded DS creation flow can report back to its
 // wrapper at Generate-click time. OnboardingView uses this to emit the
@@ -308,9 +305,8 @@ function readRememberedGenerationJob(designSystemId: string): string | null {
 
 async function resolveDesignSystemWorkspaceProject(
   system: Pick<DesignSystemDetail, 'id' | 'projectId'>,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<ResolvedDesignSystemWorkspaceProject | null> {
-  const workspace = await ensureDesignSystemWorkspace(system.id, workspaceContext);
+  const workspace = await ensureDesignSystemWorkspace(system.id);
   if (workspace) {
     return {
       projectId: workspace.project.id,
@@ -318,14 +314,9 @@ async function resolveDesignSystemWorkspaceProject(
     };
   }
   if (!system.projectId) return null;
-  const fallbackProject = await getProject(system.projectId, workspaceContext);
+  const fallbackProject = await getProject(system.projectId);
   if (!fallbackProject) return null;
-  const files = workspaceContext
-    ? await fetchProjectFiles(system.projectId, {
-        workspaceContext,
-        requireAuthoritative: true,
-      })
-    : await fetchProjectFiles(system.projectId, { requireAuthoritative: true });
+  const files = await fetchProjectFiles(system.projectId, { requireAuthoritative: true });
   return {
     projectId: system.projectId,
     files,
@@ -353,7 +344,6 @@ export function DesignSystemCreationFlow({
   designSystems = [],
 }: CreationProps) {
   const { t } = useI18n();
-  const { context: workspaceContext } = useWorkspaceContext();
   const [step, setStep] = useState<SetupStep>('setup');
   // A Library "create design system from selection" hand-off pre-fills the
   // source material with the chosen assets (single-shot; cleared on read).
@@ -678,7 +668,7 @@ export function DesignSystemCreationFlow({
     }
 
     setReferenceDesignSystemLoading(true);
-    void fetchDesignSystem(id, workspaceContext)
+    void fetchDesignSystem(id)
       .then((detail) => {
         if (referenceDesignSystemRequestRef.current !== requestId) return;
         if (!detail) {
@@ -945,7 +935,6 @@ export function DesignSystemCreationFlow({
         description: [state.company.trim(), state.notes.trim()].filter(Boolean).join('\n\n'),
         designMd: designMdForExtraction,
         throwOnError: true,
-        workspaceContext,
       });
       if (!result) {
         setVisibleError(t('dsCreate.extractionAlreadyStarting'));
@@ -958,7 +947,7 @@ export function DesignSystemCreationFlow({
       // `projects` list yet — hydrate it so onCreated can prepend it before
       // navigating into the live extraction.
       const project =
-        (await getProject(result.projectId, workspaceContext).catch(() => undefined))
+        (await getProject(result.projectId).catch(() => undefined))
         ?? undefined;
       let projectForCreated = project && result.designSystemId
         ? {
@@ -980,7 +969,6 @@ export function DesignSystemCreationFlow({
           state,
           composioConfigured,
           githubConnector,
-          workspaceContext,
           onProjectPrepared: (preparedProject) => {
             projectForCreated = preparedProject;
             onProjectPrepared?.(preparedProject);
@@ -1644,7 +1632,6 @@ export function DesignSystemDetailView({
   onInitialRevisionJobConsumed,
 }: DetailProps) {
   const { locale, t } = useI18n();
-  const { context: workspaceContext } = useWorkspaceContext();
   const [system, setSystem] = useState<DesignSystemDetail | null>(null);
   const [body, setBody] = useState('');
   const [tab, setTab] = useState<ReviewTab>('system');
@@ -1663,7 +1650,7 @@ export function DesignSystemDetailView({
   const workspaceProjectFilesRef = useRef<ProjectFile[]>([]);
   const [workspaceFilesGeneration, setWorkspaceFilesGeneration] = useState(0);
   const workspaceFilesGenerationRef = useRef(0);
-  const workspaceFilesScopeKey = `${id}:${workspaceIdentityCacheKey(workspaceContext)}`;
+  const workspaceFilesScopeKey = id;
   const workspaceFilesScopeKeyRef = useRef(workspaceFilesScopeKey);
   workspaceFilesScopeKeyRef.current = workspaceFilesScopeKey;
   const workspaceFilesRequestSeqRef = useRef(0);
@@ -1683,19 +1670,14 @@ export function DesignSystemDetailView({
       return undefined;
     }
     let cancelled = false;
-    const detailWorkspaceContext = workspaceContext;
-    void getProjectDetail(
-      workspaceProjectId,
-      undefined,
-      detailWorkspaceContext,
-    ).then((detail) => {
+    void getProjectDetail(workspaceProjectId).then((detail) => {
       if (cancelled) return;
       setWorkspaceProjectResolvedDir(detail?.resolvedDir ?? null);
     });
     return () => {
       cancelled = true;
     };
-  }, [workspaceContext, workspaceProjectId]);
+  }, [workspaceProjectId]);
   const [workspaceLoadError, setWorkspaceLoadError] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
@@ -1745,19 +1727,19 @@ export function DesignSystemDetailView({
     workspaceTabsLoadedRef.current = false;
     suppressedInitialConversationProjectIdsRef.current.clear();
     pendingWorkspaceFileWritesRef.current.clear();
-    void fetchDesignSystem(id, workspaceContext).then((detail) => {
+    void fetchDesignSystem(id).then((detail) => {
       if (cancelled) return;
       setSystem(detail);
       setBody(detail?.body ?? '');
     });
-    void fetchDesignSystemRevisions(id, workspaceContext).then((next) => {
+    void fetchDesignSystemRevisions(id).then((next) => {
       if (cancelled) return;
       setRevisions(next);
     });
     return () => {
       cancelled = true;
     };
-  }, [id, workspaceContext, workspaceFilesScopeKey]);
+  }, [id, workspaceFilesScopeKey]);
 
   useEffect(() => {
     if (!initialRevisionJob?.id) return;
@@ -1779,7 +1761,7 @@ export function DesignSystemDetailView({
       setWorkspaceLoadError(null);
       let resolved: ResolvedDesignSystemWorkspaceProject | null;
       try {
-        resolved = await resolveDesignSystemWorkspaceProject(currentSystem, workspaceContext);
+        resolved = await resolveDesignSystemWorkspaceProject(currentSystem);
       } catch {
         if (!cancelled && workspaceFilesScopeKeyRef.current === requestScopeKey) {
           setWorkspaceLoadError(t('dsFlow.workspaceOpenFailed'));
@@ -1810,7 +1792,7 @@ export function DesignSystemDetailView({
     return () => {
       cancelled = true;
     };
-  }, [onOpenProject, onProjectsRefresh, system, t, workspaceContext, workspaceFilesScopeKey]);
+  }, [onOpenProject, onProjectsRefresh, system, t, workspaceFilesScopeKey]);
 
   useEffect(() => {
     if (!workspaceProjectId) return undefined;
@@ -1820,16 +1802,14 @@ export function DesignSystemDetailView({
     }
     let cancelled = false;
     async function loadWorkspaceConversation() {
-      const existing = await listConversations(projectId, { workspaceContext });
+      const existing = await listConversations(projectId);
       if (cancelled) return;
       if (existing.length > 0) {
         setConversations(existing);
         setActiveConversationId(existing[0]!.id);
         return;
       }
-      const fresh = await createConversation(projectId, 'Design system', {
-        workspaceContext,
-      });
+      const fresh = await createConversation(projectId, 'Design system');
       if (cancelled) return;
       if (fresh) {
         setConversations([fresh]);
@@ -1840,14 +1820,14 @@ export function DesignSystemDetailView({
     return () => {
       cancelled = true;
     };
-  }, [workspaceContext, workspaceProjectId]);
+  }, [workspaceProjectId]);
 
   useEffect(() => {
     if (!workspaceProjectId) return undefined;
     const projectId = workspaceProjectId;
     let cancelled = false;
     workspaceTabsLoadedRef.current = false;
-    void loadTabs(projectId, workspaceContext).then((state) => {
+    void loadTabs(projectId).then((state) => {
       if (cancelled) return;
       setWorkspaceTabsState(state);
       workspaceTabsLoadedRef.current = true;
@@ -1855,7 +1835,7 @@ export function DesignSystemDetailView({
     return () => {
       cancelled = true;
     };
-  }, [workspaceContext, workspaceProjectId]);
+  }, [workspaceProjectId]);
 
   useEffect(() => {
     if (!workspaceProjectId || !activeConversationId) {
@@ -1868,11 +1848,7 @@ export function DesignSystemDetailView({
     setProjectChatMessagesConversationId(null);
     setProjectChatLoadError(null);
     let cancelled = false;
-    void listMessages(
-      workspaceProjectId,
-      activeConversationId,
-      workspaceContext,
-    ).then((messages) => {
+    void listMessages(workspaceProjectId, activeConversationId).then((messages) => {
       if (cancelled) return;
       setProjectChatMessages(messages);
       setProjectChatMessagesConversationId(activeConversationId);
@@ -1889,7 +1865,7 @@ export function DesignSystemDetailView({
     return () => {
       cancelled = true;
     };
-  }, [activeConversationId, workspaceContext, workspaceProjectId]);
+  }, [activeConversationId, workspaceProjectId]);
 
   useEffect(() => {
     return () => {
@@ -1910,10 +1886,7 @@ export function DesignSystemDetailView({
     let timeoutId: number | undefined;
 
     async function pollGenerationJob() {
-      const next = await fetchDesignSystemGenerationJob(
-        generationJobId,
-        workspaceContext,
-      );
+      const next = await fetchDesignSystemGenerationJob(generationJobId);
       if (cancelled) return;
       if (!next) {
         clearRememberedGenerationJob(id);
@@ -1923,7 +1896,7 @@ export function DesignSystemDetailView({
       setGenerationJob(next);
       if (next.status === 'succeeded') {
         clearRememberedGenerationJob(id);
-        const detail = await fetchDesignSystem(id, workspaceContext);
+        const detail = await fetchDesignSystem(id);
         if (cancelled) return;
         if (detail) {
           setSystem(detail);
@@ -1949,7 +1922,7 @@ export function DesignSystemDetailView({
       cancelled = true;
       if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
-  }, [id, onSystemsRefresh, t, workspaceContext]);
+  }, [id, onSystemsRefresh, t]);
 
   useEffect(() => {
     if (
@@ -1964,7 +1937,7 @@ export function DesignSystemDetailView({
     let timeoutId: number | undefined;
 
     async function pollRevisionJob() {
-      const next = await fetchDesignSystemGenerationJob(jobId, workspaceContext);
+      const next = await fetchDesignSystemGenerationJob(jobId);
       if (cancelled) return;
       if (!next) {
         setStatusLine(t('dsFlow.revisionProgressUnavailable'));
@@ -1972,7 +1945,7 @@ export function DesignSystemDetailView({
       }
       setRevisionJob(next);
       if (next.status === 'succeeded') {
-        const nextRevisions = await fetchDesignSystemRevisions(id, workspaceContext);
+        const nextRevisions = await fetchDesignSystemRevisions(id);
         if (cancelled) return;
         setRevisions(nextRevisions);
         await onSystemsRefresh?.();
@@ -1995,7 +1968,7 @@ export function DesignSystemDetailView({
       cancelled = true;
       if (timeoutId !== undefined) window.clearTimeout(timeoutId);
     };
-  }, [id, onSystemsRefresh, revisionJob?.id, revisionJob?.status, t, workspaceContext]);
+  }, [id, onSystemsRefresh, revisionJob?.id, revisionJob?.status, t]);
 
   const sections = useMemo(() => parseDesignSystemSections(body, t), [body, t]);
   const published = system?.status === 'published';
@@ -2098,11 +2071,7 @@ export function DesignSystemDetailView({
     setSaving(true);
     setStatusLine(null);
     try {
-      const updated = await updateDesignSystemDraft(
-        system.id,
-        input,
-        workspaceContext,
-      );
+      const updated = await updateDesignSystemDraft(system.id, input);
       if (updated) {
         setSystem(updated);
         setBody(updated.body);
@@ -2118,7 +2087,7 @@ export function DesignSystemDetailView({
     const nextBody = body;
     const updated = await savePatch({ body: nextBody });
     if (updated && workspaceProjectId) {
-      await writeProjectTextFile(workspaceProjectId, 'DESIGN.md', nextBody, undefined, workspaceContext);
+      await writeProjectTextFile(workspaceProjectId, 'DESIGN.md', nextBody);
       try {
         await refreshWorkspaceProjectFiles(workspaceProjectId);
       } catch {
@@ -2203,7 +2172,7 @@ export function DesignSystemDetailView({
     const requestScopeKey = workspaceFilesScopeKey;
     let resolved: ResolvedDesignSystemWorkspaceProject | null;
     try {
-      resolved = await resolveDesignSystemWorkspaceProject(system, workspaceContext);
+      resolved = await resolveDesignSystemWorkspaceProject(system);
     } catch {
       if (workspaceFilesScopeKeyRef.current === requestScopeKey) {
         setWorkspaceLoadError(t('dsFlow.workspaceOpenFailed'));
@@ -2244,16 +2213,10 @@ export function DesignSystemDetailView({
     };
     let next: ProjectFile[];
     try {
-      next = workspaceContext
-        ? await fetchProjectFiles(projectId, {
-            workspaceContext,
-            fresh: options?.fresh,
-            requireAuthoritative: true,
-          })
-        : await fetchProjectFiles(projectId, {
-            fresh: options?.fresh,
-            requireAuthoritative: true,
-          });
+      next = await fetchProjectFiles(projectId, {
+        fresh: options?.fresh,
+        requireAuthoritative: true,
+      });
     } catch {
       // A failed read says nothing about deletion. Preserve the current
       // snapshot and generation for the active lifetime; a stale lifetime
@@ -2268,27 +2231,22 @@ export function DesignSystemDetailView({
     setWorkspaceFilesGeneration(acceptedGeneration);
     onAcceptedGeneration?.(acceptedGeneration);
     return next;
-  }, [workspaceContext, workspaceFilesScopeKey]);
+  }, [workspaceFilesScopeKey]);
 
   const syncDesignSystemBodyFromWorkspace = useCallback(async (projectId: string) => {
     if (!system || !editable) return false;
     const nextBody = await fetchProjectFileText(projectId, 'DESIGN.md', {
       cache: 'no-store',
       cacheBustKey: Date.now(),
-      ...(workspaceContext ? { workspaceContext } : {}),
     });
     if (!nextBody || nextBody === body) return false;
-    const updated = await updateDesignSystemDraft(
-      system.id,
-      { body: nextBody },
-      workspaceContext,
-    );
+    const updated = await updateDesignSystemDraft(system.id, { body: nextBody });
     if (!updated) return false;
     setSystem(updated);
     setBody(updated.body);
     await onSystemsRefresh?.();
     return true;
-  }, [body, editable, onSystemsRefresh, system, workspaceContext]);
+  }, [body, editable, onSystemsRefresh, system]);
 
   // Asset counterpart of syncDesignSystemBodyFromWorkspace (spec 04 §9.3,
   // recvqb1t4FrckM): the text sync above PATCHes DESIGN.md content through
@@ -2299,9 +2257,9 @@ export function DesignSystemDetailView({
   // architecture rule that only the daemon may touch the data directory.
   const syncDesignSystemAssetsFromWorkspace = useCallback(async () => {
     if (!system || !editable) return false;
-    const result = await syncDesignSystemAssetsFromWorkspaceRequest(system.id, workspaceContext);
+    const result = await syncDesignSystemAssetsFromWorkspaceRequest(system.id);
     return Boolean(result && result.synced.length > 0);
-  }, [editable, system, workspaceContext]);
+  }, [editable, system]);
 
   const refreshDesignSystemWorkspace = useCallback(async (
     projectId: string,
@@ -2334,19 +2292,19 @@ export function DesignSystemDetailView({
   const persistProjectMessage = useCallback(
     (projectId: string, conversationId: string | null, message: ChatMessage) => {
       if (!conversationId) return;
-      void saveMessage(projectId, conversationId, message, { workspaceContext });
+      void saveMessage(projectId, conversationId, message);
     },
-    [workspaceContext],
+    [],
   );
 
   const persistWorkspaceTabsState = useCallback(
     (next: OpenTabsState) => {
       setWorkspaceTabsState(next);
       if (workspaceProjectId && workspaceTabsLoadedRef.current) {
-        void saveTabs(workspaceProjectId, next, workspaceContext);
+        void saveTabs(workspaceProjectId, next);
       }
     },
-    [workspaceContext, workspaceProjectId],
+    [workspaceProjectId],
   );
 
   const requestWorkspaceFileOpen = useCallback((name: string) => {
@@ -2389,9 +2347,7 @@ export function DesignSystemDetailView({
       }
       let conversationId = activeConversationId;
       if (!conversationId) {
-        const fresh = await createConversation(projectId, 'Design system', {
-          workspaceContext,
-        });
+        const fresh = await createConversation(projectId, 'Design system');
         if (!fresh) {
           setChatError(t('dsFlow.conversationCreateFailed'));
           return;
@@ -2489,7 +2445,6 @@ export function DesignSystemDetailView({
           projectId,
           conversationId,
           { title: text.slice(0, 60) || 'Design system' },
-          workspaceContext,
         );
       }
 
@@ -2522,7 +2477,6 @@ export function DesignSystemDetailView({
         clientRequestId: randomUUID(),
         skillId: null,
         designSystemId: system.id,
-        workspaceContext,
         attachments: attachments.map((attachment) => attachment.path),
         commentAttachments,
         model: selectedModel?.model ?? null,
@@ -2606,10 +2560,7 @@ export function DesignSystemDetailView({
               // out-of-band change) so canonical never permanently drifts
               // from the workspace project's real assets.
               void syncDesignSystemAssetsFromWorkspace();
-              const audit = await fetchProjectDesignSystemPackageAudit(
-                projectId,
-                workspaceContext,
-              );
+              const audit = await fetchProjectDesignSystemPackageAudit(projectId);
               const auditSummary = audit ? summarizeDesignSystemPackageAudit(audit) : null;
               if (auditSummary) {
                 updateAssistant(
@@ -2727,9 +2678,7 @@ export function DesignSystemDetailView({
         setChatError(t('dsFlow.workspaceOpenFailed'));
         return;
       }
-      const fresh = await createConversation(projectId, 'Design system', {
-        workspaceContext,
-      });
+      const fresh = await createConversation(projectId, 'Design system');
       if (!fresh) {
         setChatError(t('dsFlow.conversationCreateFailed'));
         return;
@@ -2759,7 +2708,6 @@ export function DesignSystemDetailView({
         system.id,
         revision.id,
         status,
-        workspaceContext,
       );
       if (!updatedRevision) {
         setStatusLine(
@@ -2770,8 +2718,8 @@ export function DesignSystemDetailView({
         return;
       }
       const [detail, nextRevisions] = await Promise.all([
-        fetchDesignSystem(system.id, workspaceContext),
-        fetchDesignSystemRevisions(system.id, workspaceContext),
+        fetchDesignSystem(system.id),
+        fetchDesignSystemRevisions(system.id),
       ]);
       if (detail) {
         setSystem(detail);
@@ -2790,11 +2738,7 @@ export function DesignSystemDetailView({
     setTokenRebuildBusy(true);
     setStatusLine(null);
     try {
-      const result = await startDesignSystemTokenContractRebuildJob(
-        system.id,
-        { force },
-        workspaceContext,
-      );
+      const result = await startDesignSystemTokenContractRebuildJob(system.id, { force });
       if (!result) {
         setStatusLine(t('dsFlow.tokenRebuildStartFailed'));
         return;
@@ -4405,7 +4349,6 @@ async function prepareCreatedDesignSystemProject({
   state,
   composioConfigured,
   githubConnector,
-  workspaceContext,
   onProjectPrepared,
   onSystemsRefresh,
   analyticsTrack,
@@ -4416,7 +4359,6 @@ async function prepareCreatedDesignSystemProject({
   state: SetupState;
   composioConfigured: boolean;
   githubConnector: ConnectorDetail | null;
-  workspaceContext?: WorkspaceCollabContext | null;
   onProjectPrepared?: (project: Project) => void;
   onSystemsRefresh?: () => Promise<void> | void;
   analyticsTrack: (
@@ -4451,7 +4393,7 @@ async function prepareCreatedDesignSystemProject({
       });
     }
     const localStart = performance.now();
-    const stagedLocalCode = await stageLocalCodeFiles(project.id, state.codeFileObjects, workspaceContext);
+    const stagedLocalCode = await stageLocalCodeFiles(project.id, state.codeFileObjects);
     if (state.codeFileObjects.length > 0 || state.codeFolders.length > 0) {
       emitSourceIngestResult(analyticsTrack, {
         sourceType: 'local_code',
@@ -4477,11 +4419,7 @@ async function prepareCreatedDesignSystemProject({
       });
     }
     const figStart = performance.now();
-    const stagedFigma = await stageFigmaFiles(
-      project.id,
-      state.figFileObjects,
-      workspaceContext,
-    );
+    const stagedFigma = await stageFigmaFiles(project.id, state.figFileObjects);
     if (state.figFileObjects.length > 0) {
       emitSourceIngestResult(analyticsTrack, {
         sourceType: 'fig',
@@ -4507,7 +4445,7 @@ async function prepareCreatedDesignSystemProject({
       });
     }
     const assetStart = performance.now();
-    const stagedAssets = await stageAssetFiles(project.id, state.assetFileObjects, workspaceContext);
+    const stagedAssets = await stageAssetFiles(project.id, state.assetFileObjects);
     if (state.assetFileObjects.length > 0) {
       emitSourceIngestResult(analyticsTrack, {
         sourceType: 'assets',
@@ -4542,8 +4480,6 @@ async function prepareCreatedDesignSystemProject({
         stagedFigma,
         stagedAssets,
       }),
-      undefined,
-      workspaceContext,
     );
     const metadata = mergeLinkedCodeFolders(project.metadata, state.codeFolders);
     const prompt = buildCreationAgentPrompt(
@@ -4553,11 +4489,7 @@ async function prepareCreatedDesignSystemProject({
       stagedAssets,
       stagedFigma,
     );
-    const preparedProject = await patchProject(
-      project.id,
-      { pendingPrompt: prompt, metadata },
-      workspaceContext,
-    );
+    const preparedProject = await patchProject(project.id, { pendingPrompt: prompt, metadata });
     try {
       window.sessionStorage.setItem(`od:auto-send-first:${project.id}`, '1');
       window.sessionStorage.setItem(`od:auto-send-prompt:${project.id}`, prompt);
@@ -5314,14 +5246,13 @@ function mergeLinkedCodeFolders(metadata: ProjectMetadata | undefined, codeFolde
 async function stageLocalCodeFiles(
   projectId: string,
   files: File[],
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<StagedLocalCodeContext> {
   if (files.length === 0) return { uploadedPaths: [], skippedCount: 0 };
   const selected = selectLocalCodeFiles(files);
   const uploadedPaths: string[] = [];
   for (const file of selected) {
     const desiredName = `${LOCAL_CODE_UPLOAD_ROOT}/${localCodeRelativePath(file)}`;
-    const uploaded = await uploadProjectFile(projectId, file, desiredName, workspaceContext);
+    const uploaded = await uploadProjectFile(projectId, file, desiredName);
     if (uploaded) {
       uploadedPaths.push(uploaded.name);
     }
@@ -5335,7 +5266,6 @@ async function stageLocalCodeFiles(
 async function stageFigmaFiles(
   projectId: string,
   files: File[],
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<StagedFigmaContext> {
   if (files.length === 0) return { summaryPaths: [], skippedCount: 0 };
   const selected = selectFigmaFiles(files);
@@ -5352,7 +5282,6 @@ async function stageFigmaFiles(
       projectId,
       file,
       selected.length > 1 ? { subdir: `figma-${base}` } : undefined,
-      workspaceContext,
     );
     if (outcome.ok) {
       summaryPaths.push(outcome.result.contextPath);
@@ -5370,14 +5299,13 @@ async function stageFigmaFiles(
 async function stageAssetFiles(
   projectId: string,
   files: File[],
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<StagedAssetContext> {
   if (files.length === 0) return { uploadedPaths: [], skippedCount: 0 };
   const selected = selectAssetFiles(files);
   const uploadedPaths: string[] = [];
   for (const file of selected) {
     const desiredName = `${ASSET_UPLOAD_ROOT}/${resourceRelativePath(file)}`;
-    const uploaded = await uploadProjectFile(projectId, file, desiredName, workspaceContext);
+    const uploaded = await uploadProjectFile(projectId, file, desiredName);
     if (uploaded) {
       uploadedPaths.push(uploaded.name);
     }

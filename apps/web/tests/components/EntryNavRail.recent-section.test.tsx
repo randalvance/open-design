@@ -2,46 +2,14 @@
 //
 // The rail's 最近浏览过 section: the head of the recent catalog under 插件, each
 // row leading with the project's live run status (the same feed the projects
-// grid reads) and opening through the shell's pull-first opener.
+// grid reads) and opening through the shell's opener.
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EntryNavRail } from '../../src/components/EntryNavRail';
 import { I18nProvider } from '../../src/i18n';
 import type { Project } from '../../src/types';
-
-const signedInContext = {
-  workspaceId: 'ws-personal',
-  workspaceType: 'personal',
-  workspaceMemberId: 'wm-1',
-  role: 'owner',
-  memberStatus: 'active',
-  lifecycleState: 'active',
-  permissions: { canInviteMembers: false, canViewWorkspaceSettings: false },
-} as unknown as WorkspaceCollabContext;
-
-const teamContext = {
-  ...signedInContext,
-  workspaceId: 'ws-team',
-  workspaceType: 'team',
-  permissions: {
-    canInviteMembers: false,
-    canViewWorkspaceSettings: false,
-    canShareProjects: true,
-  },
-} as unknown as WorkspaceCollabContext;
-
-/** What `POST …/projects/:id/move` answers; tests flip it to a refusal. */
-let MOVE_STATUS = 200;
-
-function moveRequests(): string[] {
-  return vi.mocked(fetch).mock.calls
-    .filter(([, init]) => init?.method === 'POST')
-    .map(([url]) => String(url))
-    .filter((url) => /\/projects\/[^/]+\/move$/.test(url));
-}
 
 function project(id: string, updatedAt: number, name = `Project ${id}`): Project {
   return {
@@ -69,25 +37,8 @@ let RUNS: Record<string, RunFixture> = { ...DEFAULT_RUNS };
 const originalFetch = globalThis.fetch;
 
 function stubFetch() {
-  globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-    const shareMatch = /^\/api\/projects\/([^/]+)\/share-state$/.exec(url);
-    if (shareMatch) {
-      return new Response(JSON.stringify({
-        projectId: decodeURIComponent(shareMatch[1]!),
-        hasEverShared: false, bindingExists: false, publications: [],
-      }), { headers: { 'Content-Type': 'application/json' } });
-    }
-    const moveMatch = /^\/api\/workspaces\/[^/]+\/projects\/([^/]+)\/move$/.exec(url);
-    if (moveMatch && init?.method === 'POST') {
-      const id = decodeURIComponent(moveMatch[1]!);
-      return new Response(
-        JSON.stringify(MOVE_STATUS === 200
-          ? { id, name: `Project ${id}`, workspaceId: 'ws-team', visibility: 'team', project: { id } }
-          : { error: { code: 'FORBIDDEN', message: 'no' } }),
-        { status: MOVE_STATUS, headers: { 'Content-Type': 'application/json' } },
-      );
-    }
     const match = /^\/api\/runs\?projectId=([^&]+)$/.exec(url);
     if (match) {
       const id = decodeURIComponent(match[1]!);
@@ -125,7 +76,6 @@ function renderRail(overrides: Partial<Parameters<typeof EntryNavRail>[0]> = {})
         onViewChange={() => {}}
         onNewProject={() => {}}
         open
-        context={signedInContext}
         recentProjects={Array.from({ length: 10 }, (_, index) =>
           project(`p${index + 1}`, 1_000 - index))}
         onOpenRecentProject={onOpen}
@@ -159,7 +109,6 @@ beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', VisibleRowsObserver);
   window.localStorage.clear();
   RUNS = { ...DEFAULT_RUNS };
-  MOVE_STATUS = 200;
   stubFetch();
 });
 
@@ -234,7 +183,6 @@ describe('EntryNavRail 最近浏览过 section', () => {
           onViewChange={() => {}}
           onNewProject={() => {}}
           open
-          context={signedInContext}
           recentProjects={projects}
         />
       </I18nProvider>
@@ -259,27 +207,26 @@ describe('EntryNavRail 最近浏览过 section', () => {
     expect(runRequests()).toHaveLength(before);
   });
 
-  it.each([false, true])('retires old project polling when the workspace catalog changes (empty: %s)', async (empty) => {
+  it.each([false, true])('retires old project polling when the catalog changes (empty: %s)', async (empty) => {
     vi.useFakeTimers();
-    const tree = (context: WorkspaceCollabContext, projects: Project[]) => (
+    const tree = (projects: Project[]) => (
       <I18nProvider initial="en">
         <EntryNavRail
           view="home"
           onViewChange={() => {}}
           onNewProject={() => {}}
           open
-          context={context}
           recentProjects={projects}
         />
       </I18nProvider>
     );
-    const { rerender } = render(tree(signedInContext, [project('p1', 1)]));
+    const { rerender } = render(tree([project('p1', 1)]));
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     const oldRequests = () => vi.mocked(fetch).mock.calls.filter(([url]) =>
       String(url) === '/api/runs?projectId=p1');
     expect(oldRequests()).toHaveLength(1);
 
-    rerender(tree(teamContext, empty ? [] : [project('p2', 2)]));
+    rerender(tree(empty ? [] : [project('p2', 2)]));
     // A replacement catalog starts its current rows immediately, without
     // waiting for IntersectionObserver to retire the previous visible IDs.
     if (!empty) {
@@ -291,7 +238,7 @@ describe('EntryNavRail 最近浏览过 section', () => {
     if (empty) expect(screen.queryByTestId('entry-nav-recent-toggle')).toBeNull();
 
     // Returning from an empty/replaced catalog must still restart polling.
-    rerender(tree(signedInContext, [project('p1', 1)]));
+    rerender(tree([project('p1', 1)]));
     await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
     expect(oldRequests().length).toBeGreaterThan(1);
   });
@@ -299,12 +246,6 @@ describe('EntryNavRail 最近浏览过 section', () => {
   it('renders nothing without projects', () => {
     renderRail({ recentProjects: [] });
     expect(screen.queryByTestId('entry-nav-recent-toggle')).toBeNull();
-    // A missing cloud identity is no longer a reason to hide it: the local
-    // shell lists its projects here too (OPEND-3140, see
-    // EntryNavRail.local-shell.test.tsx).
-    cleanup();
-    renderRail({ context: null });
-    expect(screen.getByTestId('entry-nav-recent-toggle')).toBeTruthy();
   });
 
   it('leads each row with its live run status from the runs feed', async () => {
@@ -388,12 +329,12 @@ describe('EntryNavRail 最近浏览过 section', () => {
     expect(screen.getByTestId('entry-nav-recent-toggle').getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('offers rename / duplicate / delete in a personal workspace — no export, no team item', () => {
+  it('offers rename / duplicate / delete — no export, no team item', () => {
     const { onDuplicate } = renderRail();
     fireEvent.click(screen.getAllByTestId('entry-nav-recent-more')[0]!);
     const menu = screen.getByRole('menu');
-    // OPEND-2686: 导出 is gone; 复制 sits between 重命名 and 删除. OPEND-2794: a
-    // personal workspace has no team plane, so 转入团队空间 is hidden here.
+    // OPEND-2686: 导出 is gone; 复制 sits between 重命名 and 删除. There is no
+    // team plane, so no 转入团队空间 item either.
     expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(
       ['Rename', 'Duplicate project', 'Delete'],
     );
@@ -471,59 +412,4 @@ describe('EntryNavRail 最近浏览过 section', () => {
     expect((within(dialog).getByRole('button', { name: 'Delete' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it('offers 转入团队空间 in a team workspace through the shared confirm dialog and reports progress in the row menu', async () => {
-    const onProjectShared = vi.fn();
-    renderRail({
-      context: teamContext,
-      onRecentProjectShared: onProjectShared,
-      isSharedRecentProject: (id) => id === 'p2',
-    });
-    fireEvent.click(screen.getAllByTestId('entry-nav-recent-more')[0]!);
-    const menu = screen.getByRole('menu');
-    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual(
-      ['Rename', 'Duplicate project', 'Move to team space', 'Delete'],
-    );
-    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Move to team space' }));
-    // The same confirmation the project cards show — nothing moves yet.
-    const dialog = screen.getByRole('alertdialog', { name: 'Move to team space' });
-    expect(moveRequests()).toHaveLength(0);
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirm move' }));
-    await waitFor(() => expect(moveRequests()).toHaveLength(1));
-    expect(moveRequests()[0]).toBe('/api/workspaces/ws-team/projects/p1/move');
-    await waitFor(() => expect(onProjectShared).toHaveBeenCalledWith(expect.objectContaining({ id: 'p1' })));
-    // The row menu re-opened to say 分享中… and closes on success.
-    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
-
-    // A project already in the team space says so and cannot be moved again.
-    fireEvent.click(screen.getAllByTestId('entry-nav-recent-more')[1]!);
-    const shared = within(screen.getByRole('menu')).getByRole('menuitem', { name: 'In team space' });
-    expect((shared as HTMLButtonElement).disabled).toBe(true);
-  });
-
-  it('keeps the row menu open with the failure when the move is refused', async () => {
-    MOVE_STATUS = 403;
-    const onProjectShareFailed = vi.fn();
-    renderRail({ context: teamContext, onRecentProjectShareFailed: onProjectShareFailed });
-    fireEvent.click(screen.getAllByTestId('entry-nav-recent-more')[0]!);
-    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Move to team space' }));
-    fireEvent.click(
-      within(screen.getByRole('alertdialog', { name: 'Move to team space' })).getByRole('button', { name: 'Confirm move' }),
-    );
-    await waitFor(() => expect(onProjectShareFailed).toHaveBeenCalledWith('p1'));
-    const menu = await screen.findByRole('menu');
-    expect(within(menu).getByRole('alert').textContent).toBe('Could not move to team space. Try again.');
-  });
-
-  it('disables mutations on a row someone else shared', () => {
-    renderRail({
-      context: teamContext,
-      isSharedRecentProject: (id) => id === 'p1',
-      recentProjectOwnerMemberIds: new Map([['p1', 'wm-other']]),
-    });
-    fireEvent.click(screen.getAllByTestId('entry-nav-recent-more')[0]!);
-    const menu = screen.getByRole('menu');
-    for (const name of ['Rename', 'Duplicate project', 'In team space', 'Delete']) {
-      expect((within(menu).getByRole('menuitem', { name }) as HTMLButtonElement).disabled, name).toBe(true);
-    }
-  });
 });

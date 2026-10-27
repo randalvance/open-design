@@ -50,7 +50,7 @@ function failedTurn(code: string, failureDetail?: string, rawDetail = 'upstream 
       runStatus: 'failed',
       // Cloud 上的 run:出口不变式会摘掉「切到 Cloud」那颗 CTA,
       // 卡面只剩这一格自己的标题与正文,正是这份测试要读的东西。
-      agentId: 'amr',
+      agentId: 'opencode',
       events: [
         {
           kind: 'status',
@@ -101,7 +101,8 @@ interface SpecCell {
 const SPEC_CELLS: readonly SpecCell[] = [
   {
     label: 'S07 · 模型不可用',
-    code: 'AMR_MODEL_UNAVAILABLE',
+    code: 'AGENT_EXECUTION_FAILED',
+    failureDetail: 'model_not_found',
     title: '当前模型不可用',
     body: '请选择其他可用模型后再试。',
   },

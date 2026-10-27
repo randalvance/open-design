@@ -1,7 +1,5 @@
 <h1 align="center">OpenDesign: The 1st Collaborative AI Design Agent Workspace</h1>
 
-> ✨ **[Celebrating 100K GitHub stars with OpenDesign Go](https://open-design.ai/pricing/)** — Go credits are doubled: **$8 for your first month, with up to $120 in monthly credits for eligible Design Plan models**. Use them across 10+ models, including GPT-6 Luna, DeepSeek V4.1 Flash, GLM-5.3 Flash-X, and MiMo V2.6 Flash. All personal plans include API access for Codex, Claude Code, DSH, OpenCode, and more.
-
 <p align="center">
   <img src="docs/assets/readme-hero-design-agent.webp" alt="OpenDesign: The 1st Collaborative AI Design Agent Workspace" width="100%" />
 </p>
@@ -9,7 +7,6 @@
 <p align="center">
   <a href="https://open-design.ai/?utm_source=github&utm_medium=referral&utm_content=readme_website">Website</a> ·
   <a href="https://open-design.ai/?utm_source=github&utm_medium=referral&utm_content=readme_download">Download</a> ·
-  <a href="https://open-design.ai/cloud/?utm_source=github&utm_medium=referral&utm_content=readme_cloud">OpenDesign Cloud</a> ·
   <a href="https://discord.gg/mHAjSMV6gz">Discord</a> ·
   <a href="https://x.com/OpenDesignHQ">Follow @OpenDesignHQ</a>
 </p>
@@ -27,7 +24,7 @@
 
 ## What is OpenDesign
 
-OpenDesign is **the 1st collaborative AI design agent workspace**. Start with a brief, then use your coding agent or OpenDesign Cloud to create a prototype that follows your design system. Share it with your team for feedback, and let your agent refine it in the same project.
+OpenDesign is **the 1st collaborative AI design agent workspace**. Start with a brief, then use your coding agent to create a prototype that follows your design system. Review it, leave comments, and let your agent refine it in the same project.
 
 That workflow is open and extensible. OpenDesign is licensed under Apache 2.0 and gives teams skills, design templates, design systems, and plugins they can inspect and adapt to their own process.
 
@@ -119,7 +116,7 @@ For DeepSeek Harness, install the official `dsh` CLI first, then select it in Op
 ¹ Automatic MCP configuration for Claude Desktop is currently supported on macOS and Windows only.
 
 <p align="center">
-  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="The 26 coding-agent CLIs OpenDesign supports — DeepSeek Harness · Claude Code · Codex · OpenCode · Hermes · Antigravity · Vela · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
+  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="The 25 coding-agent CLIs OpenDesign supports — DeepSeek Harness · Claude Code · Codex · OpenCode · Hermes · Antigravity · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
 </p>
 
 **No CLI installed?** The BYOK proxy at `POST /api/proxy/{anthropic,openai,azure,google,ollama,senseaudio}/stream` gives you the same loop (no process spawn) — paste `baseUrl` + `apiKey` + `model`, with presets for OpenAI, Atlas Cloud, Anthropic, Azure OpenAI, Google Gemini, Ollama, LM Studio, vLLM, or any OpenAI-compatible endpoint. Atlas Cloud uses `https://api.atlascloud.ai/v1` with your own key and OpenAI-compatible model ids such as `qwen/qwen3.5-flash`. Per-target SSRF protection blocks internal IPs / link-local / CGNAT at the daemon edge.
@@ -239,7 +236,7 @@ Every deck exports to **HTML** (single file, inlined assets), **PDF** (browser p
 - 🖥️ **Local-first, BYOK at every layer.** Native desktop apps for macOS (Apple Silicon + Intel) and Windows (x64). Linux desktop users can currently run OpenDesign [from source](#-run-from-source); the latest official release does not include a prebuilt Linux artifact. Product analytics and session replay are consent-gated; scrubbed safety and reliability telemetry is always on. Before describing daemon data paths, contributors and operators MUST read `AGENTS.md` → **Daemon data directory contract**. This README MUST NOT restate it.
 - 🌍 **Composable on four planes.** **Plugins** carry runnable workflows · functional **skills** carry agent behavior · **design templates** carry rendering blueprints · **design systems** carry the brand. All four use portable, versionable directories that anyone can author and publish.
 - 🔁 **Refresh an existing codebase.** Hand a `git` repo + `DESIGN.md` to the agent and it refactors your real components to the brand spec.
-- 🔒 **Privacy by conviction.** Projects can run locally or in your own deployment. Cloud model and OpenDesign Cloud requests are sent to the corresponding services. The BYOK proxy includes SSRF safeguards.
+- 🔒 **Privacy by conviction.** Projects can run locally or in your own deployment. Cloud model requests are sent to the provider you configured. The BYOK proxy includes SSRF safeguards.
 
 ---
 
@@ -565,7 +562,6 @@ Full architecture → [`docs/architecture.md`](docs/architecture.md). Skill prot
 - [x] Sidecar protocol + Electron desktop + IPC automation
 - [x] Artifact lint API + 5-dim self-critique pre-emit gate
 - [x] **0.8.0** — plugin marketplace infrastructure (261 official plugins, manifest spec, per-agent install scripts)
-- [x] **0.9.0** — OpenDesign Cloud (official model service built into the app: zero config, one-click sign-in)
 - [x] **0.10.0** — the all-in-one design workspace: the whole craft loop in one window (references → material → interactive editing → motion → handoff)
 - [x] **0.11.0** — _The Bazaar_: built in the open — a community marketplace of plugins and design systems anyone can pick from and contribute to
 - [x] **0.12.0** — _Brand-backed Design System_: turn the brand you already own into a reusable, portable `DESIGN.md` system

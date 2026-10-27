@@ -167,7 +167,7 @@ function failedMessage(): ChatMessage {
     createdAt: 1,
     runId: 'run-failed',
     runStatus: 'failed',
-    agentId: 'amr',
+    agentId: 'opencode',
     events: [
       {
         kind: 'status',
@@ -194,7 +194,6 @@ function renderChat(opts: {
       onSend={vi.fn()}
       onStop={vi.fn()}
       onRetry={vi.fn()}
-      amrBalanceCardUsd={null}
       conversations={[
         { projectId: 'project-1', id: 'conv-1', title: 'Current', createdAt: 1, updatedAt: 1 },
       ]}
@@ -202,7 +201,7 @@ function renderChat(opts: {
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
       onNewConversation={opts.onNewConversation ?? vi.fn()}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
+      config={{ agentId: 'opencode', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }

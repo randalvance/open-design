@@ -9,21 +9,11 @@
 // stayed out of the card menu.
 
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EntryShell } from '../../src/components/EntryShell';
 import { I18nProvider } from '../../src/i18n';
 import type { AgentInfo, AppConfig, Project } from '../../src/types';
-import {
-  resetTeamProjectsCache,
-  resetWorkspaceContextCache,
-} from '../../src/collab/useWorkspaceContext';
-import { workspaceDirectoryFixture } from '../helpers/workspace-context';
 
 const originalFetch = globalThis.fetch;
 const originalResizeObserver = globalThis.ResizeObserver;
@@ -39,25 +29,6 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
-}
-
-function teamContext(): WorkspaceCollabContext {
-  const role = 'member' as const;
-  const lifecycleState = 'active' as const;
-  return {
-    workspaceId: 'ws-1',
-    workspaceType: 'team',
-    workspaceMemberId: 'wm-1',
-    role,
-    memberStatus: 'active',
-    lifecycleState,
-    billingState: 'active',
-    planId: null,
-    providerMode: 'platform_credits',
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 5, usedSeats: 1 }),
-    permissions: buildWorkspacePermissions({ role, lifecycleState }),
-    displayName: 'Ma Shu',
-  };
 }
 
 function cliAgent(): AgentInfo {
@@ -109,7 +80,6 @@ function renderAt(path: string, overrides: Partial<React.ComponentProps<typeof E
     onRefreshAgents: vi.fn(() => [cliAgent()]),
     onCreateProject: vi.fn(() => Promise.resolve(true)),
     onBeginProjectCreation: () => ({ projectId: 'optimistic-project', rollback: () => undefined }),
-    onAmrBalanceGateBlockChange: () => undefined,
     onCreatePluginShareProject: vi.fn(),
     onImportClaudeDesign: vi.fn(),
     onOpenProject: vi.fn(),
@@ -139,16 +109,12 @@ async function openCardMenu(): Promise<HTMLElement> {
 
 beforeEach(() => {
   globalThis.ResizeObserver = ResizeObserverMock as typeof ResizeObserver;
-  resetWorkspaceContextCache();
-  resetTeamProjectsCache();
 });
 
 afterEach(() => {
   cleanup();
   globalThis.fetch = originalFetch;
   globalThis.ResizeObserver = originalResizeObserver;
-  resetWorkspaceContextCache();
-  resetTeamProjectsCache();
   vi.unstubAllGlobals();
 });
 
@@ -163,7 +129,7 @@ describe('OPEND-2686 — project card menu offers Duplicate project', () => {
   };
 
   it('lists Rename / Duplicate project / Delete on a Personal projects card and hands the id to the shell', async () => {
-    globalThis.fetch = vi.fn(async () => jsonResponse({ context: null, projects: [], plugins: [] })) as typeof fetch;
+    globalThis.fetch = vi.fn(async () => jsonResponse({ projects: [], plugins: [] })) as typeof fetch;
     const props = renderAt('/drafts', { projects: [localProject] });
 
     const menu = await openCardMenu();
@@ -175,49 +141,4 @@ describe('OPEND-2686 — project card menu offers Duplicate project', () => {
     expect(props.onDuplicateProject).toHaveBeenCalledWith('local-project');
   });
 
-  it('offers the same Duplicate project item on an 全部项目 card the member created', async () => {
-    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
-      const pathname = new URL(String(input), 'http://d.local').pathname;
-      if (pathname.endsWith('/workspace/directory')) {
-        return jsonResponse(workspaceDirectoryFixture([teamContext()]));
-      }
-      if (pathname.endsWith('/workspace/context')) {
-        return jsonResponse({ context: teamContext() });
-      }
-      if (pathname.endsWith('/workspace/projects/team')) {
-        return jsonResponse({
-          projects: [{
-            projectId: 'team-project',
-            ownerMemberId: 'wm-1',
-            sharedAt: '2026-09-01T00:00:00.000Z',
-            name: 'Team project',
-            updatedAt: Date.now(),
-          }],
-        });
-      }
-      if (pathname.endsWith('/files')) return jsonResponse({ files: [] });
-      return jsonResponse({});
-    }) as typeof fetch;
-    const props = renderAt('/all-projects', {
-      projects: [{
-        id: 'team-project',
-        name: 'Team project',
-        skillId: null,
-        designSystemId: null,
-        workspaceId: 'ws-1',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      }],
-    });
-
-    const menu = await openCardMenu();
-    const duplicate = within(menu).getByRole('menuitem', { name: 'Duplicate project' }) as HTMLButtonElement;
-    expect(duplicate.disabled).toBe(false);
-    const labels = within(menu).getAllByRole('menuitem').map((item) => item.textContent ?? '');
-    expect(labels.indexOf('Duplicate project')).toBe(labels.indexOf('Rename') + 1);
-    expect(labels.indexOf('Duplicate project')).toBeLessThan(labels.indexOf('Delete'));
-
-    fireEvent.click(duplicate);
-    expect(props.onDuplicateProject).toHaveBeenCalledWith('team-project');
-  });
 });

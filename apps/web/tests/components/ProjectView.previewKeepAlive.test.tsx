@@ -58,7 +58,6 @@ vi.mock('../../src/providers/anthropic', () => ({
 vi.mock('../../src/providers/daemon', () => ({
   fetchChatRunStatus: vi.fn(),
   listActiveChatRuns: vi.fn().mockResolvedValue([]),
-  publishDaemonRunFinishedEvent: vi.fn(),
   reattachDaemonRun: vi.fn(),
   streamViaDaemon: vi.fn(),
 }));
@@ -118,6 +117,7 @@ vi.mock('../../src/components/FileWorkspace', () => ({
 
 vi.mock('../../src/components/Loading', () => ({
   CenteredLoader: () => <div data-testid="loader" />,
+  Spinner: () => null,
 }));
 
 vi.mock('../../src/components/ChatPane', () => ({

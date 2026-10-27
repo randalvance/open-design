@@ -37,7 +37,7 @@ function chat(messages: ChatMessage[], conversationId = 'one') {
         conversations={[]}
         onSelectConversation={vi.fn()}
         onDeleteConversation={vi.fn()}
-        config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
+        config={{ agentId: 'opencode', agentCliEnv: {} } as unknown as AppConfig}
       />
     </I18nProvider>
   );

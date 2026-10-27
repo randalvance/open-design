@@ -243,7 +243,7 @@ describe('CommunityView catalogue source', () => {
   it('builds the grid from GET /api/plugins', async () => {
     await renderCommunity();
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/plugins', undefined);
+    expect(fetchMock).toHaveBeenCalledWith('/api/plugins');
 
     // The row mirrors the Home type row's taxonomy and order — Prototype leads
     // — and keeps all five fixed kinds even without Motion or Document templates.

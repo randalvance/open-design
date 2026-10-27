@@ -32,12 +32,9 @@ it('inherits frozen attachments only within the exact conversation and refuses a
   } finally { (await evidenceStore(dir)).close(); await rm(dir, { recursive: true, force: true }); }
 });
 
-it.each(['relay', 'vela'] as const)('publishes late Task manifests on the accepted %s transport', async (transport) => {
+it.each(['relay'] as const)('publishes late Task manifests on the accepted %s transport', async (transport) => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'od-late-task-receipts-'));
   vi.stubEnv('OPEN_DESIGN_TELEMETRY_RELAY_URL', 'https://telemetry.example.test/api/langfuse');
-  vi.stubEnv('OPEN_DESIGN_VELA_TELEMETRY', transport === 'vela' ? 'on' : 'off');
-  vi.stubEnv('VELA_CONTROL_KEY', 'synthetic-key');
-  vi.stubEnv('VELA_API_URL', 'https://vela.example.test');
   vi.stubEnv('OPEN_DESIGN_OBJECT_OUTBOX_MODE', 'send');
   try {
     await writeAppConfig(dir, { telemetry: { metrics: true, content: true, artifactManifest: true } });
@@ -52,8 +49,8 @@ it.each(['relay', 'vela'] as const)('publishes late Task manifests on the accept
     const sent: Array<{ batch: Array<{ body: { metadata: Record<string, unknown> } }> }> = [];
     await drainEvidence(dir, (async (_url, init) => {
       const body = JSON.parse(String(init?.body));
-      expect(String(_url)).toBe(transport === 'vela' ? 'https://vela.example.test/api/v1/open-design/telemetry' : 'https://telemetry.example.test/api/langfuse');
-      const trace = transport === 'vela' ? body.events[0].data : body.batch[0].body;
+      expect(String(_url)).toBe('https://telemetry.example.test/api/langfuse');
+      const trace = body.batch[0].body;
       expect(trace).toMatchObject({ id: 'strategy-task:late', name: 'open-design-strategy-task', metadata: { schema: 'open-design.strategy-task-observation/v1' } });
       sent.push({ batch: [{ body: trace }] });
       return new Response('{}', { status: 202 });
@@ -70,7 +67,6 @@ it.each(['relay', 'vela'] as const)('publishes late Task manifests on the accept
 it('clears historical skip reasons after recovery for receivers that deep-merge metadata', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'od-task-reason-recovery-'));
   vi.stubEnv('OPEN_DESIGN_TELEMETRY_RELAY_URL', 'https://telemetry.example.test/api/langfuse');
-  vi.stubEnv('OPEN_DESIGN_VELA_TELEMETRY', 'off');
   vi.stubEnv('OPEN_DESIGN_OBJECT_OUTBOX_MODE', 'send');
   try {
     await writeAppConfig(dir, { telemetry: { metrics: true, content: true, artifactManifest: true } });

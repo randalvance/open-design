@@ -73,7 +73,7 @@ describe('NewProjectPanel media provider badges', () => {
     expect(screen.queryByTestId('model-picker-option-gpt-image-2')).toBeNull();
   });
 
-  it('uses Vela as the default image provider without media API credentials', async () => {
+  it('leaves the image model unpicked without media API credentials', async () => {
     const onCreate = vi.fn();
     render(
       <NewProjectPanel
@@ -90,11 +90,13 @@ describe('NewProjectPanel media provider badges', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'Media' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Image' }));
+    // There is no managed provider any more: with no credentials, no image
+    // provider is picker-ready, so the OpenAI default cannot be pre-selected.
     await waitFor(() => {
-      expect(screen.getByTestId('model-picker-trigger').textContent).toContain('gpt-image-2 (Cloud)');
+      expect(screen.getByTestId('model-picker-trigger').textContent).toContain('Pick a model');
     });
     fireEvent.change(screen.getByTestId('new-project-name'), {
-      target: { value: 'Vela default image' },
+      target: { value: 'No-credential image' },
     });
     fireEvent.click(screen.getByTestId('create-project'));
 
@@ -102,14 +104,16 @@ describe('NewProjectPanel media provider badges', () => {
       expect.objectContaining({
         metadata: expect.objectContaining({
           kind: 'image',
-          imageModel: 'vela/gpt-image-2',
           imageAspect: '1:1',
         }),
       }),
     );
+    // No model is carried into the project: the daemon resolves its own
+    // default at generation time instead of the dialog guessing a provider.
+    expect(onCreate.mock.calls[0]?.[0]?.metadata?.imageModel).toBeUndefined();
   });
 
-  it('treats a legacy template gpt-image-2 recommendation as the managed Cloud route', async () => {
+  it('keeps a legacy template gpt-image-2 recommendation on the OpenAI model', async () => {
     const template = {
       id: 'legacy-gpt-image-template',
       surface: 'image' as const,
@@ -173,10 +177,10 @@ describe('NewProjectPanel media provider badges', () => {
       expect.objectContaining({
         metadata: expect.objectContaining({
           kind: 'image',
-          imageModel: 'vela/gpt-image-2',
+          imageModel: 'gpt-image-2',
           imageAspect: '16:9',
           promptTemplate: expect.objectContaining({
-            model: 'vela/gpt-image-2',
+            model: 'gpt-image-2',
           }),
         }),
       }),
@@ -253,7 +257,7 @@ describe('NewProjectPanel media provider badges', () => {
     expect(screen.queryByTestId('model-picker-option-gpt-image-2')).toBeNull();
   });
 
-  it('keeps the managed Vela default when another provider is configured', () => {
+  it('follows the configured provider when the OpenAI default has no credentials', () => {
     const onCreate = vi.fn();
     render(
       <NewProjectPanel
@@ -277,6 +281,8 @@ describe('NewProjectPanel media provider badges', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'Media' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Image' }));
+    // `gpt-image-2` is the catalogue default, but OpenAI has no credentials
+    // here, so the picker lands on the first model of the configured provider.
     fireEvent.change(screen.getByTestId('new-project-name'), {
       target: { value: 'Configured provider image' },
     });
@@ -285,7 +291,7 @@ describe('NewProjectPanel media provider badges', () => {
     expect(onCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         metadata: expect.objectContaining({
-          imageModel: 'vela/gpt-image-2',
+          imageModel: 'doubao-seedream-3-0-t2i-250415',
         }),
       }),
     );

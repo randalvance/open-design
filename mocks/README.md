@@ -2,10 +2,9 @@
 
 A PATH-overlay replay harness for selected agent CLI contracts (`amp`, `claude`, `opencode`,
 `codex`, `gemini`, `cursor-agent`, `deepseek`, `qwen`, `grok`, the
-ACP family `devin` / `hermes` / `kilo` / `kimi` / `kiro` / `vibe`, and
-the AMR `vela` CLI) that replays pre-recorded sessions in each CLI's
-native protocol — stdout streaming for most, JSON-RPC over stdio for
-ACP and AMR. **Zero LLM tokens.**
+ACP family `devin` / `hermes` / `kilo` / `kimi` / `kiro` / `vibe`) that
+replays pre-recorded sessions in each CLI's native protocol — stdout
+streaming for most, JSON-RPC over stdio for ACP. **Zero LLM tokens.**
 
 Some wrappers cover registered Open Design runtimes; others are retained
 legacy protocol fixtures, and this set is not an exhaustive mirror of
@@ -161,7 +160,6 @@ replay gaps:
 | `deepseek` `qwen` `grok` | `plain`                          | `server.ts` (raw stdout = final assistant text) |
 | `kimi`            | `acp-json-rpc` in the live daemon; the replay wrapper still uses obsolete `json-event-stream` | `agent-protocol/acp/session.ts:attachAcpSession` |
 | `devin` `hermes` `kilo` `kiro` `vibe` | `acp-json-rpc` | `agent-protocol/acp/session.ts:attachAcpSession`         |
-| `vela` (AMR) | `acp-json-rpc` + `login` / `models` subcommands | `runtimes/defs/amr.ts` + `apps/daemon/tests/fixtures/fake-vela.mjs` (sibling stub) |
 
 > **Note on `cursor-agent`**: OD's parser does NOT recognize tool-call
 > events — only init / assistant text / usage. The renderer therefore emits
@@ -185,36 +183,6 @@ replay gaps:
 > and uses ACP JSON-RPC. The current `mocks/bin/kimi` replay wrapper still
 > models the retired prompt-mode stream-json contract; do not treat it as live
 > Kimi contract coverage until the wrapper and its smoke test are migrated.
-
-> **Note on `vela` (AMR)**: vela is the bin OD's AMR runtime spawns. It
-> extends the generic ACP shape with `agentCapabilities` + `models`
-> blocks in `initialize` / `session/new`, plus a **strict set_model gate**
-> — `session/prompt` is rejected with -32602 until `session/set_model`
-> (or `session/set_config_option`) has been called for the current
-> sessionId, mirroring real vela 0.0.1 contract.
->
-> vela also has two non-ACP subcommands:
->
-> - `vela login` → writes `~/.amr/config.json` with a fake profile so
->   OD's daemon login route + `AmrLoginPill` poller see the same on-disk
->   projection production produces.
-> - `vela models` → prints the production-shaped `public_model_*    vela`
->   catalog.
->
-> Anything else — `vela billing summary`, `vela billing workspace-snapshot`,
-> any future one-shot — **exits 1 with a message naming the subcommand**. It has
-> to: falling through would start the ACP server, which blocks on stdin forever,
-> and the daemon callers for those subcommands `await` stdout with no timeout.
-> One unmodelled subcommand then wedges every request on the web origin (the
-> browser's six HTTP/1.1 connections all end up parked on handlers waiting for a
-> mock that will never answer), and the app looks hung rather than mocked. If a
-> test needs one of these, add a handler in `mocks/lib/vela-subcommands.mjs`.
->
-> Error injection envs (kept in sync with
-> `apps/daemon/tests/fixtures/fake-vela.mjs`):
-> `FAKE_VELA_SESSION_NEW_ERROR` / `FAKE_VELA_SET_MODEL_ERROR` /
-> `FAKE_VELA_PROMPT_ERROR` / `FAKE_VELA_LOGIN_FAIL` /
-> `FAKE_VELA_REQUIRE_SET_MODEL=0`.
 
 Each tool call from the recording is rendered with the original input
 arguments and tool output. The agents' assistant text is rendered as
@@ -444,15 +412,12 @@ mocks/
 │   ├── format-cursor-agent.mjs   ← matches handleCursorEvent
 │   ├── format-acp.mjs            ← JSON-RPC server matching attachAcpSession
 │   ├── format-kimi.mjs           ← retained obsolete Kimi stream-json renderer
-│   ├── format-vela.mjs           ← AMR vela: ACP + models block + set_model gate
-│   ├── vela-subcommands.mjs      ← `vela login` + `vela models` handlers
 │   └── format-plain.mjs          ← raw stdout (deepseek/qwen/grok)
 ├── bin/
 │   ├── amp  claude  codex  opencode  opencode-cli
 │   ├── gemini    cursor-agent
 │   ├── deepseek  qwen    grok
-│   ├── devin hermes kilo kimi kiro kiro-cli vibe vibe-acp
-│   └── vela                       ← 19 PATH-overlay wrappers
+│   └── devin hermes kilo kimi kiro kiro-cli vibe vibe-acp   ← 18 PATH-overlay wrappers
 ├── manifest.json                 ← committed: 179 entries' metadata + sha256 + provenance + R2 storage hints
 ├── golden/                       ← committed: daemon-event regression snapshots
 │   ├── README.md

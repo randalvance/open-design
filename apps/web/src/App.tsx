@@ -24,28 +24,15 @@ import {
   fidelityToTracking,
 } from '@open-design/contracts/analytics';
 import type {
-  AmrModelsResponse,
   ChatSessionMode,
   CreateProjectExampleReference,
   LocalCatalogScope,
   RunContextSelection,
-  TeamProject,
-  WorkspaceCollabContext,
-  WorkspaceInvalidationSsePayload,
-  ProjectWorkspaceScope,
   ProjectScenarioTaskProfile,
-  WorkspaceProjectSummary,
 } from '@open-design/contracts';
 import { DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID } from '@open-design/contracts';
 import { EntryView } from './components/EntryView';
-import type {
-  OptimisticProjectCreationHandoff,
-  ProjectTitleHint,
-} from './components/EntryShell';
-import {
-  HomeAmrBalanceGateDialogs,
-  type HomeAmrBalanceGateBlock,
-} from './components/HomeAmrBalanceGateDialogs';
+import type { OptimisticProjectCreationHandoff } from './components/EntryShell';
 import type { IntegrationTab } from './components/IntegrationsView';
 import { MarketplaceView } from './components/MarketplaceView';
 import { PluginDetailView } from './components/PluginDetailView';
@@ -55,8 +42,6 @@ import {
   memoryToastSubscriptionMode,
 } from './components/MemoryToast';
 import { Toast } from './components/Toast';
-import { DeletedShareNotices } from './components/project-actions/DeletedShareNotices';
-import { useDeletedShareNotices } from './components/project-actions/useDeletedShareNotices';
 import { CenteredLoader } from './components/Loading';
 import { PetOverlay, type PetTaskCenter } from './components/pet/PetOverlay';
 import { buildPetTaskCenter } from './components/pet/taskCenter';
@@ -64,14 +49,8 @@ import { migrateCustomPetAtlas } from './components/pet/pets';
 import {
   ProjectView,
   type ProjectRenameFenceToken,
-  type ProjectNameAuthorityResolution,
 } from './components/ProjectView';
-import type { ObservedPublicShareLink, ObservedShareUpdateRequest } from './components/share/observed-public-share-link';
-import type { ShareLoginReturn } from './components/share/share-login-return';
-import { SignedOutObservedShare } from './components/share/SignedOutObservedShare';
 import { projectsForWorkspaceChrome } from './runtime/workspace-chrome-projects';
-import { AmrArtifactUpgradeGate } from './components/AmrArtifactUpgradeGate';
-import { AmrArtifactUpgradeHomeCard } from './components/AmrArtifactUpgradeHomeCard';
 import { ExperienceSurvey } from './components/ExperienceSurvey';
 import { TooltipLayer } from './components/TooltipLayer';
 import { UpdateDialog } from './components/UpdateDialog';
@@ -81,8 +60,6 @@ import {
   removeWorkspaceProjectTabs,
   WorkspaceTabsBar,
 } from './components/WorkspaceTabsBar';
-import { WorkspaceTopRightAccountCluster } from './components/EntryNavRail';
-import { ProjectWorkspaceRecoveryTip } from './components/ProjectWorkspaceRecoveryTip';
 import {
   DesignSystemCreationFlow,
   DesignSystemDetailView,
@@ -96,11 +73,8 @@ import {
   switchApiProtocolConfig,
   updateCurrentApiProtocolConfig,
   type SettingsSection,
-  type SettingsHighlight,
 } from './components/SettingsDialog';
 import { PrivacyConsentModal } from './components/PrivacyConsentModal';
-import { TestCampaignModal, observeTestRuntimeIdentity } from './components/TestCampaignModal';
-import { ProductionCampaignModal } from './components/ProductionCampaignModal';
 import {
   clearHomeComposerAttachments,
   stashHomeComposerAttachments,
@@ -121,46 +95,8 @@ import {
 import { openFirstPartyExternalLinkFromClick } from './first-party-external-link';
 import {
   RUNS_CHANGED_EVENT,
-  fetchAmrModels,
-  fetchVelaLoginStatus,
   listProjectRunsWithScope,
-  type VelaLoginStatus,
 } from './providers/daemon';
-import {
-  AMR_LOGIN_STATUS_EVENT,
-  amrLoginStatusEventReason,
-  isAmrSessionAuthenticated,
-} from './components/amrLoginPolling';
-import { CollabDemoView } from './collab/CollabDemoView';
-import {
-  WorkspaceMemberDirectoryPreloader,
-} from './collab/WorkspaceMemberDirectoryPreloader';
-import {
-  beginTeamProjectMetadataRefresh,
-  fetchTeamProjectCatalogEntry as fetchScopedTeamProjectCatalogEntry,
-  fetchTeamProjectsCatalog,
-} from './collab/team-projects-catalog';
-import { useWorkspaceInvalidation } from './collab/workspace-events';
-import { useWorkspaceSnapshotActivation } from './collab/workspace-snapshot-activation';
-import { workspaceProjectHeaders } from './collab/workspace-identity';
-import {
-  beginWorkspaceScopedRead,
-  currentWorkspaceAccountGeneration,
-  notifyWorkspaceContextRefresh,
-  resolveBoundProjectWorkspaceContext,
-  resolveCurrentWorkspaceContextReadWitness,
-  useWorkspaceBillingResponse,
-  useWorkspaceContext,
-  workspaceBillingSummaryForContext,
-  workspaceIdentityCacheKey,
-  workspaceResourceReadContext,
-} from './collab/useWorkspaceContext';
-import {
-  projectResourceReadsCanStart,
-  useProjectRouteWorkspaceContext,
-} from './collab/useProjectRouteWorkspaceContext';
-import { resolvePlanTier } from './collab/team-plan';
-import { deriveTabIdentityScope, UNSET_ACCOUNT_BUCKET } from './collab/tab-scope';
 import { CommunityView } from './components/CommunityView';
 import { seedHomeComposerPrompt } from './components/HomeView';
 import {
@@ -193,21 +129,6 @@ import { isMacPlatform } from './utils/platform';
 import { randomUUID } from './utils/uuid';
 import { summarizeProjectNameFromPrompt } from './utils/projectName';
 import { armCompletionFeedbackOnFirstGesture } from './utils/notifications';
-import {
-  amrArtifactUpgradeHomeMockOffer,
-  type AmrArtifactUpgradeHomeOffer,
-} from './runtime/amr-artifact-upgrade';
-import {
-  amrBalanceGateScopeForWorkspaceContext,
-  amrBalanceGateScopesMatch,
-  type AmrBalanceGateScope,
-} from './runtime/amr-balance-gate';
-import {
-  AMR_AUTH_RETRY_CONTINUATION_TTL_MS,
-  amrAuthRetryMatchesRouteContext,
-  routeStillMatchesAmrAuthRetryContinuation,
-  type AmrAuthRetryContinuation,
-} from './runtime/amr-auth-retry-continuation';
 import { installFontRecovery } from './runtime/font-recovery';
 import {
   runWithConcurrency,
@@ -220,7 +141,6 @@ import {
   settleHomeAttachmentUpload,
 } from './state/home-attachment-handoff';
 import {
-  bootstrapFirstOpenTeamProjectRoute,
   bootstrapProjectRoute,
   createDesignSystemProjectFromProject,
   createProject,
@@ -231,14 +151,11 @@ import {
   importClaudeDesignZip,
   importFolderProject,
   invalidatePluginCatalogCache,
-  invalidateWorkspaceProjectLists,
-  listWorkspaceProjectSummaries,
   listProjects,
   listTemplates,
   deleteTemplate,
   duplicatePluginAsProject,
   patchProject,
-  resolvedWorkspaceContextForWrite,
   ProjectCreateError,
 } from './state/projects';
 import { useModalWindowDragGuard } from './hooks/useModalWindowDragGuard';
@@ -250,7 +167,6 @@ import { resumeThumbnailLoads, suspendThumbnailLoads } from './lib/thumbnail-loa
 import type {
   PluginShareAction,
   PluginShareProjectOutcome,
-  WorkspaceProjectListView,
 } from './state/projects';
 import {
   markProjectDisplaySnapshotsDirty,
@@ -296,8 +212,6 @@ type AppCreateProjectInput = Omit<CreateInput, 'metadata'> & {
   initialRunContext?: RunContextSelection | null;
   conversationMode?: ChatSessionMode;
   autoSendFirstMessage?: boolean;
-  /** Exact workspace/member authority checked by the Home AMR preflight. */
-  amrGatePrecheckWitness?: AmrBalanceGateScope;
   /**
    * The optimistic project `beginOptimisticProjectCreation` already flushed
    * for this send (Home hands off before its admission check). The create
@@ -353,8 +267,12 @@ interface PendingProjectCreation {
 }
 
 const APP_CONFIG_CHANGED_EVENT = 'open-design:app-config-changed';
-const AMR_AGENT_ID = 'amr';
-const AMR_PROFILE_ENV_KEY = 'OPEN_DESIGN_AMR_PROFILE';
+/**
+ * The one local project list. There is a single `/api/projects` catalogue for
+ * the local user, so every display snapshot shares one projection.
+ */
+const PROJECT_DISPLAY_SCOPE = { view: undefined } as const;
+const PROJECT_DISPLAY_KEY = projectDisplaySnapshotKey(PROJECT_DISPLAY_SCOPE);
 const AGENT_FOCUS_REFRESH_THROTTLE_MS = 10_000;
 
 /**
@@ -364,7 +282,7 @@ const AGENT_FOCUS_REFRESH_THROTTLE_MS = 10_000;
  * in the app: they have never completed onboarding (on either the local or the
  * daemon copy — `mergeDaemonConfig` ratchets the two before this runs), and
  * they did not arrive through an explicit deep link that onboarding must not
- * hijack (the collab demo and the community gallery are shareable URLs).
+ * hijack (a project and the community gallery are shareable URLs).
  *
  * Deliberately a pure predicate over a resolved config: the redirect belongs to
  * the one-shot boot pass, and expressing it as a function of "who the user is"
@@ -377,19 +295,11 @@ export function shouldRouteToFirstRunOnboarding(
   if (config.onboardingCompleted === true) return false;
   if (
     pathname.startsWith('/projects/')
-    || pathname.startsWith('/collab-demo')
     || pathname.startsWith('/community')
   ) {
     return false;
   }
   return true;
-}
-
-function workspaceProjectListViewForRoute(route: Route): WorkspaceProjectListView {
-  if (route.kind === 'home' && route.view === 'all-projects') return 'all';
-  if (route.kind === 'home' && route.view === 'drafts') return 'drafts';
-  if (route.kind === 'project') return 'all';
-  return 'recent';
 }
 
 export function shouldSyncMediaProvidersOnSave(
@@ -412,11 +322,6 @@ function normalizeSavedComposioConfig(config: AppConfig['composio']): AppConfig[
   return { ...(config ?? {}) };
 }
 
-function amrProfileForConfig(config: AppConfig): string | null {
-  const profile = config.agentCliEnv?.[AMR_AGENT_ID]?.[AMR_PROFILE_ENV_KEY];
-  return typeof profile === 'string' && profile ? profile : null;
-}
-
 function mergeLinkedDirsIntoMetadata(
   metadata: ProjectMetadata | undefined,
   linkedDirs?: string[] | null,
@@ -428,15 +333,6 @@ function mergeLinkedDirsIntoMetadata(
     ...baseMetadata,
     linkedDirs: Array.from(new Set([...(baseMetadata.linkedDirs ?? []), ...nextDirs])),
   };
-}
-
-function sameAgentModelChoice(
-  left: AgentModelChoice | undefined,
-  right: AgentModelChoice | undefined,
-): boolean {
-  return (left?.model ?? null) === (right?.model ?? null)
-    && (left?.reasoning ?? null) === (right?.reasoning ?? null)
-    && (left?.serviceTier ?? null) === (right?.serviceTier ?? null);
 }
 
 export function mergeAgentModelChoice(
@@ -453,51 +349,12 @@ export function mergeAgentModelChoice(
   return merged;
 }
 
-function clearStaleAmrModelChoiceOnProfileChange(
-  previous: AppConfig,
-  next: AppConfig,
-): AppConfig {
-  if (amrProfileForConfig(previous) === amrProfileForConfig(next)) return next;
-
-  const previousChoice = previous.agentModels?.[AMR_AGENT_ID];
-  const nextChoice = next.agentModels?.[AMR_AGENT_ID];
-  if (!nextChoice || !sameAgentModelChoice(previousChoice, nextChoice)) return next;
-
-  const nextAgentModels = { ...(next.agentModels ?? {}) };
-  delete nextAgentModels[AMR_AGENT_ID];
-  return { ...next, agentModels: nextAgentModels };
-}
-
-/**
- * Active Cloud sign-out is an account boundary for Cloud-owned execution
- * state. Local BYOK credentials and provider choices belong to this install,
- * not the signed-in Cloud account, so keep them available when onboarding asks
- * the user to choose an execution path again.
- */
-export function resetExecutionConfigAfterSignOut(config: AppConfig): AppConfig {
-  return {
-    ...config,
-    onboardingCompleted: false,
-    mode: DEFAULT_CONFIG.mode,
-    agentId: null,
-    agentModels: {},
-    agentCliEnv: {},
-    agentCliEnvIntent: {},
-  };
-}
-
 type ProjectListRequest = {
   generation: number;
   mutationVersion: number;
-  accountGeneration: number;
-  scopeKey: string;
-  displayKey: string;
-  workspaceView: WorkspaceProjectListView | undefined;
 };
 
 type PendingProjectNameProjection = {
-  accountGeneration: number;
-  scopeKey: string;
   project: Project;
   mutationVersion: number;
   confirmed: boolean;
@@ -509,29 +366,6 @@ type QueuedProjectRenameState = {
   pending: number;
   tail: Promise<void>;
 };
-
-/**
- * The scope key for a caller with NO resolved workspace identity — either the
- * context has not landed yet (every fresh boot passes through this) or the
- * daemon has no workspace plane at all. It is deliberately NOT treated as "a
- * workspace you left": a boot that lists projects before the context resolves
- * did not read another workspace's data, so promoting `local` → `ws:member`
- * must not discard the list it just loaded.
- */
-const UNRESOLVED_PROJECT_LIST_SCOPE = 'local';
-
-function projectListScopeKey(context: WorkspaceCollabContext | null): string {
-  return context
-    ? `workspace:${workspaceIdentityCacheKey(context)}`
-    : UNRESOLVED_PROJECT_LIST_SCOPE;
-}
-
-export function projectViewAuthorizationLifetimeKey(
-  projectId: string,
-  context: WorkspaceCollabContext | null,
-): string {
-  return `${projectListScopeKey(context)}:${projectId}`;
-}
 
 export async function persistComposioConfigChange(
   current: AppConfig,
@@ -597,24 +431,7 @@ export function resolveSettingsCloseConfig(
   return base.onboardingCompleted ? base : { ...base, onboardingCompleted: true };
 }
 
-function mergeAmrModelsIntoAgents(
-  agents: AgentInfo[],
-  amrModels: AmrModelsResponse | null,
-): AgentInfo[] {
-  if (!amrModels || amrModels.models.length === 0) return agents;
-  return agents.map((agent) => {
-    if (agent.id !== 'amr') return agent;
-    const shouldPreferAgentModels =
-      amrModels.source === 'preset' &&
-      Array.isArray(agent.models) &&
-      agent.models.length > 0;
-    if (shouldPreferAgentModels) return agent;
-    return { ...agent, models: amrModels.models, modelsSource: 'live' };
-  });
-}
-
 const CANONICAL_AGENT_ORDER = [
-  'amr',
   'claude',
   'codex',
   'devin',
@@ -675,121 +492,6 @@ function isAbortError(err: unknown): boolean {
   );
 }
 
-/**
- * `isTeamShared` is the hub-backed truth: `/api/workspace/projects/team`
- * reads the team's resource-hub catalog directly (see
- * `apps/daemon/src/routes/collab-context.ts`), not this daemon's local
- * sqlite. It stays true the instant the hub confirms the project is shared
- * to the caller's team, well before the pull below has materialized a local
- * row. Callers that need to distinguish "not on the hub catalog" (genuinely
- * not shared / no access) from "on the catalog but the local mirror hasn't
- * landed yet" must branch on `isTeamShared`, not on `pulled` — a pull can
- * return `ok: true` with no bytes materialized yet (see collab-sync.ts's
- * `/collab/pull` handler, which only registers the local project once
- * `pullLatest` resolves a non-null version).
- */
-type TeamSharedProjectPullOutcome = {
-  catalogAvailable: boolean;
-  isTeamShared: boolean;
-  pulled: boolean;
-};
-
-type TeamProjectCatalogLookup =
-  | { ok: true; project: TeamProject | null }
-  | { ok: false };
-
-async function fetchTeamProjectCatalogEntry(
-  projectId: string,
-  workspaceContext: WorkspaceCollabContext | null,
-  coalesce = true,
-): Promise<TeamProjectCatalogLookup> {
-  if (!workspaceContext) return { ok: true, project: null };
-  try {
-    const projects = await fetchTeamProjectsCatalog({
-      context: workspaceContext,
-      coalesce,
-    });
-    return {
-      ok: true,
-      project: projects.find((project) => project.projectId === projectId) ?? null,
-    };
-  } catch {
-    return { ok: false };
-  }
-}
-
-async function pullTeamSharedProjectIfAvailable(
-  projectId: string,
-  workspaceContext: WorkspaceCollabContext | null,
-): Promise<TeamSharedProjectPullOutcome> {
-  if (!workspaceContext) {
-    return { catalogAvailable: true, isTeamShared: false, pulled: false };
-  }
-  const lookup = await fetchTeamProjectCatalogEntry(projectId, workspaceContext);
-  if (!lookup.ok) {
-    return { catalogAvailable: false, isTeamShared: false, pulled: false };
-  }
-  if (!lookup.project) {
-    return { catalogAvailable: true, isTeamShared: false, pulled: false };
-  }
-  try {
-    const pullResponse = await fetch(`/api/projects/${encodeURIComponent(projectId)}/collab/pull`, {
-      method: 'POST',
-      headers: workspaceProjectHeaders(workspaceContext),
-    });
-    if (pullResponse.ok) {
-      invalidateProjectFilesCache(projectId, workspaceContext);
-    }
-    return { catalogAvailable: true, isTeamShared: true, pulled: pullResponse.ok };
-  } catch {
-    return { catalogAvailable: true, isTeamShared: true, pulled: false };
-  }
-}
-
-// A member's first-ever open of a just-shared project races the daemon's
-// local materialization (POST /collab/pull's registerPulledProject, or
-// ProjectView's own /collab/status poll firing ensureSharedProjectPlaceholder
-// — see collab-sync.ts) against the deep-link bootstrap effect below. Give
-// that materialization a bounded window instead of trusting a single
-// immediate miss.
-//
-// 21 attempts * 600ms = ~12s total. The original budget here was 4 * 600ms =
-// ~2.4s, sized well under the real /collab/pull latency observed against a
-// live vela-backed hub (up to ~10s for a fresh project's first pull) —
-// exhausting the window and falling through to "not found" while the pull
-// was still genuinely in flight is a false negative, not a correctness
-// backstop. ~12s matches the budget ProjectView's own
-// CONVERSATION_LOAD_RETRY_DELAYS_MS already established for the identical
-// "team-shared project not yet materialized locally" race on the
-// conversations-list read, so both retry loops now cover the same worst
-// case instead of one giving up 5x sooner than the other. This is still a
-// BOUNDED retry, not an unconditional hang: `everConfirmedTeamShared`
-// already keeps the caller from navigating home the moment the hub confirms
-// team membership even once (see `still-materializing` below), so widening
-// this window only helps the case where the hub itself is slow to reflect a
-// share, not a genuinely-missing/no-access project — that path still falls
-// through to the not-found/navigate-home handling unchanged.
-const DEEP_LINK_TEAM_SHARE_RETRY_ATTEMPTS = 21;
-const DEEP_LINK_TEAM_SHARE_RETRY_DELAY_MS = 600;
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export type DeepLinkedProjectResolution =
-  | { kind: 'found'; project: Project }
-  // The hub confirmed team membership at least once during the retry window:
-  // the project exists and the caller has access. Local materialization is
-  // still catching up — the caller must NOT treat this as "not found".
-  | { kind: 'still-materializing' }
-  // The Team catalog could not answer. Retrying the same unavailable request
-  // for the whole first-materialization budget only makes bootstrap look hung;
-  // surface the existing explicit retry state immediately instead.
-  | { kind: 'unavailable' }
-  // Never confirmed as team-shared within the retry window (or genuinely not
-  // shared at all) — the caller's existing not-found handling applies.
-  | { kind: 'not-found' };
-
 export type ProjectRouteSurfaceState =
   | 'ready'
   | 'loading-projects'
@@ -800,8 +502,6 @@ export type ProjectRouteSurfaceState =
 
 interface SettingsReturnTarget {
   route: Extract<Route, { kind: 'project' }>;
-  accountGeneration: number;
-  identityScopeKey: string;
 }
 
 /**
@@ -823,131 +523,17 @@ export function projectRouteSurfaceState(input: {
 }
 
 /**
- * Resolves a project a member has just deep-linked to but has no local
- * record of yet. Bounded-retries `getProject` + `pullTeamSharedProjectIfAvailable`
- * so a first-ever open of a freshly team-shared project survives the local
- * materialization race instead of being misread as "doesn't exist" on the
- * first miss. Pulled out of the App.tsx bootstrap effect as a plain async
- * function (no React, no timers beyond the injected `delay`) so the retry
- * decision — when does "not found yet" become "still materializing" versus
- * "genuinely not found" — is unit-testable without mounting the component.
- */
-export async function resolveDeepLinkedTeamSharedProject(
-  projectId: string,
-  deps: {
-    getProject: (id: string) => Promise<Project | null>;
-    pullTeamSharedProjectIfAvailable: (id: string) => Promise<TeamSharedProjectPullOutcome>;
-    delay: (ms: number) => Promise<void>;
-    retryAttempts?: number;
-    retryDelayMs?: number;
-    isCancelled?: () => boolean;
-  },
-): Promise<DeepLinkedProjectResolution> {
-  const attempts = deps.retryAttempts ?? DEEP_LINK_TEAM_SHARE_RETRY_ATTEMPTS;
-  const retryDelayMs = deps.retryDelayMs ?? DEEP_LINK_TEAM_SHARE_RETRY_DELAY_MS;
-  const isCancelled = () => deps.isCancelled?.() ?? false;
-  let everConfirmedTeamShared = false;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    if (attempt > 0) {
-      await deps.delay(retryDelayMs);
-      if (isCancelled()) return { kind: 'still-materializing' };
-    }
-    const project = await deps.getProject(projectId).catch(() => null);
-    if (isCancelled()) return { kind: 'still-materializing' };
-    if (project) return { kind: 'found', project };
-    const {
-      catalogAvailable,
-      isTeamShared,
-      pulled,
-    } = await deps.pullTeamSharedProjectIfAvailable(projectId);
-    if (isCancelled()) return { kind: 'still-materializing' };
-    if (!catalogAvailable) {
-      return everConfirmedTeamShared
-        ? { kind: 'still-materializing' }
-        : { kind: 'unavailable' };
-    }
-    if (isTeamShared) everConfirmedTeamShared = true;
-    if (pulled) {
-      const pulledProject = await deps.getProject(projectId).catch(() => null);
-      if (isCancelled()) return { kind: 'still-materializing' };
-      if (pulledProject) return { kind: 'found', project: pulledProject };
-    }
-  }
-  return everConfirmedTeamShared ? { kind: 'still-materializing' } : { kind: 'not-found' };
-}
-
-export async function hydrateReadyTeamProject(
-  projectId: string,
-  workspaceId: string,
-  deps: {
-    getWorkspaceContext: () => WorkspaceCollabContext | null;
-    listWorkspaceProjects: (
-      context: WorkspaceCollabContext,
-    ) => Promise<WorkspaceProjectSummary[]>;
-    onReady?: (project: Project, context: WorkspaceCollabContext) => void;
-    applyProject: (project: Project) => void;
-  },
-): Promise<Project | null> {
-  const initialContext = deps.getWorkspaceContext();
-  if (
-    !initialContext ||
-    initialContext.workspaceType !== 'team' ||
-    initialContext.workspaceId !== workspaceId ||
-    initialContext.memberStatus !== 'active' ||
-    initialContext.lifecycleState !== 'active'
-  ) {
-    return null;
-  }
-  const contextMatches = () => {
-    const context = deps.getWorkspaceContext();
-    return Boolean(
-      context &&
-      context.workspaceType === 'team' &&
-      context.workspaceId === initialContext.workspaceId &&
-      context.workspaceMemberId === initialContext.workspaceMemberId &&
-      context.memberStatus === 'active' &&
-      context.lifecycleState === 'active' &&
-      (context.teamId ?? context.workspaceId) ===
-        (initialContext.teamId ?? initialContext.workspaceId)
-    );
-  };
-  const summaries = await deps.listWorkspaceProjects(initialContext).catch(() => []);
-  if (!contextMatches()) return null;
-  const summary = summaries.find((candidate) =>
-    candidate.id === projectId &&
-    candidate.project.id === projectId
-  );
-  const hasMaterializedTeamBinding = Boolean(
-    summary &&
-    summary.workspaceId === workspaceId &&
-    summary.project.workspaceId === workspaceId &&
-    summary.visibility === 'team' &&
-    summary.resourceState === 'active' &&
-    summary.cloudTombstonedAt == null &&
-    summary.currentUserAccess.canOpen === true &&
-    typeof summary.resourceHubResourceId === 'string' &&
-    summary.resourceHubResourceId.trim() &&
-    summary.syncState === 'synced'
-  );
-  if (!summary || !hasMaterializedTeamBinding) return null;
-  deps.onReady?.(summary.project, initialContext);
-  deps.applyProject(summary.project);
-  return summary.project;
-}
-
-/**
  * What the user reads when a Home send's optimistic project creation fails.
  *
  * Product copy (OPEND-2849, 《报错文案｜精简版》): a create request that never
- * reached the local daemon is S28a 「本地连接已断开」; a daemon that rejects the
- * create as not signed in (`AMR_AUTH_REQUIRED`) is S03 「Open Design 尚未登录」.
- * Both are "title\nbody" keys, rendered as the toast's title + details. The
- * transport classification is the same one `HomeView` uses for its own error
- * block. Any other failure keeps its existing text.
+ * reached the local daemon is S28a 「本地连接已断开」. Its key is "title\nbody",
+ * rendered as the toast's title + details. The transport classification is
+ * the same one `HomeView` uses for its own error block. Any other failure
+ * keeps its existing text.
  */
 function homeCreateFailureNotice(
   err: unknown,
-  t: (key: 'home.createTimedOut' | 'home.daemonRecovering' | 'entry.authExpiredBody') => string,
+  t: (key: 'home.createTimedOut' | 'home.daemonRecovering') => string,
   fallback: string,
 ): string {
   if (err instanceof ProjectCreateError && err.code === 'PROJECT_CREATE_PREPARATION_TIMEOUT') {
@@ -955,9 +541,6 @@ function homeCreateFailureNotice(
   }
   if (err instanceof TypeError || (err instanceof ProjectCreateError && err.status === null)) {
     return t('home.daemonRecovering');
-  }
-  if (err instanceof ProjectCreateError && err.code === 'AMR_AUTH_REQUIRED') {
-    return t('entry.authExpiredBody');
   }
   return fallback;
 }
@@ -972,7 +555,6 @@ export function App() {
   return (
     <MotionConfig reducedMotion="user">
       <IframeKeepAliveProvider>
-        <WorkspaceMemberDirectoryPreloader />
         <AppInner />
       </IframeKeepAliveProvider>
     </MotionConfig>
@@ -985,54 +567,11 @@ function AppInner() {
   const clientType = useMemo(() => detectClientType(), []);
   const hostPlatform = useMemo(() => getOpenDesignHost()?.client.platform, []);
   useModalWindowDragGuard();
-  const workspaceContextState = useWorkspaceContext();
-  const {
-    context: workspaceContext,
-    loading: workspaceContextLoading,
-  } = workspaceContextState;
-  const currentWorkspaceIdentity = workspaceIdentityCacheKey(workspaceContext);
-  const workspaceAccountGeneration = currentWorkspaceAccountGeneration();
-  // Catalog display state is account-scoped in addition to Workspace-scoped.
-  // During an unseeded identity transition the hook intentionally retains the
-  // previous context while the replacement account is resolved; a pending
-  // sentinel makes that retained context unusable for display immediately.
-  const currentWorkspaceCatalogIdentity = JSON.stringify(
-    workspaceContextState.identityChangePending
-      ? ['pending-account', workspaceAccountGeneration]
-      : ['workspace-account', workspaceAccountGeneration, currentWorkspaceIdentity],
-  );
-  const workspaceContextRef = useRef<WorkspaceCollabContext | null>(null);
-  const workspaceContextStateRef = useRef(workspaceContextState);
-  const projectRouteWorkspaceContextRef = useRef<WorkspaceCollabContext | null>(null);
-  const projectOpenWorkspaceWitnessRef = useRef<{
-    projectId: string;
-    projectWorkspaceId: string;
-    context: WorkspaceCollabContext;
-    accountGeneration: number;
-  } | null>(null);
-  workspaceContextRef.current = workspaceContext;
-  const deletedShares = useDeletedShareNotices(
-    workspaceResourceReadContext(workspaceContextState),
-    workspaceContextState.resourceReadIdentity?.generation,
-  );
-  workspaceContextStateRef.current = workspaceContextState;
-  const listCurrentWorkspaceProjects = useCallback(
-    (options?: { throwOnError?: boolean; workspaceView?: WorkspaceProjectListView }) => {
-      const context = workspaceContextRef.current;
-      return listProjects({
-        ...options,
-        workspaceContext: context,
-        workspaceView: context ? options?.workspaceView ?? 'recent' : undefined,
-      });
-    },
-    [],
-  );
   useEffect(() => {
     const onFirstPartyExternalLink = (event: MouseEvent) => openFirstPartyExternalLinkFromClick(
       event,
       (url) => { void openExternalUrl(url); },
     );
-    // React handlers append AMR attribution while the event bubbles; bridge the final URL afterwards.
     document.addEventListener('click', onFirstPartyExternalLink);
     return () => document.removeEventListener('click', onFirstPartyExternalLink);
   }, []);
@@ -1107,14 +646,6 @@ function AppInner() {
     });
   }, [config.notifications?.desktopEnabled, config.notifications?.soundEnabled]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [amrArtifactUpgradeHomeMockConfig] = useState<AmrArtifactUpgradeHomeOffer | null>(
-    () => process.env.NODE_ENV === 'development' && typeof window !== 'undefined'
-      ? amrArtifactUpgradeHomeMockOffer(window.location.search)
-      : null,
-  );
-  const amrArtifactUpgradeHomeMock = amrArtifactUpgradeHomeMockConfig !== null;
-  const [amrArtifactUpgradeHomeOffer, setAmrArtifactUpgradeHomeOffer] =
-    useState<AmrArtifactUpgradeHomeOffer | null>(() => amrArtifactUpgradeHomeMockConfig);
   // Surfaced when a Home-picked working dir could not be applied to a freshly
   // created project (expired/invalid desktop token, daemon rejection). Without
   // this the failure was swallowed and the user believed their folder was in
@@ -1129,63 +660,33 @@ function AppInner() {
   const [deepLinkRetryRevision, setDeepLinkRetryRevision] = useState(0);
   const [settingsWelcome, setSettingsWelcome] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<SettingsSection>('execution');
-  const [settingsHighlight, setSettingsHighlight] = useState<SettingsHighlight>(null);
   const [integrationInitialTab, setIntegrationInitialTab] = useState<IntegrationTab>('mcp');
   const [daemonLive, setDaemonLive] = useState(false);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
-  const amrModelsRef = useRef<AmrModelsResponse | null>(null);
-  const amrPollGenerationRef = useRef(0);
   const agentStreamRequestSeqRef = useRef(0);
   const agentStreamAbortRef = useRef<AbortController | null>(null);
   const agentFocusRefreshLastRunRef = useRef(Date.now());
-  const [amrPollRestartToken, setAmrPollRestartToken] = useState(0);
   const [providerModelsCache, setProviderModelsCache] = useState<
     Record<string, ProviderModelOption[]>
   >({});
   // Functional skills (capabilities the agent invokes mid-task) — stays
   // small and lives under the Settings → Skills surface.
-  const [workspaceSkills, setWorkspaceSkills] = useState<{
-    identity: string;
+  const [skillsCatalog, setSkillsCatalog] = useState<{
     items: SkillSummary[];
     ready: boolean;
-  }>(() => ({
-    identity: currentWorkspaceCatalogIdentity,
-    items: [],
-    ready: false,
-  }));
-  // A workspace-scoped response is safe to render only under the exact
-  // identity it was fetched for. The replacement read starts in an effect, so
-  // clearing in that effect would still paint one frame of A's skills under B.
-  // Derive the visible catalog during render instead: an identity mismatch is
-  // a fail-closed empty list until B's own response commits.
-  const skills =
-    workspaceSkills.identity === currentWorkspaceCatalogIdentity
-      ? workspaceSkills.items
-      : [];
+  }>({ items: [], ready: false });
+  const skills = skillsCatalog.items;
   // Design templates (rendering catalogue: decks, prototypes, image/video/
   // audio templates) — sourced from /api/design-templates and shown in the
   // EntryView Templates tab. See specs/current/skills-and-design-templates.md.
   const [designTemplates, setDesignTemplates] = useState<SkillSummary[]>([]);
-  const [workspaceDesignSystems, setWorkspaceDesignSystems] = useState<{
-    identity: string;
+  const [designSystemsCatalog, setDesignSystemsCatalog] = useState<{
     items: DesignSystemSummary[];
     ready: boolean;
-  }>(() => ({
-    identity: currentWorkspaceCatalogIdentity,
-    items: [],
-    ready: false,
-  }));
-  // Like skills and projects, a design-system catalog belongs to one exact
-  // Workspace membership. Effects refresh after React commits, so merely
-  // guarding late responses is not enough: without this render-time identity
-  // check, switching A -> B paints A's systems under B until B's request
-  // finishes. Fail closed during that gap; opening the picker still reuses the
-  // already-loaded list instantly when the identity has not changed.
-  const designSystems = workspaceDesignSystems.identity === currentWorkspaceCatalogIdentity
-    ? workspaceDesignSystems.items
-    : [];
-  const skillsRequestGenerationRef = useRef<Map<string, number>>(new Map());
-  const designSystemsRequestGenerationRef = useRef<Map<string, number>>(new Map());
+  }>({ items: [], ready: false });
+  const designSystems = designSystemsCatalog.items;
+  const skillsRequestGenerationRef = useRef(0);
+  const designSystemsRequestGenerationRef = useRef(0);
   const [pendingDesignSystemRevisionJobs, setPendingDesignSystemRevisionJobs] = useState<
     Record<string, DesignSystemGenerationJob>
   >({});
@@ -1196,158 +697,14 @@ function AppInner() {
   // A ref, not the record: the record may already be cleared or replaced by a
   // newer send when a slow create finally goes out.
   const pendingProjectConversationIdsRef = useRef(new Map<string, string>());
-  // Hard block from the Home pre-run balance gate. Hosted here, not in
-  // EntryShell: the gate answers behind the optimistic pending frame, where
-  // EntryShell is already unmounted (OPEND-2614).
-  const [homeAmrBalanceGateBlock, setHomeAmrBalanceGateBlock] =
-    useState<HomeAmrBalanceGateBlock | null>(null);
   const [appliedProjectListWitness, setAppliedProjectListWitness] = useState<{
-    displayKey: string;
-    scopeKey: string;
     generation: number;
-    workspaceView: WorkspaceProjectListView | undefined;
     projectIds: ReadonlySet<string>;
   } | null>(null);
   const projectsRef = useRef<Project[]>(projects);
   useEffect(() => {
     projectsRef.current = projects;
   }, [projects]);
-  // Project names from another member's team-catalog row are authoritative:
-  // the local mirror can carry an older real name (not only "共享项目") with a
-  // newer local timestamp. Scope keys prevent a project id observed in one
-  // workspace/member context from leaking its title authority into another.
-  const [authoritativeProjectNames, setAuthoritativeProjectNames] = useState<
-    Record<string, string>
-  >({});
-  const authoritativeProjectNamesRef = useRef(authoritativeProjectNames);
-  authoritativeProjectNamesRef.current = authoritativeProjectNames;
-  const projectNameAuthorityRequestGenerationRef = useRef<Map<string, number>>(new Map());
-  const refreshTargetedProjectMetadata = useCallback(async (
-    payload: Extract<WorkspaceInvalidationSsePayload, { type: 'team-projects-changed' }>,
-  ) => {
-    const projectId = payload.projectId;
-    if (!projectId) return;
-    const issuedContext = workspaceContextRef.current;
-    if (!issuedContext) return;
-    const issuedAccountGeneration = currentWorkspaceAccountGeneration();
-    const issuedIdentity = workspaceIdentityCacheKey(issuedContext);
-    const metadataRefresh = beginTeamProjectMetadataRefresh({
-      accountGeneration: issuedAccountGeneration,
-      context: issuedContext,
-      projectId,
-      event: payload,
-    });
-    const metadataRequestIsCurrent = () =>
-      currentWorkspaceAccountGeneration() === issuedAccountGeneration
-      && workspaceIdentityCacheKey(workspaceContextRef.current) === issuedIdentity
-      && metadataRefresh.isLatest();
-    try {
-      const catalogProject = await fetchScopedTeamProjectCatalogEntry({
-        context: issuedContext,
-        projectId,
-        force: true,
-        cacheDiscriminator: metadataRefresh.cacheDiscriminator,
-      });
-      if (
-        !catalogProject
-        || !metadataRequestIsCurrent()
-      ) return;
-      const name = catalogProject.name?.trim();
-      if (!name) return;
-      setProjects((current) => {
-        if (!metadataRequestIsCurrent()) return current;
-        return current.map((project) =>
-          project.id === projectId
-          && project.workspaceId === issuedContext.workspaceId
-            ? { ...project, name }
-            : project
-        );
-      });
-      if (!metadataRequestIsCurrent()) return;
-      patchProjectDisplaySnapshots({
-        accountGeneration: issuedAccountGeneration,
-        context: issuedContext,
-        patch: (projects) => projects.map((project) =>
-          project.id === projectId
-            ? {
-                ...project,
-                name,
-                ...(catalogProject.metadata ? { metadata: catalogProject.metadata } : {}),
-                ...(catalogProject.updatedAt !== undefined
-                  ? { updatedAt: catalogProject.updatedAt }
-                  : {}),
-              }
-            : project),
-      });
-      // Another member's catalog row is title authority over a stale local
-      // mirror. The creator's own local row remains authoritative, but still
-      // receives the exact hub-confirmed projection update above (for another
-      // window/device logged into the same member).
-      if (catalogProject.ownerMemberId !== issuedContext.workspaceMemberId) {
-        const authorityKey = projectViewAuthorizationLifetimeKey(projectId, issuedContext);
-        setAuthoritativeProjectNames((current) => {
-          if (!metadataRequestIsCurrent()) return current;
-          return current[authorityKey] === name
-            ? current
-            : { ...current, [authorityKey]: name };
-        });
-      }
-    } catch {
-      // Keep the last-good projection. Reconnect/poll performs full catch-up.
-    }
-  }, []);
-  const refreshProjectCatalogRef = useRef<() => void>(() => {});
-  const teamResourceRefreshRefs = useRef<{
-    skill: (resourceId?: string) => void;
-    designSystem: (resourceId?: string) => void;
-    plugin: (
-      context: WorkspaceCollabContext | null,
-      accountGeneration: number,
-    ) => void;
-    catchUp: () => void;
-  }>({
-    skill: () => {},
-    designSystem: () => {},
-    plugin: () => {},
-    catchUp: () => {},
-  });
-  const invalidationWorkspaceContext = workspaceContext;
-  const invalidationAccountGeneration = workspaceAccountGeneration;
-  const resourceStreamIdentity = JSON.stringify([
-    invalidationAccountGeneration,
-    workspaceIdentityCacheKey(invalidationWorkspaceContext),
-  ]);
-  const handleTeamResourceStreamActive = useWorkspaceSnapshotActivation({
-    enabled: invalidationWorkspaceContext?.workspaceType === 'team',
-    identity: resourceStreamIdentity,
-    refresh: () => teamResourceRefreshRefs.current.catchUp(),
-  });
-  useWorkspaceInvalidation({
-    'team-projects-changed': (payload) => {
-      if (payload.kind === 'metadata' && payload.projectId) {
-        void refreshTargetedProjectMetadata(payload);
-        return;
-      }
-      refreshProjectCatalogRef.current();
-    },
-    'team-resources-changed': (payload) => {
-      if (payload.resourceKind === 'skill') {
-        teamResourceRefreshRefs.current.skill(payload.resourceId);
-        return;
-      }
-      if (payload.resourceKind === 'design_system') {
-        teamResourceRefreshRefs.current.designSystem(payload.resourceId);
-        return;
-      }
-      teamResourceRefreshRefs.current.plugin(
-        invalidationWorkspaceContext,
-        invalidationAccountGeneration,
-      );
-    },
-  }, {
-    workspaceContext,
-    onActive: handleTeamResourceStreamActive,
-  });
   const [petTaskCenter, setPetTaskCenter] = useState<PetTaskCenter>({
     running: [],
     queued: [],
@@ -1371,22 +728,6 @@ function AppInner() {
     );
   }, []);
   const pendingLocalProjectIdsRef = useRef<Set<string>>(new Set());
-  const currentProjectListScope = projectListScopeKey(workspaceContext);
-  const currentPendingLocalProjectScope = [
-    currentWorkspaceAccountGeneration(),
-    currentProjectListScope,
-  ].join(':');
-  const pendingLocalProjectScopeRef = useRef(currentPendingLocalProjectScope);
-  const projectAuthorizationScopeRef = useRef(currentProjectListScope);
-  const projectAuthorizationGenerationRef = useRef(0);
-  if (projectAuthorizationScopeRef.current !== currentProjectListScope) {
-    projectAuthorizationScopeRef.current = currentProjectListScope;
-    projectAuthorizationGenerationRef.current += 1;
-  }
-  if (pendingLocalProjectScopeRef.current !== currentPendingLocalProjectScope) {
-    pendingLocalProjectScopeRef.current = currentPendingLocalProjectScope;
-    pendingLocalProjectIdsRef.current.clear();
-  }
   const locallyDeletedProjectIdsRef = useRef<Map<string, number>>(new Map());
   const projectListMutationVersionRef = useRef(0);
   const projectRenameStatesRef = useRef<Map<string, QueuedProjectRenameState>>(new Map());
@@ -1435,7 +776,6 @@ function AppInner() {
   const [dsLoading, setDsLoading] = useState(true);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [projectListFailure, setProjectListFailure] = useState<{
-    displayKey: string;
     generation: number;
   } | null>(null);
   const [promptTemplatesLoading, setPromptTemplatesLoading] = useState(true);
@@ -1471,42 +811,14 @@ function AppInner() {
   const routeRef = useRef(route);
   routeRef.current = route;
   const settingsReturnTargetRef = useRef<SettingsReturnTarget | null>(null);
-  const workspaceProjectView = workspaceProjectListViewForRoute(route);
-  // Read-only mirror for the boot effect. The boot pass needs to know which
-  // project list to seed, but it must NOT restart when that answer changes:
-  // see the "boot is a one-shot" note on the bootstrap effect below. A
-  // dedicated effect already re-lists projects whenever the view or the
-  // workspace changes, so nothing is lost by the boot pass not reacting.
-  const workspaceProjectViewRef = useRef(workspaceProjectView);
-  workspaceProjectViewRef.current = workspaceProjectView;
-  // `listCurrentWorkspaceProjects` already collapses `workspaceView` to
-  // `undefined` when there is no resolved `workspaceContext` (see its
-  // `context ? options?.workspaceView ?? 'recent' : undefined` above), so the
-  // request it sends never actually varies by home tab outside a workspace.
-  // But the raw route-derived `workspaceProjectView` still changes string
-  // value on every 最近/全部/草稿 tab switch, and that alone is enough to
-  // re-run the effect below (dependency arrays compare the value passed in,
-  // not what the callback does with it) — re-fetching the identical list on
-  // every click. Mirror the callback's own collapse here so the effect's
-  // dependency is stable outside a workspace, matching the fetch it triggers.
-  const effectiveWorkspaceProjectView = workspaceContext ? workspaceProjectView : undefined;
-  const projectDisplayAccountGeneration = currentWorkspaceAccountGeneration();
-  const currentProjectDisplayKey = projectDisplaySnapshotKey({
-    accountGeneration: projectDisplayAccountGeneration,
-    context: workspaceContext,
-    view: effectiveWorkspaceProjectView,
-  });
   useStartupReady({
     visible: route.kind === 'home' && daemonAppConfigReady,
-    interactive: route.kind === 'home' && daemonAppConfigReady && !workspaceContextLoading
-      && !workspaceContextState.identityChangePending && !projectsLoading
-      && appliedProjectListWitness?.displayKey === currentProjectDisplayKey
-      && projectListFailure?.displayKey !== currentProjectDisplayKey
+    interactive: route.kind === 'home' && daemonAppConfigReady && !projectsLoading
+      && appliedProjectListWitness !== null
+      && projectListFailure === null
       && agentsReady && !agentsLoading && !skillsLoading && !dsLoading && !promptTemplatesLoading
       && designTemplatesReady && promptTemplatesReady
-      && workspaceSkills.ready && workspaceDesignSystems.ready
-      && workspaceSkills.identity === currentWorkspaceCatalogIdentity
-      && workspaceDesignSystems.identity === currentWorkspaceCatalogIdentity,
+      && skillsCatalog.ready && designSystemsCatalog.ready,
   });
   // Page timing shares the authoritative Home gates, including scoped data.
   // Independent data-driven destinations report Ready in their own component.
@@ -1514,60 +826,16 @@ function AppInner() {
   usePageNavigationReady({
     page: navigationPage(route),
     visible: pageWithSharedData && daemonAppConfigReady,
-    ready: pageWithSharedData && daemonAppConfigReady && !workspaceContextLoading
-      && !workspaceContextState.identityChangePending && !projectsLoading
-      && appliedProjectListWitness?.displayKey === currentProjectDisplayKey
-      && projectListFailure?.displayKey !== currentProjectDisplayKey
+    ready: pageWithSharedData && daemonAppConfigReady && !projectsLoading
+      && appliedProjectListWitness !== null
+      && projectListFailure === null
       && agentsReady && !agentsLoading && !skillsLoading && !dsLoading && !promptTemplatesLoading
       && designTemplatesReady && promptTemplatesReady
-      && workspaceSkills.ready && workspaceDesignSystems.ready
-      && workspaceSkills.identity === currentWorkspaceCatalogIdentity
-      && workspaceDesignSystems.identity === currentWorkspaceCatalogIdentity
+      && skillsCatalog.ready && designSystemsCatalog.ready
       && (route.kind !== 'home' || route.view !== 'settings' || !composioConfigLoading),
-    failure: pageWithSharedData && projectListFailure?.displayKey === currentProjectDisplayKey,
-    scopeKey: currentProjectDisplayKey,
+    failure: pageWithSharedData && projectListFailure !== null,
+    scopeKey: PROJECT_DISPLAY_KEY,
   });
-  // Display snapshots are deliberately separate from authorization. They may
-  // prevent a warm view from flashing a loader, but every network read and
-  // mutation still carries the current request's independently verified
-  // Workspace context. An exact account/workspace/member+view hit is safe to
-  // render while it revalidates; any other identity is cleared before paint.
-  const projectListScopeRef = useRef(currentProjectListScope);
-  const projectDisplayKeyRef = useRef(currentProjectDisplayKey);
-  if (projectDisplayKeyRef.current !== currentProjectDisplayKey) {
-    const leftAResolvedWorkspace =
-      projectListScopeRef.current !== UNRESOLVED_PROJECT_LIST_SCOPE;
-    const snapshot = readProjectDisplaySnapshot(currentProjectDisplayKey);
-    // A create/import is immediately projected into `projects`, but opening
-    // that project changes the list projection from Home's `recent` to `all`.
-    // An older exact-scope `all` snapshot must not erase the pending local row:
-    // ProjectView can keep rendering from its route snapshot, while later
-    // rename callbacks then have no list row to update and Back restores the
-    // stale Home cards. Personal creates belong to recent/all/drafts; Team is
-    // intentionally excluded until the share mutation is authoritative.
-    const pendingProjects = effectiveWorkspaceProjectView === 'team'
-      ? []
-      : projects.filter((project) =>
-          pendingLocalProjectScopeRef.current === currentPendingLocalProjectScope
-          && pendingLocalProjectIdsRef.current.has(project.id)
-          && (
-            workspaceContext === null
-              ? project.workspaceId == null
-              : project.workspaceId === workspaceContext.workspaceId
-          ));
-    projectListScopeRef.current = currentProjectListScope;
-    projectDisplayKeyRef.current = currentProjectDisplayKey;
-    if (snapshot) {
-      const snapshotIds = new Set(snapshot.projects.map((project) => project.id));
-      const preserved = pendingProjects.filter((project) => !snapshotIds.has(project.id));
-      setProjects(preserved.length > 0 ? [...preserved, ...snapshot.projects] : snapshot.projects);
-      setProjectsLoading(false);
-    } else if (leftAResolvedWorkspace) {
-      setProjects(pendingProjects);
-      setProjectsLoading(true);
-    }
-  }
-  const projectScopeRefreshMountedRef = useRef(false);
   const analytics = useAnalytics();
 
   // Single-flight guard for `/api/agents?stream=1`: beginning a new request
@@ -1589,11 +857,6 @@ function AppInner() {
     return agentStreamRequestSeqRef.current === requestId;
   }, []);
 
-  const restartAmrPolling = useCallback(() => {
-    amrPollGenerationRef.current += 1;
-    setAmrPollRestartToken((current) => current + 1);
-  }, []);
-
   // v2 schema removed the standalone `app_launch` event; the initial
   // page_view fires from each top-level page surface (home / projects /
   // automations / plugins / design_systems / integrations) instead.
@@ -1604,44 +867,8 @@ function AppInner() {
     pendingLocalProjectIdsRef.current.add(projectId);
     locallyDeletedProjectIdsRef.current.delete(projectId);
     projectListMutationVersionRef.current += 1;
-    const context = workspaceContextRef.current;
-    if (context) {
-      markProjectDisplaySnapshotsDirty({
-        accountGeneration: currentWorkspaceAccountGeneration(),
-        context,
-      });
-    }
+    markProjectDisplaySnapshotsDirty();
   }, []);
-
-  const handleTeamProjectContentReady = useCallback(async (
-    projectId: string,
-    workspaceId: string,
-    workspaceMemberId: string,
-  ): Promise<boolean> => {
-    if (workspaceContextRef.current?.workspaceMemberId !== workspaceMemberId) {
-      return false;
-    }
-    const project = await hydrateReadyTeamProject(projectId, workspaceId, {
-      getWorkspaceContext: () => workspaceContextRef.current,
-      listWorkspaceProjects: (context) =>
-        listWorkspaceProjectSummaries({
-          context,
-          workspaceView: 'team',
-          throwOnError: true,
-        }),
-      onReady: (_project, context) => {
-        invalidateProjectFilesCache(projectId, context);
-      },
-      applyProject: (project) => {
-        rememberLocalProject(projectId);
-        setProjects((current) => [
-          project,
-          ...current.filter((candidate) => candidate.id !== projectId),
-        ]);
-      },
-    });
-    return project != null;
-  }, [rememberLocalProject]);
 
   const clearLocalProject = useCallback((projectId: string, options?: { deleted?: boolean }) => {
     pendingLocalProjectIdsRef.current.delete(projectId);
@@ -1654,50 +881,23 @@ function AppInner() {
     }
   }, []);
 
-  const beginProjectListRequest = useCallback((
-    workspaceView: WorkspaceProjectListView | undefined,
-  ): ProjectListRequest => {
+  const beginProjectListRequest = useCallback((): ProjectListRequest => {
     projectListRequestGenerationRef.current += 1;
-    const issuedContext = workspaceContextRef.current;
-    const accountGeneration = currentWorkspaceAccountGeneration();
-    const effectiveView = issuedContext ? workspaceView ?? 'recent' : undefined;
     return {
       generation: projectListRequestGenerationRef.current,
       mutationVersion: projectListMutationVersionRef.current,
-      accountGeneration,
-      scopeKey: projectListScopeKey(issuedContext),
-      displayKey: projectDisplaySnapshotKey({
-        accountGeneration,
-        context: issuedContext,
-        view: effectiveView,
-      }),
-      workspaceView: effectiveView,
     };
   }, []);
 
   const recordProjectListFailure = useCallback((request: ProjectListRequest) => {
-    if (
-      request.generation === projectListRequestGenerationRef.current
-      && request.accountGeneration === currentWorkspaceAccountGeneration()
-      && request.scopeKey === projectListScopeKey(workspaceContextRef.current)
-    ) {
-      setProjectListFailure({ displayKey: request.displayKey, generation: request.generation });
+    if (request.generation === projectListRequestGenerationRef.current) {
+      setProjectListFailure({ generation: request.generation });
     }
   }, []);
 
   const reconcileFetchedProjects = useCallback((list: Project[], request: ProjectListRequest) => {
-    if (
-      request.accountGeneration !== currentWorkspaceAccountGeneration()
-      || request.scopeKey !== projectListScopeKey(workspaceContextRef.current)
-    ) {
-      return false;
-    }
     const projectedList = list.map((project) => {
-      const key = JSON.stringify([
-        request.accountGeneration,
-        request.scopeKey,
-        project.id,
-      ]);
+      const key = project.id;
       const pending = pendingProjectNameProjectionsRef.current.get(key);
       if (!pending) return project;
       if (
@@ -1761,14 +961,9 @@ function AppInner() {
     }
     latestAppliedProjectListGenerationRef.current = request.generation;
     setProjectListFailure((failure) =>
-      failure?.displayKey === request.displayKey && request.generation >= failure.generation
-        ? null
-        : failure);
+      failure && request.generation >= failure.generation ? null : failure);
     setAppliedProjectListWitness({
-      displayKey: request.displayKey,
-      scopeKey: request.scopeKey,
       generation: request.generation,
-      workspaceView: request.workspaceView,
       projectIds: fetchedIds,
     });
     for (const id of fetchedIds) pendingLocalProjectIds.delete(id);
@@ -1789,11 +984,7 @@ function AppInner() {
       activeDeletedProjectIds.size > 0
         ? new Set(visibleList.map((project) => project.id))
         : fetchedIds;
-    writeProjectDisplaySnapshot({
-      accountGeneration: request.accountGeneration,
-      context: workspaceContextRef.current,
-      view: request.workspaceView,
-    }, visibleList);
+    writeProjectDisplaySnapshot(PROJECT_DISPLAY_SCOPE, visibleList);
     setProjects((current) => {
       const preserved = current.filter(
         (project) =>
@@ -1825,229 +1016,6 @@ function AppInner() {
     analytics.setIdentity(config.installationId ?? null);
   }, [analytics.setIdentity, config.installationId, config.telemetry?.metrics]);
 
-  // App-level AMR sign-in state — declared here because the configure
-  // globals effect below reads it; the sync effects live next to the
-  // other AMR plumbing further down.
-  const [amrLoginStatus, setAmrLoginStatus] = useState<VelaLoginStatus | null>(null);
-  // A public URL is a capability. Retain only the last exact active-share GET
-  // observed under this App's authenticated account, in memory, for S13 copy.
-  const [observedPublicShareLink, setObservedPublicShareLink] = useState<
-    (ObservedPublicShareLink & { accountId: string }) | null
-  >(null);
-  const [loginUpdateRequest, setLoginUpdateRequest] = useState<ObservedShareUpdateRequest | null>(null);
-  const loginUpdateNonceRef = useRef(0);
-  // Above ProjectView's authorization lifetime: login deliberately remounts
-  // that subtree, but the user's exact first-share panel should return.
-  const [shareLoginReturn, setShareLoginReturn] = useState<ShareLoginReturn | null>(null);
-  const onShareLoginReturnChange = useCallback((request: ShareLoginReturn | null) => {
-    if (!request) { setShareLoginReturn(null); return; }
-    const current = routeRef.current;
-    if (current.kind !== 'project' || current.projectId !== request.projectId
-      || (current.fileName !== null && current.fileName !== request.filePath)) return;
-    setShareLoginReturn(request);
-    // Pin the active file so a fresh workspace does not select a sibling tab.
-    navigate({ ...current, fileName: request.filePath });
-  }, []);
-  useEffect(() => {
-    if (!shareLoginReturn) return;
-    const remaining = shareLoginReturn.expiresAt - Date.now();
-    if (remaining <= 0 || route.kind !== 'project' || route.projectId !== shareLoginReturn.projectId
-      || (route.fileName !== null && route.fileName !== shareLoginReturn.filePath)) {
-      setShareLoginReturn(null);
-      return;
-    }
-    const timer = window.setTimeout(() => setShareLoginReturn(null), remaining);
-    return () => window.clearTimeout(timer);
-  }, [route, shareLoginReturn]);
-  const onLoginUpdateRequestHandled = useCallback((nonce: number) => {
-    setLoginUpdateRequest((current) => current?.nonce === nonce ? null : current);
-  }, []);
-
-  const testRuntimeAuthenticated = isAmrSessionAuthenticated(amrLoginStatus);
-  const testRuntimeOwner = amrLoginStatus?.user?.id ?? null;
-  useEffect(() => {
-    // Home hosts unmount on navigation; identity changes elsewhere still
-    // spend their in-process replay grants, including a change back later.
-    observeTestRuntimeIdentity(testRuntimeAuthenticated, testRuntimeOwner, locale);
-  }, [testRuntimeAuthenticated, testRuntimeOwner, locale]);
-  // Inline AMR auth can invalidate the caller identity and intentionally tear
-  // down ProjectView before the login poll reports success. Keep only the
-  // exact failed-turn continuation above that authorization lifetime; the
-  // fresh ProjectView must prove the same route + Workspace authority before
-  // it may consume this one-shot retry.
-  const [amrAuthRetryContinuation, setAmrAuthRetryContinuation] =
-    useState<AmrAuthRetryContinuation | null>(null);
-  const amrAuthRetryContinuationRef = useRef<AmrAuthRetryContinuation | null>(null);
-  const clearAmrAuthRetryContinuation = useCallback((expected?: AmrAuthRetryContinuation) => {
-    if (expected && amrAuthRetryContinuationRef.current !== expected) return;
-    amrAuthRetryContinuationRef.current = null;
-    setAmrAuthRetryContinuation(null);
-  }, []);
-  const armAmrAuthRetryContinuation = useCallback((
-    input: Omit<AmrAuthRetryContinuation, 'accountIdAtArm' | 'createdAtMs'>,
-  ) => {
-    const next: AmrAuthRetryContinuation = {
-      ...input,
-      accountIdAtArm:
-        isAmrSessionAuthenticated(amrLoginStatusRef.current)
-          ? amrLoginStatusRef.current?.user?.id ?? null
-          : null,
-      createdAtMs: Date.now(),
-    };
-    amrAuthRetryContinuationRef.current = next;
-    setAmrAuthRetryContinuation(next);
-  }, []);
-  const consumeAmrAuthRetryContinuation = useCallback((
-    expected: AmrAuthRetryContinuation,
-  ): boolean => {
-    if (amrAuthRetryContinuationRef.current !== expected) return false;
-    clearAmrAuthRetryContinuation(expected);
-    return true;
-  }, [clearAmrAuthRetryContinuation]);
-  useEffect(() => {
-    if (!amrAuthRetryContinuation) return;
-    const remainingMs =
-      amrAuthRetryContinuation.createdAtMs
-      + AMR_AUTH_RETRY_CONTINUATION_TTL_MS
-      - Date.now();
-    if (remainingMs <= 0) {
-      clearAmrAuthRetryContinuation(amrAuthRetryContinuation);
-      return;
-    }
-    const timeout = window.setTimeout(() => {
-      clearAmrAuthRetryContinuation(amrAuthRetryContinuation);
-    }, remainingMs);
-    return () => window.clearTimeout(timeout);
-  }, [amrAuthRetryContinuation, clearAmrAuthRetryContinuation]);
-  // Child surfaces report status snapshots, not login events. Deduplicate the
-  // signed-in transition here: restarting the model poll for every Settings
-  // snapshot updates `agents`, which makes Settings fetch status again and
-  // creates a status -> models -> agents request loop.
-  const amrLoginStatusRef = useRef<VelaLoginStatus | null>(null);
-  const onObservedPublicShareLink = useCallback((share: ObservedPublicShareLink | null) => {
-    if (share === null) { setObservedPublicShareLink(null); return; }
-    const account = amrLoginStatusRef.current;
-    const currentRoute = routeRef.current;
-    const authority = projectRouteWorkspaceContextRef.current;
-    if (share.status !== 'active' || !share.url || !share.slug
-      || !share.authorizationScopeKey.startsWith('workspace:')
-      || !isAmrSessionAuthenticated(account) || !account?.user?.id
-      || currentRoute.kind !== 'project' || currentRoute.projectId !== share.projectId
-      || (currentRoute.fileName !== null && currentRoute.fileName !== share.filePath)
-      || !authority || authority.workspaceId !== share.workspaceId
-      || authority.workspaceMemberId !== share.workspaceMemberId) return;
-    setObservedPublicShareLink({ ...share, accountId: account.user.id });
-  }, []);
-  useEffect(() => {
-    if (!observedPublicShareLink) return;
-    if (route.kind !== 'project' || route.projectId !== observedPublicShareLink.projectId
-      || (route.fileName !== null && route.fileName !== observedPublicShareLink.filePath)
-      || (isAmrSessionAuthenticated(amrLoginStatus) && amrLoginStatus?.user?.id !== observedPublicShareLink.accountId)) {
-      setObservedPublicShareLink(null);
-    }
-  }, [route, amrLoginStatus, observedPublicShareLink]);
-  useEffect(() => {
-    if (!loginUpdateRequest) return;
-    if (Date.now() > loginUpdateRequest.expiresAt
-      || route.kind !== 'project' || route.projectId !== loginUpdateRequest.link.projectId
-      || (route.fileName !== null && route.fileName !== loginUpdateRequest.link.filePath)
-      || (isAmrSessionAuthenticated(amrLoginStatus) && amrLoginStatus?.user?.id !== loginUpdateRequest.accountId)) {
-      setLoginUpdateRequest(null);
-    }
-  }, [route, amrLoginStatus, loginUpdateRequest]);
-
-  const applyAmrLoginStatus = useCallback((
-    status: VelaLoginStatus,
-    options: { forceModelRefresh?: boolean; restartOnSignIn?: boolean } = {},
-  ) => {
-    const previousStatus = amrLoginStatusRef.current;
-    const wasLoggedIn = isAmrSessionAuthenticated(previousStatus);
-    const isLoggedIn = isAmrSessionAuthenticated(status);
-    const pendingRetry = amrAuthRetryContinuationRef.current;
-    const accountChangedWhileAuthorizing = Boolean(
-      pendingRetry
-      && (
-        (wasLoggedIn && !isLoggedIn)
-        || (
-          isLoggedIn
-          && pendingRetry.accountIdAtArm !== null
-          && status.user?.id !== pendingRetry.accountIdAtArm
-        )
-      )
-    );
-    if (accountChangedWhileAuthorizing && pendingRetry) {
-      clearAmrAuthRetryContinuation(pendingRetry);
-    }
-    amrLoginStatusRef.current = status;
-    setAmrLoginStatus(status);
-    const currentRoute = routeRef.current;
-    if (
-      pendingRetry
-      && !accountChangedWhileAuthorizing
-      && isLoggedIn
-      && status.user?.id
-      && (
-        pendingRetry.accountIdAtArm === null
-        || pendingRetry.accountIdAtArm === status.user.id
-      )
-      && currentRoute.kind === 'home'
-      && currentRoute.view === 'settings'
-    ) {
-      // The Settings page intentionally unmounts ProjectView while AMR login
-      // completes. Return only to the exact failed conversation carried by the
-      // App-owned continuation; the fresh ProjectView must still prove its
-      // persisted Workspace authority before ChatPane may consume the retry.
-      settingsReturnTargetRef.current = null;
-      navigate({
-        kind: 'project',
-        projectId: pendingRetry.projectId,
-        conversationId: pendingRetry.conversationId,
-        fileName: null,
-      }, { replace: true });
-    }
-    if (
-      isLoggedIn
-      && (
-        options.forceModelRefresh === true
-        || (options.restartOnSignIn === true && !wasLoggedIn)
-      )
-    ) {
-      restartAmrPolling();
-    }
-  }, [clearAmrAuthRetryContinuation, restartAmrPolling]);
-
-  // Tab-scope identity key, fed to WorkspaceTabsBar so it can close every open
-  // tab down to a single fresh Home tab whenever the caller's identity
-  // changes — signing out, signing in as a different account, switching
-  // workspace, or simply never having signed into AMR at all are each their
-  // own scope, and a tab opened under one must not silently keep pointing at
-  // a project/section the next identity has no standing to see (see
-  // WorkspaceTabsBar's own doc, and deriveTabIdentityScope's, for the full
-  // design rationale — notably why the workspace half of the key LATCHES
-  // across a null `workspaceContext` instead of reacting to it directly, and
-  // why `workspaceContextLoading` must ride along: on every fresh boot
-  // (first load OR a plain refresh) `amrLoginStatus` and `workspaceContext`
-  // resolve on independent timers, and without the loading flag the
-  // in-between "logged in, workspace context not landed yet" tick reads as a
-  // confirmed no-workspace baseline — so the real workspace context landing a
-  // beat later looks exactly like a workspace switch and bounces a team
-  // member's own deep-linked/refreshed project back to Home).
-  const tabScopeWorkspaceIdRef = useRef<string>('none');
-  const tabScopeAccountIdRef = useRef<string>(UNSET_ACCOUNT_BUCKET);
-  const {
-    scopeKey: identityScopeKey,
-    nextWorkspaceBucket: nextTabScopeWorkspaceId,
-    nextAccountBucket: nextTabScopeAccountId,
-  } = deriveTabIdentityScope({
-    amrLoginStatus,
-    workspaceContext,
-    workspaceContextLoading,
-    previousWorkspaceBucket: tabScopeWorkspaceIdRef.current,
-    previousAccountBucket: tabScopeAccountIdRef.current,
-  });
-  tabScopeWorkspaceIdRef.current = nextTabScopeWorkspaceId;
-  tabScopeAccountIdRef.current = nextTabScopeAccountId;
-
   // v2 analytics requires every event to carry the configure-state
   // triplet (has_available_configure_cli / configure_type /
   // configure_availability). We push it into the PostHog global register
@@ -2077,13 +1045,11 @@ function AppInner() {
       agentId: config.agentId,
       agents: agents.map((a) => ({ id: a.id, available: a.available })),
       byokConfigured,
-      amrAuthorized: isAmrSessionAuthenticated(amrLoginStatus),
     });
     analytics.setConfigureGlobals(globals);
   }, [
     analytics.setConfigureGlobals,
     agentsLoading,
-    amrLoginStatus,
     config.mode,
     config.agentId,
     config.apiKey,
@@ -2144,132 +1110,6 @@ function AppInner() {
     });
   }, [activeProjectId, activeFileName]);
 
-  useEffect(() => {
-    if (!daemonLive) return;
-    let cancelled = false;
-    let timer: number | null = null;
-    const pollGeneration = amrPollGenerationRef.current + 1;
-    amrPollGenerationRef.current = pollGeneration;
-    const pollDelayMs = 1_000;
-    const maxPresetPolls = 10;
-    let presetPolls = 0;
-
-    const applyAmrModels = async () => {
-      const result = await fetchAmrModels();
-      if (
-        cancelled ||
-        amrPollGenerationRef.current !== pollGeneration ||
-        !result ||
-        !Array.isArray(result.models) ||
-        result.models.length === 0
-      ) {
-        return;
-      }
-      amrModelsRef.current = result;
-      setAgents((current) => mergeAmrModelsIntoAgents(current, result));
-      const shouldPollPreset =
-        result.source === 'preset' &&
-        !result.remoteError &&
-        presetPolls < maxPresetPolls;
-      if (shouldPollPreset) {
-        presetPolls += 1;
-        timer = window.setTimeout(() => {
-          void applyAmrModels();
-        }, pollDelayMs);
-      }
-    };
-
-    void applyAmrModels();
-    return () => {
-      cancelled = true;
-      if (timer !== null) window.clearTimeout(timer);
-    };
-  }, [amrPollRestartToken, daemonLive]);
-
-  // App-level AMR sign-in state. Feeds two analytics globals: the
-  // `amr` configure_type bucket (deriveConfigureGlobals below) and the
-  // `user_id` public param (the AMR account id is the only join key
-  // between this PostHog project and the AMR-side one). Child surfaces
-  // push status changes up via onAmrLoginStatusChange; the global
-  // AMR_LOGIN_STATUS_EVENT covers logins finishing in surfaces that
-  // unmounted before their poll settled.
-  useEffect(() => {
-    let cancelled = false;
-    const sync = async (
-      options: { refresh?: boolean } = {},
-      restartOnSignIn = false,
-    ) => {
-      const status = await fetchVelaLoginStatus(options);
-      if (!cancelled && status) {
-        applyAmrLoginStatus(status, {
-          forceModelRefresh: options.refresh === true,
-          restartOnSignIn,
-        });
-      }
-    };
-    void sync();
-    const onStatusEvent = (event: Event) => {
-      if (amrLoginStatusEventReason(event) === 'login-canceled') {
-        clearAmrAuthRetryContinuation();
-      }
-      void sync({}, true);
-    };
-    const onReturnToApp = () => {
-      if (document.visibilityState === 'hidden') return;
-      void sync({ refresh: true });
-    };
-    window.addEventListener(AMR_LOGIN_STATUS_EVENT, onStatusEvent);
-    window.addEventListener('focus', onReturnToApp);
-    document.addEventListener('visibilitychange', onReturnToApp);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(AMR_LOGIN_STATUS_EVENT, onStatusEvent);
-      window.removeEventListener('focus', onReturnToApp);
-      document.removeEventListener('visibilitychange', onReturnToApp);
-    };
-  }, [applyAmrLoginStatus, clearAmrAuthRetryContinuation, daemonLive]);
-
-  useEffect(() => {
-    analytics.setUserId(
-      isAmrSessionAuthenticated(amrLoginStatus) ? amrLoginStatus?.user?.id ?? null : null,
-    );
-  }, [analytics.setUserId, amrLoginStatus]);
-
-  const handleAmrLoginStatusChange = useCallback((status: VelaLoginStatus | null) => {
-    if (status) applyAmrLoginStatus(status, { restartOnSignIn: true });
-  }, [applyAmrLoginStatus]);
-
-  useEffect(() => {
-    const usesOpenDesignCloud =
-      config.mode === 'daemon'
-      && config.agentId === AMR_AGENT_ID;
-    const cloudIdentityRejected =
-      workspaceContextState.failure === 'reauth-required'
-      || (
-        usesOpenDesignCloud
-        && (
-          amrLoginStatus?.loggedIn === false
-          || amrLoginStatus?.sessionState === 'reauth_required'
-        )
-      );
-    // Keep this exact file route only when its public URL was witnessed under
-    // the authenticated workspace. Project reads still fail closed below;
-    // the signed-out surface exposes that URL and no mutation authority.
-    if (observedPublicShareLink && route.kind === 'project'
-      && route.projectId === observedPublicShareLink.projectId
-      && route.fileName === observedPublicShareLink.filePath) return;
-    if (!cloudIdentityRejected) return;
-    if (route.kind === 'home' && route.view === 'onboarding') return;
-    navigate({ kind: 'home', view: 'onboarding' }, { replace: true });
-  }, [
-    amrLoginStatus,
-    config.agentId,
-    observedPublicShareLink,
-    config.mode,
-    route,
-    workspaceContextState.failure,
-  ]);
-
   // Bootstrap — detect daemon, then fan out independent fetches so each
   // entry-view tab can render the moment its own data lands. Earlier this
   // was one Promise.all behind a global "Loading workspace…" placeholder,
@@ -2282,9 +1122,9 @@ function AppInner() {
   // rewrites the merged config back to localStorage + the daemon. Re-running it
   // on navigation replays both: a user is re-judged against a config read that
   // may lag their own completion, and gets bounced into the first-run flow they
-  // already finished. Anything route- or workspace-derived that boot needs must
-  // be read through a ref (see `workspaceProjectViewRef`), and anything that
-  // must react to those changes belongs in its own effect.
+  // already finished. Anything route-derived that boot needs must be read
+  // through a ref, and anything that must react to those changes belongs in
+  // its own effect.
   useEffect(() => {
     let cancelled = false;
     let effectAgentStreamAbort: AbortController | null = null;
@@ -2315,24 +1155,14 @@ function AppInner() {
         signal: effectAgentStreamAbort?.signal,
         onAgent: (agent) => {
           if (cancelled || !isCurrentAgentStreamRequest(agentRequestId)) return;
-          setAgents((current) =>
-            mergeAmrModelsIntoAgents(
-              upsertAgent(current, agent),
-              amrModelsRef.current,
-            ),
-          );
+          setAgents((current) => upsertAgent(current, agent));
         },
       })
         .then((list) => {
           if (cancelled || !isCurrentAgentStreamRequest(agentRequestId)) return;
           setAgentsReady(true);
           reportAgentDetectDiagnostics(analytics.track, list);
-          setAgents(
-            mergeAmrModelsIntoAgents(
-              orderAgentsByRegistry(list),
-              amrModelsRef.current,
-            ),
-          );
+          setAgents(orderAgentsByRegistry(list));
         })
         .catch((err) => {
           if (
@@ -2354,13 +1184,9 @@ function AppInner() {
       // its loader once both registries respond — neither tab would have
       // a complete picture if we cleared the flag on the first reply.
       //
-      // Only the TEMPLATE half is read here. Functional skills are
-      // workspace-scoped on the daemon and must carry the caller's identity
-      // headers, which do not exist until `/api/workspace/context` settles —
-      // so that read belongs to the workspace-keyed effect below, which owns
-      // the `functional` half of this gate. Reading it here as well would
-      // spend a second `/api/skills` request per launch, and the first one
-      // would be the headerless (fail-closed) answer.
+      // Only the TEMPLATE half is read here; the functional half is read once
+      // by the mount effect below, which owns the `functional` half of this
+      // gate, so launch spends exactly one `/api/skills` request.
       let templatesReady = true;
       void fetchDesignTemplates({ onReadResult: ready => { templatesReady = ready; } }).then((list) => {
         if (cancelled) return;
@@ -2369,49 +1195,19 @@ function AppInner() {
         markSkillRegistryReady('templates');
       });
 
-      const designSystemsContext = workspaceContextRef.current;
-      // A cached Team identity already has an SSE lifecycle owner below. Do
-      // not race an eager bootstrap snapshot against its first onActive; the
-      // 250ms fallback covers shells where the stream never opens.
-      if (designSystemsContext?.workspaceType !== 'team') {
-        const designSystemsWorkspaceIdentity = workspaceIdentityCacheKey(designSystemsContext);
-        const designSystemsAccountGeneration = currentWorkspaceAccountGeneration();
-        const designSystemsCatalogIdentity = JSON.stringify([
-          'workspace-account',
-          designSystemsAccountGeneration,
-          designSystemsWorkspaceIdentity,
-        ]);
-        const designSystemsRequestGeneration =
-          (designSystemsRequestGenerationRef.current.get(designSystemsCatalogIdentity) ?? 0) + 1;
-        designSystemsRequestGenerationRef.current.set(
-          designSystemsCatalogIdentity,
-          designSystemsRequestGeneration,
-        );
-        let ready = true;
-        void fetchDesignSystems(designSystemsContext, { onReadResult: success => { ready = success; } }).then((list) => {
-            if (
-              cancelled ||
-              workspaceContextStateRef.current.identityChangePending ||
-              designSystemsRequestGenerationRef.current.get(designSystemsCatalogIdentity)
-                !== designSystemsRequestGeneration ||
-              currentWorkspaceAccountGeneration() !== designSystemsAccountGeneration ||
-              workspaceIdentityCacheKey(workspaceContextRef.current)
-                !== designSystemsWorkspaceIdentity
-            ) return;
-            setWorkspaceDesignSystems({
-              identity: designSystemsCatalogIdentity,
-              items: list,
-              ready,
-            });
-            setDsLoading(false);
-          });
-      }
+      const designSystemsRequestGeneration = ++designSystemsRequestGenerationRef.current;
+      let designSystemsReady = true;
+      void fetchDesignSystems({ onReadResult: success => { designSystemsReady = success; } }).then((list) => {
+        if (
+          cancelled
+          || designSystemsRequestGenerationRef.current !== designSystemsRequestGeneration
+        ) return;
+        setDesignSystemsCatalog({ items: list, ready: designSystemsReady });
+        setDsLoading(false);
+      });
 
-      const request = beginProjectListRequest(workspaceProjectViewRef.current);
-      void listCurrentWorkspaceProjects({
-        throwOnError: true,
-        workspaceView: workspaceProjectViewRef.current,
-      }).then((list) => {
+      const request = beginProjectListRequest();
+      void listProjects({ throwOnError: true }).then((list) => {
         if (!cancelled) reconcileFetchedProjects(list, request);
       }).catch(() => {
         if (!cancelled) recordProjectListFailure(request);
@@ -2471,10 +1267,7 @@ function AppInner() {
           daemonMediaProvidersLoaded,
         );
         const next = mergeDaemonMediaProviders(
-          clearStaleAmrModelChoiceOnProfileChange(
-            baseConfig,
-            mergeDaemonConfig(baseConfig, daemonConfig),
-          ),
+          mergeDaemonConfig(baseConfig, daemonConfig),
           daemonMediaProvidersLoaded,
         );
         const hasLocalComposioKey = Boolean(next.composio?.apiKey?.trim());
@@ -2540,15 +1333,11 @@ function AppInner() {
       cancelled = true;
       effectAgentStreamAbort?.abort();
     };
-    // `workspaceProjectView` is intentionally absent: it is route-derived, and
-    // depending on it would turn this one-shot boot pass into a per-navigation
-    // one. It is read through `workspaceProjectViewRef` instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     beginAgentStreamRequest,
     beginProjectListRequest,
     isCurrentAgentStreamRequest,
-    listCurrentWorkspaceProjects,
     reconcileFetchedProjects,
     recordProjectListFailure,
   ]);
@@ -2558,19 +1347,8 @@ function AppInner() {
   // dirty by the mutation helpers and still revalidate when selected.
   useEffect(() => {
     if (projectsLoading) return;
-    writeProjectDisplaySnapshot({
-      accountGeneration: projectDisplayAccountGeneration,
-      context: workspaceContext,
-      view: effectiveWorkspaceProjectView,
-    }, projects);
-  }, [
-    currentProjectDisplayKey,
-    effectiveWorkspaceProjectView,
-    projectDisplayAccountGeneration,
-    projects,
-    projectsLoading,
-    workspaceContext,
-  ]);
+    writeProjectDisplaySnapshot(PROJECT_DISPLAY_SCOPE, projects);
+  }, [projects, projectsLoading]);
 
   // Auto-pick the first available agent once both the daemon-stored config
   // and the agents listing have landed. Splitting this out of bootstrap
@@ -2579,13 +1357,12 @@ function AppInner() {
   // user's previous choice, so we only fill an empty slot.
   //
   // First-run onboarding is the one time we must NOT do this: the onboarding
-  // flow is the sole authority for the initial agent pick (AMR is the
-  // recommended default there), and AMR (vela) detection is asynchronous. If
-  // this fallback fires during onboarding while AMR is still being detected it
-  // snaps the slot to the registry-first *detected* agent (Claude) and
-  // persists it to the daemon, which then races and clobbers the user's AMR
-  // selection on the next launch. Gate on onboardingCompleted so this only
-  // backfills an empty slot for returning users.
+  // flow is the sole authority for the initial agent pick, and agent detection
+  // is asynchronous. If this fallback fired during onboarding it would snap the
+  // slot to the registry-first *detected* agent and persist it to the daemon,
+  // clobbering the user's own pick on the next launch. Gate on
+  // onboardingCompleted so this only backfills an empty slot for returning
+  // users.
   useEffect(() => {
     if (!daemonConfigLoaded || agentsLoading) return;
     if (config.onboardingCompleted !== true) return;
@@ -2653,226 +1430,50 @@ function AppInner() {
   }, []);
 
   const refreshProjectsStrict = useCallback(async () => {
-    const request = beginProjectListRequest(workspaceProjectView);
+    const request = beginProjectListRequest();
     try {
-      const list = await listCurrentWorkspaceProjects({
-        throwOnError: true,
-        workspaceView: workspaceProjectView,
-      });
+      const list = await listProjects({ throwOnError: true });
       reconcileFetchedProjects(list, request);
     } catch (error) {
       recordProjectListFailure(request);
       throw error;
     }
-  }, [beginProjectListRequest, listCurrentWorkspaceProjects, reconcileFetchedProjects, recordProjectListFailure, workspaceProjectView]);
+  }, [beginProjectListRequest, reconcileFetchedProjects, recordProjectListFailure]);
 
   const refreshProjects = useCallback(
     () => refreshProjectsStrict().catch(() => {}),
     [refreshProjectsStrict],
   );
 
-  const refreshProjectsAfterTeamCatalogChange = useCallback(() => {
-    const context = workspaceContextRef.current;
-    if (!context) return;
-    invalidateWorkspaceProjectLists(
-      context,
-      currentWorkspaceAccountGeneration(),
-    );
-    // Preserve the exact principal's last-good rows while the authoritative
-    // list reconciles. The request/reconcile pair independently captures and
-    // rechecks account + Workspace identity, so a late response cannot cross a
-    // switch boundary.
-    void refreshProjectsStrict().catch((error: unknown) => {
-      console.error('[projects] failed to refresh after team catalog change', error);
-    });
-  }, [refreshProjectsStrict]);
-  refreshProjectCatalogRef.current = refreshProjectsAfterTeamCatalogChange;
-
-  useEffect(() => {
-    // Bootstrap already reads this exact scope on mount. Only re-list after
-    // the resolved workspace identity or a workspace-specific route changes;
-    // local navigation does not alter the unscoped project catalogue.
-    if (!projectScopeRefreshMountedRef.current) {
-      projectScopeRefreshMountedRef.current = true;
-      return;
-    }
-    let cancelled = false;
-    const request = beginProjectListRequest(effectiveWorkspaceProjectView);
-    const snapshot = readProjectDisplaySnapshot(request.displayKey);
-    if (snapshot) {
-      setProjects(snapshot.projects);
-      setProjectsLoading(false);
-    } else {
-      setProjectsLoading(true);
-    }
-    (async () => {
-      for (let attempt = 0; attempt < 2; attempt++) {
-        try {
-          const list = await listCurrentWorkspaceProjects({
-            throwOnError: true,
-            workspaceView: effectiveWorkspaceProjectView,
-          });
-          if (!cancelled) reconcileFetchedProjects(list, request);
-          return;
-        } catch (err) {
-          if (cancelled) return;
-          if (attempt === 0) {
-            // Switching into a team workspace can race the daemon's remote
-            // team-project-catalog session warming up for it (recvqaeREM6pdv:
-            // a transient 502 here used to be silently downgraded to an empty
-            // list, which HomeView cannot tell apart from a genuinely empty
-            // workspace and renders as the first-run empty state). Retry once
-            // before giving up instead of reconciling a failure as "no
-            // projects".
-            await new Promise((resolve) => setTimeout(resolve, 1200));
-            continue;
-          }
-          recordProjectListFailure(request);
-          console.error('[projects] failed to refresh after workspace switch', err);
-        }
-      }
-    })().finally(() => {
-      if (!cancelled) setProjectsLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    workspaceContext?.workspaceId,
-    beginProjectListRequest,
-    currentProjectDisplayKey,
-    effectiveWorkspaceProjectView,
-    listCurrentWorkspaceProjects,
-    reconcileFetchedProjects,
-    recordProjectListFailure,
-  ]);
-
-  const refreshDesignSystems = useCallback(async (options?: {
-    forceTeamMaterialization?: boolean;
-    materializedTeamIds?: readonly string[];
-  }) => {
-    // Carry the captured Workspace/member identity on the request. The daemon
-    // verifies that exact membership instead of consulting mutable ambient
-    // Workspace state, and the same identity key prevents an A response from
-    // committing after the UI has moved to B.
-    if (workspaceContextStateRef.current.identityChangePending) return;
-    const issuedContext = workspaceContextRef.current;
-    const issuedIdentity = workspaceIdentityCacheKey(issuedContext);
-    const issuedAccountGeneration = currentWorkspaceAccountGeneration();
-    const issuedCatalogIdentity = JSON.stringify([
-      'workspace-account',
-      issuedAccountGeneration,
-      issuedIdentity,
-    ]);
-    const requestGeneration =
-      (designSystemsRequestGenerationRef.current.get(issuedCatalogIdentity) ?? 0) + 1;
-    designSystemsRequestGenerationRef.current.set(issuedCatalogIdentity, requestGeneration);
+  const refreshDesignSystems = useCallback(async () => {
+    // A newer read supersedes an older one: only the latest response commits,
+    // so a slow earlier catalog cannot roll back a fresher list.
+    const requestGeneration = ++designSystemsRequestGenerationRef.current;
     let ready = true;
-    const list = await fetchDesignSystems(issuedContext, { ...options, onReadResult: success => { ready = success; } });
-    if (
-      workspaceContextStateRef.current.identityChangePending
-      || designSystemsRequestGenerationRef.current.get(issuedCatalogIdentity)
-        !== requestGeneration
-      || currentWorkspaceAccountGeneration() !== issuedAccountGeneration
-      || workspaceIdentityCacheKey(workspaceContextRef.current) !== issuedIdentity
-    ) return;
-    setWorkspaceDesignSystems({ identity: issuedCatalogIdentity, items: list, ready });
-    // Bootstrap and this workspace-scoped refresh can overlap on launch.
-    // Either response is a complete catalog for the active daemon identity,
-    // so do not leave a successful refresh hidden behind bootstrap's loader
-    // when that duplicate request is cancelled or stalls.
+    const list = await fetchDesignSystems({ onReadResult: success => { ready = success; } });
+    if (designSystemsRequestGenerationRef.current !== requestGeneration) return;
+    setDesignSystemsCatalog({ items: list, ready });
+    // Bootstrap and this refresh can overlap on launch. Either response is a
+    // complete catalog, so do not leave a successful refresh hidden behind
+    // bootstrap's loader when that duplicate request is cancelled or stalls.
     setDsLoading(false);
   }, []);
 
-  // The design-system catalog is verified against the exact Workspace/member
-  // identity. Re-read whenever either half changes; a role replacement can
-  // reuse the Workspace id while changing the authoritative membership.
-  useEffect(() => {
-    if (workspaceContextState.identityChangePending) return;
-    if (workspaceContext?.workspaceType === 'team') return;
-    void refreshDesignSystems();
-  }, [
-    currentWorkspaceCatalogIdentity,
-    refreshDesignSystems,
-    workspaceContext?.workspaceType,
-    workspaceContextState.identityChangePending,
-  ]);
-
   const refreshSkills = useCallback(async () => {
-    // Always scoped. `GET /api/skills` is fail-closed on a missing
-    // `x-od-workspace-id` (`skills.ts`: `if (!scopeId) return !ownerId;`), so a
-    // headerless read is not the "unfiltered" list — it is the list with every
-    // workspace-claimed skill removed, including the ones claimed by the
-    // workspace the user is actually in.
-    if (workspaceContextStateRef.current.identityChangePending) return;
-    const issuedAccountGeneration = currentWorkspaceAccountGeneration();
-    const read = beginWorkspaceScopedRead(workspaceContextRef.current);
-    const issuedCatalogIdentity = JSON.stringify([
-      'workspace-account',
-      issuedAccountGeneration,
-      workspaceIdentityCacheKey(read.context),
-    ]);
-    const requestGeneration =
-      (skillsRequestGenerationRef.current.get(issuedCatalogIdentity) ?? 0) + 1;
-    skillsRequestGenerationRef.current.set(issuedCatalogIdentity, requestGeneration);
+    const requestGeneration = ++skillsRequestGenerationRef.current;
     let ready = true;
-    const list = await fetchSkills(read.context, { onReadResult: success => { ready = success; } });
-    // A read for the workspace the user has since LEFT must not restore that
-    // workspace's catalog over the current one — see `beginWorkspaceScopedRead`.
-    // Skipping the gate too is deliberate: this response is not an answer about
-    // the current identity, and the newer read that replaced it will mark it.
-    if (
-      workspaceContextStateRef.current.identityChangePending
-      || skillsRequestGenerationRef.current.get(issuedCatalogIdentity) !== requestGeneration
-      || currentWorkspaceAccountGeneration() !== issuedAccountGeneration
-      || !read.isStillCurrent(workspaceContextRef.current)
-    ) return;
-    setWorkspaceSkills({
-      identity: issuedCatalogIdentity,
-      items: list,
-      ready,
-    });
+    const list = await fetchSkills({ onReadResult: success => { ready = success; } });
+    if (skillsRequestGenerationRef.current !== requestGeneration) return;
+    setSkillsCatalog({ items: list, ready });
     markSkillRegistryReady('functional');
   }, [markSkillRegistryReady]);
 
-  // The skills catalog is workspace-scoped on the daemon exactly like the
-  // design-system catalog above, and needs the same workspace-keyed refresh for
-  // the same reason: the switcher lives ON the home view, so `route.kind` stays
-  // 'home' and no route change fires.
-  //
-  // It additionally waits for `workspaceContextLoading` to settle, because
-  // unlike design systems (whose scope the daemon resolves from its own vela
-  // session) this read carries the identity in REQUEST HEADERS — there is
-  // nothing correct to send until the context has resolved. Gating on it also
-  // keeps launch at exactly one `/api/skills` request: the boot pass no longer
-  // reads skills, this effect performs the first read, and a switch performs
-  // one more.
-  // Keyed on the SAME digest the commit guard compares, not just `workspaceId`.
-  // The guard discards a response whenever `workspaceIdentityCacheKey` moves —
-  // which includes member id, role, status, lifecycle and the two permission
-  // bits. A trigger that only watched `workspaceId` would therefore discard a
-  // response without starting its successor: two accounts active in the same
-  // shared team workspace differ only by membership, so A's pending read would
-  // be dropped for B while the workspace id, being unchanged, suppressed B's
-  // replacement read — leaving the functional registry loading forever on
-  // startup, or holding A's list later. "Discarded and never replaced" is a
-  // worse outcome than the staleness it replaced, so every transition that
-  // invalidates a response must also start its successor.
-  const skillsReadIdentity = currentWorkspaceCatalogIdentity;
-  const skillsReadIdentityRef = useRef<string | null>(null);
+  // The functional half of the skills registry: boot reads only design
+  // templates (see the bootstrap effect), so this one-shot read is launch's
+  // single `/api/skills` request.
   useEffect(() => {
-    if (workspaceContextLoading || workspaceContextState.identityChangePending) return;
-    if (skillsReadIdentityRef.current === skillsReadIdentity) return;
-    skillsReadIdentityRef.current = skillsReadIdentity;
-    if (workspaceContext?.workspaceType === 'team') return;
     void refreshSkills();
-  }, [
-    workspaceContextLoading,
-    workspaceContextState.identityChangePending,
-    skillsReadIdentity,
-    refreshSkills,
-    workspaceContext?.workspaceType,
-  ]);
+  }, [refreshSkills]);
 
   const refreshTemplates = useCallback(async () => {
     const list = await listTemplates();
@@ -3052,30 +1653,6 @@ function AppInner() {
     [],
   );
 
-  // OPEND-3205: this action changes the runtime in the current project. Do not
-  // optimistically acknowledge a daemon write or arm a Settings-return retry.
-  const handleSwitchToCloud = useCallback(async () => {
-    const previous = latestPersistedConfigRef.current;
-    const issuedAccount = currentWorkspaceAccountGeneration();
-    const issuedIdentity = workspaceIdentityCacheKey(workspaceContextRef.current);
-    const issuedRoute = JSON.stringify(routeRef.current);
-    const next: AppConfig = { ...previous, mode: 'daemon', agentId: 'amr' };
-    await syncConfigToDaemon(next, { throwOnError: true });
-    if (
-      latestPersistedConfigRef.current !== previous
-      || currentWorkspaceAccountGeneration() !== issuedAccount
-      || workspaceIdentityCacheKey(workspaceContextRef.current) !== issuedIdentity
-      || JSON.stringify(routeRef.current) !== issuedRoute
-    ) {
-      // The PUT already completed; this only refuses to overwrite a newer
-      // local selection or acknowledge the action in another route/identity.
-      throw new Error('Cloud configuration acknowledgement no longer owns the active selection');
-    }
-    latestPersistedConfigRef.current = next;
-    saveConfig(next);
-    setConfig(next);
-  }, []);
-
   const handleAgentModelChange = useCallback(
     (agentId: string, choice: { model?: string; reasoning?: string; serviceTier?: string }) => {
       const current = latestPersistedConfigRef.current;
@@ -3147,12 +1724,11 @@ function AppInner() {
     async (options?: { throwOnError?: boolean; agentCliEnv?: AppConfig['agentCliEnv'] }) => {
       if (options && Object.prototype.hasOwnProperty.call(options, 'agentCliEnv')) {
         const current = latestPersistedConfigRef.current;
-        const nextConfig = clearStaleAmrModelChoiceOnProfileChange(current, {
+        const nextConfig: AppConfig = {
           ...current,
           agentCliEnv: options.agentCliEnv ?? {},
-        });
+        };
         latestPersistedConfigRef.current = nextConfig;
-        amrModelsRef.current = null;
         saveConfig(nextConfig);
         setConfig(nextConfig);
         await syncConfigToDaemon(nextConfig);
@@ -3164,19 +1740,14 @@ function AppInner() {
           signal: agentStreamAbortRef.current?.signal,
           onAgent: (agent) => {
             if (!isCurrentAgentStreamRequest(agentRequestId)) return;
-            setAgents((current) =>
-              mergeAmrModelsIntoAgents(
-                upsertAgent(current, agent),
-                amrModelsRef.current,
-              ),
-            );
+            setAgents((current) => upsertAgent(current, agent));
           },
         });
         const ordered = orderAgentsByRegistry(next);
         reportAgentDetectDiagnostics(analytics.track, ordered);
         if (isCurrentAgentStreamRequest(agentRequestId)) {
           setAgentsReady(true);
-          setAgents(mergeAmrModelsIntoAgents(ordered, amrModelsRef.current));
+          setAgents(ordered);
           setAgentsLoading(false);
         }
         return ordered;
@@ -3218,28 +1789,16 @@ function AppInner() {
     const handleAppConfigChanged = () => {
       void fetchDaemonConfig().then((daemonConfig) => {
         const previous = latestPersistedConfigRef.current;
-        const next = clearStaleAmrModelChoiceOnProfileChange(
-          previous,
-          mergeDaemonConfig(previous, daemonConfig),
-        );
-        const amrProfileChanged = amrProfileForConfig(previous) !== amrProfileForConfig(next);
+        const next = mergeDaemonConfig(previous, daemonConfig);
         latestPersistedConfigRef.current = next;
         saveConfig(next);
         setConfig(next);
-        // The native Develop menu changes the complete AMR account boundary,
-        // not only the agent model catalog. Retire the old workspace selection,
-        // context, directory and every account-scoped cache before refreshing
-        // the new profile; otherwise prod workspace links remain mounted while
-        // status/models/billing already point at feature-test.
-        if (amrProfileChanged) notifyWorkspaceContextRefresh();
-        amrModelsRef.current = null;
-        restartAmrPolling();
         void refreshAgents();
       });
     };
     window.addEventListener(APP_CONFIG_CHANGED_EVENT, handleAppConfigChanged);
     return () => window.removeEventListener(APP_CONFIG_CHANGED_EVENT, handleAppConfigChanged);
-  }, [refreshAgents, restartAmrPolling]);
+  }, [refreshAgents]);
 
   /**
    * Undo an optimistic hand-off that will not become a project: drop the
@@ -3277,10 +1836,9 @@ function AppInner() {
    * settles; the pending surface is deliberately read-free so an unpersisted
    * project cannot fan out unauthorized conversation/file/presence requests.
    *
-   * Home calls this on the click tick and only then runs its admission check
-   * (the AMR balance gate), so the user never waits on that round trip in a
-   * frozen composer (OPEND-2614). `handleCreateProject` calls it itself for
-   * auto-send creates that did not come through Home's composer.
+   * Home calls this on the click tick so the user never waits on the create
+   * round trip in a frozen composer (OPEND-2614). `handleCreateProject` calls
+   * it itself for auto-send creates that did not come through Home's composer.
    */
   const beginOptimisticProjectCreation = useCallback(
     (input: AppCreateProjectInput): OptimisticProjectCreationHandoff => {
@@ -3291,14 +1849,6 @@ function AppInner() {
       const stagedFiles = Array.isArray(input.pendingFiles)
         ? input.pendingFiles.filter((file): file is File => file instanceof File)
         : [];
-      // PRODUCT INVARIANT: ordinary project creation is local. Reuse a
-      // current in-memory Workspace snapshot for `personal` + `local_only`
-      // attribution when available, but never start identity discovery or
-      // block creation on Workspace availability.
-      const createWorkspaceState = workspaceContextStateRef.current;
-      const createWorkspaceContext = createWorkspaceState.failure === 'unsupported'
-        ? null
-        : workspaceResourceReadContext(createWorkspaceState);
       const optimisticProjectId = randomUUID();
       const optimisticConversationId = randomUUID();
       const now = Date.now();
@@ -3313,9 +1863,6 @@ function AppInner() {
         ...(metadata ? { metadata } : {}),
         ...(input.appliedPluginSnapshotId
           ? { appliedPluginSnapshotId: input.appliedPluginSnapshotId }
-          : {}),
-        ...(createWorkspaceContext?.workspaceId
-          ? { workspaceId: createWorkspaceContext.workspaceId }
           : {}),
       };
       rememberLocalProject(optimisticProjectId);
@@ -3372,31 +1919,12 @@ function AppInner() {
 
       const metadata = mergeLinkedDirsIntoMetadata(input.metadata, input.linkedDirs);
       const fidelity = fidelityToTracking(metadata?.fidelity ?? null);
-      let createWorkspaceContext: WorkspaceCollabContext | null = null;
       let optimisticProjectId: string | null = input.optimisticProjectId ?? null;
       let result;
       const stagedFiles = Array.isArray(input.pendingFiles)
         ? input.pendingFiles.filter((file): file is File => file instanceof File)
         : [];
       try {
-        // PRODUCT INVARIANT: ordinary project creation is local. Reuse a
-        // current in-memory Workspace snapshot for `personal` + `local_only`
-        // attribution when available, but never start identity discovery or
-        // block creation on Workspace availability. Remote share/sync/move
-        // operations retain their authoritative gates.
-        const createWorkspaceState = workspaceContextStateRef.current;
-        createWorkspaceContext = createWorkspaceState.failure === 'unsupported'
-          ? null
-          : workspaceResourceReadContext(createWorkspaceState);
-        if (
-          input.amrGatePrecheckWitness &&
-          !amrBalanceGateScopesMatch(
-            input.amrGatePrecheckWitness,
-            amrBalanceGateScopeForWorkspaceContext(createWorkspaceContext),
-          )
-        ) {
-          throw new Error('AMR_WORKSPACE_GATE_STALE');
-        }
         // An auto-send create that did not come through Home's composer opens
         // its frame here; Home's own sends arrive with the frame already up.
         if (input.autoSendFirstMessage && !optimisticProjectId) {
@@ -3432,7 +1960,6 @@ function AppInner() {
           ...(input.exampleReference
             ? { exampleReference: input.exampleReference }
             : {}),
-          workspaceContext: createWorkspaceContext,
         });
       } catch (err) {
         const errorCode =
@@ -3519,7 +2046,6 @@ function AppInner() {
               result.project.id,
               userWorkingDir,
               input.userWorkingDirToken,
-              createWorkspaceContext,
             );
           } catch (err) {
             // The desktop working-dir token is short-lived (~60s TTL); if the
@@ -3574,12 +2100,7 @@ function AppInner() {
             STAGED_UPLOAD_CONCURRENCY,
             async (file, index) => {
               try {
-                return await uploadProjectFiles(
-                  result.project.id,
-                  [file],
-                  undefined,
-                  createWorkspaceContext,
-                );
+                return await uploadProjectFiles(result.project.id, [file]);
               } finally {
                 // This file's card leaves the tray the moment it answers, so
                 // the batch drains in front of the user instead of vanishing
@@ -3651,19 +2172,6 @@ function AppInner() {
                 `od:auto-send-prompt:${result.project.id}`,
               );
             }
-            if (input.amrGatePrecheckWitness) {
-              window.sessionStorage.setItem(
-                `od:auto-send-amr-gate-witness:${result.project.id}`,
-                JSON.stringify(input.amrGatePrecheckWitness),
-              );
-            } else {
-              window.sessionStorage.removeItem(
-                `od:auto-send-amr-gate-witness:${result.project.id}`,
-              );
-            }
-            window.sessionStorage.removeItem(
-              `od:auto-send-amr-gate-ok:${result.project.id}`,
-            );
             if (firstMessageAttachments.length > 0) {
               window.sessionStorage.setItem(
                 `od:auto-send-attachments:${result.project.id}`,
@@ -3786,41 +2294,12 @@ function AppInner() {
     [handleCreateProject, t],
   );
 
-  const resolveSourceProjectWorkspaceContext = useCallback(async (
-    sourceProjectId: string,
-  ): Promise<WorkspaceCollabContext | null> => {
-    const routeProject = routeProjectSnapshotRef.current?.project;
-    const sourceProject =
-      routeProject?.id === sourceProjectId
-        ? routeProject
-        : projects.find((project) => project.id === sourceProjectId);
-    const persistedWorkspaceId = sourceProject?.workspaceId?.trim() ?? '';
-    if (!persistedWorkspaceId) return null;
-
-    const routeContext = projectRouteWorkspaceContextRef.current;
-    if (routeContext?.workspaceId === persistedWorkspaceId) return routeContext;
-    const ambientContext = workspaceContextRef.current;
-    if (ambientContext?.workspaceId === persistedWorkspaceId) return ambientContext;
-
-    const resolved = await resolveBoundProjectWorkspaceContext(persistedWorkspaceId);
-    if (!resolved) {
-      throw new Error('source project Workspace authority is unavailable');
-    }
-    return resolved;
-  }, [projects]);
-
   const handleCreateDesignSystemFromProject = useCallback(
     async (
       sourceProjectId: string,
       input: { name?: string; pendingPrompt?: string },
     ) => {
-      const sourceWorkspaceContext =
-        await resolveSourceProjectWorkspaceContext(sourceProjectId);
-      const result = await createDesignSystemProjectFromProject(
-        sourceProjectId,
-        input,
-        sourceWorkspaceContext,
-      );
+      const result = await createDesignSystemProjectFromProject(sourceProjectId, input);
       try {
         window.sessionStorage.setItem(`od:auto-send-first:${result.project.id}`, '1');
         const pendingPrompt = input.pendingPrompt ?? result.project.pendingPrompt;
@@ -3847,14 +2326,12 @@ function AppInner() {
         fileName: null,
       });
     },
-    [refreshDesignSystems, rememberLocalProject, resolveSourceProjectWorkspaceContext],
+    [refreshDesignSystems, rememberLocalProject],
   );
 
   const handleDuplicateProject = useCallback(
     async (sourceProjectId: string, input: { name?: string } = {}) => {
-      const sourceWorkspaceContext =
-        await resolveSourceProjectWorkspaceContext(sourceProjectId);
-      const result = await duplicateProject(sourceProjectId, input, sourceWorkspaceContext);
+      const result = await duplicateProject(sourceProjectId, input);
       rememberLocalProject(result.project.id);
       setProjects((curr) => [
         result.project,
@@ -3867,7 +2344,7 @@ function AppInner() {
         fileName: null,
       });
     },
-    [rememberLocalProject, resolveSourceProjectWorkspaceContext],
+    [rememberLocalProject],
   );
 
   const handleCreatePluginShareProject = useCallback(
@@ -3876,19 +2353,7 @@ function AppInner() {
       action: PluginShareAction,
       locale?: string,
     ): Promise<PluginShareProjectOutcome> => {
-      // Best-effort, NOT `resolvedWorkspaceContextForWrite`: that helper throws
-      // while the identity read is in flight, and refusing this create would be
-      // a new block on a path that works today. Sending the context whenever it
-      // is known is a strict improvement — this call used to send none, ever —
-      // and the daemon binds a headerless create to its own signed-in workspace
-      // (`createdProjectWorkspaceHome`), so the loading window no longer
-      // produces an orphan either way.
-      const outcome = await createPluginShareProject(
-        pluginId,
-        action,
-        locale,
-        workspaceContextStateRef.current.context,
-      );
+      const outcome = await createPluginShareProject(pluginId, action, locale);
       if (!outcome.ok) return outcome;
       try {
         window.sessionStorage.setItem(
@@ -3930,10 +2395,7 @@ function AppInner() {
     file: File,
   ): Promise<ImportClaudeDesignOutcome> => {
     try {
-      const result = await importClaudeDesignZip(
-        file,
-        resolvedWorkspaceContextForWrite(workspaceContextStateRef.current),
-      );
+      const result = await importClaudeDesignZip(file);
       rememberLocalProject(result.project.id);
       setProjects((curr) => [
         result.project,
@@ -3954,10 +2416,7 @@ function AppInner() {
   }, [rememberLocalProject]);
 
   const handleImportFolder = useCallback(async (baseDir: string) => {
-    const result = await importFolderProject(
-      { baseDir },
-      resolvedWorkspaceContextForWrite(workspaceContextStateRef.current),
-    );
+    const result = await importFolderProject({ baseDir });
     rememberLocalProject(result.project.id);
     setProjects((curr) => [result.project, ...curr.filter((p) => p.id !== result.project.id)]);
     navigate({
@@ -3973,8 +2432,7 @@ function AppInner() {
   // through the normal daemon API.
   const handleImportFolderResponse = useCallback(async (result: OpenDesignHostProjectImportSuccess) => {
     rememberLocalProject(result.projectId);
-    const importedProjectContext = workspaceContextRef.current;
-    const project = await getProject(result.projectId, importedProjectContext);
+    const project = await getProject(result.projectId);
     if (project != null) {
       setProjects((curr) => [project, ...curr.filter((p) => p.id !== project.id)]);
     } else {
@@ -3995,8 +2453,8 @@ function AppInner() {
         updatedAt: Date.now(),
       };
       setProjects((curr) => [stub, ...curr.filter((p) => p.id !== stub.id)]);
-      const request = beginProjectListRequest(workspaceProjectView);
-      const list = await listCurrentWorkspaceProjects({ workspaceView: workspaceProjectView });
+      const request = beginProjectListRequest();
+      const list = await listProjects();
       reconcileFetchedProjects(list, request);
     }
     navigate({
@@ -4004,337 +2462,66 @@ function AppInner() {
       projectId: result.projectId,
       fileName: null,
     });
-  }, [beginProjectListRequest, listCurrentWorkspaceProjects, rememberLocalProject, reconcileFetchedProjects, workspaceProjectView]);
+  }, [beginProjectListRequest, rememberLocalProject, reconcileFetchedProjects]);
 
-  const rememberAuthoritativeProjectName = useCallback((
-    key: string,
-    name: string | null,
-    isCurrent: () => boolean = () => true,
-  ) => {
-    setAuthoritativeProjectNames((current) => {
-      if (!isCurrent()) return current;
-      if (name) {
-        if (current[key] === name) return current;
-        return { ...current, [key]: name };
-      }
-      if (!(key in current)) return current;
-      const next = { ...current };
-      delete next[key];
-      return next;
-    });
-  }, []);
-
-  const resolveAuthoritativeProjectName = useCallback(async (
-    projectId: string,
-    expectedAuthorizationKey: string,
-  ): Promise<ProjectNameAuthorityResolution> => {
-    const context = projectRouteWorkspaceContextRef.current;
-    const key = projectViewAuthorizationLifetimeKey(projectId, context);
-    if (key !== expectedAuthorizationKey) return { kind: 'stale' };
-    const authorizationGeneration = projectAuthorizationGenerationRef.current;
-    const requestGeneration =
-      (projectNameAuthorityRequestGenerationRef.current.get(key) ?? 0) + 1;
-    projectNameAuthorityRequestGenerationRef.current.set(key, requestGeneration);
-    const authorityRequestIsCurrent = () =>
-      projectAuthorizationGenerationRef.current === authorizationGeneration
-      && projectNameAuthorityRequestGenerationRef.current.get(key) === requestGeneration
-      && projectViewAuthorizationLifetimeKey(
-        projectId,
-        projectRouteWorkspaceContextRef.current,
-      ) === key;
-    const lookup = await fetchTeamProjectCatalogEntry(projectId, context, false);
-    if (!authorityRequestIsCurrent()) {
-      // Workspace/member changed while the catalog request was in flight.
-      // A newer same-key request also supersedes this response, so an older
-      // catalog snapshot cannot roll back a rename that resolved first.
-      return { kind: 'stale' };
-    }
-    if (!lookup.ok) {
-      // A transport failure is not evidence that ownership/title authority
-      // changed. Keep the last catalog title until a successful read says so.
-      return {
-        kind: 'resolved',
-        name: authoritativeProjectNamesRef.current[key] ?? null,
-      };
-    }
-    const catalogProject = lookup.project;
-    const catalogName = catalogProject?.name?.trim() || null;
-    const belongsToAnotherMember = Boolean(
-      catalogProject
-      && catalogProject.ownerMemberId !== context?.workspaceMemberId,
-    );
-    const authoritativeName = belongsToAnotherMember ? catalogName : null;
-    rememberAuthoritativeProjectName(key, authoritativeName, authorityRequestIsCurrent);
-    if (authoritativeName) {
-      // Merge title only into the already-authorized local row; never construct
-      // a catalog-shaped Project because catalog rows do not carry workspace
-      // binding or the full project metadata.
-      setProjects((current) => {
-        if (!authorityRequestIsCurrent()) return current;
-        return current.map((project) =>
-          project.id === projectId
-            && project.workspaceId
-            && (!context?.workspaceId || project.workspaceId === context.workspaceId)
-            ? { ...project, name: authoritativeName }
-            : project);
-      });
-    }
-    return { kind: 'resolved', name: authoritativeName };
-  }, [rememberAuthoritativeProjectName]);
-
+  /**
+   * Open a project by id. A row already in the local list navigates at once;
+   * otherwise the project is read once from the daemon and, as a last resort,
+   * the list is re-read in case it was created out of band. A project the
+   * daemon does not know is reported as missing rather than silently bounced.
+   */
   const openProjectForNavigation = useCallback(async (
     id: string,
     fileName?: string,
-    projectTitleHint?: ProjectTitleHint,
   ): Promise<boolean> => {
     const routeFileName = fileName ?? null;
-    const hintedProjectName = projectTitleHint?.name.trim() || null;
-    const requiresBoundCatalogProject = projectTitleHint?.authoritative === true;
-    const openingAccountGeneration = currentWorkspaceAccountGeneration();
-    let openingContext = workspaceContextRef.current;
-    const knownUnboundLocalProject = !requiresBoundCatalogProject
-      && projectsRef.current.some((project) =>
-        project.id === id && !project.workspaceId?.trim()
-      );
-    let pendingContextWitness: Awaited<
-      ReturnType<typeof resolveCurrentWorkspaceContextReadWitness>
-    > | null = null;
-    if (
-      !knownUnboundLocalProject
-      && (
-        !openingContext
-        || workspaceContextStateRef.current.identityChangePending === true
-      )
-    ) {
-      try {
-        pendingContextWitness = await resolveCurrentWorkspaceContextReadWitness();
-      } catch {
-        pendingContextWitness = null;
-      }
-      if (currentWorkspaceAccountGeneration() !== openingAccountGeneration) return false;
-      if (pendingContextWitness) {
-        if (!pendingContextWitness.isStillCurrent()) return false;
-        openingContext = pendingContextWitness.context;
-      } else {
-        // The richer hook may have settled while the directory read failed or
-        // was invalidated. Reuse it only when no identity change remains in
-        // flight; otherwise a cached pre-switch context is not authority.
-        const liveState = workspaceContextStateRef.current;
-        openingContext = liveState.identityChangePending ? null : liveState.context;
-      }
-    }
-    const openingAuthorizationGeneration = projectAuthorizationGenerationRef.current;
-    const openingScopeKey = projectListScopeKey(openingContext);
-    const expectedWorkspaceId = openingContext?.workspaceId ?? null;
-    const hintMatchesOpeningScope =
-      !projectTitleHint
-      || Boolean(
-        expectedWorkspaceId
-        && openingContext?.workspaceMemberId
-        && projectTitleHint.workspaceId === expectedWorkspaceId
-        && projectTitleHint.workspaceMemberId === openingContext.workspaceMemberId,
-      );
-    if (requiresBoundCatalogProject && !hintMatchesOpeningScope) return false;
-    // A stale non-authoritative card may still open the current local row, but
-    // its old-workspace title must never overwrite that row. Authoritative
-    // catalog cards fail closed above; own/local cards simply drop the hint.
-    const catalogName = hintMatchesOpeningScope ? hintedProjectName : null;
-    const titleAuthorityKey = projectViewAuthorizationLifetimeKey(
-      id,
-      openingContext,
-    );
-    const openingScopeIsCurrent = () => {
-      if (currentWorkspaceAccountGeneration() !== openingAccountGeneration) return false;
-      if (!pendingContextWitness) {
-        return projectAuthorizationGenerationRef.current === openingAuthorizationGeneration
-          && projectListScopeKey(workspaceContextRef.current) === openingScopeKey;
-      }
-      if (!pendingContextWitness.isStillCurrent()) return false;
-      const liveState = workspaceContextStateRef.current;
-      const liveContext = liveState.context ?? liveState.resourceReadIdentity?.context ?? null;
-      if (!openingContext) {
-        return liveContext === null && liveState.identityChangePending !== true;
-      }
-      return liveContext
-        ? workspaceIdentityCacheKey(liveContext) === workspaceIdentityCacheKey(openingContext)
-        : liveState.loading === true || liveState.identityChangePending === true;
-    };
-    const canUseLocalProject = (project: Project) => {
-      if (project.workspaceId) return project.workspaceId === expectedWorkspaceId;
-      return !requiresBoundCatalogProject;
-    };
-    const navigateToOpenedProject = (project: Project) => {
-      const projectWorkspaceId = project.workspaceId?.trim() ?? '';
-      projectOpenWorkspaceWitnessRef.current =
-        projectWorkspaceId
-        && openingContext?.workspaceId === projectWorkspaceId
-        && openingContext.workspaceMemberId.trim().length > 0
-        && openingContext.memberStatus === 'active'
-        && openingContext.lifecycleState !== 'deleted'
-          ? {
-              projectId: project.id,
-              projectWorkspaceId,
-              context: openingContext,
-              accountGeneration: openingAccountGeneration,
-            }
-          : null;
+    const navigateToOpenedProject = () => {
       navigate({ kind: 'project', projectId: id, fileName: routeFileName });
       return true;
     };
-    const rememberHintAuthority = () => {
-      if (projectTitleHint?.authoritative && catalogName && openingScopeIsCurrent()) {
-        // A catalog card is an authority response too. Invalidate any older
-        // deep-link/metadata lookup that started before this newer UI snapshot
-        // was accepted, otherwise its late response could roll the title back.
-        const nextRequestGeneration =
-          (projectNameAuthorityRequestGenerationRef.current.get(titleAuthorityKey) ?? 0) + 1;
-        projectNameAuthorityRequestGenerationRef.current.set(
-          titleAuthorityKey,
-          nextRequestGeneration,
-        );
-        rememberAuthoritativeProjectName(
-          titleAuthorityKey,
-          catalogName,
-          openingScopeIsCurrent,
-        );
-      }
-    };
-    // EntryShell's shared-project grid has already reconciled local SQLite with
-    // the workspace catalog. Preserve its authoritative display name during the
-    // route transition instead of reopening the stale local placeholder by id.
-    //
-    // The catalog row is NOT a local project record: it may omit workspaceId
-    // and other binding fields. Treat it as a name hint only, and merge it into
-    // an already-bound local row. If App has not observed that row yet, keep
-    // loading through GET/pull/list below instead of inserting an unbound
-    // catalog-shaped Project into local state.
-    if (
-      catalogName
-      && projectsRef.current.some((project) => project.id === id && canUseLocalProject(project))
-    ) {
-      setProjects((current) => {
-        if (!openingScopeIsCurrent()) return current;
-        const existingIndex = current.findIndex(
-          (project) => project.id === id && canUseLocalProject(project),
-        );
-        if (existingIndex < 0) return current;
-        const existing = current[existingIndex]!;
-        if (existing.name === catalogName) return current;
-        const next = [...current];
-        next[existingIndex] = {
-          ...existing,
-          name: catalogName,
-        };
-        return next;
-      });
-      rememberHintAuthority();
-      const localProject = projectsRef.current.find(
-        (project) => project.id === id && canUseLocalProject(project),
-      );
-      return localProject ? navigateToOpenedProject(localProject) : false;
-    }
-    if (
-      !catalogName
-      && projectsRef.current.some(
-        (project) => project.id === id && canUseLocalProject(project),
-      )
-    ) {
-      const localProject = projectsRef.current.find(
-        (project) => project.id === id && canUseLocalProject(project),
-      );
-      return localProject ? navigateToOpenedProject(localProject) : false;
+    if (projectsRef.current.some((project) => project.id === id)) {
+      return navigateToOpenedProject();
     }
     try {
-      const project = await getProject(id, openingContext);
-      if (!openingScopeIsCurrent()) return false;
-      if (project && canUseLocalProject(project)) {
-        const openedProject = catalogName ? { ...project, name: catalogName } : project;
-        setProjects((curr) => openingScopeIsCurrent()
-          ? [
-              openedProject,
-              ...curr.filter((candidate) => candidate.id !== openedProject.id),
-            ]
-          : curr);
-        rememberHintAuthority();
-        return navigateToOpenedProject(openedProject);
+      const project = await getProject(id);
+      if (project) {
+        setProjects((curr) => [
+          project,
+          ...curr.filter((candidate) => candidate.id !== project.id),
+        ]);
+        return navigateToOpenedProject();
       }
-      const { pulled } = await pullTeamSharedProjectIfAvailable(id, openingContext);
-      if (!openingScopeIsCurrent()) return false;
-      if (pulled) {
-        const pulledProject = await getProject(id, openingContext);
-        if (!openingScopeIsCurrent()) return false;
-        if (pulledProject && canUseLocalProject(pulledProject)) {
-          const openedProject = catalogName
-            ? { ...pulledProject, name: catalogName }
-            : pulledProject;
-          setProjects((curr) => openingScopeIsCurrent()
-            ? [
-                openedProject,
-                ...curr.filter((candidate) => candidate.id !== openedProject.id),
-              ]
-            : curr);
-          rememberHintAuthority();
-          return navigateToOpenedProject(openedProject);
-        }
-      }
-      const request = beginProjectListRequest('all');
-      const list = await listCurrentWorkspaceProjects({ workspaceView: 'all' });
-      if (!openingScopeIsCurrent()) return false;
-      const reconciledList = catalogName
-        ? list.map((candidate) =>
-            candidate.id === id && canUseLocalProject(candidate)
-              ? { ...candidate, name: catalogName }
-              : candidate)
-        : list;
-      reconcileFetchedProjects(reconciledList, request);
+      const request = beginProjectListRequest();
+      const list = await listProjects();
+      reconcileFetchedProjects(list, request);
       const fetchedProject = locallyDeletedProjectIdsRef.current.has(id)
         ? undefined
-        : reconciledList.find(
-            (candidate) => candidate.id === id && canUseLocalProject(candidate),
-          );
-      if (fetchedProject) {
-        rememberHintAuthority();
-        return navigateToOpenedProject(fetchedProject);
-      }
+        : list.find((candidate) => candidate.id === id);
+      if (fetchedProject) return navigateToOpenedProject();
     } catch {
       // Fall through to the same visible missing-project state. The daemon can
       // return 404 or transiently fail while reconciling a deleted backing
       // project; either way the user needs feedback instead of a silent bounce.
     }
-    if (!openingScopeIsCurrent()) return false;
     setProjectOpenError(t('project.missing'));
     return false;
-  }, [
-    beginProjectListRequest,
-    listCurrentWorkspaceProjects,
-    reconcileFetchedProjects,
-    rememberAuthoritativeProjectName,
-    t,
-  ]);
+  }, [beginProjectListRequest, reconcileFetchedProjects, t]);
 
   const handleOpenProject = useCallback(async (
     id: string,
     fileName?: string,
-    projectTitleHint?: ProjectTitleHint,
   ): Promise<boolean> => {
     const source = routeRef.current;
     // Clicking an already-open project/file is not another project entry.
     if (source.kind === 'project' && source.projectId === id) {
       observeNavigation(() => navigationTiming.cancel('superseded'));
-      return openProjectForNavigation(id, fileName, projectTitleHint);
+      return openProjectForNavigation(id, fileName);
     }
-    const openingAccountGeneration = currentWorkspaceAccountGeneration();
-    const openingAuthorizationGeneration = projectAuthorizationGenerationRef.current;
     const navigationId = observeNavigation(() => navigationTiming.begin(source, { projectId: id }));
     try {
-      const opened = await openProjectForNavigation(id, fileName, projectTitleHint);
-      if (!opened) {
-        if (currentWorkspaceAccountGeneration() !== openingAccountGeneration
-          || projectAuthorizationGenerationRef.current !== openingAuthorizationGeneration) {
-          if (navigationId) observeNavigation(() => navigationTiming.finish(navigationId, 'cancelled', 'scope_changed'));
-        } else {
-          if (navigationId) observeNavigation(() => navigationTiming.finish(navigationId, 'failed', 'open_unavailable'));
-        }
+      const opened = await openProjectForNavigation(id, fileName);
+      if (!opened && navigationId) {
+        observeNavigation(() => navigationTiming.finish(navigationId, 'failed', 'open_unavailable'));
       }
       return opened;
     } catch (error) {
@@ -4377,20 +2564,8 @@ function AppInner() {
   }, []);
 
   const handleDeleteProject = useCallback(async (id: string) => {
-    // Carry the active workspace identity so the daemon's cross-workspace
-    // ownership check actually runs — see deleteProject's docblock
-    // (recvq5ecTkar91: a leaked-in project was really deletable, not just
-    // visible, because this call sent no workspace headers at all).
-    const mutationContext = workspaceContextRef.current;
-    const mutationAccountGeneration = currentWorkspaceAccountGeneration();
-    await deleteProjectApi(id, mutationContext, deletedShares.capture(id, mutationContext, mutationAccountGeneration));
-    if (mutationContext) {
-      removeProjectFromDisplaySnapshots({
-        accountGeneration: mutationAccountGeneration,
-        context: mutationContext,
-        projectId: id,
-      });
-    }
+    await deleteProjectApi(id);
+    removeProjectFromDisplaySnapshots({ projectId: id });
     clearLocalProject(id, { deleted: true });
     removeWorkspaceProjectTabs(id);
     iframeKeepAlivePool.evictProject(id, { includeActive: true });
@@ -4399,20 +2574,13 @@ function AppInner() {
       navigate({ kind: 'home', view: 'home' });
     }
     return true;
-  }, [clearLocalProject, iframeKeepAlivePool, route, deletedShares.capture]);
+  }, [clearLocalProject, iframeKeepAlivePool, route]);
 
   const handleRenameProject = useCallback(async (id: string, name: string) => {
     const trimmed = name.trim();
     if (!trimmed) return;
     const previous = projectsRef.current.find((project) => project.id === id) ?? null;
-    const renameContext = workspaceContextRef.current;
-    const renameAccountGeneration = currentWorkspaceAccountGeneration();
-    const renameScopeKey = projectListScopeKey(renameContext);
-    const renameProjectionKey = JSON.stringify([
-      renameAccountGeneration,
-      renameScopeKey,
-      id,
-    ]);
+    const renameProjectionKey = id;
     let renameState = projectRenameStatesRef.current.get(renameProjectionKey);
     if (!renameState || renameState.pending === 0) {
       if (!previous) return;
@@ -4430,8 +2598,6 @@ function AppInner() {
     const renameMutationVersion = projectListMutationVersionRef.current;
     const optimistic = { ...(previous ?? renameState.confirmed), name: trimmed };
     pendingProjectNameProjectionsRef.current.set(renameProjectionKey, {
-      accountGeneration: renameAccountGeneration,
-      scopeKey: renameScopeKey,
       project: optimistic,
       mutationVersion: renameMutationVersion,
       confirmed: false,
@@ -4439,16 +2605,12 @@ function AppInner() {
     setProjects((curr) =>
       curr.map((p) => (p.id === id ? { ...p, name: trimmed } : p)),
     );
-    if (renameContext) {
-      patchProjectDisplaySnapshots({
-        accountGeneration: renameAccountGeneration,
-        context: renameContext,
-        patch: (cachedProjects) => cachedProjects.map((project) =>
-          project.id === id ? { ...project, name: trimmed } : project),
-      });
-    }
+    patchProjectDisplaySnapshots({
+      patch: (cachedProjects) => cachedProjects.map((project) =>
+        project.id === id ? { ...project, name: trimmed } : project),
+    });
     const runRename = async () => {
-      const persisted = await patchProject(id, { name: trimmed }, renameContext);
+      const persisted = await patchProject(id, { name: trimmed });
       if (persisted) renameState.confirmed = persisted;
       const isLatestQueuedRename =
         projectRenameStatesRef.current.get(renameProjectionKey) === renameState
@@ -4460,25 +2622,17 @@ function AppInner() {
         pendingProjection.project = nextProject;
         pendingProjection.confirmed = true;
       }
-      if (renameContext) {
-        patchProjectDisplaySnapshots({
-          accountGeneration: renameAccountGeneration,
-          context: renameContext,
-          patch: (cachedProjects) => cachedProjects.map((project) =>
-            project.id === id && (persisted || project.name === trimmed)
-              ? {
-                  ...project,
-                  name: nextProject.name,
-                  metadata: nextProject.metadata,
-                  updatedAt: nextProject.updatedAt,
-                }
-              : project),
-        });
-      }
-      const isCurrentScope =
-        currentWorkspaceAccountGeneration() === renameAccountGeneration
-        && projectListScopeKey(workspaceContextRef.current) === renameScopeKey;
-      if (!isCurrentScope) return;
+      patchProjectDisplaySnapshots({
+        patch: (cachedProjects) => cachedProjects.map((project) =>
+          project.id === id && (persisted || project.name === trimmed)
+            ? {
+                ...project,
+                name: nextProject.name,
+                metadata: nextProject.metadata,
+                updatedAt: nextProject.updatedAt,
+              }
+            : project),
+      });
       if (!persisted) {
         setProjects((current) => current.map((project) =>
           project.id === id && project.name === trimmed
@@ -4542,16 +2696,11 @@ function AppInner() {
         p.id === projectId ? { ...p, pendingPrompt: undefined } : p,
       ),
     );
-    const mutationContext = workspaceContextRef.current;
-    if (mutationContext) {
-      patchProjectDisplaySnapshots({
-        accountGeneration: currentWorkspaceAccountGeneration(),
-        context: mutationContext,
-        patch: (cachedProjects) => cachedProjects.map((project) =>
-          project.id === projectId ? { ...project, pendingPrompt: undefined } : project),
-      });
-    }
-    void patchProject(projectId, { pendingPrompt: null }, mutationContext);
+    patchProjectDisplaySnapshots({
+      patch: (cachedProjects) => cachedProjects.map((project) =>
+        project.id === projectId ? { ...project, pendingPrompt: undefined } : project),
+    });
+    void patchProject(projectId, { pendingPrompt: null });
   }, [route]);
 
   const handleTouchProject = useCallback(() => {
@@ -4561,48 +2710,21 @@ function AppInner() {
     setProjects((curr) =>
       curr.map((p) => (p.id === projectId ? { ...p, updatedAt } : p)),
     );
-    const mutationContext = workspaceContextRef.current;
-    if (mutationContext) {
-      patchProjectDisplaySnapshots({
-        accountGeneration: currentWorkspaceAccountGeneration(),
-        context: mutationContext,
-        patch: (cachedProjects) => cachedProjects.map((project) =>
-          project.id === projectId ? { ...project, updatedAt } : project),
-      });
-    }
-    void patchProject(projectId, { updatedAt }, mutationContext);
+    patchProjectDisplaySnapshots({
+      patch: (cachedProjects) => cachedProjects.map((project) =>
+        project.id === projectId ? { ...project, updatedAt } : project),
+    });
+    void patchProject(projectId, { updatedAt });
   }, [route]);
 
   const handleProjectChange = useCallback((updated: Project) => {
-    // ProjectView is pinned to the opened project's persisted Workspace, which
-    // can differ from the shell's ambient selection while a switch settles.
-    // Patch every list projection for that exact principal so an inline rename
-    // cannot restore an old title when the user next opens Personal or Team.
-    const projectContext = projectRouteWorkspaceContextRef.current;
-    const accountGeneration = currentWorkspaceAccountGeneration();
     // A cold deep link can mount from this route-owned snapshot before the
-    // ambient project list resolves. Keep that independent row current too,
-    // but only under the exact account + Workspace principal that opened it.
+    // project list resolves. Keep that independent row current too.
     const routeSnapshot = routeProjectSnapshotRef.current;
-    const routeSnapshotContext =
-      routeSnapshot?.workspaceContext
-      ?? routeSnapshot?.workspaceScope?.context
-      ?? null;
     const routeSnapshotMatches =
       routeRef.current.kind === 'project'
       && routeRef.current.projectId === updated.id
-      && routeSnapshot?.project.id === updated.id
-      && routeSnapshot.accountGeneration === accountGeneration
-      && (routeSnapshot.project.workspaceId ?? null) === (updated.workspaceId ?? null)
-      && (
-        routeSnapshotContext === null && projectContext === null
-        || (
-          routeSnapshotContext !== null
-          && projectContext !== null
-          && workspaceIdentityCacheKey(routeSnapshotContext)
-            === workspaceIdentityCacheKey(projectContext)
-        )
-      );
+      && routeSnapshot?.project.id === updated.id;
     if (routeSnapshotMatches) {
       routeProjectSnapshotRef.current = {
         ...routeSnapshot,
@@ -4624,38 +2746,26 @@ function AppInner() {
       }
       return curr.map((p) => (p.id === updated.id ? updated : p));
     });
-    if (projectContext) {
-      patchProjectDisplaySnapshots({
-        accountGeneration,
-        context: projectContext,
-        patch: (cachedProjects) => cachedProjects.map((project) =>
-          project.id === updated.id ? { ...project, ...updated } : project),
-      });
-    }
+    patchProjectDisplaySnapshots({
+      patch: (cachedProjects) => cachedProjects.map((project) =>
+        project.id === updated.id ? { ...project, ...updated } : project),
+    });
   }, [iframeKeepAlivePool]);
 
   const handleProjectRenameStarted = useCallback((
     optimistic: Project,
   ): ProjectRenameFenceToken => {
-    const context = projectRouteWorkspaceContextRef.current;
-    const accountGeneration = currentWorkspaceAccountGeneration();
-    const scopeKey = projectListScopeKey(context);
     projectListMutationVersionRef.current += 1;
     const mutationVersion = projectListMutationVersionRef.current;
-    const key = JSON.stringify([accountGeneration, scopeKey, optimistic.id]);
     pendingProjectNameProjectionsRef.current.set(
-      key,
+      optimistic.id,
       {
-        accountGeneration,
-        scopeKey,
         project: optimistic,
         mutationVersion,
         confirmed: false,
       },
     );
     return {
-      accountGeneration,
-      scopeKey,
       projectId: optimistic.id,
       mutationVersion,
     };
@@ -4666,8 +2776,7 @@ function AppInner() {
     confirmed: Project,
   ) => {
     if (!token || token.projectId !== confirmed.id) return;
-    const key = JSON.stringify([token.accountGeneration, token.scopeKey, token.projectId]);
-    const pending = pendingProjectNameProjectionsRef.current.get(key);
+    const pending = pendingProjectNameProjectionsRef.current.get(token.projectId);
     if (!pending || pending.mutationVersion !== token.mutationVersion) return;
     pending.project = confirmed;
     pending.confirmed = true;
@@ -4701,7 +2810,7 @@ function AppInner() {
 
   const handleDesignSystemsChanged = useCallback(
     (affectedDesignSystemId?: string) => {
-      void refreshDesignSystems({ forceTeamMaterialization: true });
+      void refreshDesignSystems();
       iframeKeepAlivePool.evictMatching(
         (entry) => {
           const proj = projectsRef.current.find((p) => p.id === entry.projectId);
@@ -4734,23 +2843,6 @@ function AppInner() {
     goBack({ kind: 'home', view: 'design-systems' });
   }, []);
 
-  const handlePluginsChanged = useCallback((
-    context: WorkspaceCollabContext | null,
-    accountGeneration: number,
-  ) => {
-    invalidatePluginCatalogCache({ workspaceContext: context, accountGeneration });
-    window.dispatchEvent(new CustomEvent('open-design:plugins-changed'));
-  }, []);
-
-  teamResourceRefreshRefs.current.skill = handleSkillsChanged;
-  teamResourceRefreshRefs.current.designSystem = handleDesignSystemsChanged;
-  teamResourceRefreshRefs.current.plugin = handlePluginsChanged;
-  teamResourceRefreshRefs.current.catchUp = () => {
-    // Focus/reconnect is snapshot catch-up, not a mutation. Keep project
-    // previews intact and never fan out the plugin mutation CustomEvent.
-    void refreshSkills();
-    void refreshDesignSystems({ forceTeamMaterialization: true });
-  };
   const handleDesignSystemImportRebuildJob = useCallback(
     (designSystemId: string, job: DesignSystemGenerationJob) => {
       setPendingDesignSystemRevisionJobs((current) => ({
@@ -4769,70 +2861,35 @@ function AppInner() {
     });
   }, []);
 
-  // The project list belongs to the shell's ambient Workspace and is cleared
-  // immediately when the navigation rail switches A -> B. An already-open
-  // project is not ambient: retain its persisted row independently so that
-  // clearing/replacing the Home catalog cannot tear down ProjectView, lose the
-  // exact A authority, or reinterpret the same route under B.
+  // An already-open project is not tied to the ambient list: retain its row
+  // independently so a list refresh that drops it (or has not loaded yet on a
+  // cold deep link) cannot tear down ProjectView mid-task.
   const routeProjectSnapshotRef = useRef<{
     project: Project;
-    accountGeneration: number;
     capturedAfterListGeneration: number;
-    workspaceScope?: ProjectWorkspaceScope;
     resolvedDir?: string | null;
-    workspaceContext?: WorkspaceCollabContext;
-    awaitingFirstMaterialization?: boolean;
   } | null>(null);
   const [, setRouteProjectSnapshotRevision] = useState(0);
-  const activeAccountGeneration = currentWorkspaceAccountGeneration();
   let loadedActiveProject: Project | null = null;
   if (route.kind === 'project') {
     const listedProject = projects.find((project) => project.id === route.projectId);
     if (listedProject) {
       const previous = routeProjectSnapshotRef.current;
-      const openingWitness = projectOpenWorkspaceWitnessRef.current;
-      const exactOpeningContext =
-        openingWitness?.projectId === listedProject.id
-        && openingWitness.projectWorkspaceId === listedProject.workspaceId
-        && openingWitness.accountGeneration === activeAccountGeneration
-          ? openingWitness.context
-          : null;
-      const preservesBootstrapWitness =
-        previous?.project.id === listedProject.id
-        && previous.accountGeneration === activeAccountGeneration
-        && previous.project.workspaceId === listedProject.workspaceId;
+      const preservesBootstrapWitness = previous?.project.id === listedProject.id;
       routeProjectSnapshotRef.current = {
         project: listedProject,
-        accountGeneration: activeAccountGeneration,
         capturedAfterListGeneration: latestAppliedProjectListGenerationRef.current,
-        ...(preservesBootstrapWitness && previous.workspaceScope
-          ? { workspaceScope: previous.workspaceScope }
-          : {}),
         ...(preservesBootstrapWitness && previous.resolvedDir !== undefined
           ? { resolvedDir: previous.resolvedDir }
           : {}),
-        ...(preservesBootstrapWitness && previous.workspaceContext
-          ? { workspaceContext: previous.workspaceContext }
-          : exactOpeningContext
-            ? { workspaceContext: exactOpeningContext }
-            : {}),
-        ...((preservesBootstrapWitness && previous.awaitingFirstMaterialization)
-          || listedProject.metadata?.sharedProjectPlaceholderAt != null
-          ? { awaitingFirstMaterialization: true }
-          : {}),
       };
-      if (exactOpeningContext) projectOpenWorkspaceWitnessRef.current = null;
     } else if (
       routeProjectSnapshotRef.current?.project.id !== route.projectId
-      || routeProjectSnapshotRef.current.accountGeneration !== activeAccountGeneration
       || (
-        appliedProjectListWitness?.scopeKey === currentProjectListScope
-        && appliedProjectListWitness.workspaceView === 'all'
+        appliedProjectListWitness !== null
         && appliedProjectListWitness.generation
           > routeProjectSnapshotRef.current.capturedAfterListGeneration
         && !appliedProjectListWitness.projectIds.has(route.projectId)
-        && workspaceContext?.workspaceId
-          === routeProjectSnapshotRef.current.project.workspaceId
       )
     ) {
       routeProjectSnapshotRef.current = null;
@@ -4844,193 +2901,33 @@ function AppInner() {
   } else {
     routeProjectSnapshotRef.current = null;
   }
-  // A fresh project deep link starts before the shell's ambient Workspace
-  // context has resolved. Derive the exact caller from the persisted project
-  // binding + signed-in account directory instead; this is independent of
-  // whichever Workspace another tab or the navigation rail currently selects.
-  const projectRouteWorkspaceContext = useProjectRouteWorkspaceContext(
-    loadedActiveProject?.workspaceId,
-    workspaceContextState,
-    routeProjectSnapshotRef.current?.project.id === loadedActiveProject?.id
-      ? routeProjectSnapshotRef.current?.workspaceContext
-        ?? routeProjectSnapshotRef.current?.workspaceScope?.context
-      : null,
-  );
-  // Never mount ProjectView around the synthetic "Untitled" placeholder. Its
-  // effects immediately fan out project-owned reads, but before the project
-  // list lands there is no persisted Workspace id with which to scope them.
-  // Waiting for the real row is the authorization gate that turns the cold
-  // start from two headerless 400 waves plus a scoped retry into one scoped
-  // wave. Unbound local projects still mount as soon as their real row lands.
   const activeProject = loadedActiveProject;
-  const activeProjectWorkspaceContext = activeProject
-    ? projectRouteWorkspaceContext.context
-    : null;
-  projectRouteWorkspaceContextRef.current = activeProjectWorkspaceContext;
   useEffect(() => {
     if (route.kind !== 'project') return;
     const attempt = navigationTiming.getSnapshot();
     if (!attempt || attempt.projectId !== route.projectId) return;
-    // These failures render an App-owned error surface, so ProjectView's
+    // This failure renders an App-owned error surface, so ProjectView's
     // business Ready hook will never mount to terminate the attempt.
-    if (projectRouteWorkspaceContext.failure) {
-      navigationTiming.finish(attempt.id, 'failed', 'scope_unavailable');
-    } else if (deepLinkResolutionFailure?.projectId === route.projectId) {
+    if (deepLinkResolutionFailure?.projectId === route.projectId) {
       navigationTiming.finish(attempt.id, 'failed', 'project_unavailable');
     }
-  }, [route, projectRouteWorkspaceContext.failure, deepLinkResolutionFailure]);
-  // The post-generation upgrade gate belongs to the project that owns the
-  // conversation, not whichever Workspace the navigation shell currently
-  // selects. A bound project stays fail-closed until its exact membership and
-  // billing snapshot resolve; borrowing the ambient/account Free plan here is
-  // what interrupted paid Team members with the Free upsell.
-  const amrUpgradeWorkspaceContext = activeProject?.workspaceId
-    ? activeProjectWorkspaceContext
-    : workspaceContext;
-  const amrUpgradeWorkspaceContextLoading = activeProject?.workspaceId
-    ? activeProjectWorkspaceContext === null
-    : workspaceContextLoading;
-  const amrUpgradeBillingResponse = useWorkspaceBillingResponse({
-    context: amrUpgradeWorkspaceContext,
-    loading: amrUpgradeWorkspaceContextLoading,
-  });
-  const amrUpgradeBilling = workspaceBillingSummaryForContext(
-    amrUpgradeBillingResponse,
-    amrUpgradeWorkspaceContext,
-  );
-  const resolvedAmrPlan = resolvePlanTier({
-    billing: amrUpgradeBilling,
-    context: amrUpgradeWorkspaceContext,
-    accountPlan:
-      amrUpgradeWorkspaceContextLoading
-      || amrUpgradeWorkspaceContext?.workspaceType === 'team'
-        ? null
-        : amrLoginStatus?.account?.plan?.trim()
-          || amrLoginStatus?.user?.plan?.trim()
-          || null,
-  });
-  useEffect(() => {
-    const pending = amrAuthRetryContinuationRef.current;
-    if (!pending) return;
-    if (route.kind === 'home' && route.view === 'settings') {
-      // This is the one permitted non-project route: the failed-turn CTA
-      // deliberately opens AMR Settings and ProjectView unmounts while the
-      // authorization attempt is in flight. Every other route exit clears the
-      // continuation below.
-      return;
-    }
-    if (!routeStillMatchesAmrAuthRetryContinuation(pending, route)) {
-      clearAmrAuthRetryContinuation(pending);
-      return;
-    }
-    if (projectRouteWorkspaceContext.failure) {
-      clearAmrAuthRetryContinuation(pending);
-      return;
-    }
-    // A null context is the expected fail-closed refresh window. Wait for the
-    // fresh exact witness rather than borrowing or latching the old one.
-    if (
-      activeProjectWorkspaceContext
-      && !amrAuthRetryMatchesRouteContext(pending, activeProjectWorkspaceContext)
-    ) {
-      clearAmrAuthRetryContinuation(pending);
-    }
-  }, [
-    activeProjectWorkspaceContext,
-    amrAuthRetryContinuation,
-    clearAmrAuthRetryContinuation,
-    projectRouteWorkspaceContext.failure,
-    route,
-  ]);
-  // Project tabs belong to the project's persisted Workspace authority, not
-  // the shell's ambient selection. On a cold deep link the ambient context can
-  // settle (or switch A -> B) after the exact project scope has already loaded;
-  // handing that B key to WorkspaceTabsBar makes its legitimate scope-change
-  // cleanup navigate to B's saved Home tab, unmounting the healthy A project
-  // and emitting a misleading presence/leave. Keep tab reconciliation
-  // deferred until the project row + exact membership witness exist, then pin
-  // it to that Workspace. Truly unbound local projects retain the ambient
-  // account/workspace tab behavior.
-  const workspaceTabsIdentityScopeKey =
-    route.kind === 'project'
-      ? activeProject === null
-        ? null
-        : activeProject.workspaceId
-          ? activeProjectWorkspaceContext && identityScopeKey !== null
-            ? `${nextTabScopeAccountId}::${activeProjectWorkspaceContext.workspaceId}`
-            : null
-          : identityScopeKey
-      : identityScopeKey;
-  const activeAuthoritativeProjectName =
-    route.kind === 'project'
-      ? authoritativeProjectNames[
-          projectViewAuthorizationLifetimeKey(
-            route.projectId,
-            activeProjectWorkspaceContext,
-          )
-        ]
-      : undefined;
-  // The switcher names the open project once (OPEND-3128), so it reads the
-  // same catalog-title authority ProjectView reconciles the record with; a
-  // deep-linked row the ambient list lacks is appended for its tab only.
+  }, [route, deepLinkResolutionFailure]);
+  // The switcher names the open project once (OPEND-3128); a deep-linked row
+  // the ambient list lacks is appended for its tab only.
   const workspaceChromeProjects = useMemo(
     () => projectsForWorkspaceChrome({
       projects,
       activeProject,
       activeProjectId: route.kind === 'project' ? route.projectId : null,
-      authoritativeProjectName: activeAuthoritativeProjectName,
+      authoritativeProjectName: null,
     }),
-    [projects, activeProject, route, activeAuthoritativeProjectName],
+    [projects, activeProject, route],
   );
-  const activeProjectAuthorizationKey =
-    route.kind === 'project'
-      ? projectViewAuthorizationLifetimeKey(
-          route.projectId,
-          activeProjectWorkspaceContext,
-        )
-      : null;
-
-  // A full-page refresh/deep link does not pass through EntryShell's card
-  // click, and the local list may already contain a stale shared-project row.
-  // Calibrate that bound row from the hub catalog as soon as both the route and
-  // workspace identity have settled. This closes the path where the effect
-  // below skipped resolution merely because SQLite returned "some" row.
-  useEffect(() => {
-    if (route.kind !== 'project') return;
-    if (!loadedActiveProject?.workspaceId) return;
-    if (!activeProjectWorkspaceContext) return;
-    if (!activeProjectAuthorizationKey || activeAuthoritativeProjectName) return;
-    void resolveAuthoritativeProjectName(route.projectId, activeProjectAuthorizationKey);
-  }, [
-    route.kind,
-    route.kind === 'project' ? route.projectId : null,
-    loadedActiveProject?.id,
-    loadedActiveProject?.workspaceId,
-    activeAuthoritativeProjectName,
-    activeProjectAuthorizationKey,
-    activeProjectWorkspaceContext,
-    resolveAuthoritativeProjectName,
-  ]);
 
   // Deep-linked route to a project we don't have yet (e.g. after a refresh
-  // that finishes after the project list comes back, OR a member's first-ever
-  // open of a project their team just shared with them). Fetch it in the
-  // background so the view can render rather than bouncing to home.
-  //
-  // A member's first open of a freshly-shared project is a genuine race: the
-  // hub already confirms the project belongs to their team, but the local
-  // sqlite mirror (materialized by POST /collab/pull's registerPulledProject,
-  // or by ProjectView's own /collab/status poll firing
-  // ensureSharedProjectPlaceholder — see collab-sync.ts) hasn't landed yet. A
-  // single immediate miss used to be indistinguishable from "this project
-  // doesn't exist / I have no access", and navigated the member straight back
-  // to Home mid-sync. `pullTeamSharedProjectIfAvailable`'s
-  // `isTeamShared` is the reliable signal here: it comes from the hub-backed
-  // `/api/workspace/projects/team` catalog, not from local sqlite state that
-  // can simply be running behind. Retry on that signal for a short bounded
-  // window, and once the hub has confirmed team membership even once, never
-  // fall through to the not-found/navigate-home path for this project — only
-  // a hub-confirmed absence does.
+  // that finishes after the project list comes back). Read it once in the
+  // background so the view can render rather than bouncing to home; a project
+  // the daemon does not know is reported as missing.
   const routeProjectListed = route.kind === 'project' && projects.some((p) => p.id === route.projectId);
   useEffect(() => {
     if (route.kind !== 'project') return;
@@ -5040,169 +2937,53 @@ function AppInner() {
     setDeepLinkResolutionFailure((current) =>
       current?.projectId === projectId ? null : current
     );
-    const deepLinkContext = workspaceContextRef.current;
-    const deepLinkIdentity = workspaceIdentityCacheKey(deepLinkContext);
-    const identityChanged = () =>
-      workspaceIdentityCacheKey(workspaceContextRef.current) !== deepLinkIdentity;
-    const accountGeneration = currentWorkspaceAccountGeneration();
-    const accountChanged = () =>
-      currentWorkspaceAccountGeneration() !== accountGeneration;
     void (async () => {
-      const openingWitness = projectOpenWorkspaceWitnessRef.current;
-      const exactOpenContext =
-        openingWitness?.projectId === projectId
-        && openingWitness.accountGeneration === accountGeneration
-          ? openingWitness.context
-          : null;
-      const bootstrap = await bootstrapProjectRoute(projectId, {
-        accountGeneration,
-        exactContext: exactOpenContext,
-      });
-      // This scope came from the project's persisted binding, not the shell's
-      // selection. Ambient null -> B settlement and A -> B navigation cannot
-      // invalidate it; only a real account boundary can.
-      if (cancelled || accountChanged()) return;
+      const bootstrap = await bootstrapProjectRoute(projectId);
+      if (cancelled) return;
       if (bootstrap.kind === 'found') {
         routeProjectSnapshotRef.current = {
           project: bootstrap.project,
-          accountGeneration,
           capturedAfterListGeneration: latestAppliedProjectListGenerationRef.current,
-          workspaceScope: bootstrap.scope,
           resolvedDir: bootstrap.resolvedDir,
-          awaitingFirstMaterialization:
-            bootstrap.project.metadata?.sharedProjectPlaceholderAt != null,
         };
         setRouteProjectSnapshotRevision((current) => current + 1);
         return;
       }
-      if (bootstrap.kind === 'forbidden') {
-        setDeepLinkResolutionFailure({ projectId, failure: 'missing' });
-        return;
-      }
-      if (bootstrap.kind === 'unavailable') {
-        // The optimistic bootstrap races the daemon health/list boot on purpose.
-        // A transport miss before those settle is not terminal; the dependency
-        // change below retries the bootstrap through its evicted failure key.
+      if (bootstrap.kind === 'forbidden' || bootstrap.kind === 'not-found') {
+        // A project the local daemon does not know, or that was deleted while
+        // its list row was still cached, is missing — unless it was created in
+        // this session and the list read simply has not caught up yet.
         if (projectsLoading || !daemonLive) return;
-        setDeepLinkResolutionFailure({
-          projectId,
-          failure: 'materialization-failed',
-        });
-        return;
-      }
-      // A verified Team identity can bootstrap independently of the shell's
-      // project list, so begin local authority + background content work now.
-      const firstOpenTeamContext = exactOpenContext ?? deepLinkContext;
-      if (
-        firstOpenTeamContext?.workspaceType === 'team'
-        && firstOpenTeamContext.memberStatus === 'active'
-        && firstOpenTeamContext.lifecycleState === 'active'
-      ) {
-        const progressive = await bootstrapFirstOpenTeamProjectRoute(projectId, {
-          accountGeneration,
-          exactContext: firstOpenTeamContext,
-        });
-        if (
-          cancelled
-          || accountChanged()
-          || (!exactOpenContext && identityChanged())
-        ) return;
-        if (progressive.kind === 'found') {
-          routeProjectSnapshotRef.current = {
-            project: progressive.project,
-            accountGeneration,
-            capturedAfterListGeneration: latestAppliedProjectListGenerationRef.current,
-            workspaceScope: progressive.scope,
-            resolvedDir: progressive.resolvedDir,
-            workspaceContext: firstOpenTeamContext,
-            awaitingFirstMaterialization:
-              progressive.awaitingFirstMaterialization,
-          };
-          setRouteProjectSnapshotRevision((current) => current + 1);
+        const request = beginProjectListRequest();
+        let list: Project[];
+        try {
+          list = await listProjects({ throwOnError: true });
+        } catch {
+          setDeepLinkResolutionFailure({ projectId, failure: 'materialization-failed' });
           return;
         }
-        if (progressive.kind === 'forbidden') {
+        if (cancelled) return;
+        const applied = reconcileFetchedProjects(list, request);
+        if (!applied) return;
+        const fetchedProject = locallyDeletedProjectIdsRef.current.has(projectId)
+          ? undefined
+          : list.find((p) => p.id === projectId);
+        const staleRequest = request.mutationVersion < projectListMutationVersionRef.current;
+        const knownLocalProject =
+          staleRequest && pendingLocalProjectIdsRef.current.has(projectId);
+        if (!fetchedProject && !knownLocalProject) {
           setDeepLinkResolutionFailure({ projectId, failure: 'missing' });
-          return;
         }
-        // `not-found` can be a hub propagation race and `unavailable` includes
-        // old daemons that registered an unbound placeholder. Both retain the
-        // proven, bounded full-pull fallback below.
+        return;
       }
-      // The exact Team bootstrap above is independent of the shell project
-      // list, so it intentionally starts while that list is still loading.
-      // Only the legacy catalog+blocking-pull fallback waits for ambient boot.
+      // The optimistic bootstrap races the daemon health/list boot on purpose.
+      // A transport miss before those settle is not terminal; the dependency
+      // change below retries the bootstrap through its evicted failure key.
       if (projectsLoading || !daemonLive) return;
-      const resolution = await resolveDeepLinkedTeamSharedProject(projectId, {
-        getProject: (id) => getProject(id, deepLinkContext),
-        pullTeamSharedProjectIfAvailable: (id) =>
-          pullTeamSharedProjectIfAvailable(id, deepLinkContext),
-        delay,
-        isCancelled: () => cancelled || identityChanged(),
-      });
-      if (cancelled || identityChanged()) return;
-      if (resolution.kind === 'found') {
-        const fetched = resolution.project;
-        setProjects((curr) => {
-          const existingIndex = curr.findIndex((candidate) => candidate.id === fetched.id);
-          if (existingIndex < 0) {
-            return [...curr, fetched];
-          }
-          return curr.map((candidate) => (candidate.id === fetched.id ? fetched : candidate));
-        });
-        return;
-      }
-      // The hub confirmed at least once during the retry window that this
-      // project belongs to the caller's team: it exists and they have access.
-      // Local materialization is just still catching up — leave the route
-      // alone instead of bouncing the member off a project they can see, but
-      // stop the spinner and offer an explicit retry after the bounded window.
-      if (resolution.kind === 'still-materializing') {
-        setDeepLinkResolutionFailure({
-          projectId,
-          failure: 'materialization-failed',
-        });
-        return;
-      }
-      if (resolution.kind === 'unavailable') {
-        setDeepLinkResolutionFailure({
-          projectId,
-          failure: 'materialization-failed',
-        });
-        return;
-      }
-      const request = beginProjectListRequest('all');
-      let list: Project[];
-      try {
-        list = await listCurrentWorkspaceProjects({
-          throwOnError: true,
-          workspaceView: 'all',
-        });
-      } catch {
-        setDeepLinkResolutionFailure({
-          projectId,
-          failure: 'materialization-failed',
-        });
-        return;
-      }
-      if (cancelled || identityChanged()) return;
-      const applied = reconcileFetchedProjects(list, request);
-      if (!applied) return;
-      const fetchedProject = locallyDeletedProjectIdsRef.current.has(projectId)
-        ? undefined
-        : list.find((p) => p.id === projectId);
-      const staleRequest = request.mutationVersion < projectListMutationVersionRef.current;
-      const knownLocalProject =
-        staleRequest && pendingLocalProjectIdsRef.current.has(projectId);
-      if (!fetchedProject && !knownLocalProject) {
-        setDeepLinkResolutionFailure({ projectId, failure: 'missing' });
-      }
+      setDeepLinkResolutionFailure({ projectId, failure: 'materialization-failed' });
     })().catch(() => {
-      if (cancelled || identityChanged()) return;
-      setDeepLinkResolutionFailure({
-        projectId,
-        failure: 'materialization-failed',
-      });
+      if (cancelled) return;
+      setDeepLinkResolutionFailure({ projectId, failure: 'materialization-failed' });
     });
     return () => {
       cancelled = true;
@@ -5211,24 +2992,17 @@ function AppInner() {
     route,
     loadedActiveProject,
     // The resolver itself reconciles the list. Depend on presence, not array
-    // identity, so its own absent→absent read cannot restart the retry budget
-    // and erase the terminal failure. Real identity changes still revalidate.
+    // identity, so its own absent→absent read cannot restart the read and
+    // erase the terminal failure.
     routeProjectListed,
-    currentProjectListScope,
-    activeAccountGeneration,
     projectsLoading,
     daemonLive,
     deepLinkRetryRevision,
     beginProjectListRequest,
-    listCurrentWorkspaceProjects,
     reconcileFetchedProjects,
-    recordProjectListFailure,
   ]);
 
-  const openSettings = useCallback((
-    section: SettingsSection = 'execution',
-    opts?: { highlight?: SettingsHighlight },
-  ) => {
+  const openSettings = useCallback((section: SettingsSection = 'execution') => {
     if (section === 'composio' || section === 'mcpClient' || section === 'integrations') {
       settingsReturnTargetRef.current = null;
       setIntegrationInitialTab(
@@ -5243,41 +3017,20 @@ function AppInner() {
     }
     const currentRoute = routeRef.current;
     settingsReturnTargetRef.current =
-      currentRoute.kind === 'project' && identityScopeKey !== null
-        ? {
-            route: { ...currentRoute },
-            accountGeneration: currentWorkspaceAccountGeneration(),
-            identityScopeKey,
-          }
-        : null;
+      currentRoute.kind === 'project' ? { route: { ...currentRoute } } : null;
     setSettingsWelcome(false);
     setSettingsInitialSection(section);
-    setSettingsHighlight(opts?.highlight ?? null);
     navigate({ kind: 'home', view: 'settings' });
-  }, [identityScopeKey]);
-
-  // Entry point from the failed-run AMR nudge: open Settings on the execution
-  // section and flag the AMR agent card for a one-shot scroll-into-view +
-  // highlight (and a sign-in coachmark when not yet authorized).
-  const openAmrSettings = useCallback(() => {
-    openSettings('execution', { highlight: 'amr' });
-  }, [openSettings]);
+  }, []);
 
   const openPetSettings = useCallback(() => {
     const currentRoute = routeRef.current;
     settingsReturnTargetRef.current =
-      currentRoute.kind === 'project' && identityScopeKey !== null
-        ? {
-            route: { ...currentRoute },
-            accountGeneration: currentWorkspaceAccountGeneration(),
-            identityScopeKey,
-          }
-        : null;
+      currentRoute.kind === 'project' ? { route: { ...currentRoute } } : null;
     setSettingsWelcome(false);
     setSettingsInitialSection('pet');
-    setSettingsHighlight(null);
     navigate({ kind: 'home', view: 'settings' });
-  }, [identityScopeKey]);
+  }, []);
 
   const openMcpSettings = useCallback(() => {
     setIntegrationInitialTab('mcp');
@@ -5378,8 +3131,8 @@ function AppInner() {
   useEffect(() => {
     if (route.kind !== 'home') return;
     void refreshTemplates();
-    if (workspaceContext?.workspaceType !== 'team') void refreshDesignSystems();
-  }, [route.kind, refreshTemplates, refreshDesignSystems, workspaceContext?.workspaceType]);
+    void refreshDesignSystems();
+  }, [route.kind, refreshTemplates, refreshDesignSystems]);
 
   // Existing card grids (DesignsTab, ProjectView), pickers (NewProjectPanel,
   // ChatComposer mention) all look skills up by id without caring whether
@@ -5441,20 +3194,10 @@ function AppInner() {
     }
     setSettingsOpen(false);
     settingsDraftConfigRef.current = null;
-    setSettingsHighlight(null);
     if (route.kind === 'home' && route.view === 'settings') {
       const returnTarget = settingsReturnTargetRef.current;
       settingsReturnTargetRef.current = null;
-      const returnIdentityStillMatches = Boolean(
-        returnTarget
-        && returnTarget.accountGeneration === currentWorkspaceAccountGeneration()
-        && returnTarget.identityScopeKey === identityScopeKey
-      );
-      navigate(
-        returnIdentityStillMatches && returnTarget
-          ? returnTarget.route
-          : { kind: 'home', view: 'home' },
-      );
+      navigate(returnTarget ? returnTarget.route : { kind: 'home', view: 'home' });
     }
   };
 
@@ -5465,21 +3208,7 @@ function AppInner() {
     setConfig(next);
     setSettingsOpen(false);
     settingsDraftConfigRef.current = null;
-    setSettingsHighlight(null);
     navigate({ kind: 'home', view: 'onboarding' });
-  }, []);
-
-  const handleActiveCloudSignOut = useCallback(async () => {
-    const next = resetExecutionConfigAfterSignOut(latestPersistedConfigRef.current);
-    latestPersistedConfigRef.current = next;
-    saveConfig(next);
-    setConfig(next);
-    setProviderModelsCache({});
-    setSettingsOpen(false);
-    settingsDraftConfigRef.current = null;
-    setSettingsHighlight(null);
-    navigate({ kind: 'home', view: 'onboarding' });
-    await syncConfigToDaemon(next, { allowOnboardingReset: true });
   }, []);
 
   const renderSettingsSurface = (presentation: 'modal' | 'page') => (
@@ -5492,12 +3221,6 @@ function AppInner() {
       appVersionInfo={appVersionInfo}
       welcome={presentation === 'modal' ? settingsWelcome : false}
       initialSection={settingsInitialSection}
-      initialHighlight={settingsHighlight}
-      persistedProjectWorkspaceId={
-        route.kind === 'project'
-          ? projects.find((project) => project.id === route.projectId)?.workspaceId ?? null
-          : null
-      }
       composioConfigLoading={composioConfigLoading}
       onPersist={handleConfigPersist}
       onSilentUpdatePreferenceChange={handleSilentUpdatePreferenceChange}
@@ -5505,9 +3228,7 @@ function AppInner() {
       onPersistComposioKey={handleConfigPersistComposioKey}
       onClose={handleCloseSettings}
       onResetOnboarding={handleResetOnboarding}
-      onAmrSignedOut={handleActiveCloudSignOut}
       onRefreshAgents={refreshAgents}
-      onAmrLoginStatusChange={handleAmrLoginStatusChange}
       daemonMediaProviders={daemonMediaProviders}
       daemonMediaProvidersFetchState={daemonMediaProvidersFetchState}
       mediaProvidersNotice={mediaProvidersNotice}
@@ -5558,13 +3279,8 @@ function AppInner() {
     appMain = <MarketplaceView />;
   } else if (route.kind === 'marketplace-detail') {
     appMain = (
-      <PluginDetailView
-        pluginId={route.pluginId}
-        workspaceContextState={workspaceContextState}
-      />
+      <PluginDetailView pluginId={route.pluginId} />
     );
-  } else if (route.kind === 'collab-demo') {
-    appMain = <CollabDemoView projectId={route.projectId} />;
   } else if (route.kind === 'community') {
     appMain = (
       <CommunityView
@@ -5578,19 +3294,8 @@ function AppInner() {
           void (async () => {
             const name = summarizeProjectNameFromPrompt(prompt) || t('common.untitled');
             try {
-              // One resolved authority for BOTH requests: the create binds the
-              // copied project to this workspace, and the seed patch is then
-              // authorized against that same binding. A headerless create is
-              // read by the daemon as a legacy caller and leaves the project
-              // bound to no workspace at all, which is what kept remixed
-              // projects out of the member's own 草稿 list.
-              const writeContext = resolvedWorkspaceContextForWrite(workspaceContextState);
-              const result = await duplicatePluginAsProject(templateId, { name }, writeContext);
-              const seeded = await patchProject(
-                result.projectId,
-                { pendingPrompt: prompt },
-                writeContext,
-              );
+              const result = await duplicatePluginAsProject(templateId, { name });
+              const seeded = await patchProject(result.projectId, { pendingPrompt: prompt });
               if (!seeded) {
                 // The project itself exists and is bound — only the prompt seed
                 // was refused. Keep the user on it (retrying through the catch
@@ -5699,38 +3404,6 @@ function AppInner() {
           ? deepLinkResolutionFailure.failure
           : undefined,
     });
-    const signedOutObservedShare = observedPublicShareLink
-      && route.kind === 'project' && route.projectId === observedPublicShareLink.projectId
-      && route.fileName === observedPublicShareLink.filePath
-      && amrLoginStatus?.loggedIn === false && amrLoginStatus.loginInFlight !== true
-      && (activeProject
-        ? activeProject.id === observedPublicShareLink.projectId
-          && activeProject.workspaceId === observedPublicShareLink.workspaceId
-          && projectRouteWorkspaceContext.failure !== undefined
-          && activeProjectWorkspaceContext === null
-        : routeSurfaceState === 'missing')
-        ? observedPublicShareLink : null;
-    const signedOutShareFallback = signedOutObservedShare ? (
-      <div className="entry-shell entry-shell--no-header">
-        <SignedOutObservedShare
-          url={signedOutObservedShare.url}
-          canUpdate={signedOutObservedShare.freshness === 'outdated'}
-          onLoginUpdateSuccess={() => {
-            if (signedOutObservedShare.freshness !== 'outdated') return;
-            setLoginUpdateRequest({
-              nonce: ++loginUpdateNonceRef.current, accountId: signedOutObservedShare.accountId,
-              link: signedOutObservedShare, expiresAt: Date.now() + 60_000,
-            });
-          }}
-        />
-      </div>
-    ) : null;
-    const localObservedShare = observedPublicShareLink
-      && activeProject?.id === observedPublicShareLink.projectId
-      && route.kind === 'project' && route.fileName === observedPublicShareLink.filePath
-      && activeProject.workspaceId === null && activeProjectWorkspaceContext === null
-      && amrLoginStatus?.loggedIn === false && amrLoginStatus.loginInFlight !== true
-        ? observedPublicShareLink : null;
     // A Home send's project is ProjectView from the click (OPEND-3334): the
     // view mounts on the optimistic row, holds every project read until the
     // create answers, and stays the same instance through the first turn.
@@ -5743,14 +3416,6 @@ function AppInner() {
       && (
         routeSurfaceState === 'loading-projects'
         || routeSurfaceState === 'resolving-deep-link'
-        || (
-          activeProject
-          && !projectResourceReadsCanStart(
-            activeProject.workspaceId,
-            projectRouteWorkspaceContext,
-          )
-          && projectRouteWorkspaceContext.loading
-        )
       )
     ) {
       appMain = (
@@ -5760,7 +3425,7 @@ function AppInner() {
       );
     } else if (!creationOwnsSurface && routeSurfaceState !== 'ready') {
       const canRetry = routeSurfaceState === 'materialization-failed';
-      appMain = signedOutShareFallback ?? (
+      appMain = (
         <div className="entry-shell entry-shell--no-header">
           <div className="centered-loader">
             <span role="alert">
@@ -5782,49 +3447,12 @@ function AppInner() {
           </div>
         </div>
       );
-    } else if (
-      !creationOwnsSurface
-      && activeProject
-      && !localObservedShare
-      && projectRouteWorkspaceContext.failure
-      && (
-        projectRouteWorkspaceContext.failure === 'forbidden'
-        || activeProjectWorkspaceContext === null
-      )
-    ) {
-      appMain = signedOutShareFallback ?? (
-        <div className="entry-shell entry-shell--no-header">
-          <div className="centered-loader">
-            <span role="alert">
-              {projectRouteWorkspaceContext.failure === 'forbidden'
-                ? t('project.missing')
-                : t('connectors.unavailable')}
-            </span>
-            <Button onClick={projectRouteWorkspaceContext.retry}>
-              {t('promptTemplates.retry')}
-            </Button>
-          </div>
-        </div>
-      );
     } else if (activeProject) {
       appMain = (
         <div className="app">
         <ProjectView
-          key={projectViewAuthorizationLifetimeKey(
-            activeProject.id,
-            activeProjectWorkspaceContext,
-          )}
+          key={activeProject.id}
           project={activeProject}
-          workspaceContextOverride={
-            activeProject.workspaceId
-              ? activeProjectWorkspaceContext
-              : undefined
-          }
-          initialWorkspaceScope={
-            routeProjectSnapshotRef.current?.project.id === activeProject.id
-              ? routeProjectSnapshotRef.current.workspaceScope
-              : undefined
-          }
           initialProjectDetail={
             routeProjectSnapshotRef.current?.project.id === activeProject.id
             && routeProjectSnapshotRef.current.resolvedDir !== undefined
@@ -5834,27 +3462,6 @@ function AppInner() {
                 }
               : undefined
           }
-          initialMaterializationPending={
-            routeProjectSnapshotRef.current?.project.id === activeProject.id
-              ? routeProjectSnapshotRef.current.awaitingFirstMaterialization
-                ?? (activeProject.metadata?.sharedProjectPlaceholderAt != null)
-              : undefined
-          }
-          projectAuthorizationKey={
-            activeProjectAuthorizationKey ?? activeProject.id
-          }
-          onObservedPublicShareLink={onObservedPublicShareLink}
-          observedPublicShareLink={signedOutObservedShare ?? localObservedShare}
-          loginUpdateRequest={loginUpdateRequest}
-          onLoginUpdateRequestHandled={onLoginUpdateRequestHandled}
-          shareLoginReturn={shareLoginReturn}
-          onShareLoginReturnChange={onShareLoginReturnChange}
-          amrAuthRetryContinuation={amrAuthRetryContinuation}
-          onArmAmrAuthRetryContinuation={armAmrAuthRetryContinuation}
-          onConsumeAmrAuthRetryContinuation={consumeAmrAuthRetryContinuation}
-          onDiscardAmrAuthRetryContinuation={clearAmrAuthRetryContinuation}
-          authoritativeProjectName={activeAuthoritativeProjectName}
-          resolveAuthoritativeProjectName={resolveAuthoritativeProjectName}
           routeFileName={route.fileName}
           routeConversationId={route.conversationId ?? null}
           config={config}
@@ -5865,12 +3472,10 @@ function AppInner() {
           daemonLive={daemonLive}
           onModeChange={handleModeChange}
           onAgentChange={handleAgentChange}
-          onSwitchToCloud={handleSwitchToCloud}
           onAgentModelChange={handleAgentModelChange}
           onApiModelChange={handleApiModelChange}
           onRefreshAgents={refreshAgents}
           onOpenSettings={openSettings}
-          onOpenAmrSettings={openAmrSettings}
           onOpenMcpSettings={openMcpSettings}
           onBrowsePlugins={openPluginRegistry}
           onOpenConnectors={openConnectorIntegrations}
@@ -5910,7 +3515,6 @@ function AppInner() {
     appMain = (
       <EntryView
         onBeginProjectCreation={beginOptimisticProjectCreation}
-        onAmrBalanceGateBlockChange={setHomeAmrBalanceGateBlock}
         skills={enabledSkills}
         designTemplates={enabledDesignTemplates}
         designSystems={enabledDS}
@@ -5921,14 +3525,6 @@ function AppInner() {
         defaultDesignSystemId={config.designSystemId}
         agents={agents}
         agentsLoading={agentsLoading}
-        amrLoggedIn={amrLoginStatus?.loggedIn ?? null}
-        amrSessionState={amrLoginStatus?.sessionState}
-        amrAccountPlan={
-          amrLoginStatus?.account?.plan?.trim()
-          || amrLoginStatus?.user?.plan?.trim()
-          || null
-        }
-        amrAccountId={amrLoginStatus?.user?.id ?? amrLoginStatus?.credentialRevision ?? null}
         config={config}
         providerModelsCache={providerModelsCache}
         onProviderModelsCacheChange={setProviderModelsCache}
@@ -5946,14 +3542,10 @@ function AppInner() {
         onSkillsRefresh={refreshSkills}
         onSkillsChanged={handleSkillsChanged}
         onRefreshAgents={refreshAgents}
-        skillsLoading={
-          workspaceSkills.identity !== currentWorkspaceCatalogIdentity || skillsLoading
-        }
-        designSystemsLoading={
-          workspaceDesignSystems.identity !== currentWorkspaceCatalogIdentity || dsLoading
-        }
+        skillsLoading={skillsLoading}
+        designSystemsLoading={dsLoading}
         projectsLoading={projectsLoading}
-        projectsLoadFailed={projectListFailure?.displayKey === currentProjectDisplayKey}
+        projectsLoadFailed={projectListFailure !== null}
         promptTemplatesLoading={promptTemplatesLoading}
         onCreateProject={handleCreateProject}
         onCreatePluginShareProject={handleCreatePluginShareProject}
@@ -5966,7 +3558,6 @@ function AppInner() {
         onDuplicateProject={handleDuplicateProject}
         onRenameProject={handleRenameProject}
         onProjectsRefresh={refreshProjectsStrict}
-        onTeamProjectContentReady={handleTeamProjectContentReady}
         onChangeDefaultDesignSystem={handleChangeDefaultDesignSystem}
         onCreateDesignSystem={() => {
           setPendingDesignSystemCreateEntry('design_systems_page');
@@ -5977,41 +3568,6 @@ function AppInner() {
         onPersistComposioKey={handleConfigPersistComposioKey}
         onOpenSettings={openSettings}
         onCompleteOnboarding={handleCompleteOnboarding}
-        onSignedOut={handleActiveCloudSignOut}
-        onAmrLoginStatusChange={handleAmrLoginStatusChange}
-        artifactUpgradeSlot={
-          amrArtifactUpgradeHomeOffer ? (
-            <AmrArtifactUpgradeHomeCard
-              key={amrArtifactUpgradeHomeOffer.sessionKey}
-              profile={amrLoginStatus?.profile ?? null}
-              metricsConsent={config.telemetry?.metrics === true}
-              installationId={config.installationId}
-              onViewArtifact={() => {
-                if (
-                  !amrArtifactUpgradeHomeOffer.projectId
-                  || !amrArtifactUpgradeHomeOffer.conversationId
-                ) {
-                  navigate({ kind: 'home', view: 'projects' });
-                  return;
-                }
-                navigate({
-                  kind: 'project',
-                  projectId: amrArtifactUpgradeHomeOffer.projectId,
-                  conversationId: amrArtifactUpgradeHomeOffer.conversationId,
-                  fileName: amrArtifactUpgradeHomeOffer.fileName,
-                });
-              }}
-              onDismiss={() => {
-                if (amrArtifactUpgradeHomeMock) return;
-                setAmrArtifactUpgradeHomeOffer((current) =>
-                  current?.sessionKey === amrArtifactUpgradeHomeOffer.sessionKey
-                    ? null
-                    : current,
-                );
-              }}
-            />
-          ) : undefined
-        }
       />
     );
   }
@@ -6029,63 +3585,17 @@ function AppInner() {
           // Supply only that route-owned row to chrome; never insert it into
           // the ambient Home catalogue.
           projects={workspaceChromeProjects}
-          activeProjectWorkspaceId={
-            route.kind === 'project' && activeProject
-              ? activeProject.workspaceId ?? null
-              : undefined
-          }
-          preserveSignedOutShareRoute={Boolean(observedPublicShareLink
-            && route.kind === 'project' && route.projectId === observedPublicShareLink.projectId
-            && route.fileName === observedPublicShareLink.filePath
-            && amrLoginStatus?.loggedIn === false && amrLoginStatus.loginInFlight !== true)}
           onboardingCompleted={config.onboardingCompleted === true}
-          identityScopeKey={workspaceTabsIdentityScopeKey}
-          workspaceContext={workspaceContext}
           onRenameProject={handleRenameProject}
           onDuplicateProject={handleDuplicateProject}
           onDeleteProject={handleDeleteProject}
         />
-        {/* Avatar + credits keep their home-view spot (the top-right actions
-            host inside the tabs chrome) while a project tab is open, even
-            though EntryShell — the cluster's usual owner — is unmounted here.
-            Home and the other entry views mount theirs through EntryNavRail;
-            the routes are mutually exclusive, so exactly one is on screen. */}
         {route.kind === 'project' ? (
-          <WorkspaceTopRightAccountCluster
-            onOpenSettings={openSettings}
-            onSignedOut={handleActiveCloudSignOut}
-            updaterSlot={
-              <UpdaterPopup
-                allowSilentUpdates={config.allowSilentUpdates}
-                silentUpdatePreferenceReady={daemonAppConfigReady}
-                onAllowSilentUpdatesChange={handleSilentUpdatePreferenceChange}
-              />
-            }
-            workspaceContextOverride={
-              activeProject?.workspaceId
-                ? activeProjectWorkspaceContext
-                : undefined
-            }
-            workspaceContextLoading={
-              activeProject?.workspaceId
-                ? projectRouteWorkspaceContext.loading
-                : undefined
-            }
-            amrLoggedIn={amrLoginStatus?.loggedIn ?? null}
-            amrAccountPlan={
-              amrLoginStatus?.account?.plan?.trim()
-              || amrLoginStatus?.user?.plan?.trim()
-              || null
-            }
-            amrAccountId={amrLoginStatus?.user?.id ?? amrLoginStatus?.credentialRevision ?? null}
-            metricsConsent={config.telemetry?.metrics === true}
-            installationId={config.installationId}
+          <UpdaterPopup
+            allowSilentUpdates={config.allowSilentUpdates}
+            silentUpdatePreferenceReady={daemonAppConfigReady}
+            onAllowSilentUpdatesChange={handleSilentUpdatePreferenceChange}
           />
-        ) : null}
-        {route.kind === 'project'
-          && activeProjectWorkspaceContext
-          && projectRouteWorkspaceContext.failure === 'unavailable' ? (
-          <ProjectWorkspaceRecoveryTip />
         ) : null}
         <div className="workspace-shell__body">
           {appMain}
@@ -6099,22 +3609,6 @@ function AppInner() {
           dockLine
         />
       )}
-      {/* Every placement these hosts may render is a home placement
-          (`opend.home.*`), so the home view is where they belong: not over a
-          project workbench, not over another entry tab, and — since account
-          restoration can finish while login is still up — not over onboarding. */}
-      {route.kind === 'home' && route.view === 'home' && (
-        <>
-          <TestCampaignModal
-            authenticated={isAmrSessionAuthenticated(amrLoginStatus)}
-            sessionSubject={amrLoginStatus?.user?.id ?? null}
-          />
-          <ProductionCampaignModal
-            authenticated={isAmrSessionAuthenticated(amrLoginStatus)}
-            sessionSubject={amrLoginStatus?.user?.id ?? null}
-          />
-        </>
-      )}
       <TooltipLayer />
       <UpdateDialog />
       {/* Mounted at shell level, outside the route views, so a survey armed by
@@ -6125,28 +3619,6 @@ function AppInner() {
         onExposure={() => trackExperienceSurveyShown(analytics.track)}
         onDismiss={() => trackExperienceSurveyDismissed(analytics.track)}
         onSubmit={(answers) => trackExperienceSurveySent(analytics.track, answers)}
-      />
-      <AmrArtifactUpgradeGate
-        cloudModelSelected={config.mode === 'daemon' && config.agentId === 'amr'}
-        homeVisible={route.kind === 'home' && route.view === 'home'}
-        activeProjectId={route.kind === 'project' ? route.projectId : null}
-        activeConversationId={
-          route.kind === 'project' ? route.conversationId ?? null : null
-        }
-        activeFileName={route.kind === 'project' ? route.fileName : null}
-        plan={resolvedAmrPlan}
-        planResolved={
-          amrLoginStatus !== null
-          && (!isAmrSessionAuthenticated(amrLoginStatus) || resolvedAmrPlan !== null)
-        }
-        profile={amrLoginStatus?.profile ?? null}
-        metricsConsent={config.telemetry?.metrics === true}
-        installationId={config.installationId}
-        onHomeOfferChange={
-          amrArtifactUpgradeHomeMock
-            ? undefined
-            : setAmrArtifactUpgradeHomeOffer
-        }
       />
       <AnimatePresence>
       {settingsOpen ? (
@@ -6169,7 +3641,6 @@ function AppInner() {
             ),
         })}
       />
-      <DeletedShareNotices state={deletedShares} />
       {workingDirError ? (
         <Toast
           message={workingDirError}
@@ -6188,11 +3659,6 @@ function AppInner() {
           onDismiss={() => setProjectCreateError(null)}
         />
       ) : null}
-      <HomeAmrBalanceGateDialogs
-        block={homeAmrBalanceGateBlock}
-        metricsConsent={config.telemetry?.metrics === true}
-        installationId={config.installationId}
-      />
       {projectOpenError ? (
         <Toast
           message={projectOpenError}

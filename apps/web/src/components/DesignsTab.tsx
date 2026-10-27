@@ -1,7 +1,6 @@
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Dialog, DialogDescription, DialogFooter, DialogTitle } from "@open-design/components";
-import type { WorkspaceCollabContext } from "@open-design/contracts";
 import { projectKindFromMetadataToTracking } from "@open-design/contracts/analytics";
 import { useAnalytics } from "../analytics/provider";
 import {
@@ -11,8 +10,6 @@ import {
   trackProjectsMorePopoverClick,
 } from "../analytics/events";
 import { useT } from "../i18n";
-import { useWorkspaceContext } from "../collab/useWorkspaceContext";
-import { currentWorkspaceAccountGeneration, workspaceIdentityCacheKey } from "../collab/workspace-identity";
 import {
 	getProjectCoverSnapshot,
 	projectCoverSnapshotKey,
@@ -38,7 +35,6 @@ import { LiveArtifactBadges } from "./LiveArtifactBadges";
 import { Toast } from "./Toast";
 import { ProjectDeleteConfirmDialog } from "./project-actions/ProjectDeleteConfirmDialog";
 import { useProjectDeleteFlow } from "./project-actions/useProjectDeleteFlow";
-import { useBatchProjectShareCount } from "./project-actions/useBatchProjectShareCount";
 import {
 	HtmlProjectCoverFrame,
 	coverFromProjectFile,
@@ -143,8 +139,7 @@ export function DesignsTab({
 	const confirmTitleId = useId();
 	const t = useT();
 	const analytics = useAnalytics();
-	const { context: workspaceContext, loading: workspaceContextLoading } = useWorkspaceContext();
-	const deleteFlow = useProjectDeleteFlow({ onDelete, analyticsPage: "all_projects", workspaceContext });
+	const deleteFlow = useProjectDeleteFlow({ onDelete, analyticsPage: "all_projects" });
 	// P0 page_view page_name=projects — fire once when the tab mounts so
 	// `/projects` landings register even before the user clicks anything.
 	// ref-keyed to survive re-renders that flip parent state without
@@ -176,8 +171,6 @@ export function DesignsTab({
 	const [projectsRefreshing, setProjectsRefreshing] = useState(false);
 	const menuContainerRef = useRef<HTMLDivElement | null>(null);
 	const projectsRefreshInFlightRef = useRef(false);
-	const liveWorkspaceIdentityRef = useRef<string | null>(null);
-	const coverWorkspaceIdentityRef = useRef<string | null>(null);
 	const [renameTarget, setRenameTarget] = useState<{ id: string; original: string } | null>(null);
 	const [renameInput, setRenameInput] = useState("");
 	const [confirmTarget, setConfirmTarget] = useState<{
@@ -189,7 +182,6 @@ export function DesignsTab({
 	const [confirmPending, setConfirmPending] = useState(false);
 	const [confirmError, setConfirmError] = useState<string | null>(null);
 	const [batchDeleteIds, setBatchDeleteIds] = useState<string[]>([]);
-	const batchShares = useBatchProjectShareCount(confirmTarget ? batchDeleteIds : [], workspaceContext);
 	const [view, setView] = useState<ViewMode>(() => {
 		if (typeof window === "undefined") return "grid";
 		try {
@@ -203,13 +195,8 @@ export function DesignsTab({
 	});
 
 	useEffect(() => {
-		if (!isActive || workspaceContextLoading) return;
+		if (!isActive) return;
 		const controller = new AbortController();
-		const workspaceIdentity = workspaceIdentityCacheKey(workspaceContext);
-		if (liveWorkspaceIdentityRef.current !== workspaceIdentity) {
-			liveWorkspaceIdentityRef.current = workspaceIdentity;
-			setLiveArtifactsByProject({});
-		}
 		const projectIds = projects.map((project) => project.id);
 		if (projectIds.length === 0) {
 			setLiveArtifactsByProject({});
@@ -224,7 +211,6 @@ export function DesignsTab({
 						projectId,
 						await fetchLiveArtifacts(projectId, {
 							signal: controller.signal,
-							workspaceContext,
 						}),
 					] as const,
 		).then((entries) => {
@@ -233,22 +219,19 @@ export function DesignsTab({
 		});
 
 		return () => controller.abort();
-	}, [isActive, projects, workspaceContext, workspaceContextLoading]);
+	}, [isActive, projects]);
 
 	useEffect(() => {
-		if (!isActive || workspaceContextLoading) return;
+		if (!isActive) return;
 		const controller = new AbortController();
 		if (projects.length === 0) {
 			setCoverByProject({});
 			return;
 		}
-		const workspaceIdentity = workspaceIdentityCacheKey(workspaceContext);
-		const workspaceIdentityChanged = coverWorkspaceIdentityRef.current !== workspaceIdentity;
-		coverWorkspaceIdentityRef.current = workspaceIdentity;
 		const immediateEntries: Array<readonly [string, ProjectCoverOverride | null]> = [];
 		const unresolvedProjects = projects.filter((project) => {
 			const snapshot = getProjectCoverSnapshot(
-				projectCoverSnapshotKey(workspaceIdentity, project.id, project.updatedAt),
+				projectCoverSnapshotKey(null, project.id, project.updatedAt),
 			);
 			if (snapshot === undefined) return true;
 			immediateEntries.push([project.id, snapshot.cover] as const);
@@ -260,7 +243,7 @@ export function DesignsTab({
 		for (const project of projects) {
 			if (immediateByProject.has(project.id)) {
 				next[project.id] = immediateByProject.get(project.id)!;
-			} else if (!workspaceIdentityChanged && Object.hasOwn(current, project.id)) {
+			} else if (Object.hasOwn(current, project.id)) {
 				next[project.id] = current[project.id]!;
 			}
 		}
@@ -282,7 +265,6 @@ export function DesignsTab({
 					try {
 						files = await fetchProjectFiles(project.id, {
 							signal: controller.signal,
-							workspaceContext,
 						});
 					} catch {
 						return [project.id, undefined] as const;
@@ -296,7 +278,7 @@ export function DesignsTab({
 					}
 				}
 				setProjectCoverSnapshot(
-					projectCoverSnapshotKey(workspaceIdentity, project.id, project.updatedAt),
+					projectCoverSnapshotKey(null, project.id, project.updatedAt),
 					cover,
 				);
 				return [project.id, cover] as const;
@@ -312,7 +294,7 @@ export function DesignsTab({
 			}));
 		});
 		return () => controller.abort();
-	}, [isActive, projects, workspaceContext, workspaceContextLoading]);
+	}, [isActive, projects]);
 
 	useEffect(() => {
 		if (!menuOpenId) return;
@@ -562,7 +544,7 @@ export function DesignsTab({
 			message: `${t("common.delete")} "${artifact.title}"?`,
 			confirmLabel: t("designs.menuDelete"),
 			onConfirm: async () => {
-				const ok = await deleteLiveArtifact(projectId, artifact.id, workspaceContext);
+				const ok = await deleteLiveArtifact(projectId, artifact.id);
 				if (!ok) return false;
 				setLiveArtifactsByProject((current) => ({
 					...current,
@@ -576,9 +558,7 @@ export function DesignsTab({
 	};
 
 	const commitConfirmTarget = async () => {
-		if (!confirmTarget || confirmPending || (batchDeleteIds.length > 0 &&
-      (batchShares.pending || batchShares.failed || batchShares.count === null ||
-        batchShares.generation !== currentWorkspaceAccountGeneration()))) return;
+		if (!confirmTarget || confirmPending) return;
 		const target = confirmTarget;
 		setConfirmError(null);
 		setConfirmPending(true);
@@ -857,12 +837,7 @@ export function DesignsTab({
 									>
 										<iframe
 											className="thumb-iframe"
-											src={liveArtifactPreviewUrl(
-												p.id,
-												artifact.id,
-												"rendered",
-												workspaceContext,
-											)}
+											src={liveArtifactPreviewUrl(p.id, artifact.id, "rendered")}
 											title=""
 											loading="lazy"
 											sandbox="allow-scripts"
@@ -897,11 +872,7 @@ export function DesignsTab({
 
 						const liveCount = liveArtifactsByProject[p.id]?.length ?? 0;
 						const status = p.status?.value ?? "not_started";
-						const cover = projectCover(
-							p,
-							coverByProject[p.id] ?? null,
-							workspaceContext,
-						);
+						const cover = projectCover(p, coverByProject[p.id] ?? null);
 						const isSelected = selected.has(p.id);
 						const designSystemProject = isDesignSystemProject(p);
 						const publishedDesignSystem = isPublishedDesignSystemProject(p, designSystems);
@@ -1239,8 +1210,6 @@ export function DesignsTab({
 			{deleteFlow.target ? (
 				<ProjectDeleteConfirmDialog
 					projectName={deleteFlow.target.name}
-					activeShareCount={deleteFlow.activeShareCount}
-					shareReadStatus={deleteFlow.shareReadStatus}
 					pending={deleteFlow.pending}
 					failed={deleteFlow.failed}
 					errorMessage={deleteFlow.errorMessage}
@@ -1263,11 +1232,6 @@ export function DesignsTab({
 				>
 					<DialogTitle id={confirmTitleId}>{confirmTarget.title}</DialogTitle>
 					<DialogDescription className="modal-confirm-message">{confirmTarget.message}</DialogDescription>
-					{batchDeleteIds.length > 0 && batchShares.count !== null && batchShares.count > 0 ? (
-						<DialogDescription>{t("designs.deleteActiveShares", { count: batchShares.count })}</DialogDescription>
-					) : null}
-					{batchDeleteIds.length > 0 && batchShares.pending ? <p role="status">{t("common.loading")}</p> : null}
-					{batchDeleteIds.length > 0 && batchShares.failed ? <p role="alert">{t("ds.actionFailed")}</p> : null}
 					{confirmError ? (
 						<p className="modal-confirm-error" role="alert">
 							{confirmError}
@@ -1289,7 +1253,7 @@ export function DesignsTab({
 							type="button"
 							className="primary danger"
 							autoFocus
-							disabled={confirmPending || (batchDeleteIds.length > 0 && (batchShares.pending || batchShares.failed || batchShares.count === null || batchShares.generation !== currentWorkspaceAccountGeneration()))}
+							disabled={confirmPending}
 							onClick={() => void commitConfirmTarget()}
 						>
 							{confirmTarget.confirmLabel}
@@ -1376,7 +1340,6 @@ function isOrbitProject(project: Project): boolean {
 function projectCover(
 	project: Project,
 	override: ProjectCoverOverride | null,
-	workspaceContext?: WorkspaceCollabContext | null,
 ): {
 	kind: "image" | "video" | "html" | "logo" | "brand" | "fallback";
 	src?: string;
@@ -1414,12 +1377,7 @@ function projectCover(
 	if (override) {
 		return {
 			kind: override.kind,
-			src: projectCoverUrl(
-				project.id,
-				override.name,
-				override.mtime,
-				workspaceContext,
-			),
+			src: projectCoverUrl(project.id, override.name, override.mtime),
 			style,
 			initial,
 			name: override.name,
@@ -1427,12 +1385,7 @@ function projectCover(
 	}
 	const entry = meta?.entryFile;
 	if (entry) {
-		const src = projectCoverUrl(
-			project.id,
-			entry,
-			project.updatedAt,
-			workspaceContext,
-		);
+		const src = projectCoverUrl(project.id, entry, project.updatedAt);
 		if (meta?.kind === "image") return { kind: "image", src, style, initial };
 		if (meta?.kind === "video") return { kind: "video", src, style, initial };
 		if (/\.html?$/i.test(entry)) return { kind: "html", src, style, initial, name: entry };

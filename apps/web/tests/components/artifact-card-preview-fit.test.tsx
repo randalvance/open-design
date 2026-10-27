@@ -29,9 +29,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { FileOpsSummary } from '../../src/components/FileOpsSummary';
-import { CollabProvider } from '../../src/collab/collab-context';
 import type { FileOpEntry } from '../../src/runtime/file-ops';
-import { workspaceContextFixture } from '../helpers/workspace-context';
 
 beforeAll(() => {
   const style = document.createElement('style');
@@ -51,33 +49,6 @@ afterEach(() => {
 
 const PROJECT_ID = 'c7e3b234-2fb3-4f6e-8aae-a3a00697c476';
 
-function projectCollabValue() {
-  return {
-    workspaceContext: workspaceContextFixture({
-      workspaceId: 'workspace-a',
-      workspaceMemberId: 'member-a',
-    }),
-    workspaceContextLoading: false,
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed' as const,
-    isOwner: false,
-    isEffectiveOwner: true,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: vi.fn(),
-    requestPublish: vi.fn(),
-    refreshPresence: vi.fn(),
-    checkStatusNow: vi.fn(),
-  };
-}
-
 function fileOpEntry(path: string, status: FileOpEntry['status'] = 'done'): FileOpEntry {
   return {
     path,
@@ -91,9 +62,9 @@ function fileOpEntry(path: string, status: FileOpEntry['status'] = 'done'): File
 
 function renderCards(entries: FileOpEntry[], props: Record<string, unknown> = {}) {
   return render(
-    <CollabProvider value={projectCollabValue()}>
+    <>
       <FileOpsSummary entries={entries} projectId={PROJECT_ID} {...props} />
-    </CollabProvider>,
+    </>,
   );
 }
 

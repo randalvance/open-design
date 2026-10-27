@@ -1,67 +1,20 @@
 // @vitest-environment jsdom
-import { useEffect } from 'react';
 import { pickHomeTemplate } from '../helpers/home-template-picker';
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
   DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID,
   type DesignSystemSummary,
   type InstalledPluginRecord,
   type ConnectorDetail,
   type McpServerConfig,
   type SkillSummary,
-  type WorkspaceCollabContext,
 } from '@open-design/contracts';
-
-const workspaceA: WorkspaceCollabContext = {
-  workspaceId: 'workspace-a',
-  workspaceType: 'team',
-  workspaceMemberId: 'member-a',
-  role: 'member',
-  memberStatus: 'active',
-  lifecycleState: 'active',
-  billingState: 'active',
-  planId: 'team_plus',
-  providerMode: 'platform_credits',
-  seatSummary: buildWorkspaceSeatSummary({ seatLimit: 5, usedSeats: 1 }),
-  permissions: buildWorkspacePermissions({ role: 'member', lifecycleState: 'active' }),
-};
-let workspaceContextState: {
-  context: WorkspaceCollabContext | null;
-  loading: boolean;
-  failure?: 'unsupported';
-  identityChangePending?: boolean;
-} = { context: workspaceA, loading: false };
 
 vi.mock('../../src/components/home-hero/PlaceholderCarousel', () => ({
   PlaceholderCarousel: () => null,
 }));
-
-// Team plugin projections load after stream activation. This suite exercises
-// context serialization; supply the same readiness signal as a live workspace.
-vi.mock('../../src/collab/workspace-events', () => ({
-  useWorkspaceInvalidation: (
-    _handlers: unknown,
-    options?: { onActive?: () => void; enabled?: boolean; workspaceContext?: WorkspaceCollabContext | null },
-  ) => {
-    const identity = options?.workspaceContext?.workspaceId;
-    useEffect(() => {
-      if (options?.enabled && identity) options.onActive?.();
-    }, [identity, options?.enabled]);
-    return { connected: false };
-  },
-}));
-
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>();
-  return {
-    ...actual,
-    useWorkspaceContext: () => workspaceContextState,
-  };
-});
 
 import { HomeView } from '../../src/components/HomeView';
 import { HOME_APPLY_TEMPLATE_EVENT } from '../../src/components/home-hero/chips';
@@ -166,7 +119,6 @@ function makePlugin(id: string, title: string): InstalledPluginRecord {
 }
 
 afterEach(() => {
-  workspaceContextState = { context: workspaceA, loading: false };
   cleanup();
   vi.unstubAllGlobals();
   window.localStorage.clear();
@@ -178,78 +130,6 @@ afterEach(() => {
 
 
 describe('HomeView context picker', () => {
-  it('preserves selected local catalog provenance while Workspace identity transitions', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async (url) => {
-      if (typeof url === 'string' && url === '/api/plugins') {
-        return new Response(JSON.stringify({ plugins: [] }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
-      if (typeof url === 'string' && url === '/api/mcp/servers') {
-        return new Response(JSON.stringify({ servers: [], templates: [] }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        });
-      }
-      throw new Error(`unexpected fetch ${url}`);
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
-      cb(0);
-      return 0;
-    });
-    const onSubmit = vi.fn();
-    const view = render(
-      <HomeView
-        projects={[]}
-        skills={[SKILL]}
-        designSystems={[WORKSPACE_DESIGN_SYSTEM]}
-        defaultDesignSystemId={WORKSPACE_DESIGN_SYSTEM.id}
-        onSubmit={onSubmit}
-        onOpenProject={() => undefined}
-      />,
-    );
-
-    await screen.findByTestId('home-hero-input');
-    setHomeHeroPrompt('@proto');
-    await settle();
-    fireEvent.mouseDown(await screen.findByRole('option', { name: /prototype lab/i }));
-    await waitFor(() => expect(screen.getByTestId('home-hero-active-skill')).toBeTruthy());
-
-    workspaceContextState = {
-      context: null,
-      loading: true,
-      identityChangePending: true,
-    };
-    view.rerender(
-      <HomeView
-        projects={[]}
-        skills={[SKILL]}
-        skillsLoading
-        designSystems={[WORKSPACE_DESIGN_SYSTEM]}
-        designSystemsLoading
-        defaultDesignSystemId={WORKSPACE_DESIGN_SYSTEM.id}
-        onSubmit={onSubmit}
-        onOpenProject={() => undefined}
-      />,
-    );
-    await waitFor(() => expect((screen.getByTestId('home-hero-submit') as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(screen.getByTestId('home-hero-submit'));
-
-    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
-      skillId: SKILL.id,
-      skillCatalogScope: {
-        workspaceId: workspaceA.workspaceId,
-        workspaceMemberId: workspaceA.workspaceMemberId,
-      },
-      designSystemId: WORKSPACE_DESIGN_SYSTEM.id,
-      designSystemCatalogScope: {
-        workspaceId: workspaceA.workspaceId,
-        workspaceMemberId: workspaceA.workspaceMemberId,
-      },
-    }));
-  });
 
   it('stages pasted files on Home and submits them as first-turn context', async () => {
     const fetchMock = vi.fn<typeof fetch>(async (url) => {

@@ -35,8 +35,8 @@ export const ACP_ARTIFACT_ECHO_START_RE = new RegExp(
 );
 /** Maximum number of `acp_raw_event_shape` and `acp_artifact_text_suppression` diagnostic events emitted per session to avoid flooding the event stream. */
 export const ACP_RAW_EVENT_SHAPE_DIAGNOSTIC_LIMIT = 8;
-/** Maximum number of bytes retained from stderr to detect AMR retry/failure signals; older bytes are discarded to bound memory use. */
-export const AMR_STDERR_RETRY_TAIL_LIMIT = 16_000;
+/** Maximum number of bytes retained from stderr for child-exit diagnostics; older bytes are discarded to bound memory use. */
+export const ACP_STDERR_TAIL_LIMIT = 16_000;
 /** Maximum number of redacted stderr characters attached to an ACP child-exit diagnostic. */
 export const ACP_STDERR_DIAGNOSTIC_TAIL_LIMIT = 4_000;
 /**

@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 //
-// OPEND-3140 — the signed-out (local CLI / BYOK) shell gets the same entry
-// rail layout the cloud shell has: the 最近项目 section fed from the local
-// project list with live run status, the 项目 destination, and the message
-// centre riding the rail's foot dock instead of being a bare rail item.
+// OPEND-3140 — the local (CLI / BYOK) shell's entry rail: the 最近项目 section
+// fed from the local project list with live run status, the 项目 destination,
+// and the local identity row riding the rail's foot dock.
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -63,9 +62,6 @@ function stubFetch() {
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       );
     }
-    if (url.includes('/messages?')) {
-      return Response.json({ messages: [], nextCursor: null, unreadCount: 0 });
-    }
     return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
   }) as unknown as typeof fetch;
 }
@@ -84,10 +80,7 @@ function renderLocalRail(overrides: Partial<Parameters<typeof EntryNavRail>[0]> 
         onViewChange={onViewChange}
         onNewProject={() => {}}
         open
-        context={null}
-        billing={null}
         onOpenSettings={onOpenSettings}
-        footerNotice={<div data-testid="local-sign-in-card">Sign in</div>}
         recentProjects={Array.from({ length: 5 }, (_, index) =>
           project(`p${index + 1}`, 1_000 - index))}
         onOpenRecentProject={onOpen}
@@ -114,7 +107,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('EntryNavRail local (signed-out) shell', () => {
+describe('EntryNavRail local shell', () => {
   it('lists the local projects in the 最近项目 section, newest first, with live run status', async () => {
     renderLocalRail();
     const toggle = screen.getByTestId('entry-nav-recent-toggle');
@@ -168,27 +161,19 @@ describe('EntryNavRail local (signed-out) shell', () => {
     expect(drafts.textContent).toContain('All projects');
     fireEvent.click(drafts);
     expect(onViewChange).toHaveBeenCalledWith('drafts');
-    // Still no team catalogue without a workspace.
+    // No team catalogue destination.
     expect(screen.queryByTestId('entry-nav-all-projects')).toBeNull();
   });
 
-  it('docks the message centre beside a local identity row at the rail foot, like the cloud shell', async () => {
+  it('docks the social links above a local identity row at the rail foot', () => {
     renderLocalRail();
-    const dock = document.querySelector('.entry-nav-rail__account-dock') as HTMLElement | null;
-    expect(dock).not.toBeNull();
-    const bell = within(dock!).getByTestId('entry-nav-message-center');
-    expect(bell.classList.contains('entry-nav-rail__account-bell')).toBe(true);
-    expect(bell.getAttribute('aria-haspopup')).toBe('dialog');
-    // Not a plain rail destination any more.
-    expect(bell.classList.contains('entry-nav-rail__btn')).toBe(false);
-    expect(document.querySelector('.entry-nav-rail__group [data-testid="entry-nav-message-center"]')).toBeNull();
-    // The social links ride the dock, above the identity row, as they do signed in.
-    expect(within(dock!).getByTestId('entry-nav-rail-social')).toBeTruthy();
-    // The sign-in card keeps its slot in the footer.
-    expect(screen.getByTestId('local-sign-in-card')).toBeTruthy();
-    fireEvent.click(bell);
-    await waitFor(() => expect(screen.getByTestId('message-center-dialog')).toBeTruthy());
-    expect(bell.getAttribute('aria-expanded')).toBe('true');
+    const dock = screen.getByTestId('entry-nav-local-account-dock');
+    expect(within(dock).getByTestId('entry-nav-rail-social')).toBeTruthy();
+    expect(within(dock).getByTestId('entry-nav-local-account')).toBeTruthy();
+    // No account, no message centre, no sign-in affordance anywhere in the rail.
+    expect(screen.queryByTestId('entry-nav-message-center')).toBeNull();
+    expect(screen.queryByTestId('entry-nav-account')).toBeNull();
+    expect(screen.queryByTestId('workspace-switcher')).toBeNull();
   });
 
   it('opens Settings from the local identity row', () => {

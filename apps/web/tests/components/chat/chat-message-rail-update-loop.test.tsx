@@ -118,7 +118,7 @@ function buildMessages(streamedChars: number): ChatMessage[] {
     createdAt: 100,
     runId: 'run-1',
     runStatus: 'running',
-    agentId: 'amr',
+    agentId: 'opencode',
     events: [],
   } as unknown as ChatMessage);
   return out;
@@ -142,7 +142,7 @@ function renderChat(messages: ChatMessage[]) {
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
+      config={{ agentId: 'opencode', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }
@@ -237,7 +237,7 @@ describe('ChatMessageRail — 流式期间活动点必须收敛', () => {
           activeConversationId="conv-1"
           onSelectConversation={vi.fn()}
           onDeleteConversation={vi.fn()}
-          config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
+          config={{ agentId: 'opencode', agentCliEnv: {} } as unknown as AppConfig}
         />,
       );
       await tick();

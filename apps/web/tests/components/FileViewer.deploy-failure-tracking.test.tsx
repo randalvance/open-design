@@ -86,9 +86,8 @@ async function deployToVercel() {
       liveHtml="<html><body><h1>Hello</h1></body></html>"
     />,
   );
-  // Deploy providers sit behind the Share panel's "More sharing options" menu.
+  // Deploy providers are the Share panel's rows.
   fireEvent.click(screen.getByRole('button', { name: /^share$/i }));
-  fireEvent.click(await screen.findByRole('button', { name: 'More sharing options' }));
   fireEvent.click(await screen.findByRole('menuitem', { name: /Deploy to Vercel/i }));
   await screen.findByRole('combobox', { name: /Provider/i });
   const deployButtons = await screen.findAllByRole('button', { name: /^Deploy$/i });

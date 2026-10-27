@@ -7,7 +7,6 @@ import { DesignKitView, useBrandFonts } from '../../src/components/DesignKitView
 import { PreviewModal } from '../../src/components/PreviewModal';
 import { I18nProvider } from '../../src/i18n';
 import type { DesignKit } from '../../src/runtime/design-kit';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 function previewKit(): DesignKit {
   return {
@@ -41,19 +40,7 @@ afterEach(() => {
 });
 
 describe('DesignKitView iframe sandboxing', () => {
-  it('keeps fetch headers while browser font URLs use server-derived project authority', async () => {
-    const context = {
-      workspaceId: 'workspace-team',
-      workspaceType: 'team',
-      workspaceMemberId: 'member-1',
-      role: 'member',
-      memberStatus: 'active',
-      lifecycleState: 'active',
-      permissions: {
-        canShareProjects: false,
-        canWriteSyncedFiles: false,
-      },
-    } as WorkspaceCollabContext;
+  it('loads the project font manifest and injects self-hosted font faces', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       Response.json({
         files: [{
@@ -66,18 +53,12 @@ describe('DesignKitView iframe sandboxing', () => {
       }),
     );
 
-    const { unmount } = renderHook(() => useBrandFonts('project-team', [], context));
+    const { unmount } = renderHook(() => useBrandFonts('project-team', []));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/projects/project-team/raw/fonts/manifest.json',
-        {
-          cache: 'no-store',
-          headers: expect.objectContaining({
-            'x-od-workspace-id': 'workspace-team',
-            'x-od-workspace-member-id': 'member-1',
-          }),
-        },
+        { cache: 'no-store' },
       );
       expect(document.head.querySelector('style[data-brand-fonts="project-team"]')?.textContent)
         .toContain(

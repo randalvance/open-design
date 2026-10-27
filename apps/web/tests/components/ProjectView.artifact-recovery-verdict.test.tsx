@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildWorkspacePermissions, buildWorkspaceSeatSummary, OD_NEXT_AGENT_DECLARED_BLOCK_REASON, type WorkspaceCollabContext } from '@open-design/contracts';
+import { OD_NEXT_AGENT_DECLARED_BLOCK_REASON } from '@open-design/contracts';
 import { ProjectView } from '../../src/components/ProjectView';
 import { AssistantMessage } from '../../src/components/AssistantMessage';
 import { I18nProvider } from '../../src/i18n';
@@ -52,7 +52,7 @@ const config: AppConfig = { mode: 'daemon', apiProtocol: 'openai', apiKey: '', b
   agentId: 'opencode', skillId: null, designSystemId: null };
 let sequence = 0;
 let project: Project;
-let context: WorkspaceCollabContext;
+let context: { workspaceId: string; workspaceMemberId: string };
 let history: ChatMessage[];
 let files: ProjectFile[];
 let savedHtml: string | null;
@@ -79,10 +79,7 @@ function strategyTask() {
 beforeEach(() => {
   vi.clearAllMocks(); window.localStorage.clear(); window.sessionStorage.clear();
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
-  context = { workspaceId: 'verdict-workspace', workspaceType: 'personal', workspaceMemberId: 'verdict-member',
-    role: 'member', memberStatus: 'active', lifecycleState: 'active', billingState: 'active', planId: null,
-    providerMode: 'platform_credits', seatSummary: buildWorkspaceSeatSummary({ seatLimit: 0, usedSeats: 0 }),
-    permissions: buildWorkspacePermissions({ role: 'member', lifecycleState: 'active' }) };
+  context = { workspaceId: 'verdict-workspace', workspaceMemberId: 'verdict-member' };
   project = { id: `artifact-verdict-${++sequence}`, name: 'Artifact verdict', workspaceId: context.workspaceId,
     skillId: null, designSystemId: null, metadata: { kind: 'prototype' }, createdAt: 1000, updatedAt: 2000 };
   files = []; savedHtml = null; writeStarted = false; messageWrites = []; history = [];
@@ -144,7 +141,7 @@ async function recover(kind: typeof strategy) {
       strategyTaskBlockedText: strategyTask().blockedContext.visibleText } : {}) }];
   render(<I18nProvider initial="en"><ProjectView project={project}
     initialProjectDetail={{ project, resolvedDir: '/workspace/verdict-fixture' }}
-    routeConversationId={`conv-${project.id}`} routeFileName={null} config={config} workspaceContextOverride={context}
+    routeConversationId={`conv-${project.id}`} routeFileName={null} config={config}
     agents={[{ id: 'opencode', name: 'OpenCode', bin: 'opencode', available: true, models: [] }]}
     skills={[]} designTemplates={[]} designSystems={[]} daemonLive onModeChange={vi.fn()} onAgentChange={vi.fn()}
     onAgentModelChange={vi.fn()} onRefreshAgents={vi.fn()} onOpenSettings={vi.fn()} onBack={vi.fn()}

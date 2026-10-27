@@ -18,12 +18,7 @@ import { useT } from '../i18n';
 import { scrollMovesAnchor } from '../lib/scroll-moves-anchor';
 import { buildPath, navigate, type EntryHomeView, type Route } from '../router';
 import type { Project } from '../types';
-import {
-  type ProjectDisplayStatus,
-  type TeamProject,
-  type WorkspaceCollabContext,
-  workspaceContextHasTeamIdentity,
-} from '@open-design/contracts';
+import { type ProjectDisplayStatus } from '@open-design/contracts';
 import { Icon, type IconName } from './Icon';
 import {
   hasCompletionNotice,
@@ -37,17 +32,6 @@ import {
   useProjectHoverCover,
 } from './entry-nav-rail/ProjectHoverPreview';
 import { DeleteMark, MoreDotsMark, RenameMark } from './entry-nav-rail/RailRecentRow';
-import { createSharedProjectPredicate } from '../collab/all-projects-list';
-import { fetchTeamProjectsCatalog } from '../collab/team-projects-catalog';
-import { projectOwnedBySelf } from './project-actions/ownership';
-import {
-  forgetOptimisticProjectOwnership,
-  type OptimisticProjectOwnershipWitnesses,
-  optimisticProjectOwnershipScopeKey,
-  projectOwnerMemberIdsWithOptimisticWitnesses,
-  recordOptimisticProjectOwnership,
-} from '../collab/optimistic-project-ownership';
-import { currentWorkspaceAccountGeneration } from '../collab/workspace-identity';
 import { ProjectDeleteConfirmDialog } from './project-actions/ProjectDeleteConfirmDialog';
 import {
   type ProjectDeleteHandler,
@@ -57,8 +41,6 @@ import {
   type ProjectDuplicateHandler,
   useProjectDuplicateFlow,
 } from './project-actions/useProjectDuplicateFlow';
-import { useWorkspaceProjectMove } from './project-actions/useWorkspaceProjectMove';
-import { MoveToTeamConfirmDialog, moveConfirmSkipped } from './MoveToTeamConfirmDialog';
 import actionStyles from './WorkspaceProjectActions.module.css';
 import { acknowledgeProjectCompletion, useProjectRunStatuses } from '../hooks/useProjectRunStatuses';
 import { STATUS_LABEL_KEYS } from '../state/projectRunStatus';
@@ -80,7 +62,6 @@ import { homeHeroChipLabel } from './home-hero/chip-labels';
 import { isMacPlatform } from '../utils/platform';
 import { useGlideIndicator } from '../hooks/useGlideIndicator';
 import { useLiquidGlass } from '../hooks/useLiquidGlass';
-import { WORKSPACE_CHROME_ACCOUNT_ACTIONS_ID } from './workspaceChromeActions';
 
 type WorkspaceChromeTab =
   | {
@@ -112,15 +93,8 @@ interface WorkspaceTabsState {
   activeTabId: string;
 }
 
-interface PersistedWorkspaceTabsSnapshot {
-  state: WorkspaceTabsState;
-  updatedAt: number;
-}
-
 interface PersistedWorkspaceTabsStore {
   current: WorkspaceTabsState | null;
-  scopeKey: string | undefined;
-  scopes: Record<string, PersistedWorkspaceTabsSnapshot>;
 }
 
 interface DisplayTab {
@@ -141,48 +115,15 @@ interface TabDragTarget {
 interface Props {
   route: Route;
   projects: Project[];
-  /**
-   * Persisted Workspace binding for the project currently named by `route`.
-   * `null` is an authoritative unbound/local project; `undefined` means the
-   * current route is not a resolved project and must not relax scope resets.
-   */
-  activeProjectWorkspaceId?: string | null;
   // Once onboarding is finished, the permanent entry
   // tab must never linger on the 'onboarding' (Welcome) view — some completion
   // paths navigate straight to a new project/design-system and leave the entry
   // tab showing Welcome in the background. This flips it back to Home.
   onboardingCompleted?: boolean;
   /**
-   * Stable "AMR account + active workspace" identity key the currently open
-   * tabs belong to (derived in App.tsx from `amrLoginStatus` +
-   * `workspaceContext` — see the comment there for the exact composition).
-   * `null` means "not resolved yet" (before the first AMR status read
-   * completes): the bar leaves whatever it already restored from
-   * localStorage untouched rather than guessing.
-   *
-   * Once resolved, each value owns an isolated tab snapshot. Switching to a
-   * different workspace restores only that scope's tabs (or a fresh Home tab
-   * on first visit), so returning to a workspace keeps its order and active
-   * tab without exposing those tabs in another scope.
-   */
-  identityScopeKey?: string | null;
-  /** A witnessed public URL may remain on its exact file route after sign-out;
-   * the old account's tabs must still be discarded. */
-  preserveSignedOutShareRoute?: boolean;
-  /**
-   * Workspace headers for the per-project run lookups behind the dropdown's
-   * status glyphs and the hover preview's cover read. Optional: without it the
-   * requests go unscoped, which is correct for a local/unbound session and
-   * simply returns nothing readable in a workspace one.
-   */
-  workspaceContext?: WorkspaceCollabContext | null;
-  /**
    * The docked dropdown's per-row ⋮ menu (OPEND-2686 / OPEND-3128): 重命名 /
-   * 复制项目 / 转入团队空间 / 删除, through the flows the rail's 最近项目 rows and
-   * the project cards already share. Each item renders only when its handler
-   * is supplied; 转入团队空间 needs no handler — it runs `moveWorkspaceProject`
-   * itself — and shows under the rail row menu's conditions (a team workspace
-   * with `canShareProjects`).
+   * 复制项目 / 删除, through the flows the rail's 最近项目 rows and the project
+   * cards already share. Each item renders only when its handler is supplied.
    */
   onRenameProject?: (id: string, name: string) => Promise<unknown> | void;
   onDuplicateProject?: ProjectDuplicateHandler;
@@ -231,7 +172,6 @@ function dockActionsAnchorFor(
 const STORAGE_KEY = 'open-design:workspace-tabs:v1';
 const OPEN_WORKSPACE_TAB_EVENT = 'open-design:workspace-tabs:open';
 const REMOVE_WORKSPACE_PROJECT_TABS_EVENT = 'open-design:workspace-tabs:remove-project';
-const MAX_PERSISTED_TAB_SCOPES = 12;
 const TAB_DRAG_HAPTIC_MS = 8;
 const TAB_DROP_HAPTIC_MS = 12;
 
@@ -524,41 +464,14 @@ function reviveTabsState(value: unknown): WorkspaceTabsState | null {
 }
 
 function readPersistedTabsStore(): PersistedWorkspaceTabsStore {
-  const empty: PersistedWorkspaceTabsStore = {
-    current: null,
-    scopeKey: undefined,
-    scopes: {},
-  };
+  const empty: PersistedWorkspaceTabsStore = { current: null };
   if (typeof window === 'undefined') return empty;
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return empty;
     const parsed = JSON.parse(raw) as unknown;
     if (parsed === null || typeof parsed !== 'object') return empty;
-    const record = parsed as Record<string, unknown>;
-    const current = reviveTabsState(record);
-    const scopeKey = typeof record.scopeKey === 'string' ? record.scopeKey : undefined;
-    const scopes: Record<string, PersistedWorkspaceTabsSnapshot> = {};
-    if (record.scopes !== null && typeof record.scopes === 'object') {
-      for (const [key, value] of Object.entries(record.scopes as Record<string, unknown>)) {
-        if (!key || value === null || typeof value !== 'object') continue;
-        const snapshotRecord = value as Record<string, unknown>;
-        const state = reviveTabsState(snapshotRecord.state);
-        if (!state) continue;
-        scopes[key] = {
-          state,
-          updatedAt: typeof snapshotRecord.updatedAt === 'number'
-            ? snapshotRecord.updatedAt
-            : 0,
-        };
-      }
-    }
-    // Migrate the previous single-scope format in memory. It remains readable
-    // at the top level while the next write adds the scoped registry.
-    if (scopeKey && current && !scopes[scopeKey]) {
-      scopes[scopeKey] = { state: current, updatedAt: 0 };
-    }
-    return { current, scopeKey, scopes };
+    return { current: reviveTabsState(parsed) };
   } catch {
     return empty;
   }
@@ -566,36 +479,12 @@ function readPersistedTabsStore(): PersistedWorkspaceTabsStore {
 
 function persistTabsStore(
   store: PersistedWorkspaceTabsStore,
-  currentScopeKey: string | undefined,
   current: WorkspaceTabsState,
 ): void {
   if (typeof window === 'undefined') return;
   try {
-    const scopes = currentScopeKey
-      ? {
-          ...store.scopes,
-          [currentScopeKey]: {
-            state: normalizeTabsState(current),
-            updatedAt: Date.now(),
-          },
-        }
-      : store.scopes;
-    const retainedScopes = Object.fromEntries(
-      Object.entries(scopes)
-        .sort(([, left], [, right]) => right.updatedAt - left.updatedAt)
-        .slice(0, MAX_PERSISTED_TAB_SCOPES),
-    );
-    const payloadScopeKey = currentScopeKey ?? store.scopeKey;
-    window.localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        ...normalizeTabsState(current),
-        ...(payloadScopeKey ? { scopeKey: payloadScopeKey, scopes: retainedScopes } : {}),
-      }),
-    );
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeTabsState(current)));
     store.current = current;
-    store.scopeKey = payloadScopeKey;
-    store.scopes = retainedScopes;
   } catch {
     // Best-effort browser chrome state. Navigation itself remains URL-driven.
   }
@@ -609,34 +498,10 @@ function freshHomeTabsState(): WorkspaceTabsState {
 function initialTabsState(
   route: Route,
   persisted: PersistedWorkspaceTabsStore,
-  identityScopeKey: string | null | undefined,
 ): WorkspaceTabsState {
   const fallback = tabFromRoute(route);
   const fallbackState = { tabs: [fallback], activeTabId: fallback.id };
-  if (identityScopeKey === undefined) {
-    return syncStateToRoute(persisted.current ?? fallbackState, route);
-  }
-  if (identityScopeKey === null) {
-    // An unowned snapshot (no `scopeKey` stamp — written by a build that
-    // predates tab scoping) cannot be attributed to whichever identity is
-    // about to resolve, so it must not even be displayed provisionally
-    // (recvqziATl6LlJ / recvqxKdOz0S6g). Owned snapshots keep the warm-reload
-    // restore; the scope effect reconciles them once the identity resolves.
-    if (persisted.scopeKey === undefined) {
-      return syncStateToRoute(fallbackState, route);
-    }
-    return persisted.current ?? syncStateToRoute(fallbackState, route);
-  }
-  const scoped = persisted.scopes[identityScopeKey]?.state;
-  if (persisted.scopeKey === identityScopeKey) {
-    return syncStateToRoute(scoped ?? persisted.current ?? fallbackState, route);
-  }
-  if (persisted.scopeKey === undefined) {
-    // Same attribution rule with the scope already resolved at mount time:
-    // unowned storage never seeds a resolved scope. Route truth alone does.
-    return syncStateToRoute(fallbackState, route);
-  }
-  return scoped ?? freshHomeTabsState();
+  return syncStateToRoute(persisted.current ?? fallbackState, route);
 }
 
 function syncStateToRoute(state: WorkspaceTabsState, route: Route): WorkspaceTabsState {
@@ -722,42 +587,6 @@ function syncStateToRoute(state: WorkspaceTabsState, route: Route): WorkspaceTab
   return normalizeTabsState({ tabs: nextTabs, activeTabId: replacement.id });
 }
 
-function accountBucketForScope(scopeKey: string): string {
-  return scopeKey.split('::', 1)[0] ?? scopeKey;
-}
-
-function workspaceBucketForScope(scopeKey: string): string | null {
-  const separator = scopeKey.indexOf('::');
-  return separator < 0 ? null : scopeKey.slice(separator + 2);
-}
-
-function shouldRehomeAuthorizedProjectAfterSignIn({
-  previousScopeKey,
-  nextScopeKey,
-  route,
-  activeProjectWorkspaceId,
-}: {
-  previousScopeKey: string;
-  nextScopeKey: string;
-  route: Route;
-  activeProjectWorkspaceId: string | null | undefined;
-}): boolean {
-  const activeProjectMatchesIncomingScope =
-    activeProjectWorkspaceId === null
-    || (
-      typeof activeProjectWorkspaceId === 'string'
-      && activeProjectWorkspaceId === workspaceBucketForScope(nextScopeKey)
-    );
-  return (
-    accountBucketForScope(previousScopeKey) === 'anon'
-    && accountBucketForScope(nextScopeKey) !== 'anon'
-    && route.kind === 'project'
-    && activeProjectWorkspaceId !== undefined
-    && activeProjectMatchesIncomingScope
-  );
-}
-
-
 /** Corner home glyph (per product: the brand tile gave way to a plain home
  *  icon). Renders the SAME glyph as the rail's 首页 item (`Icon name="home"`)
  *  rather than a hand-inlined path: the two sit on one vertical axis, so a
@@ -834,14 +663,12 @@ function completionNoticeFor(
  */
 function DockRowPreview({
   project,
-  workspaceContext,
   anchor,
 }: {
   project: Project;
-  workspaceContext: WorkspaceCollabContext | null;
   anchor: { top: number; left: number };
 }) {
-  const cover = useProjectHoverCover(project, workspaceContext);
+  const cover = useProjectHoverCover(project);
   const { resolveCover } = cover;
   useEffect(() => {
     void resolveCover();
@@ -860,11 +687,7 @@ function DockRowPreview({
 export function WorkspaceTabsBar({
   route,
   projects,
-  activeProjectWorkspaceId,
   onboardingCompleted = false,
-  identityScopeKey,
-  preserveSignedOutShareRoute = false,
-  workspaceContext = null,
   onRenameProject,
   onDuplicateProject,
   onDeleteProject,
@@ -878,18 +701,8 @@ export function WorkspaceTabsBar({
   const searchHint = `${t('common.search')} ${isMacPlatform() ? '⌘K' : 'Ctrl+K'}`;
   const [persistedTabsStore] = useState(readPersistedTabsStore);
   const [state, setState] = useState<WorkspaceTabsState>(
-    () => initialTabsState(route, persistedTabsStore, identityScopeKey),
+    () => initialTabsState(route, persistedTabsStore),
   );
-  const lastSeenScopeKeyRef = useRef<string | undefined>(persistedTabsStore.scopeKey);
-  const resolvedScopeOnceRef = useRef(false);
-  const pendingScopeStateRef = useRef<{
-    scopeKey: string;
-    state: WorkspaceTabsState;
-  } | null>(null);
-  const pendingScopeRouteRef = useRef<{
-    scopeKey: string;
-    path: string;
-  } | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
   // #5517 corner fan: the "+" button opens a corner-anchored radial menu of
@@ -1088,7 +901,6 @@ export function WorkspaceTabsBar({
   );
   const runStatusByProjectId = useProjectRunStatuses(dropdownProjectIds, {
     enabled: dockMenuOpen,
-    workspaceContext,
   });
 
   // Hovered row in the dock dropdown — the one the preview card is showing.
@@ -1199,125 +1011,17 @@ export function WorkspaceTabsBar({
     };
   }, [dockActionsProjectId]);
 
-  // 转入团队空间 shows under the rail row menu's conditions: a team plane to
-  // move into AND the right to share. A personal workspace hides the item.
-  const moveToTeamAvailable =
-    workspaceContextHasTeamIdentity(workspaceContext)
-    && workspaceContext?.permissions?.canShareProjects === true;
-  // Shared / foreign rows are decided from the same evidence the rail uses —
-  // the team hub's catalog — read once per dropdown open (coalesced and cached
-  // by the catalog module, so this is not a second poll) rather than through
-  // `useTeamProjects`, which would keep polling on the project route.
-  const [teamCatalog, setTeamCatalog] = useState<readonly TeamProject[]>([]);
-  useEffect(() => {
-    if (!dockMenuOpen || !workspaceContextHasTeamIdentity(workspaceContext) || !workspaceContext) {
-      return undefined;
-    }
-    let cancelled = false;
-    fetchTeamProjectsCatalog({ context: workspaceContext })
-      .then((catalog) => {
-        if (!cancelled) setTeamCatalog(catalog);
-      })
-      .catch((error: unknown) => {
-        // Off-team / offline / no hub: the rows read as unshared and owned,
-        // which is what the rail shows with no catalog either.
-        console.warn('[WorkspaceTabsBar] team project catalog read failed:', error);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [dockMenuOpen, workspaceContext]);
-  // Moves made from this menu flip the row's shared state at once; the
-  // catalog read on the next open confirms it. The move response is also the
-  // row's ownership witness until then — without it a just-shared row would
-  // read as someone else's (shared, no attribution) and lose its actions,
-  // which is the same lag EntryShell's optimistic layer covers for the cards.
-  const [sharedThisSession, setSharedThisSession] = useState<ReadonlySet<string>>(
-    () => new Set<string>(),
-  );
-  const [ownershipWitnesses, setOwnershipWitnesses] = useState<OptimisticProjectOwnershipWitnesses>(
-    () => new Map(),
-  );
-  const ownershipScopeKey = optimisticProjectOwnershipScopeKey(
-    workspaceContext,
-    currentWorkspaceAccountGeneration(),
-  );
-  const isSharedProject = useMemo(
-    () => createSharedProjectPredicate({
-      teamProjects: teamCatalog,
-      localProjects: projects,
-      workspaceContext,
-      sharedThisSession,
-    }),
-    [projects, sharedThisSession, teamCatalog, workspaceContext],
-  );
-  const teamProjectOwnerMemberIds = useMemo(
-    () => projectOwnerMemberIdsWithOptimisticWitnesses({
-      scopeKey: ownershipScopeKey,
-      teamProjects: teamCatalog,
-      witnesses: ownershipWitnesses,
-    }),
-    [ownershipScopeKey, ownershipWitnesses, teamCatalog],
-  );
-  const dockRowOwnedBySelf = useCallback(
-    (projectId: string) => projectOwnedBySelf({
-      projectId,
-      ownerMemberIds: teamProjectOwnerMemberIds,
-      selfMemberId: workspaceContext?.workspaceMemberId,
-      isShared: isSharedProject,
-    }),
-    [isSharedProject, teamProjectOwnerMemberIds, workspaceContext?.workspaceMemberId],
-  );
   // The dropdown only exists on the project route, where no project-collection
   // page is on screen; its actions file under Home, as the rail's do off the
   // collection views.
   const deleteFlow = useProjectDeleteFlow({
     onDelete: onDeleteProject,
     analyticsPage: 'home',
-    workspaceContext,
   });
   const duplicateFlow = useProjectDuplicateFlow({
     onDuplicate: onDuplicateProject,
     analyticsPage: 'home',
-    workspaceContext,
   });
-  const moveFlow = useWorkspaceProjectMove({
-    workspaceContext,
-    analyticsPage: 'home',
-    onProjectShared: (moved) => {
-      setSharedThisSession((prev) => new Set(prev).add(moved.id));
-      setOwnershipWitnesses((prev) => recordOptimisticProjectOwnership(prev, {
-        scopeKey: ownershipScopeKey,
-        context: workspaceContext,
-        project: moved,
-      }));
-    },
-    onProjectShareFailed: (projectId) => {
-      setSharedThisSession((prev) => {
-        if (!prev.has(projectId)) return prev;
-        const next = new Set(prev);
-        next.delete(projectId);
-        return next;
-      });
-      setOwnershipWitnesses((prev) => forgetOptimisticProjectOwnership(prev, projectId));
-    },
-    // Progress and failure show in the row's ⋮ menu, which the confirm dialog
-    // dismissed: re-open it once the request is on its way, close it again on
-    // success (the rail section does the same with its row menu).
-    onMoveStart: (project) => setDockActionsProjectId(project.id),
-    onMoveSettled: (project, _action, ok) => {
-      if (ok) setDockActionsProjectId((current) => (current === project.id ? null : current));
-    },
-  });
-  const [moveTarget, setMoveTarget] = useState<Project | null>(null);
-  const requestMoveToTeam = useCallback((project: Project) => {
-    setDockActionsProjectId(null);
-    if (moveConfirmSkipped()) {
-      void moveFlow.shareToTeam(project);
-      return;
-    }
-    setMoveTarget(project);
-  }, [moveFlow]);
   const duplicateFromDock = useCallback(async (project: Project) => {
     if (dockDuplicatingId) return;
     setDockDuplicateFailedId(null);
@@ -1364,29 +1068,8 @@ export function WorkspaceTabsBar({
     [displayTabs],
   );
   useEffect(() => {
-    if (identityScopeKey === null) return;
-    const pendingScopeRoute = pendingScopeRouteRef.current;
-    if (
-      pendingScopeRoute
-      && pendingScopeRoute.scopeKey === identityScopeKey
-    ) {
-      // React StrictMode replays mount effects without remounting refs. Keep
-      // rejecting the outgoing workspace URL until the router commits the
-      // route selected for the incoming scope.
-      if (pendingScopeRoute.path !== buildPath(route)) return;
-      pendingScopeRouteRef.current = null;
-    }
-    if (
-      typeof identityScopeKey === 'string'
-      && lastSeenScopeKeyRef.current !== identityScopeKey
-    ) {
-      // A workspace transition owns route reconciliation: the current URL can
-      // still describe the outgoing workspace for this render and must never
-      // be folded into the incoming workspace's snapshot.
-      return;
-    }
     setState((current) => syncStateToRoute(current, route));
-  }, [route, identityScopeKey]);
+  }, [route]);
 
   useEffect(() => {
     if (!previousOnboardingCompletedRef.current && onboardingCompleted) {
@@ -1429,179 +1112,6 @@ export function WorkspaceTabsBar({
       });
     });
   }, [onboardingCompleted, onboardingActive, route.kind]);
-
-  // Tab-scope enforcement: every AMR account + workspace key owns one isolated
-  // snapshot. Save the outgoing state before loading the incoming state, and
-  // navigate to that snapshot's active tab. The persistent registry is capped
-  // (MAX_PERSISTED_TAB_SCOPES), so workspace bouncing remains recoverable
-  // without turning localStorage into an unbounded recently-closed cache.
-  //
-  // Suppressed while onboarding is active: `createNewTab`/`openRadialMenu`
-  // are both gated on `onboardingActive`, so the ONLY tab that can exist
-  // during onboarding is the single pinned entry tab — there is nothing to
-  // protect against yet, and forcing a close+navigate-home mid-flow would
-  // eject the user from the Connect step before they finish it (a real
-  // scenario: finishing AMR sign-in mid-onboarding is exactly a scope change
-  // per this design). The new key is still recorded via the ref so the
-  // reconciliation does not re-fire the moment onboarding completes with a
-  // scope that has not changed again since.
-  useEffect(() => {
-    if (typeof identityScopeKey !== 'string') return;
-    const previous = lastSeenScopeKeyRef.current;
-    lastSeenScopeKeyRef.current = identityScopeKey;
-    const firstResolvedScope = !resolvedScopeOnceRef.current;
-    resolvedScopeOnceRef.current = true;
-    if (previous === identityScopeKey) return;
-
-    if (previous === undefined) {
-      // Upgrade compatibility, held to the attribution rule (recvqziATl6LlJ /
-      // recvqxKdOz0S6g): a legacy single snapshot has no owner stamp, so it
-      // must never be adopted into whichever scope happens to resolve first —
-      // the account that opened those tabs may have switched since (pre-scoping
-      // builds never closed tabs on an account swap), and adopting would
-      // surface another account's project tabs inside the current account's
-      // workspace. Tabs are bookmarks: when attribution is unknowable, drop
-      // the snapshot and rebuild from route truth (fresh Home plus whatever
-      // tab the current URL already points at). A session with no unowned
-      // snapshot in storage (fresh install / already-scoped storage) keeps
-      // adopting its own live, session-created state unchanged.
-      const unownedSnapshotInStorage =
-        persistedTabsStore.scopeKey === undefined && persistedTabsStore.current !== null;
-      const adopted = syncStateToRoute(
-        unownedSnapshotInStorage ? freshHomeTabsState() : stateRef.current,
-        route,
-      );
-      persistedTabsStore.scopes[identityScopeKey] = {
-        state: adopted,
-        updatedAt: Date.now(),
-      };
-      pendingScopeStateRef.current = { scopeKey: identityScopeKey, state: adopted };
-      setState(adopted);
-      return;
-    }
-
-    if (!firstResolvedScope) {
-      persistedTabsStore.scopes[previous] = {
-        state: stateRef.current,
-        updatedAt: Date.now(),
-      };
-    }
-
-    if (onboardingActive) {
-      // Onboarding must not be interrupted by sign-in resolving a workspace:
-      // never navigate away from the flow. But re-homing the live state to
-      // the new scope is attribution, and the live state is not always the
-      // single pinned entry tab the flow itself creates — a snapshot restored
-      // at mount can ride along (browser localStorage outlives a daemon
-      // data-dir reset that replays onboarding). Within one account that is
-      // the owner's own state; across accounts (a direct mid-onboarding
-      // account swap) it must fail closed to a fresh Home state instead
-      // (recvqziATl6LlJ leak family) — visually identical for the legitimate
-      // sign-in-mid-onboarding case (a single entry tab either way, synced to
-      // the onboarding route), and never a cross-account tab transfer.
-      const rehomed =
-        accountBucketForScope(previous) === accountBucketForScope(identityScopeKey)
-          ? stateRef.current
-          : syncStateToRoute(freshHomeTabsState(), route);
-      persistedTabsStore.scopes[identityScopeKey] = {
-        state: rehomed,
-        updatedAt: Date.now(),
-      };
-      if (rehomed !== stateRef.current) {
-        pendingScopeStateRef.current = { scopeKey: identityScopeKey, state: rehomed };
-        setState(rehomed);
-      }
-      return;
-    }
-
-    // Settings is app-local rather than Workspace-owned. Keep that explicit
-    // destination when leaving a project-pinned Workspace scope for the same
-    // account's ambient scope, and through the failed-run CTA's anonymous ->
-    // signed-in authorization handoff. Rebuild from a fresh entry tab so no
-    // project tab crosses the scope boundary. Account A -> B still falls
-    // through to the fail-closed reset below.
-    const previousAccountBucket = accountBucketForScope(previous);
-    const nextAccountBucket = accountBucketForScope(identityScopeKey);
-    if (
-      route.kind === 'home'
-      && route.view === 'settings'
-      && (
-        previousAccountBucket === nextAccountBucket
-        || (previousAccountBucket === 'anon' && nextAccountBucket !== 'anon')
-      )
-    ) {
-      const rehomed = syncStateToRoute(freshHomeTabsState(), route);
-      persistedTabsStore.scopes[identityScopeKey] = {
-        state: rehomed,
-        updatedAt: Date.now(),
-      };
-      pendingScopeStateRef.current = { scopeKey: identityScopeKey, state: rehomed };
-      pendingScopeRouteRef.current = null;
-      setState(rehomed);
-      return;
-    }
-
-    // Inline "Authorize & retry" must finish the same run in place. Re-home
-    // only the live route tab (plus a fresh Home tab) when anonymous login
-    // resolves either an unbound local project or an exact witness for the
-    // project's persisted Workspace. Unresolved projects, Workspace
-    // mismatches, sign-out, authenticated account A→B, and Team/Personal
-    // workspace switches all retain the fail-closed reset below.
-    if (shouldRehomeAuthorizedProjectAfterSignIn({
-      previousScopeKey: previous,
-      nextScopeKey: identityScopeKey,
-      route,
-      activeProjectWorkspaceId,
-    })) {
-      const rehomed = syncStateToRoute(freshHomeTabsState(), route);
-      persistedTabsStore.scopes[identityScopeKey] = {
-        state: rehomed,
-        updatedAt: Date.now(),
-      };
-      pendingScopeStateRef.current = { scopeKey: identityScopeKey, state: rehomed };
-      pendingScopeRouteRef.current = null;
-      setState(rehomed);
-      return;
-    }
-    // The anonymous scope can settle in multiple passes (account -> anon ->
-    // anonymous workspace). Keep only this witnessed public-link route while
-    // discarding every authenticated project tab on each pass.
-    if (nextAccountBucket === 'anon'
-      && preserveSignedOutShareRoute && route.kind === 'project') {
-      const anonymousTabs = freshHomeTabsState();
-      pendingScopeStateRef.current = { scopeKey: identityScopeKey, state: anonymousTabs };
-      pendingScopeRouteRef.current = null;
-      setState(anonymousTabs);
-      return;
-    }
-
-    // Preserve the prior fail-closed authentication boundary: workspace
-    // bouncing within one account is recoverable, but sign-out or an account
-    // change always lands on a fresh Home state instead of reviving browser
-    // chrome from a previous authenticated session.
-    const mayRestore =
-      accountBucketForScope(previous) === accountBucketForScope(identityScopeKey);
-    const nextState = mayRestore
-      ? persistedTabsStore.scopes[identityScopeKey]?.state ?? freshHomeTabsState()
-      : freshHomeTabsState();
-    pendingScopeStateRef.current = { scopeKey: identityScopeKey, state: nextState };
-    setState(nextState);
-    const activeTab =
-      nextState.tabs.find((tab) => tab.id === nextState.activeTabId) ?? nextState.tabs[0]!;
-    const nextRoute = routeForTab(activeTab);
-    const nextPath = buildPath(nextRoute);
-    pendingScopeRouteRef.current = buildPath(route) === nextPath
-      ? null
-      : { scopeKey: identityScopeKey, path: nextPath };
-    navigate(nextRoute);
-  }, [
-    activeProjectWorkspaceId,
-    identityScopeKey,
-    onboardingActive,
-    preserveSignedOutShareRoute,
-    persistedTabsStore,
-    route,
-  ]);
 
   // Scroll the active tab into view when it changes. The strip itself
   // is native-scrollable horizontally (see CSS), so we just nudge the
@@ -1727,21 +1237,8 @@ export function WorkspaceTabsBar({
   }, [state.activeTabId, state.tabs.length]);
 
   useEffect(() => {
-    const pending = pendingScopeStateRef.current;
-    if (pending) {
-      // Effects from the render that observed a NEW scope still close over the
-      // OLD scope's state. Wait for React to commit the selected snapshot
-      // before associating any state with the incoming key.
-      if (pending.scopeKey !== identityScopeKey || pending.state !== state) return;
-      pendingScopeStateRef.current = null;
-    }
-    if (identityScopeKey === null) return;
-    persistTabsStore(
-      persistedTabsStore,
-      typeof identityScopeKey === 'string' ? identityScopeKey : undefined,
-      state,
-    );
-  }, [state, identityScopeKey, persistedTabsStore]);
+    persistTabsStore(persistedTabsStore, state);
+  }, [state, persistedTabsStore]);
 
   useEffect(() => {
     function onWorkspaceTabShortcut(event: KeyboardEvent) {
@@ -2142,19 +1639,6 @@ export function WorkspaceTabsBar({
     const dockActionsProject = dockActionsProjectId
       ? projectById.get(dockActionsProjectId) ?? null
       : null;
-    const dockActionsOwnedBySelf = dockActionsProject
-      ? dockRowOwnedBySelf(dockActionsProject.id)
-      : true;
-    const dockActionsForeignTitle = dockActionsOwnedBySelf
-      ? undefined
-      : t('recentProjects.ownOnlyMutation');
-    const dockActionsShared = dockActionsProject ? isSharedProject(dockActionsProject.id) : false;
-    const dockActionsSharing =
-      dockActionsProject !== null && moveFlow.sharingId === dockActionsProject.id;
-    const dockActionsShareError =
-      dockActionsProject && moveFlow.error?.projectId === dockActionsProject.id
-        ? moveFlow.error.kind
-        : null;
     return (
       <div className="workspace-tabs-dropdown" data-testid="workspace-tabs-dropdown">
         <button
@@ -2258,7 +1742,7 @@ export function WorkspaceTabsBar({
                       ) : null}
                     </button>
                     )}
-                    {rowProject && (onRenameProject || onDuplicateProject || onDeleteProject || moveToTeamAvailable) ? (
+                    {rowProject && (onRenameProject || onDuplicateProject || onDeleteProject) ? (
                       <button
                         type="button"
                         className={actionStyles.more}
@@ -2282,7 +1766,6 @@ export function WorkspaceTabsBar({
                           }
                           clearPreview();
                           setDockDuplicateFailedId(null);
-                          moveFlow.clearError();
                           setDockActionsProjectId(rowProject.id);
                         }}
                       >
@@ -2295,9 +1778,9 @@ export function WorkspaceTabsBar({
             </div>
             {/* The open row's ⋮ menu, in the preview's slot beside the
                 dropdown and portalled for the same reason the preview is.
-                Items, in order: 重命名 / 复制项目 / 转入团队空间 (team
-                workspaces only) / 删除 — the rail row menu's list, through
-                the flows it shares with the project cards. */}
+                Items, in order: 重命名 / 复制项目 / 删除 — the rail row
+                menu's list, through the flows it shares with the project
+                cards. */}
             {dockActionsProject && dockActionsAnchor && typeof document !== 'undefined' ? createPortal(
               <div
                 ref={dockActionsRef}
@@ -2310,8 +1793,6 @@ export function WorkspaceTabsBar({
                   <button
                     type="button"
                     role="menuitem"
-                    disabled={!dockActionsOwnedBySelf}
-                    title={dockActionsForeignTitle}
                     onClick={() => {
                       setDockActionsProjectId(null);
                       setDockRenameDraft(dockActionsProject.name);
@@ -2326,8 +1807,7 @@ export function WorkspaceTabsBar({
                   <button
                     type="button"
                     role="menuitem"
-                    disabled={!dockActionsOwnedBySelf || dockDuplicatingId !== null}
-                    title={dockActionsForeignTitle}
+                    disabled={dockDuplicatingId !== null}
                     onClick={() => { void duplicateFromDock(dockActionsProject); }}
                   >
                     <Icon name="copy" size={14} />
@@ -2343,46 +1823,11 @@ export function WorkspaceTabsBar({
                     {t('ds.actionFailed')}
                   </div>
                 ) : null}
-                {/* Hidden, not disabled, without a team plane (see
-                    `moveToTeamAvailable`); a shared row and a foreign row
-                    keep the item and explain themselves instead. */}
-                {moveToTeamAvailable ? (
-                  <button
-                    type="button"
-                    role="menuitem"
-                    disabled={dockActionsSharing || dockActionsShared || !dockActionsOwnedBySelf}
-                    title={dockActionsForeignTitle}
-                    data-testid="workspace-tabs-dropdown-move-to-team"
-                    onClick={() => requestMoveToTeam(dockActionsProject)}
-                  >
-                    <Icon name="share" size={14} />
-                    <span>
-                      {dockActionsSharing
-                        ? t('recentProjects.shareInProgress')
-                        : dockActionsShared
-                          ? t('recentProjects.sharedInTeam')
-                          : t('recentProjects.moveToTeam')}
-                    </span>
-                  </button>
-                ) : null}
-                {dockActionsShareError ? (
-                  <div className={actionStyles.error} role="alert">
-                    {t(
-                      dockActionsShareError === 'unshare'
-                        ? 'recentProjects.unshareFailed'
-                        : dockActionsShareError === 'owner-conflict'
-                          ? 'recentProjects.shareOwnerConflict'
-                          : 'recentProjects.shareFailed',
-                    )}
-                  </div>
-                ) : null}
                 {onDeleteProject ? (
                   <button
                     type="button"
                     role="menuitem"
                     className={actionStyles.danger}
-                    disabled={!dockActionsOwnedBySelf}
-                    title={dockActionsForeignTitle}
                     onClick={() => {
                       // The confirmation (the shared project delete dialog,
                       // OPEND-2797) is modal; the dropdown has nothing left
@@ -2410,7 +1855,6 @@ export function WorkspaceTabsBar({
                    of pointing a live cover at a new project. */
                 key={previewProject.id}
                 project={previewProject}
-                workspaceContext={workspaceContext}
                 anchor={previewAnchor}
               />
             ) : null}
@@ -2689,36 +2133,17 @@ export function WorkspaceTabsBar({
       </div>
       </>,
       )}
-      <div
-        id={WORKSPACE_CHROME_ACCOUNT_ACTIONS_ID}
-        className="workspace-chrome-account-actions"
-        data-testid="workspace-chrome-account-actions"
-      />
       {/* Portalled: the chrome header is a backdrop-filtered box, which would
-          contain a fixed dialog rendered inside it. `MoveToTeamConfirmDialog`
-          portals itself. */}
+          contain a fixed dialog rendered inside it. */}
       {deleteFlow.target && typeof document !== 'undefined' ? createPortal(
         <ProjectDeleteConfirmDialog
           projectName={deleteFlow.target.name}
-          activeShareCount={deleteFlow.activeShareCount}
-          shareReadStatus={deleteFlow.shareReadStatus}
           pending={deleteFlow.pending}
           failed={deleteFlow.failed}
           onCancel={deleteFlow.cancel}
           onConfirm={() => void deleteFlow.commit()}
         />,
         document.body,
-      ) : null}
-      {moveTarget ? (
-        <MoveToTeamConfirmDialog
-          action="to-team"
-          onCancel={() => setMoveTarget(null)}
-          onConfirm={() => {
-            const project = moveTarget;
-            setMoveTarget(null);
-            void moveFlow.shareToTeam(project);
-          }}
-        />
       ) : null}
       {radialMenu ? createPortal(
         <div className="workspace-radial-layer" onMouseDown={() => setRadialMenu(null)}>
@@ -2830,9 +2255,6 @@ function displayTabFor(
     community: t('pluginsHome.title'),
     drafts: t('entry.navDrafts'),
     'all-projects': t('entry.navAllProjects'),
-    members: t('entry.navMembers'),
-    board: t('entry.navBoard'),
-    'workspace-settings': t('entry.navWorkspaceSettings'),
     settings: t('settings.title'),
   };
   const entryIcon: Record<EntryHomeView, IconName> = {
@@ -2848,9 +2270,6 @@ function displayTabFor(
     community: 'globe',
     drafts: 'file',
     'all-projects': 'folder',
-    members: 'users',
-    board: 'kanban',
-    'workspace-settings': 'settings',
     settings: 'settings',
   };
   return {

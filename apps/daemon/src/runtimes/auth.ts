@@ -1,6 +1,5 @@
 import { execAgentFile } from './invocation.js';
 import { readCodexProviderEnvKey } from '../codex-config-normalize.js';
-import { reportsPlatformProviderCredentialFault } from '../integrations/vela-errors.js';
 import type { RuntimeAgentDef, RuntimeEnv } from './types.js';
 
 export type AgentAuthProbeResult = {
@@ -391,11 +390,11 @@ const SEVERITY_LABELS = new Set([
  * Exported for that guard only.
  */
 export const OWN_AGENT_COMMAND_NAMES: ReadonlySet<string> = new Set([
-  'agy', 'aider', 'amp', 'amr', 'antigravity', 'atomcode', 'byok-opencode',
+  'agy', 'aider', 'amp', 'antigravity', 'atomcode', 'byok-opencode',
   'claude', 'codebuddy', 'codex', 'copilot', 'cursor-agent', 'deepseek',
   'deepseek-harness', 'devin', 'dsh', 'grok', 'grok-build', 'hermes', 'kilo',
   'kimi', 'kiro', 'kiro-cli', 'mimo', 'opencode', 'opencode-cli', 'pi',
-  'qoder', 'qodercli', 'qwen', 'reasonix', 'trae-cli', 'traecli', 'vela',
+  'qoder', 'qodercli', 'qwen', 'reasonix', 'trae-cli', 'traecli',
   'vibe', 'vibe-acp',
 ]);
 
@@ -467,16 +466,6 @@ export function classifyAgentServiceFailure(
 ): AgentServiceFailureCode | null {
   const value = String(text || '');
   if (!value.trim()) return null;
-  // Claimed before auth because the code says whose credentials failed and the
-  // sentence beside it does not. vela's link gateway answers an upstream
-  // 401/403 with `upstream_provider_unauthenticated` /
-  // `upstream_provider_forbidden` on an HTTP 500, worded "Upstream provider
-  // credentials are missing or invalid." — which satisfies this file's
-  // `credentials (?:are )?missing` alternative and so reported the platform's
-  // own misconfiguration to the user as "Sign-in required" (catalogue R-053).
-  // A self-identifying machine code outranks a class read off prose; the same
-  // precedence the daemon records as `evidenceLevel: 'structured_code'`.
-  if (reportsPlatformProviderCredentialFault(value)) return 'UPSTREAM_UNAVAILABLE';
   // The auth class is a claim about THIS agent's credential — the web turns it
   // into a sign-in offer. A report that names a different holder (a tool the
   // agent ran) is answering a different question, so it does not reach the auth

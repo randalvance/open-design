@@ -5,32 +5,13 @@ import type {
   PluginDuplicateProjectResponse,
   Project,
   ProjectMetadata,
-  WorkspaceCollabContext,
 } from '@open-design/contracts';
-import { TeamResourceCopyForbiddenError } from '@open-design/contracts';
 import {
   duplicatePluginExampleIntoProject,
   PluginDuplicateProjectError,
 } from '../../plugins/duplicate-project.js';
-import {
-  enforceTeamResourceCopyAllowed,
-  type TeamResourceStateProvider,
-} from '../../collab/team-resource-state.js';
-import {
-  enforceVerifiedWorkspaceResourceMutation,
-  resolveOptionalLocalWorkspaceRequestAuthority,
-  type VerifyWorkspaceRequestAuthority,
-} from '../../collab/workspace-resource-mutation.js';
-import {
-  authorizeCreatedProjectWorkspace,
-  bindCreatedProjectToWorkspace,
-  sendCreatedProjectWorkspaceError,
-} from '../../collab/created-project-workspace.js';
-import type { WorkspaceDirectoryFetchResult } from '../../collab/vela-workspace-context.js';
 import type { PluginShareAction } from '../../services/plugin-share-tasks.js';
-import type { AuthorizeProjectRequest } from '../../collab/project-request-authority.js';
-import { workspaceTeamPluginBindingResourceId } from '../../plugins/registry.js';
-import { localPluginRegistryScope } from '../../plugins/local-source.js';
+import type { AuthorizeProjectRequest } from '../../project-authority.js';
 import {
   classifyPluginInstallError,
   type PluginInstallErrorCode,
@@ -55,12 +36,8 @@ export interface RegisterPluginEventRoutesDeps {
     requireLocalDaemonRequest: RequestHandler;
     sendApiError: (res: Response, status: number, code: string, message: string) => unknown;
   };
-  verifyWorkspaceRequestAuthority?: VerifyWorkspaceRequestAuthority;
   plugins: {
-    listVisiblePluginIds(
-      workspaceId: string | null,
-      workspaceMemberId: string | null,
-    ): Promise<ReadonlySet<string>>;
+    listVisiblePluginIds(): Promise<ReadonlySet<string>>;
   };
 }
 
@@ -92,22 +69,6 @@ interface AppliedPluginSnapshotLike {
   snapshotId: string;
   pluginId: string;
   [key: string]: unknown;
-}
-
-interface WorkspaceProjectBindingRow {
-  workspaceId?: string | null;
-  visibility?: string | null;
-  resourceState?: string | null;
-  createdByWorkspaceMemberId?: string | null;
-}
-
-// The narrow slice of a `workspace_resources` row the mutation gate needs —
-// see collab/workspace-resource-mutation.ts's `WorkspaceResourceAccessInput`,
-// which this mirrors so `enforceWorkspaceResourceMutation` accepts it as-is.
-interface WorkspaceResourceBindingRow {
-  visibility?: string | null;
-  resourceState?: string | null;
-  createdByWorkspaceMemberId?: string | null;
 }
 
 interface MissingInputErrorLike extends Error {
@@ -155,12 +116,8 @@ interface PluginRouteHelpers {
     req: Request,
     res: Response,
     mode: 'install' | 'upgrade',
-    authority: WorkspaceCollabContext | null,
   ): Promise<unknown>;
-  loadPluginRegistryView(options?: {
-    workspaceId?: string | null;
-    workspaceMemberId?: string | null;
-  }): Promise<unknown>;
+  loadPluginRegistryView(): Promise<unknown>;
   buildConnectorProbe(service: unknown): unknown;
   handleShareProject(
     req: Request,
@@ -192,70 +149,20 @@ interface PluginRouteHelpers {
 export interface RegisterPluginRoutesDeps {
   db: SqliteDbLike;
   authorizeProjectRequest: AuthorizeProjectRequest;
-  /** Team-resource copy red-line (D3). When present, a frozen team plugin cannot
-   *  be duplicated into a personal project. Omit to skip the guard (no-op). */
-  teamResources?: TeamResourceStateProvider;
   paths: { PROJECTS_DIR: string; PLUGIN_REGISTRY_ROOTS: string[]; PLUGIN_LOCKFILE_PATH: string };
   ids: { randomId(): string };
   projectStore: {
     insertProject(db: SqliteDbLike, project: unknown): Project | null;
     getProject(db: SqliteDbLike, id: string): Project | null;
-    ensureWorkspaceProject(db: SqliteDbLike, input: unknown): unknown;
     dbDeleteProject(db: SqliteDbLike, id: string): unknown;
     removeProjectDir(projectsRoot: string, projectId: string): Promise<unknown>;
   };
-  fetchProjectCreationWorkspaceDirectory?: () => Promise<WorkspaceDirectoryFetchResult>;
-  /** Settled, TTL-bounded authority for the pure Plugin catalog read. */
-  verifyWorkspaceReadAuthority?: VerifyWorkspaceRequestAuthority;
-  /** Fresh authority for mutations and non-catalog reads. */
-  verifyWorkspaceRequestAuthority?: VerifyWorkspaceRequestAuthority;
   conversations: {
     insertConversation(db: SqliteDbLike, conversation: unknown): unknown;
   };
-  /**
-   * Read access to the generic `workspace_resources` binding table (db.ts),
-   * pre-bound to no particular resource type — routes below pass `'plugin'`
-   * explicitly so a future skill/design-system route can reuse the exact
-   * same deps shape. Optional so callers that never reach the uninstall
-   * route (`registerProjectPluginRoutes`, existing narrow-scope tests) don't
-   * have to wire it; `registerPluginRoutes`'s uninstall handler treats an
-   * absent value as "no gate" rather than crashing.
-   */
-  workspaceResources?: {
-    getWorkspaceResource: (
-      db: SqliteDbLike,
-      resourceType: string,
-      workspaceId: string,
-      resourceId: string,
-    ) => WorkspaceResourceBindingRow | null | undefined;
-    getWorkspaceResourceByResourceId: (
-      db: SqliteDbLike,
-      resourceType: string,
-      resourceId: string,
-    ) => WorkspaceResourceBindingRow | null | undefined;
-    workspaceTeamPluginBindingAllowsRead?: (
-      db: SqliteDbLike,
-      workspaceId: string,
-      pluginId: string,
-    ) => boolean;
-    getWorkspaceProjectByProjectId?: (
-      db: SqliteDbLike,
-      projectId: string,
-    ) => WorkspaceProjectBindingRow | null | undefined;
-  };
   plugins: {
-    listInstalledPlugins: (
-      db: SqliteDbLike,
-      workspaceId?: string | null,
-      workspaceMemberId?: string | null,
-    ) => InstalledPluginLike[] | Promise<InstalledPluginLike[]>;
+    listInstalledPlugins: (db: SqliteDbLike) => InstalledPluginLike[] | Promise<InstalledPluginLike[]>;
     getInstalledPlugin: (db: SqliteDbLike, id: string) => InstalledPluginLike | null;
-    getWorkspacePlugin?: (
-      db: SqliteDbLike,
-      id: string,
-      workspaceId: string | null,
-      workspaceMemberId?: string | null,
-    ) => InstalledPluginLike | null | Promise<InstalledPluginLike | null>;
     getLocalPluginBySource?: (
       db: SqliteDbLike,
       id: string,
@@ -301,53 +208,25 @@ function duplicatedProjectKind(plugin: InstalledPluginLike): ProjectMetadata['ki
 }
 
 export function registerPluginEventRoutes(app: Express, deps: RegisterPluginEventRoutesDeps): void {
-  const resolveEventScope = async (req: Request, res: Response) => {
-    const authority = resolveOptionalLocalWorkspaceRequestAuthority(req);
-    if (!authority.ok) {
-      deps.http.sendApiError(
-        res,
-        authority.status,
-        authority.code,
-        authority.message,
-      );
-      return null;
-    }
-    return {
-      workspaceId: authority.context?.workspaceId ?? null,
-      workspaceMemberId: authority.context?.workspaceMemberId ?? null,
-    };
-  };
-  const visibleEvents = async <T extends { pluginId: string }>(
-    scope: { workspaceId: string | null; workspaceMemberId: string | null },
-    events: ReadonlyArray<T>,
-  ) => {
-    // Plugin events predate Workspace bindings and carry no trustworthy scope
-    // of their own. Prove visibility against the current scoped catalog; an
-    // empty-id or already-uninstalled event cannot be proven and is hidden.
-    const visibleIds = await deps.plugins.listVisiblePluginIds(
-      scope.workspaceId,
-      scope.workspaceMemberId,
-    );
+  const visibleEvents = async <T extends { pluginId: string }>(events: ReadonlyArray<T>) => {
+    // Prove visibility against the current catalog; an empty-id or
+    // already-uninstalled event cannot be proven and is hidden.
+    const visibleIds = await deps.plugins.listVisiblePluginIds();
     return events.filter((event): event is T => Boolean(
       event.pluginId && visibleIds.has(event.pluginId),
     ));
   };
   app.get('/api/plugins/events/snapshot', async (req, res) => {
-    const scope = await resolveEventScope(req, res);
-    if (!scope) return;
     const since = Number(typeof req.query.since === 'string' ? req.query.since : 0);
     const { pluginEventSnapshot } = await import('../../plugins/events.js');
     const events = await visibleEvents(
-      scope,
       pluginEventSnapshot(Number.isFinite(since) && since > 0 ? since : 0),
     );
     res.json({ events, count: events.length, generatedAt: Date.now() });
   });
-  app.get('/api/plugins/events/stats', async (req, res) => {
-    const scope = await resolveEventScope(req, res);
-    if (!scope) return;
+  app.get('/api/plugins/events/stats', async (_req, res) => {
     const { pluginEventSnapshot, summarisePluginEvents } = await import('../../plugins/events.js');
-    const events = await visibleEvents(scope, pluginEventSnapshot());
+    const events = await visibleEvents(pluginEventSnapshot());
     res.json({ stats: summarisePluginEvents(events), generatedAt: Date.now() });
   });
   app.post('/api/plugins/events/purge', deps.http.requireLocalDaemonRequest, async (_req, res) => {
@@ -357,15 +236,13 @@ export function registerPluginEventRoutes(app: Express, deps: RegisterPluginEven
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
   app.get('/api/plugins/events', async (req, res) => {
-    const scope = await resolveEventScope(req, res);
-    if (!scope) return;
     const since = Number(typeof req.query.since === 'string' ? req.query.since : 0);
     const { pluginEventSnapshot, subscribePluginEvents } = await import('../../plugins/events.js');
     let closed = false;
     let ready = false;
     const pending: Array<{ pluginId: string }> = [];
     const emitIfVisible = (ev: { pluginId: string }) => {
-      void visibleEvents(scope, [ev]).then(([visible]) => {
+      void visibleEvents([ev]).then(([visible]) => {
         if (!closed && visible) {
           res.write(`event: plugin\ndata: ${JSON.stringify(visible)}\n\n`);
         }
@@ -378,7 +255,6 @@ export function registerPluginEventRoutes(app: Express, deps: RegisterPluginEven
       else emitIfVisible(ev);
     });
     const backlog = await visibleEvents(
-      scope,
       pluginEventSnapshot(Number.isFinite(since) && since > 0 ? since : 0),
     );
     res.setHeader('Content-Type', 'text/event-stream');
@@ -395,34 +271,8 @@ export function registerPluginEventRoutes(app: Express, deps: RegisterPluginEven
 }
 
 export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDeps): void {
-  const { db, paths, ids, projectStore, conversations, plugins, helpers, teamResources, workspaceResources } = deps;
-  const resolveWorkspaceAuthority = async (
-    req: Request,
-    res: Response,
-    verifyAuthority: VerifyWorkspaceRequestAuthority | undefined =
-      deps.verifyWorkspaceRequestAuthority,
-  ): Promise<WorkspaceCollabContext | null | undefined> => {
-    const authority = resolveOptionalLocalWorkspaceRequestAuthority(req);
-    if (!authority.ok) {
-      helpers.sendApiError(
-        res,
-        authority.status,
-        authority.code,
-        authority.message,
-      );
-      return undefined;
-    }
-    return authority.context;
-  };
-  const resolveRequestPlugin = async (
-    id: string,
-    authority: WorkspaceCollabContext | null,
-  ) => {
-    const workspaceId = authority?.workspaceId ?? null;
-    return plugins.getWorkspacePlugin
-      ? plugins.getWorkspacePlugin(db, id, workspaceId, authority?.workspaceMemberId ?? null)
-      : plugins.getInstalledPlugin(db, id);
-  };
+  const { db, paths, ids, projectStore, conversations, plugins, helpers } = deps;
+  const resolveRequestPlugin = async (id: string) => plugins.getInstalledPlugin(db, id);
   const applyResolvedPlugin = async (
     req: Request,
     res: Response,
@@ -451,74 +301,29 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
       manifestSourceDigest: computed.manifestSourceDigest,
     });
   };
-  const isTeamPlugin = (plugin: InstalledPluginLike | null | undefined): boolean =>
-    typeof plugin?.source === 'string' && plugin.source.startsWith('team:plugin:');
-  const hasActiveTeamPluginBinding = (
-    id: string,
-    authority: WorkspaceCollabContext | null,
-  ): boolean => {
-    const workspaceId = authority?.workspaceId?.trim();
-    if (!workspaceId || !workspaceResources) return false;
-    const binding = workspaceResources.getWorkspaceResource(
-      db,
-      'plugin',
-      workspaceId,
-      workspaceTeamPluginBindingResourceId(workspaceId, id),
-    );
-    return binding?.visibility === 'team' && binding.resourceState !== 'deleted';
-  };
-  const denyTeamPluginMutation = (
-    res: Response,
-    id: string,
-    authority: WorkspaceCollabContext | null,
-    plugin?: InstalledPluginLike | null,
-  ): boolean => {
-    if (!hasActiveTeamPluginBinding(id, authority) && !isTeamPlugin(plugin)) {
-      return false;
-    }
-    res.status(403).json({ error: 'WORKSPACE_RESOURCE_MANAGE_DENIED' });
-    return true;
-  };
-  const snapshotVisibleToAuthority = (
-    row: { projectId?: string },
-    authority: WorkspaceCollabContext | null,
-  ): boolean => {
-    if (!row.projectId || !workspaceResources?.getWorkspaceProjectByProjectId) {
-      return false;
-    }
-    const binding = workspaceResources.getWorkspaceProjectByProjectId(db, row.projectId);
-    // Headerless local compatibility is deliberately limited to a snapshot
-    // whose project is provably unbound. A Workspace-bound snapshot may hold
-    // prompts and connector inputs and must not leak through this global lane.
-    if (!authority) return !binding;
-    if (
-      !binding
-      || binding.workspaceId !== authority.workspaceId
-      || binding.resourceState === 'deleted'
-    ) return false;
-    return binding.visibility === 'team'
-      || binding.createdByWorkspaceMemberId === authority.workspaceMemberId;
-  };
-  app.get('/api/plugins', async (req, res) => { try { const authority = await resolveWorkspaceAuthority(req, res, deps.verifyWorkspaceReadAuthority ?? deps.verifyWorkspaceRequestAuthority); if (authority === undefined) return; const visible = await plugins.listInstalledPlugins(db, authority?.workspaceId ?? null, authority?.workspaceMemberId ?? null); res.json({ plugins: helpers.applyBakedPreviews(visible, helpers.PLUGIN_PREVIEWS_DIR) }); } catch (err) { res.status(500).json({ error: String(err) }); } });
+  app.get('/api/plugins', async (_req, res) => {
+    try {
+      const visible = await plugins.listInstalledPlugins(db);
+      res.json({ plugins: helpers.applyBakedPreviews(visible, helpers.PLUGIN_PREVIEWS_DIR) });
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
   // Keep this static route before /api/plugins/:id; Express matches in
   // registration order and would otherwise interpret "stats" as a plugin id.
-  app.get('/api/plugins/stats', async (req, res) => {
-    const authority = await resolveWorkspaceAuthority(req, res);
-    if (authority === undefined) return;
-    const installed = await plugins.listInstalledPlugins(
-      db,
-      authority?.workspaceId ?? null,
-      authority?.workspaceMemberId ?? null,
-    );
+  app.get('/api/plugins/stats', async (_req, res) => {
+    const installed = await plugins.listInstalledPlugins(db);
     const snapshotRows = db.prepare(
       `SELECT status, project_id, project_id AS projectId, run_id, applied_at
          FROM applied_plugin_snapshots`,
     ).all() as Array<{ projectId?: string }>;
-    const visibleSnapshots = snapshotRows.filter((row) =>
-      snapshotVisibleToAuthority(row, authority));
-    return helpers.handlePluginStats(res, installed, visibleSnapshots);
+    return helpers.handlePluginStats(res, installed, snapshotRows);
   });
-  app.get('/api/plugins/:id', async (req, res) => { try { const authority = await resolveWorkspaceAuthority(req, res); if (authority === undefined) return; const plugin = await resolveRequestPlugin(req.params.id, authority); if (!plugin) return res.status(404).json({ error: 'plugin not found' }); res.json(plugin); } catch (err) { res.status(500).json({ error: String(err) }); } });
+  app.get('/api/plugins/:id', async (req, res) => {
+    try {
+      const plugin = await resolveRequestPlugin(req.params.id);
+      if (!plugin) return res.status(404).json({ error: 'plugin not found' });
+      res.json(plugin);
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
   app.post('/api/plugins/upload-zip', (req, res) => {
     helpers.pluginUpload.single('file')(req, res, async (err: unknown) => {
       if (err) return helpers.sendMulterError(res, err);
@@ -558,82 +363,23 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
     });
   });
   app.post('/api/plugins/install', async (req, res) => {
-    const authority = await resolveWorkspaceAuthority(req, res);
-    if (authority === undefined) return;
-    return helpers.installOrUpgradePlugin(req, res, 'install', authority);
+    return helpers.installOrUpgradePlugin(req, res, 'install');
   });
-  // This route used to carry NO permission check at all: any caller (any
-  // workspace, any role) could uninstall any plugin. Now gated the same way
-  // project mutations are, via the shared
-  // `enforceWorkspaceResourceMutation` (collab/workspace-resource-mutation.ts).
-  //
-  // The scoped resolver runs before the mutation gate. It quarantines an
-  // unbound user plugin from an explicitly scoped caller and hides Personal
-  // plugins from every non-creator, including Workspace owner/admin. The
-  // headerless local lane can still manage genuinely unbound legacy plugins.
   app.post('/api/plugins/:id/uninstall', async (req, res) => {
     try {
       if (!plugins.isSafePluginId(req.params.id)) return res.status(400).json({ error: 'invalid plugin id' });
-      const authority = await resolveWorkspaceAuthority(req, res);
-      if (authority === undefined) return;
-      const requestedPlugin = await resolveRequestPlugin(req.params.id, authority);
+      const requestedPlugin = await resolveRequestPlugin(req.params.id);
       if (!requestedPlugin) return res.status(404).json({ error: 'plugin not found' });
-      if (
-        typeof requestedPlugin?.source === 'string' &&
-        requestedPlugin.source.startsWith('team:plugin:')
-      ) {
-        return res.status(403).json({ error: 'WORKSPACE_RESOURCE_MANAGE_DENIED' });
-      }
-      const binding = workspaceResources?.getWorkspaceResourceByResourceId(db, 'plugin', req.params.id);
-      if (binding && workspaceResources && !await enforceVerifiedWorkspaceResourceMutation(
-        'plugin',
-        req,
-        res,
-        helpers.sendApiError,
-        (dbArg, workspaceId, resourceId) => workspaceResources.getWorkspaceResource(dbArg as SqliteDbLike, 'plugin', workspaceId, resourceId),
-        (dbArg, resourceId) => workspaceResources.getWorkspaceResourceByResourceId(dbArg as SqliteDbLike, 'plugin', resourceId),
-        db,
-        req.params.id,
-        'delete',
-        authority
-          ? async () => ({ ok: true as const, context: authority })
-          : undefined,
-      )) return;
       const result = await plugins.uninstallPlugin(db, req.params.id, paths.PLUGIN_REGISTRY_ROOTS); if (!result.ok && !result.removedFolder) return res.status(404).json({ error: 'plugin not found', warning: result.warning }); res.json(result);
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
   app.post('/api/plugins/:id/upgrade', async (req, res) => {
-    const authority = await resolveWorkspaceAuthority(req, res);
-    if (authority === undefined) return;
-    // A live exact-Workspace Team binding is the mutation target even while
-    // its local mirror is temporarily missing. Reject before resolving the
-    // plugin so the resolver cannot fall through to a same-id Personal row
-    // (or turn the Team mutation into a misleading 404 when none exists).
-    if (denyTeamPluginMutation(res, req.params.id, authority)) return;
-    const requestedPlugin = await resolveRequestPlugin(req.params.id, authority);
+    const requestedPlugin = await resolveRequestPlugin(req.params.id);
     if (!requestedPlugin) return res.status(404).json({ error: 'plugin not found' });
-    if (denyTeamPluginMutation(res, req.params.id, authority, requestedPlugin)) return;
-    const binding = workspaceResources?.getWorkspaceResourceByResourceId(db, 'plugin', req.params.id);
-    if (binding && workspaceResources && !await enforceVerifiedWorkspaceResourceMutation(
-      'plugin',
-      req,
-      res,
-      helpers.sendApiError,
-      (dbArg, workspaceId, resourceId) => workspaceResources.getWorkspaceResource(dbArg as SqliteDbLike, 'plugin', workspaceId, resourceId),
-      (dbArg, resourceId) => workspaceResources.getWorkspaceResourceByResourceId(dbArg as SqliteDbLike, 'plugin', resourceId),
-      db,
-      req.params.id,
-      'writeFiles',
-      authority
-        ? async () => ({ ok: true as const, context: authority })
-        : undefined,
-    )) return;
-    return helpers.installOrUpgradePlugin(req, res, 'upgrade', authority);
+    return helpers.installOrUpgradePlugin(req, res, 'upgrade');
   });
   app.post('/api/plugins/:id/apply-local', async (req, res) => {
-    // This endpoint identifies bytes the local catalogue already returned. It
-    // deliberately performs no Workspace authority read; catalogue sync owns
-    // local availability and remote mutations retain their own fresh gates.
+    // This endpoint identifies bytes the local catalogue already returned.
     res.setHeader('x-od-plugin-apply-local', '1');
     try {
       const body = req.body && typeof req.body === 'object'
@@ -645,12 +391,10 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
       }
       const plugin = await plugins.getLocalPluginBySource(db, req.params.id, source);
       if (!plugin) return res.status(404).json({ error: 'plugin not found' });
-      const registry = await helpers.loadPluginRegistryView(
-        localPluginRegistryScope(plugin),
-      );
+      const registry = await helpers.loadPluginRegistryView();
       // Registry loading walks local Skill/Design System files asynchronously.
-      // Re-resolve immediately before apply so a local reconciliation tombstone
-      // that landed during that walk cannot activate stale plugin bytes.
+      // Re-resolve immediately before apply so an uninstall that landed during
+      // that walk cannot activate stale plugin bytes.
       const currentPlugin = await plugins.getLocalPluginBySource(
         db,
         req.params.id,
@@ -667,30 +411,9 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
   });
   app.post('/api/plugins/:id/apply', async (req, res) => {
     try {
-      const authority = await resolveWorkspaceAuthority(req, res);
-      if (authority === undefined) return;
-      const plugin = await resolveRequestPlugin(req.params.id, authority);
+      const plugin = await resolveRequestPlugin(req.params.id);
       if (!plugin) return res.status(404).json({ error: 'plugin not found' });
-      const registry = await helpers.loadPluginRegistryView({
-        workspaceId: authority?.workspaceId ?? null,
-        workspaceMemberId: authority?.workspaceMemberId ?? null,
-      });
-      const exactWorkspaceId = authority?.workspaceId?.trim();
-      if (
-        typeof plugin.source === 'string' &&
-        plugin.source.startsWith('team:plugin:') &&
-        (
-          !exactWorkspaceId ||
-          !workspaceResources?.workspaceTeamPluginBindingAllowsRead ||
-          !workspaceResources.workspaceTeamPluginBindingAllowsRead(
-            db,
-            exactWorkspaceId,
-            req.params.id,
-          )
-        )
-      ) {
-        return res.status(404).json({ error: 'plugin not found' });
-      }
+      const registry = await helpers.loadPluginRegistryView();
       return applyResolvedPlugin(req, res, plugin, registry);
     } catch (err: unknown) {
       if (err instanceof plugins.MissingInputError) {
@@ -704,26 +427,10 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
     let insertedProject = false;
     try {
       const pluginId = Array.isArray(req.params.id) ? req.params.id[0] ?? '' : req.params.id ?? '';
-      const authority = await resolveWorkspaceAuthority(req, res);
-      if (authority === undefined) return;
-      const plugin = await resolveRequestPlugin(pluginId, authority);
+      const plugin = await resolveRequestPlugin(pluginId);
       if (!plugin) return res.status(404).json({ error: { code: 'plugin-not-found', message: 'plugin not found' } });
       if (typeof plugin.id !== 'string' || typeof plugin.fsPath !== 'string') {
         return res.status(422).json({ error: { code: 'plugin-not-duplicable', message: 'plugin record is missing a filesystem source' } });
-      }
-      // AC-9 copy red-line (D3): a frozen team plugin cannot be duplicated into a
-      // personal project. Runs before any project is created (nothing to clean up
-      // if it throws). No-op until the resource-hub reports this plugin as a
-      // frozen team resource.
-      if (teamResources) {
-        await enforceTeamResourceCopyAllowed(teamResources, { kind: 'plugin', resourceId: plugin.id });
-      }
-      const createWorkspace = await authorizeCreatedProjectWorkspace(
-        req,
-        deps.fetchProjectCreationWorkspaceDirectory,
-      );
-      if (!createWorkspace.ok) {
-        return sendCreatedProjectWorkspaceError(res, createWorkspace);
       }
       const body = req.body && typeof req.body === 'object'
         ? req.body as PluginDuplicateProjectRequest
@@ -774,12 +481,6 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
           createdAt: now,
           updatedAt: now,
         });
-        bindCreatedProjectToWorkspace(
-          (input) => projectStore.ensureWorkspaceProject(db, input),
-          createWorkspace.context,
-          projectId,
-          now,
-        );
         return createdProject;
       })();
       const loadedProject = projectStore.getProject(db, projectId) ?? project;
@@ -814,9 +515,6 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
           await projectStore.removeProjectDir(paths.PROJECTS_DIR, cleanupProjectId).catch(() => {});
         }
       }
-      if (err instanceof TeamResourceCopyForbiddenError) {
-        return res.status(403).json({ error: { code: err.code, message: err.message } });
-      }
       if (err instanceof PluginDuplicateProjectError) {
         return res.status(err.status).json({ error: { code: err.code, message: err.message } });
       }
@@ -824,23 +522,22 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
     }
   });
   app.post('/api/plugins/:id/share-project', async (req, res) => {
-    const authority = await resolveWorkspaceAuthority(req, res);
-    if (authority === undefined) return;
-    if (denyTeamPluginMutation(res, req.params.id, authority)) return;
-    const plugin = await resolveRequestPlugin(req.params.id, authority);
+    const plugin = await resolveRequestPlugin(req.params.id);
     if (!plugin) return res.status(404).json({ error: 'plugin not found' });
-    if (denyTeamPluginMutation(res, req.params.id, authority, plugin)) return;
     return helpers.handleShareProject(req, res, plugin);
   });
-  app.post('/api/plugins/:id/doctor', async (req, res) => { try { const authority = await resolveWorkspaceAuthority(req, res); if (authority === undefined) return; const plugin = await resolveRequestPlugin(req.params.id, authority); if (!plugin) return res.status(404).json({ error: 'plugin not found' }); const registry = await helpers.loadPluginRegistryView({ workspaceId: authority?.workspaceId ?? null, workspaceMemberId: authority?.workspaceMemberId ?? null }); const connectorProbe = helpers.buildConnectorProbe(helpers.connectorService); res.json(plugins.doctorPlugin(plugin, registry, { connectorProbe })); } catch (err) { res.status(500).json({ error: String(err) }); } });
+  app.post('/api/plugins/:id/doctor', async (req, res) => {
+    try {
+      const plugin = await resolveRequestPlugin(req.params.id);
+      if (!plugin) return res.status(404).json({ error: 'plugin not found' });
+      const registry = await helpers.loadPluginRegistryView();
+      const connectorProbe = helpers.buildConnectorProbe(helpers.connectorService);
+      res.json(plugins.doctorPlugin(plugin, registry, { connectorProbe }));
+    } catch (err) { res.status(500).json({ error: String(err) }); }
+  });
   app.post('/api/plugins/:id/trust', async (req, res) => {
-    const authority = await resolveWorkspaceAuthority(req, res);
-    if (authority === undefined) return;
-    const plugin = await resolveRequestPlugin(req.params.id, authority);
+    const plugin = await resolveRequestPlugin(req.params.id);
     if (!plugin) return res.status(404).json({ error: 'plugin not found' });
-    if (typeof plugin.source === 'string' && plugin.source.startsWith('team:plugin:')) {
-      return res.status(403).json({ error: 'WORKSPACE_RESOURCE_MANAGE_DENIED' });
-    }
     return helpers.handlePluginTrust(req, res, plugin);
   });
   const authorizeSnapshotRead = async (
@@ -885,20 +582,16 @@ export function registerPluginRoutes(app: Express, deps: RegisterPluginRoutesDep
       res.json({ snapshotId: snap.snapshotId, pluginId: snap.pluginId, block });
     } catch (err) { res.status(500).json({ error: String(err) }); }
   });
-  app.get('/api/applied-plugins', async (req, res) => {
+  app.get('/api/applied-plugins', async (_req, res) => {
     try {
-      const authority = await resolveWorkspaceAuthority(req, res);
-      if (authority === undefined) return;
       const rows = db.prepare(
-        `SELECT id, project_id AS projectId
+        `SELECT id
            FROM applied_plugin_snapshots
           ORDER BY applied_at DESC
           LIMIT 500`,
-      ).all() as Array<SqliteRowId & { projectId?: string }>;
-      const visibleRows = rows.filter((row) =>
-        snapshotVisibleToAuthority(row, authority));
+      ).all() as SqliteRowId[];
       res.json({
-        snapshots: visibleRows
+        snapshots: rows
           .map((row) => plugins.getSnapshot(db, row.id))
           .filter((snapshot): snapshot is AppliedPluginSnapshotLike => snapshot !== null),
       });

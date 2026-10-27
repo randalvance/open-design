@@ -363,21 +363,6 @@
           "reusable": true,
           "postinstallIntent": "ci-ui"
         },
-        "ui_p0_project_collab": {
-          "success": {
-            "UI P0 (project-collab)": [
-              "Prebuild workspace type declarations",
-              "Run UI P0 domain"
-            ]
-          },
-          "inputs": [
-            "suite://ui-runtime"
-          ],
-          "runnerClass": "ui_p0_heavy",
-          "products": "none",
-          "reusable": true,
-          "postinstallIntent": "ci-ui"
-        },
         "ui_p0_project_runtime": {
           "success": {
             "UI P0 (project-runtime)": [
@@ -469,11 +454,6 @@
             "name": "UI P0 (project-workspace-editor)",
             "workload": "ui_p0_project_workspace_editor",
             "shard": "project-workspace-editor"
-          },
-          {
-            "name": "UI P0 (project-collab)",
-            "workload": "ui_p0_project_collab",
-            "shard": "project-collab"
           },
           {
             "name": "UI P0 (project-runtime)",

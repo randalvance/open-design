@@ -215,6 +215,7 @@ vi.mock('../../src/components/FileWorkspace', () => ({
 
 vi.mock('../../src/components/Loading', () => ({
   CenteredLoader: () => null,
+  Spinner: () => null,
 }));
 
 async function waitForReadyChatPaneProps() {
@@ -578,7 +579,6 @@ describe('ProjectView daemon cleanup', () => {
       'project-comment-route',
       'conv-route',
       expect.objectContaining({ note: 'Member QA comment' }),
-      null,
     );
   });
 
@@ -1696,7 +1696,7 @@ describe('ProjectView daemon cleanup', () => {
     );
 
     await waitFor(() =>
-      expect(fetchProjectDesignSystemPackageAudit).toHaveBeenCalledWith('project-ds', null),
+      expect(fetchProjectDesignSystemPackageAudit).toHaveBeenCalledWith('project-ds'),
     );
     await waitFor(() => expect(streamViaDaemon).toHaveBeenCalled());
     expect(window.sessionStorage.getItem('od:design-system-audit-auto-repair:project-ds')).toBe('1');
@@ -1788,7 +1788,7 @@ describe('ProjectView daemon cleanup', () => {
     await chatProps.onSend!('Update the design system', [], []);
 
     await waitFor(() =>
-      expect(fetchProjectDesignSystemPackageAudit).toHaveBeenCalledWith('project-ds-manual', null),
+      expect(fetchProjectDesignSystemPackageAudit).toHaveBeenCalledWith('project-ds-manual'),
     );
     await waitFor(() => {
       expect(saveMessage.mock.calls.some((call) =>
@@ -1871,7 +1871,7 @@ describe('ProjectView daemon cleanup', () => {
     );
 
     await waitFor(() =>
-      expect(fetchProjectDesignSystemPackageAudit).toHaveBeenCalledWith('project-ds-pass', null),
+      expect(fetchProjectDesignSystemPackageAudit).toHaveBeenCalledWith('project-ds-pass'),
     );
     expect(streamViaDaemon).toHaveBeenCalledTimes(1);
     expect(window.sessionStorage.getItem('od:design-system-audit-auto-repair:project-ds-pass')).toBeNull();
@@ -2402,7 +2402,6 @@ describe('ProjectView daemon cleanup', () => {
     await waitFor(() =>
       expect(fetchProjectFiles).toHaveBeenCalledWith('project-1', {
         requireAuthoritative: true,
-        workspaceContext: null,
       }),
     );
     expect(fetchChatRunStatus).not.toHaveBeenCalled();
@@ -2482,7 +2481,7 @@ describe('ProjectView daemon cleanup', () => {
     );
 
     await waitFor(() =>
-      expect(fetchChatRunStatus).toHaveBeenCalledWith('run-legacy-replay', null),
+      expect(fetchChatRunStatus).toHaveBeenCalledWith('run-legacy-replay'),
     );
     await waitFor(() => {
       expect(saveMessage).toHaveBeenCalledWith(
@@ -3978,7 +3977,6 @@ describe('ProjectView daemon cleanup', () => {
         'conv-1',
         'comment-1',
         'needs_review',
-        null,
       );
     });
   });
@@ -4146,8 +4144,7 @@ describe('ProjectView daemon cleanup', () => {
           call[2]?.id === 'msg-spurious-canceled' &&
           call[2]?.runStatus === 'canceled' &&
           call[2]?.resumable === true &&
-          call[2]?.events === preservedEvents &&
-          call[3]?.workspaceContext === null,
+          call[2]?.events === preservedEvents,
       );
       expect(canceledSave).toBeTruthy();
     });
@@ -4309,7 +4306,6 @@ describe('ProjectView daemon cleanup', () => {
     render(
       <ProjectView
         project={{ id: 'project-recover-failed', name: 'Project', skillId: null, designSystemId: null } as never}
-        initialWorkspaceScope={{ kind: 'unbound', projectId: 'project-recover-failed', workspaceId: null, context: null }}
         routeFileName={null}
         config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
@@ -4396,7 +4392,6 @@ describe('ProjectView daemon cleanup', () => {
     render(
       <ProjectView
         project={{ id: 'project-css-recover', name: 'Project', skillId: null, designSystemId: null } as never}
-        initialWorkspaceScope={{ kind: 'unbound', projectId: 'project-css-recover', workspaceId: null, context: null }}
         routeFileName={null}
         config={{ mode: 'daemon', agentId: 'agent-1', notifications: undefined, agentModels: {} } as never}
         agents={[{ id: 'agent-1', name: 'OpenCode', models: [] } as never]}
@@ -4425,7 +4420,6 @@ describe('ProjectView daemon cleanup', () => {
       expect.objectContaining({
         artifactManifest: expect.objectContaining({ entry: 'theme.css' }),
       }),
-      null,
     );
   });
 
@@ -4524,7 +4518,6 @@ describe('ProjectView daemon cleanup', () => {
       expect.objectContaining({
         artifactManifest: expect.objectContaining({ entry: 'real-daemon-smoke.html' }),
       }),
-      null,
     );
     expect(saveTabs).not.toHaveBeenCalledWith('project-1', expect.objectContaining({ active: 'index.html' }));
   });

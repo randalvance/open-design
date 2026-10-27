@@ -1,7 +1,5 @@
 <h1 align="center">OpenDesign：首个协作式 AI 设计 Agent 工作台</h1>
 
-> ✨ **[庆祝 GitHub 100K Star，OpenDesign Go 额度翻倍](https://open-design.ai/pricing/)**。**首月仅需 8 美元，指定 Design Plan 模型每月最高可享 120 美元使用额度**，可用于 GPT-6 Luna、DeepSeek V4.1 Flash、GLM-5.3 Flash-X、MiMo V2.6 Flash 等 10 多款模型。 所有个人套餐均提供 API 接入，可用于 Codex、Claude Code、DSH、OpenCode 等工具。
-
 <p align="center">
   <img src="../../docs/assets/readme-hero-design-agent.webp" alt="OpenDesign：首个协作式 AI 设计 Agent 工作台" width="100%" />
 </p>
@@ -9,7 +7,6 @@
 <p align="center">
   <a href="https://open-design.ai/">官网</a> ·
   <a href="https://open-design.ai/">下载</a> ·
-  <a href="https://open-design.ai/cloud/">OpenDesign Cloud</a> ·
   <a href="https://discord.gg/mHAjSMV6gz">Discord</a> ·
   <a href="https://x.com/OpenDesignHQ">关注 @OpenDesignHQ</a>
 </p>
@@ -27,7 +24,7 @@
 
 ## 什么是 OpenDesign
 
-OpenDesign 是**首个协作式 AI 设计 Agent 工作台**。从需求描述出发，使用你熟悉的编程 Agent 或 OpenDesign Cloud，创建符合设计系统的原型。与团队分享并收集反馈，再让 Agent 在同一个项目中继续完善。
+OpenDesign 是**首个协作式 AI 设计 Agent 工作台**。从需求描述出发，使用你熟悉的编程 Agent，创建符合设计系统的原型。审阅并添加评论，再让 Agent 在同一个项目中继续完善。
 
 这套工作流开放且可扩展。OpenDesign 采用 Apache 2.0 许可证；团队可以查看并按自己的流程调整技能、设计模板、设计系统和插件。
 
@@ -119,7 +116,7 @@ OpenDesign 是**首个协作式 AI 设计 Agent 工作台**。从需求描述出
 ¹ Claude Desktop 的自动 MCP 配置目前仅在 macOS 和 Windows 上支持。
 
 <p align="center">
-  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="OpenDesign 支持的 26 个编码 Agent CLI — DeepSeek Harness · Claude Code · Codex · OpenCode · Hermes · Antigravity · Vela · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
+  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="OpenDesign 支持的 25 个编码 Agent CLI — DeepSeek Harness · Claude Code · Codex · OpenCode · Hermes · Antigravity · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
 </p>
 
 **未安装任何 CLI？** `POST /api/proxy/{anthropic,openai,azure,google,ollama,senseaudio}/stream` 的 BYOK 代理提供同样的循环（无需 spawn 进程）——粘贴 `baseUrl` + `apiKey` + `model`，支持 OpenAI、Anthropic、Azure OpenAI、Google Gemini、Ollama、LM Studio、vLLM 或任何 OpenAI 兼容端点。每个目标的 SSRF 防护在守护进程边缘拦截内网 IP / link-local / CGNAT。
@@ -239,7 +236,7 @@ OpenDesign 是**首个协作式 AI 设计 Agent 工作台**。从需求描述出
 - 🖥️ **本地优先，每一层都可 BYOK。** 原生桌面应用保持本地优先。产品分析和会话回放需经用户同意；经清理的安全与可靠性遥测始终开启。在描述 daemon 数据路径之前，必须阅读仓库根目录 `AGENTS.md` 中的 **Daemon data directory contract**。
 - 🌍 **四个平面上可组合。** **插件**承载可运行的工作流 · 功能**技能**承载 Agent 行为 · **设计模板**承载渲染蓝图 · **设计系统**承载品牌。四者都采用可移植、可版本控制的目录，任何人都可以编写和发布。
 - 🔁 **刷新现有代码库。** 将 `git` 仓库 + `DESIGN.md` 交给 Agent，它就能将你的真实组件重构到品牌规范。
-- 🔒 **隐私信条。** 项目可在本地或自行部署的环境中运行。使用云端模型或 OpenDesign Cloud 时，相关请求会发送至相应服务。BYOK 代理包含 SSRF 防护。
+- 🔒 **隐私信条。** 项目可在本地或自行部署的环境中运行。使用云端模型时，相关请求会发送至相应服务。BYOK 代理包含 SSRF 防护。
 
 ---
 
@@ -539,7 +536,6 @@ pnpm guard && pnpm --filter @open-design/plugin-runtime typecheck
 - [x] Sidecar 协议 + Electron 桌面 + IPC 自动化
 - [x] 工件 Lint API + 五维自评预输出门控
 - [x] **0.8.0**——插件市场基础设施（261 个官方插件、manifest 规范、逐 Agent 安装脚本）
-- [x] **0.9.0**——OpenDesign Cloud（应用内置的官方模型服务：零配置，一键登录）
 - [x] **0.10.0**——一体化设计工作区：一个窗口内完成完整创作闭环（参考 → 素材 → 交互编辑 → 动效 → 交付）
 - [x] **0.11.0**——_The Bazaar_：在开放中构建——人人都可以挑选和贡献的插件与设计系统社区市场
 - [x] **0.12.0**——_品牌设计系统_：把你已经拥有的品牌变成可复用、可移植的 `DESIGN.md` 系统

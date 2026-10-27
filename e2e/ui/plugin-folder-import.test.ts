@@ -33,7 +33,6 @@ test('[P1] imports a valid local Skill folder through the running product', asyn
   );
   let importCompleted = false;
   let importedSkillId: string | null = null;
-  let cleanupHeaders: Record<string, string> | undefined;
 
   try {
     await page.goto('/');
@@ -64,10 +63,6 @@ test('[P1] imports a valid local Skill folder through the running product', asyn
     expect(typeof responseSkillId).toBe('string');
     if (typeof responseSkillId !== 'string') throw new Error('Skill import response omitted skill.id');
     importedSkillId = responseSkillId;
-    const importHeaders = await importResponse.request().allHeaders();
-    cleanupHeaders = Object.fromEntries(
-      Object.entries(importHeaders).filter(([name]) => name.startsWith('x-od-workspace-')),
-    );
 
     await expect(page.getByRole('status')).toContainText(skillName);
     await expect(plugins.getByText(skillName, { exact: true }).first()).toBeVisible();
@@ -77,10 +72,7 @@ test('[P1] imports a valid local Skill folder through the running product', asyn
     // state into a later test that happens to reuse the same worker.
     const cleanupSkillId = importedSkillId ?? skillName;
     await cleanupSkillFixture(
-      () => page.request.delete(
-        `/api/skills/${encodeURIComponent(cleanupSkillId)}`,
-        cleanupHeaders ? { headers: cleanupHeaders } : undefined,
-      ),
+      () => page.request.delete(`/api/skills/${encodeURIComponent(cleanupSkillId)}`),
       { importCompleted, skillName: cleanupSkillId },
     );
   }

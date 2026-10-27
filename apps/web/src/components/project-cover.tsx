@@ -1,8 +1,6 @@
 import { MOTION_PREVIEW_OUTPUT_HEADER } from '@open-design/contracts/runtime/motion-source-player';
-import { appendResourceQuery } from '../collab/workspace-identity';
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { bindMotionPreviewActivity, unbindMotionPreviewActivity } from '../runtime/motion-preview-activity';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import { projectFileUrl } from '../providers/registry';
 import type { ProjectFile } from '../types';
 import {
@@ -54,9 +52,8 @@ export function projectCoverUrl(
   projectId: string,
   name: string,
   version?: number,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): string {
-  const url = projectFileUrl(projectId, name, workspaceContext);
+  const url = projectFileUrl(projectId, name);
   if (!Number.isFinite(version) || version === undefined || version <= 0) return url;
   const separator = url.includes('?') ? '&' : '?';
   return `${url}${separator}v=${encodeURIComponent(String(Math.trunc(version)))}`;
@@ -217,7 +214,7 @@ export function HtmlProjectCoverFrame({
   const motionVideo = (detectedMotion?.src === src ? detectedMotion?.video : undefined)
     ?? (motionThumbnail && Boolean(motionSize));
   const frameSrc = motionVideo && src
-    ? appendResourceQuery(src, 'odMotionPreview=1&odMotionThumbnail=1') : src;
+    ? `${src}${src.includes('?') ? '&' : '?'}odMotionPreview=1&odMotionThumbnail=1` : src;
   const frameRef = useRef<HTMLIFrameElement | null>(null);
   const onSizeRef = useRef(onMotionSize);
   onSizeRef.current = onMotionSize;

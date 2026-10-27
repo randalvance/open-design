@@ -144,7 +144,7 @@ export interface MediaFailureSignal {
   message?: string | null | undefined;
   /** Only an explicit boolean counts; undefined means "the producer did not say". */
   retryable?: boolean | null | undefined;
-  /** Model id, so an OD-owned (`vela/*`) credential failure is not read as a BYOK one. */
+  /** Model id the failure was reported for, when the producer knows it. */
   model?: string | null | undefined;
 }
 
@@ -167,10 +167,7 @@ const MEDIA_FAILURE_NEXT_STEP_BY_CODE: Readonly<Record<string, MediaFailureNextS
   UPSTREAM_UNAVAILABLE: 'retry-later',
   // The installed runtime cannot place the call at all.
   MEDIA_CLI_INCOMPATIBLE: 'update-app',
-  // Money.
-  AMR_INSUFFICIENT_BALANCE: 'add-credit',
-  // Identity behind an OD-owned model.
-  AMR_AUTH_REQUIRED: 'sign-in',
+  // The agent runtime itself needs the user to sign in before it can place the call.
   AGENT_AUTH_REQUIRED: 'sign-in',
 };
 
@@ -192,11 +189,8 @@ const MISSING_CREDENTIAL_RE = /\bno\s+(?:[\w.-]+\s+){0,3}(?:api key|credential)\
 /** Every long-poll adapter gives up with this exact phrase. */
 const RENDER_TIMED_OUT_RE = /\bdid not finish in time\b/i;
 
-function nextStepForStatus(
-  status: number,
-  odOwnedModel: boolean,
-): MediaFailureNextStep | undefined {
-  if (status === 401 || status === 403) return odOwnedModel ? 'sign-in' : 'open-settings';
+function nextStepForStatus(status: number): MediaFailureNextStep | undefined {
+  if (status === 401 || status === 403) return 'open-settings';
   if (status === 402) return 'add-credit';
   if (status === 404) return 'switch-model';
   if (status === 408 || status === 425 || status === 429) return 'retry-later';
@@ -227,11 +221,8 @@ export function mediaFailureNextStep(signal: MediaFailureSignal): MediaFailureNe
   const byCode = code ? MEDIA_FAILURE_NEXT_STEP_BY_CODE[code] : undefined;
   if (byCode) return byCode;
 
-  const model = typeof signal.model === 'string' ? signal.model.trim() : '';
-  const odOwnedModel = model.startsWith('vela/');
-
   if (typeof signal.status === 'number' && Number.isFinite(signal.status)) {
-    const byStatus = nextStepForStatus(signal.status, odOwnedModel);
+    const byStatus = nextStepForStatus(signal.status);
     if (byStatus) return byStatus;
   }
 
@@ -239,7 +230,7 @@ export function mediaFailureNextStep(signal: MediaFailureSignal): MediaFailureNe
   if (message) {
     const embedded = statusFromMessage(message);
     if (embedded !== undefined) {
-      const byEmbedded = nextStepForStatus(embedded, odOwnedModel);
+      const byEmbedded = nextStepForStatus(embedded);
       if (byEmbedded) return byEmbedded;
     }
     if (MISSING_CREDENTIAL_RE.test(message)) return 'open-settings';

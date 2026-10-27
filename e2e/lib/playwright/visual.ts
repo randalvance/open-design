@@ -4,7 +4,7 @@ import type { Project } from '@open-design/contracts';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fulfillAgentsRoute } from './mock-factory.js';
-import { openSettingsDialog } from './amr.js';
+import { openSettingsDialog } from './entry.js';
 import { T } from '@/timeouts';
 
 const STORAGE_KEY = 'open-design:config';
@@ -98,20 +98,6 @@ export const VISUAL_CLI_AGENTS = [
   },
 ] as const;
 
-export const VISUAL_AMR_AGENT = {
-  id: 'amr',
-  name: 'OpenDesign',
-  bin: 'vela',
-  available: true,
-  version: '0.1.0',
-  models: [
-    { id: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
-    { id: 'deepseek-v3.2', label: 'DeepSeek V3.2' },
-    { id: 'glm-5.1', label: 'GLM 5.1' },
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-  ],
-} as const;
-
 const VISUAL_PROJECTS = [
   {
     id: 'visual-project-launchpad',
@@ -180,15 +166,6 @@ type VisualPageOptions = {
   projects?: readonly VisualProject[];
   config?: Partial<VisualConfig>;
   agents?: readonly unknown[];
-  /** Signed-in by default so non-auth visual surfaces can reach Home. */
-  velaLoggedIn?: boolean;
-};
-
-type VisualVelaAccountOptions = {
-  profile?: string;
-  plan?: string;
-  balanceUsd?: string;
-  email?: string;
 };
 
 const VISUAL_PLUGINS = [
@@ -343,27 +320,6 @@ export async function configureVisualPage(page: Page, options: VisualPageOptions
     });
   });
 
-  await page.route('**/api/integrations/vela/status', async (route) => {
-    const loggedIn = options.velaLoggedIn ?? true;
-    await fulfillGet(
-      route,
-      loggedIn
-        ? {
-            loggedIn: true,
-            loginInFlight: false,
-            profile: 'visual',
-            configPath: '/tmp/.amr/config.json',
-            user: { id: 'visual-user', email: 'visual@example.com' },
-          }
-        : {
-            loggedIn: false,
-            profile: 'local',
-            configPath: '/tmp/.amr/config.json',
-            user: null,
-          },
-    );
-  });
-
   await page.route('**/api/media/providers/aihubmix/models**', async (route) => {
     await fulfillGet(route, { models: [] });
   });
@@ -381,36 +337,6 @@ export async function configureVisualPage(page: Page, options: VisualPageOptions
 
   await page.route('**/api/projects', async (route) => {
     await fulfillGet(route, { projects });
-  });
-
-  // A project deep link no longer borrows the shell's ambient Workspace. If
-  // the project list has not settled first, App bootstraps the route through
-  // an authoritative scope witness followed by the matching project detail.
-  // Keep those reads inside the visual fixture instead of letting the generic
-  // API catch-all turn normal list/bootstrap scheduling into a 404 race.
-  await page.route('**/api/projects/*/workspace-scope', async (route) => {
-    if (route.request().method() !== 'GET') {
-      await route.fallback();
-      return;
-    }
-    const projectId = decodeURIComponent(
-      new URL(route.request().url()).pathname.split('/').at(-2) ?? '',
-    );
-    const project = projects.find((candidate) => candidate.id === projectId);
-    if (!project) {
-      await route.fulfill({ status: 404, json: { error: `unknown project ${projectId}` } });
-      return;
-    }
-    await route.fulfill({
-      json: {
-        scope: {
-          kind: 'unbound',
-          projectId,
-          workspaceId: null,
-          context: null,
-        },
-      },
-    });
   });
 
   await page.route('**/api/projects/*', async (route) => {
@@ -653,49 +579,6 @@ export async function configureVisualPage(page: Page, options: VisualPageOptions
   }, [VISUAL_STYLE_ID] as const);
 }
 
-export async function mockSignedInVelaAccount(
-  page: Page,
-  options: VisualVelaAccountOptions = {},
-): Promise<void> {
-  const profile = options.profile ?? 'test';
-  const plan = options.plan ?? 'plus';
-  const balanceUsd = options.balanceUsd ?? '247.51';
-  const email = options.email ?? 'leaf@example.com';
-  const fetchedAt = '2026-06-25T03:59:00.000Z';
-
-  await page.route('**/api/integrations/vela/status', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        loggedIn: true,
-        loginInFlight: false,
-        profile,
-        user: { id: 'u1', email },
-        account: { plan, balanceUsd },
-        configPath: '/home/test/.amr/config.json',
-      }),
-    });
-  });
-
-  await page.route('**/api/integrations/vela/wallet**', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        status: 'available',
-        profile,
-        user: { id: 'u1', email, plan },
-        balanceUsd,
-        updatedAt: fetchedAt,
-        fetchedAt,
-        stale: false,
-        source: 'vela_api',
-      }),
-    });
-  });
-}
-
 export async function waitForVisualReady(page: Page): Promise<void> {
   await page.getByText('Loading OpenDesign…').waitFor({ state: 'hidden', timeout: T.xlong });
   await expect(page.getByTestId('home-hero')).toBeVisible({ timeout: T.medium });
@@ -841,7 +724,7 @@ export async function openAvatarMenu(page: Page): Promise<Locator> {
 }
 
 export async function openSettingsDetailsFromHeader(page: Page): Promise<Locator> {
-  // Delegates to amr.ts's `openSettingsDialog`, which already encodes
+  // Delegates to entry.ts's `openSettingsDialog`, which already encodes
   // everything this local copy was missing and getting wrong:
   //
   //   - It expands the nav rail first. #5517 moved the entry settings chip into

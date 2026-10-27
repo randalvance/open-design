@@ -24,9 +24,6 @@
     "electron-builder": "26.8.1",
     "resedit": "1.7.2"
   },
-  "optionalDependencies": {
-    "@powerformer/vela-cli": "0.1.7"
-  },
   "devDependencies": {
     "@typescript/native": "npm:typescript@7.0.2",
     "@types/node": "24.12.2",

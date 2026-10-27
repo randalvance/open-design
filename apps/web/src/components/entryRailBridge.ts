@@ -30,3 +30,14 @@ export function readStoredRailOpen(): boolean {
     return false;
   }
 }
+
+// The no-drag actions host in the tabs chrome row (rendered by
+// WorkspaceTabsBar) that `EntryTopRightCluster` portals the GitHub chip and the
+// update-ready rocket into, so Electron counts them in its first draggable
+// region hit map. Falls back to `document.body` in isolated harnesses.
+export const WORKSPACE_CHROME_ACTIONS_HOST_ID = 'workspace-chrome-account-actions';
+
+export function workspaceChromeActionsHost(): HTMLElement | null {
+  if (typeof document === 'undefined') return null;
+  return document.getElementById(WORKSPACE_CHROME_ACTIONS_HOST_ID);
+}

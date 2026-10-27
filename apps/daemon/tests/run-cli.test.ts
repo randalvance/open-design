@@ -212,7 +212,6 @@ describe('od run CLI', () => {
       '--byok-protocol', 'openai', '--byok-base-url', 'https://models.example/v1',
       '--byok-api-version', '2026-01-01', '--byok-key-env', 'OD_TEST_BYOK_KEY',
       '--model', 'custom-model', '--prompt-file', promptFile,
-      '--workspace', 'team-workspace', '--workspace-member', 'creator-member',
       '--json', '--daemon-url', stub.baseUrl,
     ], { OD_TEST_BYOK_KEY: apiKey });
 
@@ -223,8 +222,6 @@ describe('od run CLI', () => {
     expect(stub.requests).toHaveLength(1);
     const request = stub.requests[0]!;
     expect(`${request.method} ${request.url}`).toBe('POST /api/runs');
-    expect(request.headers['x-od-workspace-id']).toBe('team-workspace');
-    expect(request.headers['x-od-workspace-member-id']).toBe('creator-member');
     expect(JSON.parse(request.body)).toEqual({
       projectId: 'project-1',
       agentId: 'byok-opencode',
@@ -372,8 +369,7 @@ describe('od run CLI', () => {
     const result = await runCli([
       'run', 'start', '--project', 'project-1', '--task-execution', 'task-1',
       '--byok-protocol', 'openai', '--byok-key-env', 'OD_TEST_BYOK_KEY',
-      '--model', 'custom-model', '--workspace', 'team-workspace',
-      '--workspace-member', 'creator-member', '--follow', '--daemon-url', stub.baseUrl,
+      '--model', 'custom-model', '--follow', '--daemon-url', stub.baseUrl,
     ], { OD_TEST_BYOK_KEY: 'run-2' });
 
     expect(result.code, result.stderr).toBe(0);
@@ -382,10 +378,6 @@ describe('od run CLI', () => {
     expect(stub.requests.map((request) => `${request.method} ${request.url}`)).toEqual([
       'POST /api/runs', 'GET /api/runs/run-1/events', 'GET /api/runs/run-2/events',
     ]);
-    for (const request of stub.requests) {
-      expect(request.headers['x-od-workspace-id']).toBe('team-workspace');
-      expect(request.headers['x-od-workspace-member-id']).toBe('creator-member');
-    }
     const events = result.stdout.trim().split('\n').slice(1).map((line) => JSON.parse(line));
     expect(events).toHaveLength(2);
     expect(events[1].data.strategyTask).toMatchObject({
@@ -450,115 +442,7 @@ describe('od run CLI', () => {
     }
   });
 
-  it('refuses to continue a run without a safe recoverable native session', async () => {
-    stub = await startRunStubServer(false);
 
-    const result = await runCli([
-      'run',
-      'continue',
-      'run-1',
-      '--daemon-url',
-      stub.baseUrl,
-    ]);
-
-    expect(result.code).toBe(1);
-    expect(result.stdout).toBe('');
-    expect(result.stderr).toContain('Run run-1 does not have a safe recoverable native session.');
-    expect(stub.requests.map((request) => `${request.method} ${request.url}`)).toEqual([
-      'GET /api/runs/run-1',
-    ]);
-  });
-
-  it('forwards explicit Workspace scope through continue status and creation requests', async () => {
-    stub = await startRunStubServer(true);
-
-    const result = await runCli([
-      'run',
-      'continue',
-      'run-1',
-      '--workspace',
-      'team-workspace',
-      '--workspace-member',
-      'creator-member',
-      '--daemon-url',
-      stub.baseUrl,
-    ]);
-
-    expect(result.code).toBe(0);
-    expect(result.stderr).toBe('');
-    expect(stub.requests).toHaveLength(2);
-    for (const request of stub.requests) {
-      expect(request.headers['x-od-workspace-id']).toBe('team-workspace');
-      expect(request.headers['x-od-workspace-member-id']).toBe('creator-member');
-    }
-  });
-
-  it.each([
-    {
-      label: 'list',
-      args: ['run', 'list', '--json'],
-      requests: ['GET /api/runs'],
-    },
-    {
-      label: 'project list',
-      args: ['run', 'list', '--project', 'project-1', '--json'],
-      requests: ['GET /api/runs?projectId=project-1'],
-    },
-    {
-      label: 'info',
-      args: ['run', 'info', 'run-1'],
-      requests: ['GET /api/runs/run-1'],
-    },
-    {
-      label: 'result package',
-      args: ['run', 'result-package', 'run-1', '--json'],
-      requests: ['GET /api/runs/run-1/result-package'],
-    },
-    {
-      label: 'cancel',
-      args: ['run', 'cancel', 'run-1'],
-      requests: ['POST /api/runs/run-1/cancel'],
-    },
-    {
-      label: 'redesign',
-      args: ['run', 'redesign', '--project', 'project-1', '--json'],
-      requests: ['POST /api/runs'],
-    },
-    {
-      label: 'redesign import and start',
-      args: ['run', 'redesign', '--path', DAEMON_ROOT, '--json'],
-      requests: ['POST /api/import/folder', 'POST /api/runs'],
-    },
-    {
-      label: 'start and follow',
-      args: ['run', 'start', '--project', 'project-1', '--follow'],
-      requests: ['POST /api/runs', 'GET /api/runs/run-2/events'],
-    },
-    {
-      label: 'watch',
-      args: ['run', 'watch', 'run-1'],
-      requests: ['GET /api/runs/run-1/events'],
-    },
-  ])('forwards explicit Workspace scope for $label requests', async ({ args, requests }) => {
-    stub = await startRunStubServer(true);
-
-    const result = await runCli([
-      ...args,
-      '--workspace',
-      'team-workspace',
-      '--workspace-member',
-      'creator-member',
-      '--daemon-url',
-      stub.baseUrl,
-    ]);
-
-    expect(result.code, result.stderr).toBe(0);
-    expect(stub.requests.map((request) => `${request.method} ${request.url}`)).toEqual(requests);
-    for (const request of stub.requests) {
-      expect(request.headers['x-od-workspace-id']).toBe('team-workspace');
-      expect(request.headers['x-od-workspace-member-id']).toBe('creator-member');
-    }
-  });
 
   it('keeps no-scope run creation and streaming requests headerless', async () => {
     stub = await startRunStubServer(true);

@@ -238,90 +238,6 @@ describe('app-config', () => {
       expect(cfg.orbit).not.toHaveProperty('templateSkillId');
     });
 
-    it('preserves only the minimal persisted Orbit Workspace identity', async () => {
-      await writeFile(
-        path.join(dataDir, 'app-config.json'),
-        JSON.stringify({
-          orbit: {
-            enabled: true,
-            time: '09:30',
-            workspaceScope: {
-              workspaceId: ' workspace-a ',
-              workspaceMemberId: ' member-a ',
-              role: 'owner',
-            },
-          },
-        }),
-      );
-
-      const cfg = await readAppConfig(dataDir);
-
-      expect(cfg.orbit?.workspaceScope).toEqual({
-        workspaceId: 'workspace-a',
-        workspaceMemberId: 'member-a',
-      });
-    });
-
-    it('keeps scoped Orbit identity when an older client updates Orbit without that field', async () => {
-      await writeAppConfig(dataDir, {
-        orbit: {
-          enabled: true,
-          time: '09:30',
-          workspaceScope: {
-            workspaceId: 'workspace-a',
-            workspaceMemberId: 'member-a',
-          },
-        },
-      });
-
-      await writeAppConfig(dataDir, {
-        orbit: {
-          enabled: false,
-          time: '10:15',
-        },
-      });
-
-      await expect(readAppConfig(dataDir)).resolves.toMatchObject({
-        orbit: {
-          enabled: false,
-          time: '10:15',
-          workspaceScope: {
-            workspaceId: 'workspace-a',
-            workspaceMemberId: 'member-a',
-          },
-        },
-      });
-    });
-
-    it('allows an explicit null to clear a persisted Orbit Workspace identity', async () => {
-      await writeAppConfig(dataDir, {
-        orbit: {
-          enabled: true,
-          time: '09:30',
-          workspaceScope: {
-            workspaceId: 'workspace-a',
-            workspaceMemberId: 'member-a',
-          },
-        },
-      });
-
-      await writeAppConfig(dataDir, {
-        orbit: {
-          enabled: false,
-          time: '10:15',
-          workspaceScope: null,
-        },
-      });
-
-      await expect(readAppConfig(dataDir)).resolves.toMatchObject({
-        orbit: {
-          enabled: false,
-          time: '10:15',
-          workspaceScope: null,
-        },
-      });
-    });
-
     it('falls back to default orbit time for out-of-range stored values', async () => {
       await writeFile(
         path.join(dataDir, 'app-config.json'),
@@ -513,13 +429,6 @@ describe('app-config', () => {
             OPENAI_BASE_URL: '  https://proxy.example/openai  ',
             OPENAI_API_KEY: '  sk-proxy-openai  ',
           },
-          amr: {
-            VELA_BIN: '~/bin/vela',
-            VELA_API_URL: '  https://custom-amr.example  ',
-            OPEN_DESIGN_AMR_PROFILE: '  local  ',
-            OPENCODE_TEST_HOME: '  ~/.open-design-amr-opencode  ',
-            HOME: 'should-not-persist',
-          },
           opencode: {
             OPENCODE_BIN: '  ~/bin/opencode  ',
           },
@@ -545,12 +454,6 @@ describe('app-config', () => {
       expect(cfg.agentCliEnv).toEqual({
         claude: { CLAUDE_CONFIG_DIR: '~/.claude-2', ANTHROPIC_BASE_URL: 'https://proxy.example/anthropic', ANTHROPIC_API_KEY: 'sk-proxy-anthropic', ANTHROPIC_AUTH_TOKEN: 'sk-proxy-token', MMD_MODEL_ROUTES_FILE: '~/.config/mms/model-routes.json' },
         codex: { CODEX_HOME: '~/.codex-alt', CODEX_BIN: '~/bin/codex-next', OPENAI_BASE_URL: 'https://proxy.example/openai', OPENAI_API_KEY: 'sk-proxy-openai' },
-        amr: {
-          VELA_BIN: '~/bin/vela',
-          VELA_API_URL: 'https://custom-amr.example',
-          OPEN_DESIGN_AMR_PROFILE: 'local',
-          OPENCODE_TEST_HOME: '~/.open-design-amr-opencode',
-        },
         opencode: { OPENCODE_BIN: '~/bin/opencode' },
         'trae-cli': { TRAE_CLI_BIN: '~/bin/traecli-public' },
         // pi's config-directory override survives the save (#8093); the

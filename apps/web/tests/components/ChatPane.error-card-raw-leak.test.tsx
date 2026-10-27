@@ -72,7 +72,7 @@ const FAILED: ChatMessage = {
   createdAt: 1,
   runId: 'run-1',
   runStatus: 'failed',
-  agentId: 'amr',
+  agentId: 'opencode',
   events: [
     {
       kind: 'status',
@@ -103,7 +103,7 @@ function renderChat(props: { error: string | null; errorSourceAssistantId?: stri
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
+      config={{ agentId: 'opencode', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }
@@ -198,7 +198,7 @@ describe('命中映射表的失败仍然用它自己的文案', () => {
         activeConversationId="conv-1"
         onSelectConversation={vi.fn()}
         onDeleteConversation={vi.fn()}
-        config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
+        config={{ agentId: 'opencode', agentCliEnv: {} } as unknown as AppConfig}
       />,
     );
     expect(descriptionOf(container)!.textContent).toContain(

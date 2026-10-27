@@ -1,7 +1,5 @@
 <h1 align="center">OpenDesign: ilk iş birliğine dayalı yapay zekâ tasarım ajanı çalışma alanı</h1>
 
-> ✨ **[OpenDesign Go ile GitHub’da 100K yıldızı kutluyoruz](https://open-design.ai/pricing/)** — Go kredileri iki katına çıktı: **İlk ay 8 ABD doları karşılığında uygun Design Plan modelleri için aylık 120 ABD dolarına kadar kredi**. GPT-6 Luna, DeepSeek V4.1 Flash, GLM-5.3 Flash-X ve MiMo V2.6 Flash dahil 10’dan fazla modelde kullanın. Tüm bireysel planlar Codex, Claude Code, DSH, OpenCode ve diğer araçlar için API erişimi içerir.
-
 <p align="center">
   <img src="../../docs/assets/readme-hero-design-agent.webp" alt="OpenDesign: ilk iş birliğine dayalı yapay zekâ tasarım ajanı çalışma alanı" width="100%" />
 </p>
@@ -9,7 +7,6 @@
 <p align="center">
   <a href="https://open-design.ai/">Web Sitesi</a> ·
   <a href="https://open-design.ai/">İndir</a> ·
-  <a href="https://open-design.ai/cloud/">OpenDesign Cloud</a> ·
   <a href="https://discord.gg/mHAjSMV6gz">Discord</a> ·
   <a href="https://x.com/OpenDesignHQ">@OpenDesignHQ'yu takip et</a>
 </p>
@@ -27,7 +24,7 @@
 
 ## OpenDesign nedir
 
-OpenDesign, **ilk iş birliğine dayalı yapay zekâ tasarım ajanı çalışma alanıdır**. Bir proje özetiyle başlayın; alıştığınız kodlama ajanını veya OpenDesign Cloud'u kullanarak tasarım sisteminize uygun bir prototip oluşturun. Ekibinizle paylaşın, geri bildirim toplayın ve ajanınızın aynı projede çalışmayı geliştirmesine izin verin.
+OpenDesign, **ilk iş birliğine dayalı yapay zekâ tasarım ajanı çalışma alanıdır**. Bir proje özetiyle başlayın; alıştığınız kodlama ajanını kullanarak tasarım sisteminize uygun bir prototip oluşturun. Gözden geçirin, yorum bırakın ve ajanınızın aynı projede çalışmayı geliştirmesine izin verin.
 
 Bu iş akışı açık ve genişletilebilir. OpenDesign, Apache 2.0 lisansıyla sunulur; ekipler becerileri, tasarım şablonlarını, tasarım sistemlerini ve eklentileri inceleyip kendi süreçlerine uyarlayabilir.
 
@@ -115,7 +112,7 @@ Bu iş akışı açık ve genişletilebilir. OpenDesign, Apache 2.0 lisansıyla 
 Kuru çalıştırma önizlemesi için `od mcp install <agent> --print` · kaldırmak için `--uninstall` · tam liste için `od mcp install --help`.
 
 <p align="center">
-  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="The 25 coding-agent CLIs OpenDesign supports — Claude Code · Codex · OpenCode · Hermes · Antigravity · Vela · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
+  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="The 24 coding-agent CLIs OpenDesign supports — Claude Code · Codex · OpenCode · Hermes · Antigravity · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
 </p>
 
 **Kurulu CLI yok mu?** `POST /api/proxy/{anthropic,openai,azure,google,ollama,senseaudio}/stream` adresindeki BYOK proxy size aynı döngüyü verir (süreç başlatma yok) — `baseUrl` + `apiKey` + `model` yapıştırın; OpenAI, Anthropic, Azure OpenAI, Google Gemini, Ollama, LM Studio, vLLM veya herhangi bir OpenAI uyumlu uç nokta desteğiyle. Hedef bazlı SSRF koruması, daemon kenarında dahili IP'leri / link-local / CGNAT adreslerini engeller.
@@ -235,7 +232,7 @@ Her deste **HTML** (tek dosya, gömülü varlıklar), **PDF** (tarayıcı yazdı
 - 🖥️ **Yerel öncelikli, her katmanda BYOK.** Yerel masaüstü uygulamaları yerel öncelikli kalır. Ürün analitiği ve oturum tekrarı onay gerektirir; hassas verilerden arındırılmış güvenlik ve güvenilirlik telemetrisi her zaman açıktır. Daemon veri yollarını açıklamadan önce kökteki `AGENTS.md` dosyasında **Daemon data directory contract** bölümünü MUTLAKA okuyun.
 - 🌍 **Dört düzlemde birleştirilebilir.** **Eklentiler** çalıştırılabilir iş akışları taşır · işlevsel **beceriler** ajan davranışını taşır · **tasarım şablonları** render planlarını taşır · **tasarım sistemleri** markayı taşır. Dördü de herkesin yazıp yayınlayabileceği taşınabilir, sürümlenebilir dizinler kullanır.
 - 🔁 **Mevcut bir kod tabanını yenileyin.** Ajana bir `git` deposu + `DESIGN.md` verin, gerçek bileşenlerinizi marka spesifikasyonuna göre yeniden düzenler.
-- 🔒 **İlkesel gizlilik.** Projeler yerel olarak veya kendi dağıtımınızda çalışabilir. Bulut modellerine ve OpenDesign Cloud’a yapılan istekler ilgili hizmetlere gönderilir. BYOK proxy SSRF koruması içerir.
+- 🔒 **İlkesel gizlilik.** Projeler yerel olarak veya kendi dağıtımınızda çalışabilir. Bulut modellerine yapılan istekler ilgili hizmetlere gönderilir. BYOK proxy SSRF koruması içerir.
 
 ---
 
@@ -534,7 +531,6 @@ Tam mimari → [`docs/architecture.md`](../../docs/architecture.md). Beceri prot
 - [x] Sidecar protokolü + Electron masaüstü + IPC otomasyonu
 - [x] Artifact lint API'si + 5 boyutlu öz-eleştiri ön-yayın kapısı
 - [x] **0.8.0** — eklenti pazar yeri altyapısı (261 resmî eklenti, manifest spesifikasyonu, ajan başına kurulum betikleri)
-- [x] **0.9.0** — OpenDesign Cloud (uygulamaya gömülü resmî Model Router: sıfır yapılandırma, tek tıkla oturum açma)
 - [x] Paketlenmiş Electron derlemeleri — macOS (Apple Silicon + Intel) + Windows (x64) + Linux AppImage (isteğe bağlı hat)
 - [ ] Yorum modu cerrahi düzenlemeler — kısmen sunuldu; güvenilir hedefli yamalama devam ediyor
 - [ ] AI tarafından yayılan ayar paneli UX'i — henüz uygulanmadı

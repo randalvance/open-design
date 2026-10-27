@@ -1,17 +1,15 @@
 // @vitest-environment jsdom
 //
 // OPEND-3180: the Discord / X / mail links at the foot of the entry rail show
-// only their icons. The visible names are gone on both the signed-in account
-// dock and its signed-out (local shell) twin; each link keeps an accessible
-// name and surfaces the same copy through the shared `.od-tooltip` layer, and
-// the click targets are unchanged.
+// only their icons. Each link keeps an accessible name and surfaces the same
+// copy through the shared `.od-tooltip` layer, and the click targets are
+// unchanged.
 
 import { act, cleanup, render, screen, within } from '@testing-library/react';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { EntryNavRail, resetWorkspaceDirectoryCache } from '../../src/components/EntryNavRail';
-import { WORKSPACE_CHROME_ACCOUNT_ACTIONS_ID } from '../../src/components/workspaceChromeActions';
+import { EntryNavRail } from '../../src/components/EntryNavRail';
+import { WORKSPACE_CHROME_ACTIONS_HOST_ID } from '../../src/components/entryRailBridge';
 import { resetProjectRunStatusStore } from '../../src/hooks/useProjectRunStatuses';
 import { I18nProvider, type Locale } from '../../src/i18n';
 
@@ -21,38 +19,18 @@ const SOCIAL_LINKS = [
   { href: 'mailto:support@open-design.ai', label: 'Questions? Email our team' },
 ];
 
-function teamContext(): WorkspaceCollabContext {
-  return {
-    workspaceId: 'ws-team',
-    workspaceType: 'team',
-    workspaceMemberId: 'wm-1',
-    role: 'owner',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: 'team_plus',
-    displayName: 'Leaf',
-    seatSummary: { seatLimit: 5, usedSeats: 1, availableSeats: 4, isSeatFull: false },
-    permissions: { canInviteMembers: true, canViewWorkspaceSettings: true },
-  } as unknown as WorkspaceCollabContext;
-}
-
 function stubFetch() {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.includes('/messages?')) {
-        return Response.json({ messages: [], nextCursor: null, unreadCount: 0 });
-      }
-      if (url.includes('/status')) return Response.json({ loggedIn: false });
       if (url.includes('/api/runs?')) return Response.json({ runs: [], awaitingInputProjectIds: [] });
       return Response.json({ items: [] });
     }),
   );
 }
 
-function renderRail(context: WorkspaceCollabContext | null, locale: Locale = 'en') {
+function renderRail(locale: Locale = 'en') {
   return render(
     <I18nProvider initial={locale}>
       <EntryNavRail
@@ -60,9 +38,6 @@ function renderRail(context: WorkspaceCollabContext | null, locale: Locale = 'en
         onViewChange={() => {}}
         onNewProject={() => {}}
         open
-        context={context}
-        billing={null}
-        footerNotice={context ? undefined : <div data-testid="local-sign-in-card">Sign in</div>}
       />
     </I18nProvider>,
   );
@@ -72,20 +47,18 @@ let chromeActionsHost: HTMLDivElement;
 
 beforeEach(() => {
   localStorage.clear();
-  resetWorkspaceDirectoryCache();
   resetProjectRunStatusStore();
   stubFetch();
   const chrome = document.createElement('header');
   chrome.className = 'workspace-tabs-chrome';
   chromeActionsHost = document.createElement('div');
-  chromeActionsHost.id = WORKSPACE_CHROME_ACCOUNT_ACTIONS_ID;
+  chromeActionsHost.id = WORKSPACE_CHROME_ACTIONS_HOST_ID;
   chrome.append(chromeActionsHost);
   document.body.append(chrome);
 });
 
 afterEach(() => {
   cleanup();
-  resetWorkspaceDirectoryCache();
   resetProjectRunStatusStore();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -118,31 +91,20 @@ function expectIconOnlySocialRow(row: HTMLElement) {
 }
 
 describe('OPEND-3180 — icon-only social links at the rail foot', () => {
-  it.each(['zh-CN', 'zh-TW'] as const)('%s uses the Feishu icon and invitation in both account states', async (locale) => {
-    for (const context of [null, teamContext()]) {
-      const view = renderRail(context, locale);
-      await act(async () => {});
-      const link = screen.getByTestId('entry-nav-rail-discord');
-      expect(link.getAttribute('href')).toBe('https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=a38j32fc-756c-4d02-846b-53356fee12a7');
-      expect(link.getAttribute('aria-label')).toBe(locale === 'zh-CN' ? '加入 OpenDesign 飞书群' : '加入 OpenDesign 飛書群');
-      expect(link.getAttribute('data-tooltip')).toBe(link.getAttribute('aria-label'));
-      expect(link.getAttribute('data-community-platform')).toBe('feishu');
-      expect(link.querySelector('svg')).not.toBeNull();
-      expect(visibleText(link)).toBe('');
-      view.unmount();
-    }
-  });
-
-  it('signed in: the account dock shows Discord / X / mail as icons with tooltips', async () => {
-    renderRail(teamContext());
+  it.each(['zh-CN', 'zh-TW'] as const)('%s uses the Feishu icon and invitation', async (locale) => {
+    renderRail(locale);
     await act(async () => {});
-    const dock = screen.getByTestId('entry-nav-account').closest('.entry-nav-rail__account-dock') as HTMLElement;
-    expect(dock).not.toBeNull();
-    expectIconOnlySocialRow(within(dock).getByTestId('entry-nav-rail-social'));
+    const link = screen.getByTestId('entry-nav-rail-discord');
+    expect(link.getAttribute('href')).toBe('https://applink.feishu.cn/client/chat/chatter/add_by_link?link_token=a38j32fc-756c-4d02-846b-53356fee12a7');
+    expect(link.getAttribute('aria-label')).toBe(locale === 'zh-CN' ? '加入 OpenDesign 飞书群' : '加入 OpenDesign 飛書群');
+    expect(link.getAttribute('data-tooltip')).toBe(link.getAttribute('aria-label'));
+    expect(link.getAttribute('data-community-platform')).toBe('feishu');
+    expect(link.querySelector('svg')).not.toBeNull();
+    expect(visibleText(link)).toBe('');
   });
 
-  it('signed out: the local dock shows the same icon-only row', async () => {
-    renderRail(null);
+  it('the local dock shows the icon-only row', async () => {
+    renderRail();
     await act(async () => {});
     const dock = screen.getByTestId('entry-nav-local-account-dock');
     expectIconOnlySocialRow(within(dock).getByTestId('entry-nav-rail-social'));

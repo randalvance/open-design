@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createToolsDevSuite } from '../../lib/tools-dev/runtime.ts';
 import { runToolsDevJson } from '../../lib/tools-dev/cli.ts';
-import { captureUntrackedSourceIdentity, collectRealEvidence, loadReplayFixtures, replayCaseVerdict, runSyntaxAcceptance, resolveSyntaxTelemetryCanary, syntaxTelemetryDeliveryOutcome, syntaxTelemetryFinalizationMessage } from '../../scripts/syntax-acceptance.ts';
+import { captureUntrackedSourceIdentity, loadReplayFixtures, replayCaseVerdict, runSyntaxAcceptance, resolveSyntaxTelemetryCanary, syntaxTelemetryDeliveryOutcome, syntaxTelemetryFinalizationMessage } from '../../scripts/syntax-acceptance.ts';
 
 const { runtime } = vi.hoisted(() => ({ runtime: {
   startWeb: vi.fn(), logs: vi.fn(async () => ({})), stopWeb: vi.fn(async () => ({ stopped: true })),
@@ -30,10 +30,6 @@ const scratch = async () => {
 afterEach(async () => {
   await Promise.all(scratchRoots.splice(0).map(root => rm(root, { recursive: true, force: true })));
 });
-const metrics = { strategyRoute: 'od-next', agent: 'open-design:amr', model: 'deepseek-v4-flash', deliverableSyntax: {
-  status: 'pass', terminalRunStatus: 'succeeded', recoveredDeliveryCount: 0,
-  finalization: { action: 'allow', summaryVersion: 1, repairEngine: 'host-safe-fixer@2', initialStatus: 'pass', stagedPatchCount: 0, committedPatchCount: 0, committedRepairRules: [] },
-} };
 const warningFinalization = {
   action: 'warn', reason: 'no_safe_fix', refusal: 'unsupported_syntax_error', summaryVersion: 1,
   repairEngine: 'host-safe-fixer@2', initialStatus: 'repairable', stagedPatchCount: 0,
@@ -42,7 +38,7 @@ const warningFinalization = {
 
 describe('syntax acceptance evidence contract', () => {
   it('[P1] keeps telemetry offline unless explicitly requested', () => {
-    expect(resolveSyntaxTelemetryCanary({ enabled: false, mode: 'real', externalInputs: true, profile: 'prod', isolatedRoot: '/tmp/synthetic' })).toBeNull();
+    expect(resolveSyntaxTelemetryCanary({ enabled: false, mode: 'real', externalInputs: true, profile: 'prod' })).toBeNull();
   });
 
   it('[P1] finalizes only the matching durable terminal message without inventing telemetry', () => {
@@ -58,11 +54,10 @@ describe('syntax acceptance evidence contract', () => {
   });
 
   it('[P1] confines upload to one repeat of built-in synthetic fixtures and the test relay', () => {
-    const input = { enabled: true, mode: 'replay', externalInputs: false, profile: 'test', isolatedRoot: '/tmp/synthetic', token: 'abc12345', relayUrl: 'https://telemetry-test.open-design.ai/api/langfuse' };
+    const input = { enabled: true, mode: 'replay', externalInputs: false, profile: 'test', token: 'abc12345', relayUrl: 'https://telemetry-test.open-design.ai/api/langfuse' };
     const plan = resolveSyntaxTelemetryCanary(input)!;
     expect(plan.prefs).toEqual({ metrics: true, content: true, artifactManifest: false });
-    expect(plan.env).toMatchObject({ AMR_HOME: '/tmp/synthetic/amr', OD_INSTALLATION_DIR: '', OD_LEGACY_DATA_DIR: '', VELA_CONTROL_KEY: '', VELA_RUNTIME_KEY: '', POSTHOG_KEY: '', LANGFUSE_PUBLIC_KEY: '', LANGFUSE_SECRET_KEY: '', OD_TELEMETRY_ENV: 'synthetic-test-abc12345' });
-    expect(plan.env).not.toHaveProperty('OPEN_DESIGN_VELA_TELEMETRY');
+    expect(plan.env).toMatchObject({ OD_INSTALLATION_DIR: '', OD_LEGACY_DATA_DIR: '', POSTHOG_KEY: '', LANGFUSE_PUBLIC_KEY: '', LANGFUSE_SECRET_KEY: '', OD_TELEMETRY_ENV: 'synthetic-test-abc12345' });
     expect(plan.fixtures.map(fixture => fixture.id)).toEqual(['synthetic-clean', 'synthetic-repaired', 'synthetic-warning']);
     expect(plan.fixtures.every(fixture => fixture.source.length < 256 && fixture.expected !== undefined)).toBe(true);
     for (const invalid of [{ mode: 'real' }, { externalInputs: true }, { repeat: '2' }, { profile: 'prod' }, { relayUrl: 'https://telemetry.open-design.ai/api/langfuse' }, { relayUrl: undefined }]) {
@@ -198,64 +193,20 @@ describe('syntax acceptance evidence contract', () => {
     expect(replayCaseVerdict(fixture, run, fixture.source)).toMatchObject({ passed: true, deliveredWithWarning: true, repairVerified: false });
   });
 
-  it('[P1] accepts complete warning delivery in real evidence but not missing evidence or real execution failure', async () => {
-    const root = await scratch();
-    const syntax = { status: 'repairable', finalization: warningFinalization, terminalRunStatus: 'succeeded', deliveredWithSyntaxWarningCount: 1, recoveredDeliveryCount: 0, blockedBrokenDeliveryCount: 0 };
-    const cases = [
-      { evalId: 'warning', status: 'succeeded', metrics: { ...metrics, deliverableSyntax: syntax } },
-      { evalId: 'missing-summary', status: 'succeeded', metrics: { ...metrics, deliverableSyntax: { ...syntax, finalization: undefined } } },
-      { evalId: 'false-recovery', status: 'succeeded', metrics: { ...metrics, deliverableSyntax: { ...syntax, recoveredDeliveryCount: 1 } } },
-      { evalId: 'protocol-failed', status: 'failed', metrics: { ...metrics, deliverableSyntax: syntax } },
-      { evalId: 'no-artifact-evidence', status: 'succeeded', metrics: { ...metrics, deliverableSyntax: undefined } },
-      { evalId: 'staged-pass-without-summary', status: 'succeeded', metrics: { ...metrics, deliverableSyntax: { status: 'pass' } } },
-    ];
-    await writeFile(path.join(root, 'result.json'), JSON.stringify({ cases }));
-    const result = await collectRealEvidence(root, cases.map(entry => entry.evalId));
-    expect(result.collection.complete).toBe(true);
-    expect(result.cases.map(entry => entry.passed)).toEqual([true, false, false, false, false, false]);
-    expect(result.cases[0]).toMatchObject({ deliveredWithWarning: true, repairVerified: false });
-  });
-
-  it('[P1] retains completed cases from events after runner interruption and separates unfinished from not started', async () => {
-    const root = await scratch();
-    await writeFile(path.join(root, 'events.jsonl'), [
-      { type: 'case_started', evalId: 'done' },
-      { type: 'case_finished', evalId: 'done', status: 'succeeded', metrics },
-      { type: 'case_started', evalId: 'interrupted' },
-    ].map(entry => JSON.stringify(entry)).join('\n') + '\n');
-    const recovered = await collectRealEvidence(root, ['done', 'interrupted', 'not-started']);
-    expect(recovered.cases).toHaveLength(1);
-    expect(recovered.cases[0]).toMatchObject({ evalId: 'done', status: 'succeeded', passed: true });
-    expect(recovered.collection).toMatchObject({ complete: false, source: 'events', finishedCaseCount: 1, unfinishedCaseIds: ['interrupted'], notStartedCaseIds: ['not-started'] });
-  });
-
-  it('[P1] prefers result cases but recovers missing entries from events without duplicating completed cases', async () => {
-    const root = await scratch();
-    await writeFile(path.join(root, 'result.json'), JSON.stringify({ cases: [{ evalId: 'one', status: 'succeeded', metrics }] }));
-    await writeFile(path.join(root, 'events.jsonl'), ['one', 'two'].map(evalId => JSON.stringify({ type: 'case_finished', evalId, status: 'succeeded', metrics })).join('\n'));
-    const recovered = await collectRealEvidence(root, ['one', 'two']);
-    expect(recovered.cases).toHaveLength(2);
-    expect(recovered.collection).toMatchObject({ complete: true, source: 'result+events', finishedCaseCount: 2 });
-  });
-
-  it('[P1] reports malformed or unexpected evidence without discarding earlier finished records', async () => {
-    const root = await scratch();
-    await writeFile(path.join(root, 'events.jsonl'), JSON.stringify({ type: 'case_finished', evalId: 'unexpected', status: 'succeeded', metrics }) + '\n{"type":');
-    const recovered = await collectRealEvidence(root, ['expected']);
-    expect(recovered.cases).toHaveLength(1);
-    expect(recovered.collection.complete).toBe(false);
-    expect(recovered.collection.unexpectedCaseIds).toEqual(['unexpected']);
-    expect(recovered.collection.evidenceErrors).toHaveLength(1);
+  it('[P1] rejects any mode other than replay before creating evidence', async () => {
+    await expect(runSyntaxAcceptance(['--mode', 'real'])).rejects.toThrow('Only --mode replay is supported');
+    expect(runtime.startWeb).not.toHaveBeenCalled();
   });
 
   it('[P1] failed preflight still persists sourceAfter and confirmed cleanup without starting a runtime', async () => {
     const previousExitCode = process.exitCode;
     try {
-      // Explicitly invalid profile fails before build/login/start; all lifecycle operations below are mocked.
-      const result = await runSyntaxAcceptance(['--mode', 'real', '--profile', 'prod']);
+      // A missing fixture manifest fails before build/start; all lifecycle operations below are mocked.
+      const missingManifest = path.join(await scratch(), 'missing-fixtures.json');
+      const result = await runSyntaxAcceptance(['--mode', 'replay', '--fixture-manifest', missingManifest]);
       scratchRoots.push(result.root);
       expect(result.status).toBe('BLOCKED');
-      expect(result.error).toContain('requires --profile test');
+      expect(result.error).toContain('missing-fixtures.json');
       expect(runtime.startWeb).not.toHaveBeenCalled();
       const [spec, dependencies] = vi.mocked(createToolsDevSuite).mock.calls.at(-1)!;
       expect(dependencies?.runJson).toBeTypeOf('function');
