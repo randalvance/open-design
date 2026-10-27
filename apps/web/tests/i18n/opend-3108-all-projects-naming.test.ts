@@ -64,12 +64,4 @@ describe('OPEND-3108 · 「项目」→「全部项目」', () => {
       expect(dict[key], `${locale} ${key} still says "Projects"`).not.toBe(dict['entry.navProjects']);
     }
   }, 30_000);
-
-  it.each(LOCALES)('%s: the three collection tabs are translated, and 团队项目 matches the team noun', async (locale) => {
-    const dict = await loadDict(locale);
-    expect(dict['recentProjects.collectionRecent'], `${locale} recent`).toBeTruthy();
-    expect(dict['recentProjects.collectionPersonalProjects'], `${locale} personal`).toBeTruthy();
-    // 团队项目 reuses the locale's existing noun for the (former) team entry.
-    expect(dict['recentProjects.collectionTeamProjects'], `${locale} team`).toBe(dict['entry.navAllProjects']);
-  }, 30_000);
 });

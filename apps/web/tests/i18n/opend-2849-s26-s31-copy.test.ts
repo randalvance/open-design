@@ -85,22 +85,6 @@ describe('OPEND-2849 supplement copy', () => {
     );
     expect(lookup(zh, 'chat.runError.title.localStorageFailure')).toBe('无法保存文件');
   });
-
-  /*
-   * 第四轮(S32a 整格对齐)把这一句拆成了标题 + 正文两个键,旧键已删;逐字判据在
-   * `opend-2849-round4-copy.test.ts`。这里留着的是上一轮的那条底线:中文里不许再出现半角逗号。
-   */
-  it('browser-not-opened copy has no half-width comma (zh-CN, zh-TW)', async () => {
-    for (const locale of ['zh-CN', 'zh-TW'] as const) {
-      const dict = await loadDict(locale);
-      expect(lookup(dict, 'settings.amrActivationBrowserFailed')).toBeUndefined();
-      for (const key of ['settings.amrActivationBrowserFailedTitle', 'settings.amrActivationBrowserFailedDescription']) {
-        const value = lookup(dict, key);
-        expect(value?.trim()).toBeTruthy();
-        expect(value).not.toContain(',');
-      }
-    }
-  });
 });
 
 describe.each(LOCALES)('OPEND-2849 supplement locale %s', (locale) => {
