@@ -71,6 +71,7 @@ import {
   resolveDaemonResourceRoot,
   resolveDataDir,
   resolveProcessResourcesPath,
+  resolveDaemonWebStaticDir,
 } from './daemon-paths.js';
 export {
   resolveDaemonCliPath,
@@ -987,11 +988,12 @@ const DAEMON_RESOURCE_ROOT = resolveDaemonResourceRoot({
     process.env.OD_INSTALLATION_DIR,
   ],
 });
-// Built web app lives in `out/` — that's where Next.js writes the static
-// export configured in next.config.ts. The folder name used to be `dist/`
-// when this project shipped with Vite; the daemon serves whatever the
-// frontend toolchain emits, no further config needed.
-const STATIC_DIR = path.join(PROJECT_ROOT, 'apps', 'web', 'out');
+// Built web app: the Next.js static export from `apps/web/out` in a source
+// checkout, or `web/` under the resource root in a bundled distribution.
+const STATIC_DIR = resolveDaemonWebStaticDir({
+  resourceRoot: DAEMON_RESOURCE_ROOT,
+  projectRoot: PROJECT_ROOT,
+});
 // Baked plugin preview clips (scripts/bake-plugin-previews.mjs). Served at
 // PLUGIN_PREVIEWS_ROUTE; their manifest rewrites html plugins' previews to a
 // cheap poster + hover-play video in the home gallery.
