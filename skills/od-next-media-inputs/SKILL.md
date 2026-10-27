@@ -45,19 +45,11 @@ the Core imagery-by-type rule; it is the only source of those rules.
 
 ## Search stock photos
 
-- Fetch every stock slot through the authenticated daemon wrapper in one
-  call, using the company service and your existing Vela login:
-  `"$OD_NODE_BIN" "$OD_BIN" media stock-search --slots '[{"id":"hero","query":"black eyeglasses frame","width":1200,"orientation":"landscape"}]'`.
-  Write queries in English with the subject first. The service follows configured channel priority,
-  tries each channel at most once within its attempt limit, ranks by alt text, and returns
-  each result. The wrapper downloads images into `assets/stock/` and records
-  credits in `assets/stock/credits.json`. Provider keys stay on the server;
-  never ask the user to configure a stock-provider key.
-- If the command fails or times out, or a slot returns `error`, `not_found`,
-  or `budget_exceeded`, keep successful local files and use your available
-  web/image search tools for only the missing slots. This includes unavailable
-  service/login, API errors, rate limits and failed image downloads. Do not
-  call the stock tool again for those failed slots.
+- Search for each stock slot with your available web/image search tools.
+  Write queries in English with the subject first. Download the selected
+  images into `assets/stock/` and record each credit in
+  `assets/stock/credits.json`. Never ask the user to configure a
+  stock-provider key.
 - Search the stock libraries' public pages or the correct official source
   for a named real subject. Read each result's title/alt text, source and
   license before selecting its actual image URL; never invent a URL or ID.

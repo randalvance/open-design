@@ -717,7 +717,7 @@ export interface TaskTelemetryStatus {
   status: 'unknown' | 'pending' | 'in_flight' | 'failed' | 'accepted' | 'not_expected' | 'observed' | 'compatibility';
   traceId: string | null;
   protocol: 'legacy-v1' | 'otlp-v4' | null;
-  transport: 'langfuse' | 'relay' | 'vela' | null;
+  transport: 'langfuse' | 'relay' | null;
   attemptCount: number | null;
   reason: string | null;
   environment: string | null;
