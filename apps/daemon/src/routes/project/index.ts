@@ -105,6 +105,7 @@ import { isSafeId, validateProjectPath } from '../../projects.js';
 import {
   getFirstProjectConversation,
   SYNC_KEEPS_UPDATED_AT,
+  renamePreviewCommentFilePath,
 } from '../../db.js';
 import {
   BUILT_IN_PROJECT_LOCATION_ID,
@@ -5796,8 +5797,13 @@ export function registerProjectFileRoutes(app: Express, ctx: RegisterProjectFile
       // `source_path_at_capture` records where the bytes came from at the time
       // and stays put, so an HTML card keeps opening the renamed latest while
       // an image card keeps opening its own frozen bytes.
+      // Comments are bound to the artifact identity through their file path,
+      // so the pointer and the bindings move together or not at all.
       try {
-        renameWorkspaceArtifactPath(db, projectId, result.oldName, result.newName);
+        db.transaction(() => {
+          renameWorkspaceArtifactPath(db, projectId, result.oldName, result.newName);
+          renamePreviewCommentFilePath(db, projectId, result.oldName, result.newName);
+        })();
       } catch (error) {
         console.warn('[chat-artifacts] rename bookkeeping failed', error);
       }

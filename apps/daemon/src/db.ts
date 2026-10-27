@@ -3774,6 +3774,39 @@ function currentPreviewCommentFilter(db: SqliteDb, projectId: string): (comment:
   };
 }
 
+/**
+ * Follow a file rename for every comment bound to that file.
+ *
+ * `currentPreviewCommentFilter` only shows a comment whose `file_path` still
+ * matches the live artifact pointer it was bound to (`source_file_id`), so a
+ * rename that moves the pointer but not the comments would silently hide them.
+ * This moves exact matches and, for a folder rename, every path under it; it
+ * must run in the same transaction as `renameWorkspaceArtifactPath`.
+ */
+export function renamePreviewCommentFilePath(
+  db: SqliteDb,
+  projectId: string,
+  fromPath: string,
+  toPath: string,
+  now = Date.now(),
+): number {
+  const exact = db
+    .prepare(
+      `UPDATE preview_comments SET file_path = ?, updated_at = ?
+        WHERE project_id = ? AND file_path = ?`,
+    )
+    .run(toPath, now, projectId, fromPath);
+  const prefix = `${fromPath}/`;
+  const nested = db
+    .prepare(
+      `UPDATE preview_comments
+          SET file_path = ? || substr(file_path, ?), updated_at = ?
+        WHERE project_id = ? AND substr(file_path, 1, ?) = ?`,
+    )
+    .run(`${toPath}/`, prefix.length + 1, now, projectId, prefix.length, prefix);
+  return Number(exact.changes) + Number(nested.changes);
+}
+
 export function listPreviewComments(
   db: SqliteDb, projectId: string, conversationId: string,
   options: PreviewCommentReadOptions = {},

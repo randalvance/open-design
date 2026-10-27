@@ -87,6 +87,47 @@ describe('project file rename route', () => {
     expect(await renamed.text()).toBe('body');
   });
 
+  it('carries the file\'s comments along with the rename', async () => {
+    const projectId = await createProject();
+    await writeText(projectId, 'index.html', '<h1 data-od-id="hero">Hero</h1>');
+    const convResp = await fetch(`${baseUrl}/api/projects/${projectId}/conversations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Chat' }),
+    });
+    expect(convResp.status).toBe(200);
+    const { conversation } = (await convResp.json()) as { conversation: { id: string } };
+    const commentResp = await fetch(
+      `${baseUrl}/api/projects/${projectId}/conversations/${conversation.id}/comments`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          note: 'Make the hero bolder',
+          target: {
+            filePath: 'index.html',
+            elementId: 'hero',
+            selector: '[data-od-id="hero"]',
+            label: 'h1',
+            text: 'Hero',
+            htmlHint: '<h1>',
+            position: { x: 0, y: 0, width: 10, height: 10 },
+          },
+        }),
+      },
+    );
+    expect(commentResp.status).toBe(200);
+
+    const resp = await renameFile(projectId, 'index.html', 'pages/home.html');
+    expect(resp.status).toBe(200);
+
+    const listResp = await fetch(`${baseUrl}/api/projects/${projectId}/conversations/${conversation.id}/comments`);
+    expect(listResp.status).toBe(200);
+    const { comments } = (await listResp.json()) as { comments: Array<{ note: string; filePath: string }> };
+    expect(comments).toHaveLength(1);
+    expect(comments[0]).toMatchObject({ note: 'Make the hero bolder', filePath: 'pages/home.html' });
+  });
+
   it('renames case-only filename changes instead of treating them as no-ops', async () => {
     const projectId = await createProject();
     await writeText(projectId, 'paste-1.txt', 'body');

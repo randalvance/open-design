@@ -224,6 +224,14 @@ const MEDIA_MODEL_ALIASES: Readonly<Record<string, string>> = {
   'nano-banana-2-lite': 'gemini-3.1-flash-image-preview',
   // Preserve existing project metadata while removing the Codex renderer.
   'codex-gpt-image-2': 'gpt-image-2',
+  // Projects created while the managed OpenDesign Cloud catalogue existed
+  // persisted its `vela/*` ids; route them to the local models they wrapped.
+  'vela/gpt-image-2': 'gpt-image-2',
+  'vela/nano-banana-2': 'gemini-3.1-flash-image-preview',
+  'vela/nano-banana-2-lite': 'gemini-3.1-flash-image-preview',
+  'vela/seedream-5.0': 'doubao-seedream-5-0-260128',
+  'vela/seedream-5.0-pro': 'doubao-seedream-5-0-260128',
+  'vela/doubao-seedance-2-0-260128': 'doubao-seedance-2-0-260128',
 };
 
 export function canonicalMediaModelId(id: string): string {
