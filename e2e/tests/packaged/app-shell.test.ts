@@ -98,14 +98,17 @@ const HOME_SHELL: readonly FixtureNode[] = [
   { attributes: { 'data-testid': 'entry-nav-updater' }, classes: ['entry-nav__item'] },
 ];
 
-// The auth-first surface a fresh install or a completed but signed-out core
-// run comes up on: EntryShell's onboarding shell wrapping OnboardingView's
-// identity gate. Runtime selection intentionally follows Cloud sign-in.
-const CLOUD_SIGN_IN_LANDING: readonly FixtureNode[] = [
+// The first-run surface a fresh install comes up on: EntryShell's onboarding
+// shell wrapping the local landing, whose primary call-to-action picks the
+// local CLI agent path.
+const LOCAL_LANDING: readonly FixtureNode[] = [
   { classes: ['entry-shell', 'entry-shell--no-header', 'entry-shell--onboarding'] },
   { classes: ['entry-onboarding-modal'] },
-  { classes: ['onboarding-view', 'onboarding-view--cloud'] },
-  { classes: ['onboarding-cloud__primary'] },
+  { classes: ['onboarding-view', 'onboarding-view--landing'] },
+  {
+    attributes: { 'data-testid': 'onboarding-landing-primary' },
+    classes: ['onboarding-landing__alt-btn', 'onboarding-landing__primary-choice'],
+  },
 ];
 
 describe('packaged app-shell probe', () => {
@@ -118,34 +121,34 @@ describe('packaged app-shell probe', () => {
   it('ships a self-contained expression that reads the globals the renderer has', () => {
     expect(packagedAppShellExpression).toContain('(document, HTMLElement)');
     expect(packagedAppShellExpression).toContain('[data-testid="entry-nav-home"]');
-    expect(packagedAppShellExpression).toContain('.onboarding-cloud__primary');
+    expect(packagedAppShellExpression).toContain('[data-testid="onboarding-landing-primary"]');
   });
 
-  it('tracks the identity gate rendered by the current onboarding shell', async () => {
+  it('tracks the primary call-to-action rendered by the current onboarding shell', async () => {
     const [entryShellSource, macSpecSource, winSpecSource] = await Promise.all([
       readFile(new URL('../../../apps/web/src/components/EntryShell.tsx', import.meta.url), 'utf8'),
       readFile(new URL('../../specs/mac.spec.ts', import.meta.url), 'utf8'),
       readFile(new URL('../../specs/win.spec.ts', import.meta.url), 'utf8'),
     ]);
-    const identityProbe = "querySelector('.onboarding-cloud__primary')";
+    const identityProbe = `querySelector('[data-testid="onboarding-landing-primary"]')`;
 
-    expect(entryShellSource).toContain('className="onboarding-cloud__primary"');
-    expect(packagedAppShellExpression).toContain('.onboarding-cloud__primary');
+    expect(entryShellSource).toContain('data-testid="onboarding-landing-primary"');
+    expect(packagedAppShellExpression).toContain('[data-testid="onboarding-landing-primary"]');
     expect(macSpecSource).toContain(identityProbe);
     expect(winSpecSource).toContain(identityProbe);
   });
 
   it('reports home for the main shell', () => {
     expect(probe(renderFixture(HOME_SHELL))).toMatchObject({
-      cloudSignInVisible: false,
+      primaryCtaVisible: false,
       homeVisible: true,
       onboardingVisible: false,
     });
   });
 
-  it('reports the cloud sign-in identity gate', () => {
-    expect(probe(renderFixture(CLOUD_SIGN_IN_LANDING))).toMatchObject({
-      cloudSignInVisible: true,
+  it('reports the first-run landing', () => {
+    expect(probe(renderFixture(LOCAL_LANDING))).toMatchObject({
+      primaryCtaVisible: true,
       homeVisible: false,
       onboardingVisible: true,
     });
@@ -159,7 +162,7 @@ describe('packaged app-shell probe', () => {
 
   it('reports nothing for a blank window', () => {
     expect(probe(renderFixture([], { title: '' }))).toMatchObject({
-      cloudSignInVisible: false,
+      primaryCtaVisible: false,
       homeVisible: false,
       onboardingVisible: false,
     });
@@ -176,21 +179,21 @@ describe('packaged app-shell terminal state', () => {
   });
 
   // The bug this file exists for. A packaged first run that nobody signs in to
-  // comes to rest on the cloud sign-in landing — `connectStepRuntimeReady` in
-  // EntryShell.tsx will not advance without a signed-in cloud account, an
+  // comes to rest on the first-run landing — `connectStepRuntimeReady` in
+  // EntryShell.tsx will not advance without an
   // installed local CLI, or a verified BYOK key, none of which a release runner
   // has. Treating that as "not settled" made the Windows smoke wait 45s for a
   // home shell that can never arrive, which is why the 0.18.0 stable cut had to
   // fall back to `win_x64_smoke_mode: skip`.
-  it('settles on the cloud sign-in landing when the profile only needs a rendered surface', () => {
-    const snapshot = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+  it('settles on the first-run landing when the profile only needs a rendered surface', () => {
+    const snapshot = probe(renderFixture(LOCAL_LANDING));
 
     expect(packagedAppShellState(snapshot)).toBe('onboarding-landing');
     expect(packagedAppShellSettled(snapshot, { acceptOnboardingLanding: true })).toBe(true);
   });
 
   it('still requires home when the profile has to drive the entry rail', () => {
-    const snapshot = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const snapshot = probe(renderFixture(LOCAL_LANDING));
 
     expect(packagedAppShellSettled(snapshot, { acceptOnboardingLanding: false })).toBe(false);
     expect(packagedAppShellFailureReason(snapshot, { acceptOnboardingLanding: false })).toContain(
@@ -204,7 +207,7 @@ describe('packaged app-shell terminal state', () => {
     expect(packagedAppShellState(snapshot)).toBeNull();
     expect(packagedAppShellSettled(snapshot, { acceptOnboardingLanding: true })).toBe(false);
     expect(packagedAppShellFailureReason(snapshot, { acceptOnboardingLanding: true })).toContain(
-      'neither the home nav rail nor the onboarding cloud sign-in landing rendered',
+      'neither the home nav rail nor the first-run onboarding landing rendered',
     );
   });
 
@@ -222,7 +225,7 @@ describe('packaged app-shell terminal state', () => {
     expect(packagedAppShellState(snapshot)).toBeNull();
     expect(packagedAppShellSettled(snapshot, { acceptOnboardingLanding: true })).toBe(false);
     expect(packagedAppShellFailureReason(snapshot, { acceptOnboardingLanding: true })).toContain(
-      'cloud sign-in landing did not render',
+      'first-run landing did not render',
     );
   });
 
@@ -238,12 +241,11 @@ describe('packaged app-shell terminal state', () => {
 
 // The postcondition PerishCode's review on #6481 asked to keep: a run that
 // seeds onboarding as completed must still notice when a cold launch loses it.
-// Auth-first means a retained completed user may legitimately see the same
-// cloud sign-in landing as a first run, so the seed check and surface policy
-// must stay separate.
+// The seed check and the surface policy must stay separate: which surface the
+// renderer shows is not evidence of what the daemon retained.
 describe('packaged app-shell policy', () => {
   it('accepts the auth-first landing when a seeded core run retained onboarding completion', () => {
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(LOCAL_LANDING));
     const policy = packagedAppShellPolicy({
       coreProfile: true,
       daemonOnboardingCompleted: true,
@@ -270,7 +272,7 @@ describe('packaged app-shell policy', () => {
   });
 
   it('does not infer completed-user auth permission without a seed', () => {
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(LOCAL_LANDING));
     const policy = packagedAppShellPolicy({ coreProfile: true, daemonOnboardingCompleted: true, seededOnboardingCompleted: false });
 
     expect(packagedAppShellSettled(landing, policy)).toBe(false);
@@ -297,7 +299,7 @@ describe('packaged app-shell policy', () => {
   });
 
   it('requires an explicit permission before accepting the landing', () => {
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(LOCAL_LANDING));
 
     for (const acceptOnboardingLanding of [undefined, null, 1, 'yes']) {
       expect(
@@ -328,7 +330,7 @@ describe('packaged app-shell policy', () => {
   });
 
   it('keeps a lost seed failing at the shell check', () => {
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(LOCAL_LANDING));
     const policy = packagedAppShellPolicy({
       coreProfile: true,
       daemonOnboardingCompleted: false,
@@ -369,7 +371,7 @@ describe('packaged app-shell policy', () => {
   });
 
   it('lets an unseeded run settle on the landing', () => {
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(LOCAL_LANDING));
     const policy = packagedAppShellPolicy({ coreProfile: true, daemonOnboardingCompleted: false, seededOnboardingCompleted: false });
 
     expect(packagedAppShellSettled(landing, policy)).toBe(true);
@@ -553,9 +555,9 @@ describe('packaged launch scenarios', () => {
     return { now: () => t, sleep: async (ms: number) => { t += ms; } };
   };
 
-  it('settles a genuine first run on the cloud sign-in landing', async () => {
+  it('settles a genuine first run on the first-run landing', async () => {
     const clock = virtualClock();
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(LOCAL_LANDING));
 
     const result = await runPackagedAppShellPhase({
       coreProfile: true,
@@ -587,7 +589,7 @@ describe('packaged launch scenarios', () => {
 
   it('settles a retained completed user on the core auth-first landing', async () => {
     const clock = virtualClock();
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(LOCAL_LANDING));
 
     const result = await runPackagedAppShellPhase({
       coreProfile: true,
@@ -603,7 +605,7 @@ describe('packaged launch scenarios', () => {
 
   it('fails a completed user whose seeded state was lost across the relaunch', async () => {
     const clock = virtualClock();
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(LOCAL_LANDING));
 
     await expect(
       runPackagedAppShellPhase({
@@ -630,7 +632,7 @@ describe('packaged launch scenarios', () => {
         scenario: 'first-run',
         sleep: clock.sleep,
       }),
-    ).rejects.toThrow(/neither the home nav rail nor the onboarding cloud sign-in landing rendered/);
+    ).rejects.toThrow(/neither the home nav rail nor the first-run onboarding landing rendered/);
   });
 });
 
@@ -652,7 +654,7 @@ describe('real fresh-install app-config response', () => {
 
   it('settles a first run whose daemon never wrote the key', async () => {
     const clock = virtualClock();
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(LOCAL_LANDING));
 
     const result = await runPackagedAppShellPhase({
       coreProfile: true,
@@ -669,7 +671,7 @@ describe('real fresh-install app-config response', () => {
 
   it('still fails a completed user whose key went missing', async () => {
     const clock = virtualClock();
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(LOCAL_LANDING));
 
     await expect(
       runPackagedAppShellPhase({
@@ -686,7 +688,7 @@ describe('real fresh-install app-config response', () => {
 
   it('keeps a wrong-typed key a fault even for a first run', async () => {
     const clock = virtualClock();
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(LOCAL_LANDING));
 
     await expect(
       runPackagedAppShellPhase({
@@ -705,7 +707,7 @@ describe('real fresh-install app-config response', () => {
 
   it('keeps transport and HTTP faults closed for a first run', async () => {
     const clock = virtualClock();
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(LOCAL_LANDING));
 
     for (const failure of [fakeConfigFetch({ ok: false, status: 500 }), fakeConfigFetch({ throws: true })]) {
       await expect(
