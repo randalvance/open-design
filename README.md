@@ -290,6 +290,17 @@ Then, inside the agent:
 
 In a filesystem-backed local CLI run, the agent composes the selected functional skill or design template with your `DESIGN.md`, writes the canonical project files, and OpenDesign previews those files. A BYOK/plain-API run without filesystem tools instead returns one complete `<artifact>` block.
 
+### 📦 Install from npm
+
+One package with the `od` CLI, the local daemon, the web UI, and the bundled skills, design systems, templates, and plugins. Needs Node 24.
+
+```bash
+npm install -g @randalvance/open-design
+od   # starts the daemon and opens the web UI; add --no-open to run headless
+```
+
+Projects and settings live under `~/.local/share/open-design/cli` (`%LOCALAPPDATA%\open-design\cli` on Windows); set `OD_DATA_DIR` to move them.
+
 ### 🐳 Run with Docker
 
 ```bash

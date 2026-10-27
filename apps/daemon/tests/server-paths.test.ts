@@ -6,6 +6,7 @@ import {
   resolveDaemonResourceRoot,
   resolveProjectRoot,
 } from '../src/server.js';
+import { resolveDaemonWebStaticDir } from '../src/daemon-paths.js';
 
 describe('resolveProjectRoot', () => {
   it('resolves the repository root from the source daemon directory', () => {
@@ -136,5 +137,25 @@ describe('resolveDaemonPluginPreviewsDir', () => {
         projectRoot,
       }),
     ).toBe(path.join(projectRoot, 'rel', 'previews'));
+  });
+});
+
+describe('resolveDaemonWebStaticDir', () => {
+  it('serves apps/web/out from the project root in the dev layout (no resource root)', () => {
+    const projectRoot = path.resolve(import.meta.dirname, '../../..');
+
+    expect(resolveDaemonWebStaticDir({ resourceRoot: undefined, projectRoot })).toBe(
+      path.join(projectRoot, 'apps', 'web', 'out'),
+    );
+  });
+
+  it('serves web/ under the resource root in a bundled distribution', () => {
+    // The npm package is its own resource root and ships the static export
+    // as `web/`; it has no `apps/` tree to fall back to.
+    const resourceRoot = '/usr/local/lib/node_modules/open-design';
+
+    expect(resolveDaemonWebStaticDir({ resourceRoot, projectRoot: resourceRoot })).toBe(
+      path.join(resourceRoot, 'web'),
+    );
   });
 });

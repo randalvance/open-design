@@ -267,6 +267,17 @@ Depois, dentro do agente:
 
 Em uma execução CLI local com filesystem, o agente combina a skill funcional ou o template escolhido com seu `DESIGN.md`, grava os arquivos canônicos e o OpenDesign os mostra no preview. Uma execução BYOK/API sem ferramentas de arquivos retorna um único bloco `<artifact>` completo.
 
+### 📦 Instalar pelo npm
+
+Um único pacote com a CLI `od`, o daemon local, a interface web e as skills, sistemas de design, templates e plugins incluídos. Requer Node 24.
+
+```bash
+npm install -g @randalvance/open-design
+od   # inicia o daemon e abre a interface web; use --no-open para rodar sem navegador
+```
+
+Projetos e configurações ficam em `~/.local/share/open-design/cli` (`%LOCALAPPDATA%\open-design\cli` no Windows); defina `OD_DATA_DIR` para movê-los.
+
 ### 🐳 Rode com Docker
 
 ```bash

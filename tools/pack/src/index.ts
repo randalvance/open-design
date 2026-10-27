@@ -41,6 +41,7 @@ import {
   uninstallPackedLinuxApp,
   uninstallPackedLinuxHeadless,
 } from "./linux.js";
+import { packNpm, smokeNpm } from "./npm/index.js";
 
 type CliOptions = ToolPackCliOptions;
 
@@ -257,6 +258,24 @@ addBuildOptions(addSharedOptions(cli.command("linux <action>", "Linux packaging 
         return;
       default:
         throw new Error(`unsupported linux action: ${action}`);
+    }
+  });
+
+addSharedOptions(cli.command("npm <action>", "npm package commands: build|smoke"))
+  .option("--app-version <version>", "override the package version (default: root package.json version)")
+  .option("--package-name <name>", "npm package name (default: root package.json name)")
+  .option("--skip-build", "reuse the existing daemon dist and web static export instead of rebuilding them")
+  .option("--tarball <path>", "smoke: tarball to install (default: the newest tarball under the npm output root)")
+  .action(async (action: string, options: CliOptions) => {
+    switch (action) {
+      case "build":
+        printJson(await packNpm(options));
+        return;
+      case "smoke":
+        printJson(await smokeNpm(options));
+        return;
+      default:
+        throw new Error(`unsupported npm action: ${action}`);
     }
   });
 

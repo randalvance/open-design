@@ -118,6 +118,33 @@ export function resolveDaemonPluginPreviewsDir({
   );
 }
 
+export interface ResolveDaemonWebStaticDirOptions {
+  resourceRoot: string | null | undefined;
+  projectRoot: string;
+}
+
+/**
+ * Where the daemon serves the built web app from.
+ *
+ * A source checkout serves the Next.js static export that `apps/web` writes
+ * to `apps/web/out`. A bundled distribution such as the npm package ships no
+ * `apps/` tree and carries that export as `web/` under its resource root
+ * instead. Packaged desktop builds also set a resource root but run the web
+ * app through their own server sidecar and ship no `web/` directory, so the
+ * static route stays unmounted there (server.ts only mounts a directory that
+ * exists).
+ */
+export function resolveDaemonWebStaticDir({
+  resourceRoot,
+  projectRoot,
+}: ResolveDaemonWebStaticDirOptions): string {
+  return resolveDaemonResourceDir(
+    resourceRoot ?? null,
+    'web',
+    path.join(projectRoot, 'apps', 'web', 'out'),
+  );
+}
+
 export interface ResolveDataDirOptions {
   requireExplicit?: boolean;
 }

@@ -276,6 +276,17 @@ curl -fsSL https://open-design.ai/install.sh | sh -s <agent>
 
 在具備檔案系統的本地 CLI 執行中，agent 會把選定的功能 skill 或設計範本與 `DESIGN.md` 組合、寫入標準專案檔案，OpenDesign 直接預覽這些檔案。沒有檔案系統工具的 BYOK／純 API 執行則回傳一個完整的 `<artifact>` 區塊。
 
+### 📦 透過 npm 安裝
+
+一個套件即包含 `od` 命令列、本機守護程式、Web 介面，以及內建的 skills、設計系統、範本和外掛。需要 Node 24。
+
+```bash
+npm install -g @randalvance/open-design
+od   # 啟動守護程式並開啟 Web 介面；加上 --no-open 以無介面方式執行
+```
+
+專案與設定保存在 `~/.local/share/open-design/cli`（Windows 為 `%LOCALAPPDATA%\open-design\cli`）；設定 `OD_DATA_DIR` 可變更位置。
+
 ### 🐳 以 Docker 執行
 
 ```bash

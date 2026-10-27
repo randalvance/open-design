@@ -267,6 +267,17 @@ od mcp install <agent>
 
 ファイルシステム対応のローカル CLI 実行では、エージェントが選択した機能スキルまたはデザインテンプレートと `DESIGN.md` を合成し、正規プロジェクトファイルを書き、OpenDesign がそれをプレビューします。ファイルツールのない BYOK/API 実行は、完全な `<artifact>` ブロックを 1 つ返します。
 
+### 📦 npm からインストール
+
+`od` CLI、ローカルデーモン、Web UI、同梱のスキル・デザインシステム・テンプレート・プラグインを 1 つのパッケージにまとめています。Node 24 が必要です。
+
+```bash
+npm install -g @randalvance/open-design
+od   # デーモンを起動して Web UI を開く。--no-open でヘッドレス実行
+```
+
+プロジェクトと設定は `~/.local/share/open-design/cli`（Windows では `%LOCALAPPDATA%\open-design\cli`）に保存されます。`OD_DATA_DIR` で場所を変更できます。
+
 ### 🐳 Docker で実行
 
 ```bash

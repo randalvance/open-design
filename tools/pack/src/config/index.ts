@@ -51,6 +51,7 @@ export type ToolPackCliOptions = {
   macCompression?: string;
   notarize?: boolean;
   namespace?: string;
+  packageName?: string;
   path?: string;
   payloadPath?: string;
   portable?: boolean;
@@ -61,8 +62,10 @@ export type ToolPackCliOptions = {
   removeSidecars?: boolean;
   signed?: boolean;
   silent?: boolean;
+  skipBuild?: boolean;
   statusPollCount?: string | number;
   statusPollIntervalMs?: string | number;
+  tarball?: string;
   to?: string;
   updateAction?: string;
 };

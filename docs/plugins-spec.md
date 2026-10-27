@@ -1243,9 +1243,9 @@ In practice this means:
 
 What this unlocks:
 
-- A user with **only Claude Code** (or any code agent) plus `npm i -g @open-design/cli` plus a running headless daemon can do the entire user journey: install plugin → create project → run → consume artifacts. No OD desktop required.
+- A user with **only Claude Code** (or any code agent) plus `npm i -g @randalvance/open-design` plus a running headless daemon can do the entire user journey: install plugin → create project → run → consume artifacts. No OD desktop required.
 - The OD desktop UI installs the same daemon and the same CLI; it just adds a window. Users who later install the desktop find the same projects, plugins, and history that the headless flow produced — there is no "headless project format" vs. "desktop project format". This spec MUST NOT define daemon data paths; read root `AGENTS.md` → **Daemon data directory contract** before changing or documenting shared storage.
-- CI is a first-class citizen: a GitHub Action can `npm i -g @open-design/cli && od daemon start --headless && od plugin install … && od run start --project … --follow`. No display, no electron, no per-step UI scripting.
+- CI is a first-class citizen: a GitHub Action can `npm i -g @randalvance/open-design && od daemon start --headless && od plugin install … && od run start --project … --follow`. No display, no electron, no per-step UI scripting.
 - External products can embed OD by spawning a headless daemon and shelling out — `od` is the public surface, internals are free to evolve.
 
 The cost: a small handful of `od daemon` flags and one new lifecycle subcommand (`od daemon start/stop/status` with `--headless` / `--serve-web`). Implementation lands in Phase 2 alongside the CLI parity slice.
