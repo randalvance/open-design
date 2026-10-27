@@ -267,6 +267,17 @@ od mcp install <agent>
 
 파일시스템 기반 로컬 CLI 실행에서 에이전트는 선택한 기능 스킬 또는 디자인 템플릿과 `DESIGN.md`를 합성해 정규 프로젝트 파일을 쓰고 OpenDesign이 이를 미리 봅니다. 파일 도구가 없는 BYOK/API 실행은 완전한 `<artifact>` 블록 하나를 반환합니다.
 
+### 📦 npm으로 설치
+
+`od` CLI, 로컬 데몬, 웹 UI, 그리고 내장 스킬·디자인 시스템·템플릿·플러그인을 하나의 패키지로 제공합니다. Node 24가 필요합니다.
+
+```bash
+npm install -g open-design
+od   # 데몬을 시작하고 웹 UI를 엽니다. --no-open을 붙이면 헤드리스로 실행
+```
+
+프로젝트와 설정은 `~/.local/share/open-design/cli`(Windows에서는 `%LOCALAPPDATA%\open-design\cli`)에 저장됩니다. `OD_DATA_DIR`로 위치를 바꿀 수 있습니다.
+
 ### 🐳 Docker로 실행
 
 ```bash

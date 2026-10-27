@@ -267,6 +267,17 @@ Ardından, ajanın içinde:
 
 Filesystem destekli yerel CLI çalıştırmasında ajan seçilen işlevsel beceri veya tasarım şablonunu `DESIGN.md` ile birleştirir, kanonik proje dosyalarını yazar ve OpenDesign bunları önizler. Dosya araçları olmayan BYOK/API çalıştırması bunun yerine tek bir eksiksiz `<artifact>` bloğu döndürür.
 
+### 📦 npm ile kurun
+
+`od` CLI'sini, yerel daemon'u, web arayüzünü ve paketle gelen skill'leri, tasarım sistemlerini, şablonları ve eklentileri içeren tek bir paket. Node 24 gerektirir.
+
+```bash
+npm install -g open-design
+od   # daemon'u başlatır ve web arayüzünü açar; headless için --no-open ekleyin
+```
+
+Projeler ve ayarlar `~/.local/share/open-design/cli` altında tutulur (Windows'ta `%LOCALAPPDATA%\open-design\cli`); taşımak için `OD_DATA_DIR` ayarlayın.
+
 ### 🐳 Docker ile çalıştırın
 
 ```bash

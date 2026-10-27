@@ -267,6 +267,17 @@ curl -fsSL https://open-design.ai/install.sh | sh -s <agent>
 
 ใน local CLI run ที่มี filesystem, agent จะ compose functional skill หรือ design template ที่เลือกกับ `DESIGN.md`, เขียน canonical project files และ OpenDesign preview ไฟล์เหล่านั้น. BYOK/plain-API run ที่ไม่มี filesystem tools จะคืน `<artifact>` block ที่สมบูรณ์หนึ่งก้อนแทน.
 
+### 📦 ติดตั้งจาก npm
+
+แพ็กเกจเดียวที่รวม CLI `od`, เดมอนในเครื่อง, เว็บ UI และสกิล ระบบดีไซน์ เทมเพลต และปลั๊กอินที่มาพร้อมกัน ต้องใช้ Node 24
+
+```bash
+npm install -g open-design
+od   # เริ่มเดมอนและเปิดเว็บ UI; เพิ่ม --no-open เพื่อรันแบบ headless
+```
+
+โปรเจกต์และการตั้งค่าอยู่ที่ `~/.local/share/open-design/cli` (`%LOCALAPPDATA%\open-design\cli` บน Windows) ตั้งค่า `OD_DATA_DIR` เพื่อย้ายตำแหน่ง
+
 ### 🐳 รันด้วย Docker
 
 ```bash

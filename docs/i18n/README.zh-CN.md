@@ -271,6 +271,17 @@ od mcp install <agent>
 
 在有文件系统的本地 CLI 运行中，Agent 会将选中的功能技能或设计模板与 `DESIGN.md` 组合，写入规范项目文件，OpenDesign 直接预览这些文件。没有文件系统工具的 BYOK/纯 API 运行则返回一个完整的 `<artifact>` 块。
 
+### 📦 通过 npm 安装
+
+一个包即包含 `od` 命令行、本地守护进程、Web 界面，以及内置的 skills、设计系统、模板和插件。需要 Node 24。
+
+```bash
+npm install -g open-design
+od   # 启动守护进程并打开 Web 界面；加 --no-open 以无界面方式运行
+```
+
+项目和设置保存在 `~/.local/share/open-design/cli`（Windows 为 `%LOCALAPPDATA%\open-design\cli`）；设置 `OD_DATA_DIR` 可更改位置。
+
 ### 🐳 使用 Docker 运行
 
 ```bash
