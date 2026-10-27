@@ -272,7 +272,7 @@ En una ejecución CLI local con sistema de archivos, el agente combina el skill 
 Un solo paquete con la CLI `od`, el daemon local, la interfaz web y las skills, sistemas de diseño, plantillas y plugins incluidos. Requiere Node 24.
 
 ```bash
-npm install -g open-design
+npm install -g @randalvance/open-design
 od   # inicia el daemon y abre la interfaz web; añade --no-open para modo headless
 ```
 

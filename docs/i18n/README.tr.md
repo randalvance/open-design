@@ -272,7 +272,7 @@ Filesystem destekli yerel CLI çalıştırmasında ajan seçilen işlevsel becer
 `od` CLI'sini, yerel daemon'u, web arayüzünü ve paketle gelen skill'leri, tasarım sistemlerini, şablonları ve eklentileri içeren tek bir paket. Node 24 gerektirir.
 
 ```bash
-npm install -g open-design
+npm install -g @randalvance/open-design
 od   # daemon'u başlatır ve web arayüzünü açar; headless için --no-open ekleyin
 ```
 

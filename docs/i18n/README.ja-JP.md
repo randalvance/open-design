@@ -272,7 +272,7 @@ od mcp install <agent>
 `od` CLI、ローカルデーモン、Web UI、同梱のスキル・デザインシステム・テンプレート・プラグインを 1 つのパッケージにまとめています。Node 24 が必要です。
 
 ```bash
-npm install -g open-design
+npm install -g @randalvance/open-design
 od   # デーモンを起動して Web UI を開く。--no-open でヘッドレス実行
 ```
 

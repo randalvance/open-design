@@ -272,7 +272,7 @@ In einem dateisystemgestützten lokalen CLI-Lauf kombiniert der Agent den gewäh
 Ein Paket mit dem `od`-CLI, dem lokalen Daemon, der Web-UI sowie den mitgelieferten Skills, Designsystemen, Vorlagen und Plugins. Benötigt Node 24.
 
 ```bash
-npm install -g open-design
+npm install -g @randalvance/open-design
 od   # startet den Daemon und öffnet die Web-UI; mit --no-open headless
 ```
 

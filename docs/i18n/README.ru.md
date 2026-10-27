@@ -279,7 +279,7 @@ curl -fsSL https://open-design.ai/install.sh | sh -s <agent>
 Один пакет с CLI `od`, локальным демоном, веб-интерфейсом и встроенными навыками, дизайн-системами, шаблонами и плагинами. Требуется Node 24.
 
 ```bash
-npm install -g open-design
+npm install -g @randalvance/open-design
 od   # запускает демон и открывает веб-интерфейс; добавьте --no-open для headless-режима
 ```
 

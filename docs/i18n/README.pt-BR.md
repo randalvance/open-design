@@ -272,7 +272,7 @@ Em uma execução CLI local com filesystem, o agente combina a skill funcional o
 Um único pacote com a CLI `od`, o daemon local, a interface web e as skills, sistemas de design, templates e plugins incluídos. Requer Node 24.
 
 ```bash
-npm install -g open-design
+npm install -g @randalvance/open-design
 od   # inicia o daemon e abre a interface web; use --no-open para rodar sem navegador
 ```
 

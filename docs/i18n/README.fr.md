@@ -286,7 +286,7 @@ Dans une exécution CLI locale avec système de fichiers, l'agent compose le ski
 Un seul paquet avec la CLI `od`, le daemon local, l'interface web et les skills, systèmes de design, templates et plugins intégrés. Nécessite Node 24.
 
 ```bash
-npm install -g open-design
+npm install -g @randalvance/open-design
 od   # démarre le daemon et ouvre l'interface web ; ajoutez --no-open pour le mode headless
 ```
 

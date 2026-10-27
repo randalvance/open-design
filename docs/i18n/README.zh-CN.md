@@ -276,7 +276,7 @@ od mcp install <agent>
 一个包即包含 `od` 命令行、本地守护进程、Web 界面，以及内置的 skills、设计系统、模板和插件。需要 Node 24。
 
 ```bash
-npm install -g open-design
+npm install -g @randalvance/open-design
 od   # 启动守护进程并打开 Web 界面；加 --no-open 以无界面方式运行
 ```
 

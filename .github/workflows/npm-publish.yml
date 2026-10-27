@@ -12,9 +12,9 @@ on:
   workflow_dispatch:
     inputs:
       package_name:
-        description: "npm package name (default: the root package.json name)"
+        description: "npm package name"
         required: false
-        default: ""
+        default: "@randalvance/open-design"
       dist_tag:
         description: "npm dist-tag to publish under"
         required: false

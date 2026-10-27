@@ -281,7 +281,7 @@ curl -fsSL https://open-design.ai/install.sh | sh -s <agent>
 一個套件即包含 `od` 命令列、本機守護程式、Web 介面，以及內建的 skills、設計系統、範本和外掛。需要 Node 24。
 
 ```bash
-npm install -g open-design
+npm install -g @randalvance/open-design
 od   # 啟動守護程式並開啟 Web 介面；加上 --no-open 以無介面方式執行
 ```
 

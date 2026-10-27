@@ -274,7 +274,7 @@ od mcp install <agent>
 حزمة واحدة تضم أمر `od`، والخدمة المحلية، وواجهة الويب، والمهارات وأنظمة التصميم والقوالب والإضافات المضمّنة. تتطلب Node 24.
 
 ```bash
-npm install -g open-design
+npm install -g @randalvance/open-design
 od   # يشغّل الخدمة ويفتح واجهة الويب؛ أضف ‎--no-open للتشغيل دون متصفح
 ```
 

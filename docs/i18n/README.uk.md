@@ -272,7 +272,7 @@ od mcp install <agent>
 Один пакет із CLI `od`, локальним демоном, вебінтерфейсом і вбудованими навичками, дизайн-системами, шаблонами та плагінами. Потрібен Node 24.
 
 ```bash
-npm install -g open-design
+npm install -g @randalvance/open-design
 od   # запускає демон і відкриває вебінтерфейс; додайте --no-open для headless-режиму
 ```
 

@@ -295,7 +295,7 @@ In a filesystem-backed local CLI run, the agent composes the selected functional
 One package with the `od` CLI, the local daemon, the web UI, and the bundled skills, design systems, templates, and plugins. Needs Node 24.
 
 ```bash
-npm install -g open-design
+npm install -g @randalvance/open-design
 od   # starts the daemon and opens the web UI; add --no-open to run headless
 ```
 

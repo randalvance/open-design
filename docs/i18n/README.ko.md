@@ -272,7 +272,7 @@ od mcp install <agent>
 `od` CLI, 로컬 데몬, 웹 UI, 그리고 내장 스킬·디자인 시스템·템플릿·플러그인을 하나의 패키지로 제공합니다. Node 24가 필요합니다.
 
 ```bash
-npm install -g open-design
+npm install -g @randalvance/open-design
 od   # 데몬을 시작하고 웹 UI를 엽니다. --no-open을 붙이면 헤드리스로 실행
 ```
 

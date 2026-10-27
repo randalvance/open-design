@@ -272,7 +272,7 @@ curl -fsSL https://open-design.ai/install.sh | sh -s <agent>
 แพ็กเกจเดียวที่รวม CLI `od`, เดมอนในเครื่อง, เว็บ UI และสกิล ระบบดีไซน์ เทมเพลต และปลั๊กอินที่มาพร้อมกัน ต้องใช้ Node 24
 
 ```bash
-npm install -g open-design
+npm install -g @randalvance/open-design
 od   # เริ่มเดมอนและเปิดเว็บ UI; เพิ่ม --no-open เพื่อรันแบบ headless
 ```
 
