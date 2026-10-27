@@ -1,7 +1,5 @@
 <h1 align="center">OpenDesign : le premier espace de travail collaboratif avec des agents de design IA</h1>
 
-> ✨ **[Fêtons les 100K étoiles GitHub avec OpenDesign Go](https://open-design.ai/pricing/)** — Les crédits Go sont doublés : **8 $ US le premier mois, avec jusqu’à 120 $ US de crédits mensuels pour les modèles éligibles du Design Plan**. Utilisez-les sur plus de 10 modèles, dont GPT-6 Luna, DeepSeek V4.1 Flash, GLM-5.3 Flash-X et MiMo V2.6 Flash. Tous les forfaits individuels incluent un accès API pour Codex, Claude Code, DSH, OpenCode et d'autres outils.
-
 <p align="center">
   <img src="../../docs/assets/readme-hero-design-agent.webp" alt="OpenDesign : le premier espace de travail collaboratif avec des agents de design IA" width="100%" />
 </p>
@@ -9,7 +7,6 @@
 <p align="center">
   <a href="https://open-design.ai/?utm_source=github&utm_medium=referral&utm_content=readme_website">Site web</a> ·
   <a href="https://open-design.ai/?utm_source=github&utm_medium=referral&utm_content=readme_download">Télécharger</a> ·
-  <a href="https://open-design.ai/cloud/?utm_source=github&utm_medium=referral&utm_content=readme_cloud">OpenDesign Cloud</a> ·
   <a href="https://discord.gg/mHAjSMV6gz">Discord</a> ·
   <a href="https://x.com/OpenDesignHQ">Suivre @OpenDesignHQ</a>
 </p>
@@ -27,7 +24,7 @@
 
 ## Qu'est-ce qu'OpenDesign
 
-OpenDesign est **le premier espace de travail collaboratif avec des agents de design IA**. Partez d'un brief, puis utilisez votre agent de code habituel ou OpenDesign Cloud pour créer un prototype fidèle à votre système de design. Partagez-le avec votre équipe, recueillez ses retours et laissez l'agent l'améliorer dans le même projet.
+OpenDesign est **le premier espace de travail collaboratif avec des agents de design IA**. Partez d'un brief, puis utilisez votre agent de code habituel pour créer un prototype fidèle à votre système de design. Relisez-le, laissez des commentaires et laissez l'agent l'améliorer dans le même projet.
 
 Ce processus est ouvert et extensible. OpenDesign est sous licence Apache 2.0 et met à disposition des compétences, des modèles, des systèmes de design et des plugins que les équipes peuvent examiner et adapter à leurs méthodes.
 
@@ -119,7 +116,7 @@ Pour DeepSeek Harness, installez d'abord la CLI officielle `dsh`, puis sélectio
 ¹ La configuration automatique du serveur MCP pour Claude Desktop est actuellement prise en charge uniquement sur macOS et Windows.
 
 <p align="center">
-  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="Les 26 CLI d'agents de code pris en charge par OpenDesign — DeepSeek Harness · Claude Code · Codex · OpenCode · Hermes · Antigravity · Vela · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
+  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="Les 25 CLI d'agents de code pris en charge par OpenDesign — DeepSeek Harness · Claude Code · Codex · OpenCode · Hermes · Antigravity · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
 </p>
 
 **Aucun CLI installé ?** Le proxy BYOK à `POST /api/proxy/{anthropic,openai,azure,google,ollama,senseaudio}/stream` vous offre la même boucle (sans spawn de processus) — collez `baseUrl` + `apiKey` + `model`, avec des préréglages pour OpenAI, Atlas Cloud, Anthropic, Azure OpenAI, Google Gemini, Ollama, LM Studio, vLLM ou tout point de terminaison compatible OpenAI. Atlas Cloud utilise `https://api.atlascloud.ai/v1` avec votre propre clé et des identifiants de modèles compatibles OpenAI comme `qwen/qwen3.5-flash`. Une protection SSRF par cible bloque les IP internes / link-local / CGNAT à la périphérie du daemon.
@@ -239,7 +236,7 @@ Chaque présentation s'exporte en **HTML** (fichier unique, ressources intégré
 - 🖥️ **Local-first, BYOK à chaque couche.** Applications de bureau natives pour macOS (Apple Silicon et Intel) et Windows (x64), avec une AppImage Linux dans la voie de publication optionnelle. L'analyse d'usage et la relecture de session nécessitent un consentement ; la télémétrie de sécurité et de fiabilité, expurgée des données sensibles, reste active. Avant de décrire des chemins de données du daemon, les contributeurs et opérateurs DOIVENT lire [`AGENTS.md` → **Daemon data directory contract**](../../AGENTS.md#daemon-data-directory-contract). Ce README NE DOIT PAS répéter ce contrat.
 - 🌍 **Composable sur quatre plans.** Les **plugins** portent les workflows · les **skills fonctionnels** le comportement de l'agent · les **modèles de design** les plans de rendu · les **systèmes de design** la marque. Ces quatre éléments sont des répertoires portables et versionnables que chacun peut créer et publier.
 - 🔁 **Rafraîchissez une base de code existante.** Confiez un dépôt `git` + un `DESIGN.md` à l'agent et il refactorise vos vrais composants selon les spécifications de la marque.
-- 🔒 **Confidentialité par conviction.** Les projets peuvent fonctionner localement ou sur votre propre déploiement. Les requêtes aux modèles cloud et à OpenDesign Cloud sont envoyées aux services correspondants. Le proxy BYOK inclut des protections contre la SSRF.
+- 🔒 **Confidentialité par conviction.** Les projets peuvent fonctionner localement ou sur votre propre déploiement. Les requêtes aux modèles cloud sont envoyées aux services correspondants. Le proxy BYOK inclut des protections contre la SSRF.
 
 ---
 
@@ -555,7 +552,6 @@ Architecture complète → [`docs/architecture.md`](../../docs/architecture.md).
 - [x] Protocole sidecar + bureau Electron + automatisation IPC
 - [x] API de lint d'artefacts + portail d'auto-critique en 5 dimensions avant émission
 - [x] **0.8.0** — infrastructure de marketplace de plugins (261 plugins officiels, spec de manifeste, scripts d'installation par agent)
-- [x] **0.9.0** — OpenDesign Cloud (service de modèles officiel intégré à l'application : zéro configuration, connexion en un clic)
 - [x] **0.10.0** — le workspace de design tout-en-un : toute la boucle créative dans une fenêtre (références → matière → édition interactive → animation → transmission)
 - [x] **0.11.0** — _The Bazaar_ : une marketplace communautaire ouverte de plugins et de systèmes de design que chacun peut utiliser et enrichir
 - [x] **0.12.0** — _Brand-backed Design System_ : transformez votre marque existante en un système `DESIGN.md` réutilisable et portable

@@ -1,7 +1,5 @@
 <h1 align="center">OpenDesign: первое совместное рабочее пространство с ИИ-дизайн-агентами</h1>
 
-> ✨ **[Отмечаем 100K звёзд на GitHub с OpenDesign Go](https://open-design.ai/pricing/)** — Кредиты Go удвоены: **8 долларов США за первый месяц и до 120 долларов США в ежемесячных кредитах для доступных в Design Plan моделей**. Используйте их с более чем 10 моделями, включая GPT-6 Luna, DeepSeek V4.1 Flash, GLM-5.3 Flash-X и MiMo V2.6 Flash. Все персональные тарифы включают доступ к API для Codex, Claude Code, DSH, OpenCode и других инструментов.
-
 <p align="center">
   <img src="../../docs/assets/readme-hero-design-agent.webp" alt="OpenDesign: первое совместное рабочее пространство с ИИ-дизайн-агентами" width="100%" />
 </p>
@@ -9,7 +7,6 @@
 <p align="center">
   <a href="https://open-design.ai/?utm_source=github&utm_medium=referral&utm_content=readme_website">Сайт</a> ·
   <a href="https://open-design.ai/?utm_source=github&utm_medium=referral&utm_content=readme_download">Скачать</a> ·
-  <a href="https://open-design.ai/cloud/?utm_source=github&utm_medium=referral&utm_content=readme_cloud">OpenDesign Cloud</a> ·
   <a href="https://discord.gg/mHAjSMV6gz">Discord</a> ·
   <a href="https://x.com/OpenDesignHQ">Подписаться @OpenDesignHQ</a>
 </p>
@@ -27,7 +24,7 @@
 
 ## Что такое OpenDesign
 
-OpenDesign — **первое совместное рабочее пространство с ИИ-дизайн-агентами**. Начните с описания задачи и используйте привычного агента для разработки или OpenDesign Cloud, чтобы создать прототип в соответствии с вашей дизайн-системой. Поделитесь им с командой, соберите отзывы и попросите агента доработать результат в том же проекте.
+OpenDesign — **первое совместное рабочее пространство с ИИ-дизайн-агентами**. Начните с описания задачи и используйте привычного агента для разработки, чтобы создать прототип в соответствии с вашей дизайн-системой. Проверьте его, оставьте комментарии и попросите агента доработать результат в том же проекте.
 
 Этот процесс открыт и расширяем. OpenDesign распространяется по лицензии Apache 2.0: команды могут изучать и адаптировать навыки, шаблоны, дизайн-системы и плагины под свои процессы.
 
@@ -115,7 +112,7 @@ OpenDesign — **первое совместное рабочее простра
 `od mcp install <agent> --print` для предпросмотра без изменений · `--uninstall` для удаления · полный список через `od mcp install --help`.
 
 <p align="center">
-  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="25 CLI кодинг-агента, которые поддерживает OpenDesign — Claude Code · Codex · OpenCode · Hermes · Antigravity · Vela · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
+  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="24 CLI кодинг-агента, которые поддерживает OpenDesign — Claude Code · Codex · OpenCode · Hermes · Antigravity · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
 </p>
 
 **Нет установленного CLI?** BYOK-прокси по адресу `POST /api/proxy/{anthropic,openai,azure,google,ollama,senseaudio}/stream` даёт вам тот же цикл (без запуска процессов) — вставьте `baseUrl` + `apiKey` + `model`, с поддержкой OpenAI, Anthropic, Azure OpenAI, Google Gemini, Ollama, LM Studio, vLLM или любого OpenAI-совместимого эндпоинта. Защита от SSRF для каждой цели блокирует внутренние IP / link-local / CGNAT на границе демона.
@@ -235,7 +232,7 @@ OpenDesign — **первое совместное рабочее простра
 - 🖥️ **Локальный по умолчанию, BYOK на каждом уровне.** Нативные десктопные приложения ориентированы на локальную работу. Аналитика продукта и воспроизведение сессий требуют согласия; очищенная телеметрия безопасности и надёжности всегда включена. Перед описанием путей данных демона необходимо прочитать корневой `AGENTS.md`, раздел **Daemon data directory contract**.
 - 🌍 **Компонуемый в четырёх плоскостях.** **Плагины** несут workflow · **функциональные навыки** — поведение агента · **шаблоны дизайна** — чертежи рендеринга · **дизайн-системы** — бренд.
 - 🔁 **Обновляйте существующую кодовую базу.** Передайте `git`-репозиторий + `DESIGN.md` агенту, и он отрефакторит ваши реальные компоненты под спецификацию бренда.
-- 🔒 **Конфиденциальность по убеждению.** Проекты могут работать локально или в собственном развёртывании. Запросы к облачным моделям и OpenDesign Cloud отправляются соответствующим сервисам. BYOK-прокси включает защиту от SSRF.
+- 🔒 **Конфиденциальность по убеждению.** Проекты могут работать локально или в собственном развёртывании. Запросы к облачным моделям отправляются соответствующим сервисам. BYOK-прокси включает защиту от SSRF.
 
 ---
 
@@ -545,7 +542,6 @@ pnpm guard && pnpm --filter @open-design/plugin-runtime typecheck
 - [x] Sidecar-протокол + десктоп на Electron + IPC-автоматизация
 - [x] API линтинга артефактов + пятимерный гейт самокритики перед выдачей
 - [x] **0.8.0** — инфраструктура маркетплейса плагинов (261 официальный плагин, спецификация манифеста, скрипты установки для каждого агента)
-- [x] **0.9.0** — OpenDesign Cloud (официальный сервис моделей, встроенный в приложение: без настройки, вход в один клик)
 - [x] **0.10.0** — универсальное рабочее пространство дизайна: весь craft-цикл в одном окне (референсы → материалы → интерактивное редактирование → motion → handoff)
 - [x] **0.11.0** — _The Bazaar_: разработка в открытую — community-маркетплейс плагинов и дизайн-систем, которые можно выбирать и пополнять
 - [x] **0.12.0** — _Brand-backed Design System_: превращайте уже существующий бренд в переиспользуемую переносимую систему `DESIGN.md`

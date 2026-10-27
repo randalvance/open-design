@@ -1,7 +1,5 @@
 <h1 align="center">OpenDesign: der erste kollaborative Arbeitsbereich für KI-Design-Agenten</h1>
 
-> ✨ **[100.000 GitHub-Sterne feiern mit OpenDesign Go](https://open-design.ai/pricing/)** — Das Go-Guthaben wird verdoppelt: **8 US-Dollar im ersten Monat für bis zu 120 US-Dollar monatliches Guthaben für berechtigte Design-Plan-Modelle**. Nutzbar für mehr als 10 Modelle, darunter GPT-6 Luna, DeepSeek V4.1 Flash, GLM-5.3 Flash-X und MiMo V2.6 Flash. Alle persönlichen Tarife enthalten API-Zugang für Codex, Claude Code, DSH, OpenCode und weitere Tools.
-
 <p align="center">
   <img src="../../docs/assets/readme-hero-design-agent.webp" alt="OpenDesign: der erste kollaborative Arbeitsbereich für KI-Design-Agenten" width="100%" />
 </p>
@@ -9,7 +7,6 @@
 <p align="center">
   <a href="https://open-design.ai/">Website</a> ·
   <a href="https://open-design.ai/">Download</a> ·
-  <a href="https://open-design.ai/cloud/">OpenDesign Cloud</a> ·
   <a href="https://discord.gg/mHAjSMV6gz">Discord</a> ·
   <a href="https://x.com/OpenDesignHQ">@OpenDesignHQ folgen</a>
 </p>
@@ -27,7 +24,7 @@
 
 ## Was ist OpenDesign
 
-OpenDesign ist **der erste kollaborative Arbeitsbereich für KI-Design-Agenten**. Beginnen Sie mit einem Briefing und erstellen Sie mit Ihrem gewohnten Coding-Agenten oder OpenDesign Cloud einen Prototyp, der Ihrem Designsystem folgt. Teilen Sie ihn mit Ihrem Team, sammeln Sie Feedback und lassen Sie den Agenten ihn im selben Projekt weiterentwickeln.
+OpenDesign ist **der erste kollaborative Arbeitsbereich für KI-Design-Agenten**. Beginnen Sie mit einem Briefing und erstellen Sie mit Ihrem gewohnten Coding-Agenten einen Prototyp, der Ihrem Designsystem folgt. Prüfen Sie ihn, hinterlassen Sie Kommentare und lassen Sie den Agenten ihn im selben Projekt weiterentwickeln.
 
 Dieser Ablauf ist offen und erweiterbar. OpenDesign steht unter der Apache-2.0-Lizenz. Teams können Skills, Designvorlagen, Designsysteme und Plugins prüfen und an ihre Arbeitsweise anpassen.
 
@@ -115,7 +112,7 @@ Dieser Ablauf ist offen und erweiterbar. OpenDesign steht unter der Apache-2.0-L
 `od mcp install <agent> --print` für eine Trockenlauf-Vorschau · `--uninstall` zum Entfernen · vollständige Liste mit `od mcp install --help`.
 
 <p align="center">
-  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="The 25 coding-agent CLIs OpenDesign supports — Claude Code · Codex · OpenCode · Hermes · Antigravity · Vela · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
+  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="The 24 coding-agent CLIs OpenDesign supports — Claude Code · Codex · OpenCode · Hermes · Antigravity · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
 </p>
 
 **Kein CLI installiert?** Der BYOK-Proxy unter `POST /api/proxy/{anthropic,openai,azure,google,ollama,senseaudio}/stream` gibt dir dieselbe Schleife (ohne Prozess-Spawn) — füge `baseUrl` + `apiKey` + `model` ein, mit Unterstützung für OpenAI, Anthropic, Azure OpenAI, Google Gemini, Ollama, LM Studio, vLLM oder jeden OpenAI-kompatiblen Endpunkt. Pro-Ziel-SSRF-Schutz blockiert interne IPs / Link-Local / CGNAT am Daemon-Rand.
@@ -235,7 +232,7 @@ Jedes Deck exportiert als **HTML** (einzelne Datei, eingebettete Assets), **PDF*
 - 🖥️ **Local-first, BYOK auf jeder Ebene.** Native Desktop-Apps bleiben local-first. Produktanalysen und Sitzungsaufzeichnungen erfordern eine Einwilligung; bereinigte Sicherheits- und Zuverlässigkeitstelemetrie bleibt aktiv. Bevor Sie Daemon-Datenpfade beschreiben, MÜSSEN Sie `AGENTS.md` im Repository-Stamm lesen, Abschnitt **Daemon data directory contract**.
 - 🌍 **Komponierbar auf vier Ebenen.** **Plugins** tragen lauffähige Workflows · funktionale **Skills** tragen Agent-Verhalten · **Designvorlagen** tragen Rendering-Blaupausen · **Designsysteme** tragen die Marke. Alle vier verwenden portable, versionierbare Verzeichnisse, die jeder erstellen und veröffentlichen kann.
 - 🔁 **Eine bestehende Codebasis auffrischen.** Übergib dem Agent ein `git`-Repo + `DESIGN.md`, und er refaktoriert deine echten Komponenten auf die Markenvorgabe.
-- 🔒 **Datenschutz aus Überzeugung.** Projekte können lokal oder in einer eigenen Bereitstellung laufen. Anfragen an Cloud-Modelle und OpenDesign Cloud werden an die jeweiligen Dienste gesendet. Der BYOK-Proxy bietet SSRF-Schutz.
+- 🔒 **Datenschutz aus Überzeugung.** Projekte können lokal oder in einer eigenen Bereitstellung laufen. Anfragen an Cloud-Modelle werden an die jeweiligen Dienste gesendet. Der BYOK-Proxy bietet SSRF-Schutz.
 
 ---
 
@@ -535,7 +532,6 @@ Vollständige Architektur → [`docs/architecture.md`](../../docs/architecture.m
 - [x] Sidecar-Protokoll + Electron-Desktop + IPC-Automatisierung
 - [x] Artefakt-Lint-API + 5-dimensionales Selbstkritik-Pre-Emit-Gate
 - [x] **0.8.0** — Plugin-Marktplatz-Infrastruktur (261 offizielle Plugins, Manifest-Spezifikation, Installationsskripte pro Agent)
-- [x] **0.9.0** — OpenDesign Cloud (offizieller Model Router in die App integriert: keine Konfiguration, Ein-Klick-Anmeldung)
 - [x] Gepackte Electron-Builds — macOS (Apple Silicon + Intel) + Windows (x64) + Linux-AppImage (optionale Spur)
 - [ ] Kommentar-Modus für chirurgische Bearbeitungen — teilweise ausgeliefert; zuverlässiges gezieltes Patchen in Arbeit
 - [ ] KI-ausgegebenes Tweaks-Panel-UX — noch nicht implementiert

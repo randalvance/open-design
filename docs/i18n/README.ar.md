@@ -2,8 +2,6 @@
 
 <h1 align="center">OpenDesign: أول مساحة عمل تعاونية لوكلاء التصميم بالذكاء الاصطناعي</h1>
 
-> ✨ **[نحتفل بـ 100 ألف نجمة على GitHub مع OpenDesign Go](https://open-design.ai/pricing/)** — ضاعفنا رصيد Go: **8 دولارات أمريكية للشهر الأول، مع رصيد شهري يصل إلى 120 دولارًا أمريكيًا لنماذج Design Plan المؤهلة**. استخدمه مع أكثر من 10 نماذج، منها GPT-6 Luna وDeepSeek V4.1 Flash وGLM-5.3 Flash-X وMiMo V2.6 Flash. تشمل جميع الخطط الفردية الوصول إلى واجهة API لاستخدامها مع Codex وClaude Code وDSH وOpenCode وغيرها.
-
 <p align="center">
   <img src="../../docs/assets/readme-hero-design-agent.webp" alt="OpenDesign: أول مساحة عمل تعاونية لوكلاء التصميم بالذكاء الاصطناعي" width="100%" />
 </p>
@@ -11,7 +9,6 @@
 <p align="center">
   <a href="https://open-design.ai/">الموقع</a> ·
   <a href="https://open-design.ai/">التنزيل</a> ·
-  <a href="https://open-design.ai/cloud/">OpenDesign Cloud</a> ·
   <a href="https://discord.gg/mHAjSMV6gz">Discord</a> ·
   <a href="https://x.com/OpenDesignHQ">تابع ‎@OpenDesignHQ</a>
 </p>
@@ -29,7 +26,7 @@
 
 ## ما هو OpenDesign
 
-OpenDesign **أول مساحة عمل تعاونية لوكلاء التصميم بالذكاء الاصطناعي**. ابدأ بوصف موجز، ثم استخدم وكيل البرمجة الذي تعرفه أو OpenDesign Cloud لإنشاء نموذج أولي متوافق مع نظام التصميم لديك. شاركه مع فريقك، واجمع الملاحظات، ودع الوكيل يحسّنه داخل المشروع نفسه.
+OpenDesign **أول مساحة عمل تعاونية لوكلاء التصميم بالذكاء الاصطناعي**. ابدأ بوصف موجز، ثم استخدم وكيل البرمجة الذي تعرفه لإنشاء نموذج أولي متوافق مع نظام التصميم لديك. راجعه وأضف تعليقاتك، ودع الوكيل يحسّنه داخل المشروع نفسه.
 
 سير العمل هذا مفتوح وقابل للتوسعة. يتوفر OpenDesign بترخيص Apache 2.0، ويتيح للفرق فحص المهارات وقوالب التصميم وأنظمة التصميم والإضافات وتكييفها مع طريقة عملها.
 
@@ -117,7 +114,7 @@ OpenDesign **أول مساحة عمل تعاونية لوكلاء التصميم
 `od mcp install <agent> --print` لمعاينة تجريبية دون تنفيذ · `--uninstall` للإزالة · القائمة الكاملة عبر `od mcp install --help`.
 
 <p align="center">
-  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="The 25 coding-agent CLIs OpenDesign supports — Claude Code · Codex · OpenCode · Hermes · Antigravity · Vela · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
+  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="The 24 coding-agent CLIs OpenDesign supports — Claude Code · Codex · OpenCode · Hermes · Antigravity · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
 </p>
 
 **لا توجد واجهة CLI مثبَّتة؟** يمنحك وكيل BYOK على `POST /api/proxy/{anthropic,openai,azure,google,ollama,senseaudio}/stream` الحلقة نفسها (دون إنشاء عملية) — الصق `baseUrl` + `apiKey` + `model`، مع دعم OpenAI وAnthropic وAzure OpenAI وGoogle Gemini وOllama وLM Studio وvLLM، أو أي نقطة نهاية متوافقة مع OpenAI. تمنع حماية SSRF لكل هدف عناوين IP الداخلية / link-local / CGNAT عند حافة الـ daemon.
@@ -237,7 +234,7 @@ OpenDesign **أول مساحة عمل تعاونية لوكلاء التصميم
 - 🖥️ **محلي أولًا، BYOK في كل طبقة.** تظل تطبيقات سطح المكتب الأصلية محلية أولًا. تتطلب تحليلات المنتج وإعادة تشغيل الجلسات الموافقة؛ وتظل بيانات قياس السلامة والموثوقية المنقحة نشطة. قبل وصف مسارات بيانات الـ daemon، يجب قراءة `AGENTS.md` في جذر المستودع، قسم **Daemon data directory contract**.
 - 🌍 **قابل للتركيب على أربعة مستويات.** **الإضافات** تحمل سير العمل · **المهارات الوظيفية** تحمل سلوك الوكيل · **قوالب التصميم** تحمل مخططات التصيير · **أنظمة التصميم** تحمل العلامة التجارية.
 - 🔁 **حدِّث قاعدة شفرة موجودة.** سلّم مستودع `git` + ملف `DESIGN.md` إلى الوكيل، فيعيد هيكلة مكوناتك الحقيقية وفق مواصفة العلامة التجارية.
-- 🔒 **الخصوصية عن قناعة.** يمكن تشغيل المشاريع محليًا أو في بيئة النشر الخاصة بك. تُرسل طلبات النماذج السحابية وOpenDesign Cloud إلى الخدمات المعنية. يتضمن وكيل BYOK حماية ضد SSRF.
+- 🔒 **الخصوصية عن قناعة.** يمكن تشغيل المشاريع محليًا أو في بيئة النشر الخاصة بك. تُرسل طلبات النماذج السحابية إلى الخدمات المعنية. يتضمن وكيل BYOK حماية ضد SSRF.
 
 ---
 
@@ -536,7 +533,6 @@ pnpm guard && pnpm --filter @open-design/plugin-runtime typecheck
 - [x] بروتوكول جانبي + سطح مكتب Electron + أتمتة IPC
 - [x] واجهة API لفحص المخرجات + بوابة نقد ذاتي بخمسة أبعاد قبل الإصدار
 - [x] **0.8.0** — بنية تحتية لسوق الإضافات (261 إضافة رسمية، مواصفة البيان، سكربتات تثبيت لكل وكيل)
-- [x] **0.9.0** — OpenDesign Cloud (Model Router الرسمي مدمج في التطبيق: بلا إعداد، تسجيل دخول بنقرة واحدة)
 - [x] إصدارات Electron مجمَّعة — macOS (Apple Silicon + Intel) + Windows (x64) + Linux AppImage (مسار اختياري)
 - [ ] تعديلات جراحية في وضع التعليق — مشحونة جزئيًا؛ الترقيع المستهدف الموثوق قيد التنفيذ
 - [ ] تجربة استخدام لوحة تعديلات يصدرها الذكاء الاصطناعي — لم تُنفَّذ بعد

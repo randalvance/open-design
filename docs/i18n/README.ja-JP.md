@@ -1,7 +1,5 @@
 <h1 align="center">OpenDesign：初の共同作業型AIデザインエージェントワークスペース</h1>
 
-> ✨ **[GitHub 100K スター記念 — OpenDesign Go のクレジットが2倍に](https://open-design.ai/pricing/)**。**初月わずか8米ドルで、対象の Design Plan モデルで毎月最大120米ドル分のクレジット**をご利用いただけます。GPT-6 Luna、DeepSeek V4.1 Flash、GLM-5.3 Flash-X、MiMo V2.6 Flash など10種類以上のモデルに対応しています。 すべての個人プランには、Codex、Claude Code、DSH、OpenCode などで利用できる API アクセスが含まれます。
-
 <p align="center">
   <img src="../../docs/assets/readme-hero-design-agent.webp" alt="OpenDesign：初の共同作業型AIデザインエージェントワークスペース" width="100%" />
 </p>
@@ -9,7 +7,6 @@
 <p align="center">
   <a href="https://open-design.ai/">ウェブサイト</a> ·
   <a href="https://open-design.ai/">ダウンロード</a> ·
-  <a href="https://open-design.ai/cloud/">OpenDesign Cloud</a> ·
   <a href="https://discord.gg/mHAjSMV6gz">Discord</a> ·
   <a href="https://x.com/OpenDesignHQ">@OpenDesignHQ をフォロー</a>
 </p>
@@ -27,7 +24,7 @@
 
 ## OpenDesign とは
 
-OpenDesign は**初の共同作業型AIデザインエージェントワークスペース**です。要件を入力し、普段使っているコーディングエージェントまたは OpenDesign Cloud で、デザインシステムに沿ったプロトタイプを作成します。チームと共有してフィードバックを集め、同じプロジェクト内でエージェントに改善を続けてもらえます。
+OpenDesign は**初の共同作業型AIデザインエージェントワークスペース**です。要件を入力し、普段使っているコーディングエージェントで、デザインシステムに沿ったプロトタイプを作成します。確認してコメントを残し、同じプロジェクト内でエージェントに改善を続けてもらえます。
 
 このワークフローはオープンで拡張可能です。OpenDesign は Apache 2.0 ライセンスで公開され、スキル、デザインテンプレート、デザインシステム、プラグインをチームが調べて独自の工程に合わせて調整できます。
 
@@ -115,7 +112,7 @@ OpenDesign は**初の共同作業型AIデザインエージェントワーク�
 `od mcp install <agent> --print` でドライランのプレビュー · `--uninstall` で削除 · 完全な一覧は `od mcp install --help` で確認できます。
 
 <p align="center">
-  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="The 25 coding-agent CLIs OpenDesign supports — Claude Code · Codex · OpenCode · Hermes · Antigravity · Vela · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
+  <img src="https://repo-assets.open-design.ai/resources/images/coding-agents.png" alt="The 24 coding-agent CLIs OpenDesign supports — Claude Code · Codex · OpenCode · Hermes · Antigravity · Grok Build · Kimi · Cursor Agent · Qwen · Qoder · GitHub Copilot · Pi · Kiro · Kilo · Mistral Vibe · DeepSeek · Reasonix · Aider · Amp · CodeBuddy · Mimo · AtomCode · Devin · Trae" width="100%" />
 </p>
 
 **CLI を一つもインストールしていない場合は？** `POST /api/proxy/{anthropic,openai,azure,google,ollama,senseaudio}/stream` の BYOK プロキシが同じループ（プロセスのスポーンなし）を提供します——`baseUrl` + `apiKey` + `model` を貼り付けるだけで、OpenAI、Anthropic、Azure OpenAI、Google Gemini、Ollama、LM Studio、vLLM、または任意の OpenAI 互換エンドポイントに対応します。ターゲットごとの SSRF 保護が、内部 IP／リンクローカル／CGNAT をデーモンのエッジでブロックします。
@@ -235,7 +232,7 @@ Runtime 定義は [`apps/daemon/src/runtimes/defs/`](../../apps/daemon/src/runti
 - 🖥️ **ローカルファースト、あらゆるレイヤーで BYOK。** ネイティブデスクトップアプリはローカルファーストです。製品分析とセッションリプレイには同意が必要です。データを処理・除去した安全性と信頼性のテレメトリは常時有効です。デーモンデータパスを説明する前に、ルートの `AGENTS.md` にある **Daemon data directory contract** を必ず読んでください。
 - 🌍 **4 つの平面で組み合わせ可能。** **プラグイン**はワークフロー、**機能スキル**はエージェント動作、**デザインテンプレート**はレンダリング設計図、**デザインシステム**はブランドを担います。
 - 🔁 **既存のコードベースをリフレッシュ。** `git` リポジトリ + `DESIGN.md` をエージェントに渡せば、あなたの実際のコンポーネントをブランド仕様にリファクタリングします。
-- 🔒 **信念としてのプライバシー。** プロジェクトはローカルまたは自分で管理する環境で実行できます。クラウドモデルや OpenDesign Cloud へのリクエストは、それぞれのサービスに送信されます。BYOK プロキシには SSRF 対策が含まれます。
+- 🔒 **信念としてのプライバシー。** プロジェクトはローカルまたは自分で管理する環境で実行できます。クラウドモデルへのリクエストは、それぞれのサービスに送信されます。BYOK プロキシには SSRF 対策が含まれます。
 
 ---
 
@@ -534,7 +531,6 @@ pnpm guard && pnpm --filter @open-design/plugin-runtime typecheck
 - [x] サイドカープロトコル + Electron デスクトップ + IPC 自動化
 - [x] アーティファクト lint API + 5 次元の自己批評による発行前ゲート
 - [x] **0.8.0** — プラグインマーケットプレイスのインフラ（261 の公式プラグイン、マニフェスト仕様、エージェントごとのインストールスクリプト）
-- [x] **0.9.0** — OpenDesign Cloud（アプリに組み込まれた公式 Model Router: 設定ゼロ、ワンクリックのサインイン）
 - [x] パッケージ化された Electron ビルド — macOS（Apple Silicon + Intel） + Windows（x64） + Linux AppImage（オプションのレーン）
 - [ ] コメントモードの外科的な編集 — 一部提供済み。信頼性の高いターゲット指定のパッチ適用は進行中
 - [ ] AI が発行する tweaks パネルの UX — 未実装
