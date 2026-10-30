@@ -1719,6 +1719,8 @@ interface Props {
   commentQueueOnSend?: boolean;
   commentSendDisabled?: boolean;
   previewComments?: PreviewComment[];
+  previewCommentsState?: 'loading' | 'error' | 'success';
+  onRetryPreviewComments?: () => void;
   onSavePreviewComment?: (target: PreviewCommentTarget, note: string, attachAfterSave: boolean, images?: File[], commentId?: string) => Promise<PreviewComment | null>;
   onRemovePreviewComment?: (commentId: string) => Promise<boolean>;
   /**
@@ -1819,6 +1821,8 @@ export const FileViewer = memo(function FileViewer({
   commentQueueOnSend = false,
   commentSendDisabled = false,
   previewComments = [],
+  previewCommentsState = 'success',
+  onRetryPreviewComments,
   onSavePreviewComment,
   onRemovePreviewComment,
   onReorderPreviewComment,
@@ -1879,6 +1883,8 @@ export const FileViewer = memo(function FileViewer({
         commentQueueOnSend={commentQueueOnSend}
         commentSendDisabled={commentSendDisabled}
         previewComments={previewComments}
+        previewCommentsState={previewCommentsState}
+        onRetryPreviewComments={onRetryPreviewComments}
         onSavePreviewComment={onSavePreviewComment}
         onRemovePreviewComment={onRemovePreviewComment}
         onReorderPreviewComment={onReorderPreviewComment}
@@ -4539,6 +4545,8 @@ function CommentListBody({ note, t }: { note: string; t: TranslateFn }) {
 
 export function CommentSidePanel({
   comments,
+  loadState = 'success',
+  onRetry,
   projectId,
   filePath,
   selectedIds,
@@ -4566,6 +4574,8 @@ export function CommentSidePanel({
   deckSlideCount,
 }: {
   comments: PreviewComment[];
+  loadState?: 'loading' | 'error' | 'success';
+  onRetry?: () => void;
   projectId?: string;
   /** The file currently open in the viewer, so the sync banner can scope its
    *  per-file backfill answer. Absent means "don't ask for backfill status"
@@ -4793,7 +4803,12 @@ export function CommentSidePanel({
           setDragState(null);
         }}
       >
-        {sorted.length === 0 ? (
+        {loadState === 'loading' ? <div role="status">{t('common.loading')}</div> : null}
+        {loadState === 'error' ? <div role="alert">
+          {t('chat.comments.loadFailed')}
+          {onRetry ? <Button variant="ghost" onClick={onRetry}>{t('preview.retry')}</Button> : null}
+        </div> : null}
+        {sorted.length === 0 && loadState === 'success' ? (
           <div className="comment-side-empty">
             {t('chat.comments.emptySaved')}
           </div>
@@ -5038,6 +5053,8 @@ export function computeReorderedSortKey(
 
 function CommentSideDock({
   comments,
+  loadState = 'success',
+  onRetry,
   projectId,
   filePath,
   selectedIds,
@@ -5065,6 +5082,8 @@ function CommentSideDock({
   deckSlideCount,
 }: {
   comments: PreviewComment[];
+  loadState?: 'loading' | 'error' | 'success';
+  onRetry?: () => void;
   projectId?: string;
   filePath?: string;
   selectedIds: Set<string>;
@@ -5100,6 +5119,8 @@ function CommentSideDock({
     >
       <CommentSidePanel
         comments={comments}
+        loadState={loadState}
+        onRetry={onRetry}
         projectId={projectId}
         filePath={filePath}
         selectedIds={selectedIds}
@@ -6880,6 +6901,8 @@ function HtmlViewer({
   commentQueueOnSend = false,
   commentSendDisabled = false,
   previewComments = [],
+  previewCommentsState = 'success',
+  onRetryPreviewComments,
   onSavePreviewComment,
   onRemovePreviewComment,
   onReorderPreviewComment,
@@ -6915,6 +6938,8 @@ function HtmlViewer({
   commentQueueOnSend?: boolean;
   commentSendDisabled?: boolean;
   previewComments?: PreviewComment[];
+  previewCommentsState?: 'loading' | 'error' | 'success';
+  onRetryPreviewComments?: () => void;
   onSavePreviewComment?: (target: PreviewCommentTarget, note: string, attachAfterSave: boolean, images?: File[], commentId?: string) => Promise<PreviewComment | null>;
   onRemovePreviewComment?: (commentId: string) => Promise<boolean>;
   onReorderPreviewComment?: (commentId: string, sortKey: number) => Promise<void>;
@@ -9120,7 +9145,7 @@ function HtmlViewer({
   );
   // Browser-owned iframe subresource requests cannot attach Workspace headers,
   // and URL resolution does not inherit the query string from the document's
-  // scoped raw URL. Hold the Team preview until every confirmed relative asset
+  // scoped raw URL. Hold a shared-project preview until every confirmed relative asset
   // has been rewritten to its own scoped raw URL; otherwise the first srcDoc
   // paint can leak an unscoped font/image request before the async rewrite
   // finishes.
@@ -9781,10 +9806,10 @@ function HtmlViewer({
     setInlinedSource(null);
     if (useUrlLoadPreview) return;
     if (!assetInliningSource) return;
-    // Personal-project srcDoc previews already have a stable raw-file base,
+    // Private-project srcDoc previews already have a stable raw-file base,
     // so Chromium can resolve ordinary relative assets itself. Re-fetching
     // and inlining every stylesheet/script here replaces an already-visible
-    // document after asynchronous file discovery settles. Team previews are
+    // document after asynchronous file discovery settles. Shared previews are
     // different: iframe subresource requests cannot carry workspace auth, so
     // they still require per-asset materialization. Personal root-relative
     // refs also keep this pass because they first need project-file-list
@@ -11457,6 +11482,7 @@ function HtmlViewer({
       filePath: file.name,
       elementId: String(data.elementId || ''),
       selector: String(data.selector || ''),
+      domSelector: typeof data.domSelector === 'string' ? data.domSelector : undefined,
       label: String(data.label || ''),
       text: String(data.text || ''),
       position: {
@@ -11536,7 +11562,9 @@ function HtmlViewer({
         if (!snapshot.elementId || !isValidCommentOverlayPosition(snapshot.position)) return;
         if (commentUsesIdentity({ elementId: request.targetId ?? '', selector: request.selector })
           && (!request.targetId || snapshot.elementId !== request.targetId || snapshot.selector !== request.selector)) return;
-        if (snapshot.elementId !== request.targetId && !commentSelectorsMatch(snapshot.selector, request.selector)) return;
+        if (snapshot.elementId !== request.targetId && !commentSelectorsMatch(snapshot.selector, request.selector)
+          && !commentSelectorsMatch(snapshot.domSelector ?? '', request.selector)) return;
+        const previousTargetId = request.targetId;
         request.targetId = snapshot.elementId;
         // A tagged reply acknowledges srcDoc's completed locate/scroll. Later
         // tracking updates must not trigger the URL bridge's initial scroll.
@@ -11544,7 +11572,13 @@ function HtmlViewer({
         setMissingCommentLocation(null);
         setActiveCommentTarget(snapshot);
         setHoveredCommentTarget(snapshot);
-        setLiveCommentTargets(current => new Map(current).set(snapshot.elementId, snapshot));
+        setLiveCommentTargets(current => {
+          const next = new Map(current);
+          // A successful tagged locate supersedes the old target in this same
+          // render. Do not let the saved pin use stale coordinates until refresh.
+          if (previousTargetId && previousTargetId !== snapshot.elementId) next.delete(previousTargetId);
+          return next.set(snapshot.elementId, snapshot);
+        });
         return;
       }
       if (data.type === 'od:comment-active-target-update') {
@@ -11554,7 +11588,11 @@ function HtmlViewer({
         // URL previews still use the daemon's existing bridge. It reports DOM
         // boxes without request ids; match the current target and use its
         // existing scroll protocol, without changing daemon or its contract.
-        if (request && request.previewKey === commentTargetsKey && snapshot.elementId === request.targetId) {
+        const previousTargetId = request?.targetId;
+        const matchesRequest = request && request.previewKey === commentTargetsKey
+          && (snapshot.elementId === request.targetId || commentSelectorsMatch(snapshot.domSelector ?? '', request.selector));
+        if (matchesRequest) {
+          request.targetId = snapshot.elementId;
           setMissingCommentLocation(null);
           const height = iframeRef.current?.clientHeight ?? 0;
           if (!request.scrolled && height > 0) {
@@ -11576,7 +11614,9 @@ function HtmlViewer({
         setLiveCommentTargets((current) => {
           const existing = current.get(snapshot.elementId);
           if (existing && commentSnapshotEqual(existing, snapshot)) return current;
-          return new Map(current).set(snapshot.elementId, snapshot);
+          const next = new Map(current);
+          if (matchesRequest && previousTargetId && previousTargetId !== snapshot.elementId) next.delete(previousTargetId);
+          return next.set(snapshot.elementId, snapshot);
         });
         setActiveCommentTarget((current) =>
           current && current.elementId === snapshot.elementId && !commentSnapshotEqual(current, snapshot)
@@ -15443,6 +15483,8 @@ function HtmlViewer({
   const commentSidePanel = workspaceActive && commentPanelOpen ? (
     <CommentSideDock
       comments={visibleSideComments}
+      loadState={previewCommentsState}
+      onRetry={onRetryPreviewComments}
       projectId={projectId}
       filePath={file.path || file.name}
       deckSlideCount={effectiveDeck ? slideState?.count : undefined}
@@ -16150,6 +16192,7 @@ function HtmlViewer({
                     * 下面两块面板一行都没动 —— 这正是「一份实现」的意思。
                     */
                   <AnchoredMenuShell
+                    stablePlacement={unifiedActionTab === 'share'}
                     anchorId={menuAnchorId ?? toolbarMenuAnchorId}
                     wrapperClassName="share-menu chrome-share-menu chrome-share-menu--unified"
                     className={

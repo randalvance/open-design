@@ -56,6 +56,7 @@ import {
   scanRunEventsForUsageAnalytics,
   summarizeRunTimingAnalytics,
   summarizeToolAnalytics,
+  type PerRequestUsageLedger,
 } from '../run-analytics-observability.js';
 import {
   diffRunArtifacts,
@@ -84,6 +85,7 @@ import {
   runFilesWrittenForRun,
   runAdmissionEvidenceForRun,
   runPreviewModuleCountForRun,
+  type RunSideEffectLedger,
 } from '../runtimes/run-lifecycle-analytics.js';
 import { odNextRolloutAnalyticsProperties } from '../strategies/od-next/rollout-analytics.js';
 import type { AppliedPluginSnapshot } from '@open-design/contracts';
@@ -217,6 +219,7 @@ export interface RunAnalyticsLifecycleDeps {
   design: {
     runs: {
       wait(run: ChatRun): Promise<TerminalRunStatus>;
+      persistState?(run: ChatRun): unknown;
       setAnalyticsRecovery?(run: ChatRun, recovery: {
         context: AnalyticsContext;
         properties: Record<string, unknown>;
@@ -326,6 +329,25 @@ function runFinishedStorageProperties(
   }
 }
 
+/** Freeze the ledgers too: resumed requests continue folding into them. */
+function terminalRunForAnalytics(run: ChatRun, status: TerminalRunStatus): ChatRun {
+  const ledgerRun = run as ChatRun & {
+    perRequestUsageLedger?: PerRequestUsageLedger;
+    sideEffectLedger?: RunSideEffectLedger;
+  };
+  return {
+    ...run,
+    ...status,
+    events: [...run.events],
+    ...(ledgerRun.perRequestUsageLedger
+      ? { perRequestUsageLedger: structuredClone(ledgerRun.perRequestUsageLedger) }
+      : {}),
+    ...(ledgerRun.sideEffectLedger
+      ? { sideEffectLedger: structuredClone(ledgerRun.sideEffectLedger) }
+      : {}),
+  } as ChatRun;
+}
+
 export function createRunAnalyticsLifecycle(
   deps: RunAnalyticsLifecycleDeps,
 ): RunAnalyticsLifecycle {
@@ -339,8 +361,32 @@ export function createRunAnalyticsLifecycle(
     runRetryEventsForAnalytics,
   } = deps.telemetry;
 
+  const installedAttempts = new WeakMap<ChatRun, number>();
   const install = (input: RunAnalyticsInstallInput): void => {
     const run = input.run;
+    const attempt = run.manualResumeAttemptCount ?? 0;
+    if (installedAttempts.get(run) === attempt) return;
+    installedAttempts.set(run, attempt);
+    const rechargeWaitDurationMs = run.rechargeWaitDurationMs ?? 0;
+    const isCurrentAttempt = () => (input.run.manualResumeAttemptCount ?? 0) === attempt;
+    // Subscribe before context/configuration I/O: a finished attempt can be
+    // resumed while those reads are pending. Its observer must keep its own
+    // terminal status and must never checkpoint the newer attempt.
+    let waiting: Promise<TerminalRunStatus>;
+    try {
+      waiting = design.runs.wait(run);
+    } catch {
+      return;
+    }
+    const terminal = waiting.then((status) => ({
+      status,
+      run: {
+        ...terminalRunForAnalytics(run, status),
+        manualResumeAttemptCount: attempt,
+        rechargeWaitDurationMs,
+      } as ChatRun,
+    }));
+
     const strategyRolloutDecision =
       input.rolloutDecision !== undefined
         ? input.rolloutDecision
@@ -357,7 +403,7 @@ export function createRunAnalyticsLifecycle(
       const hintDsEnrichment = analyticsHints.dsEnrichment === true;
       const requestProjectId = typeof reqBody.projectId === 'string' ? reqBody.projectId : null;
       if (hintDsEnrichment && requestProjectId) {
-        design.runs.wait(run).then((status: TerminalRunStatus) => {
+        terminal.then(({ status }) => {
           if (runResultFromStatus(status.status) !== 'success') return;
           try {
             const enrichedProject = toProjectRecord(getProject(db, requestProjectId));
@@ -394,7 +440,7 @@ export function createRunAnalyticsLifecycle(
       if (!run.analyticsContext && analyticsContext) {
         run.analyticsContext = analyticsContext;
       }
-      design.runs.wait(run).then((status: { status: string }) => {
+      terminal.then(({ status, run }) => {
         reportRunCompletionTelemetryFallback({
           analyticsContext: analyticsContext ?? null,
           run,
@@ -697,9 +743,9 @@ export function createRunAnalyticsLifecycle(
                   run.externalPluginAnalytics.generationSloWindowMs,
                 deduplicated: input.creationKind === 'reused',
                 resume: input.resumed === true,
-                attempt_count: (run.manualResumeAttemptCount ?? 0) + 1,
+                attempt_count: attempt + 1,
                 recharge_wait_duration_ms:
-                  run.rechargeWaitDurationMs ?? 0,
+                  rechargeWaitDurationMs,
                 ...(input.attributionMismatch
                   ? { source_metadata_mismatch: true }
                   : {}),
@@ -711,7 +757,7 @@ export function createRunAnalyticsLifecycle(
         // it here is the only place this dimension has to be added.
         Object.assign(baseProps, harnessAnalyticsFromRolloutDecision(run.strategyRolloutDecision));
         Object.assign(baseProps, buildRunCreatedV4Aliases(baseProps, taskLineage));
-        design.runs.setAnalyticsRecovery?.(run, {
+        if (isCurrentAttempt()) design.runs.setAnalyticsRecovery?.(input.run, {
           context: analyticsContext,
           properties: baseProps,
           insertId: runInsertId,
@@ -723,7 +769,7 @@ export function createRunAnalyticsLifecycle(
           properties: baseProps,
           insertId: runInsertId,
         });
-        design.runs.wait(run).then(async (status: TerminalRunStatus) => {
+        terminal.then(async ({ status, run }) => {
           const appCfgAtFinish = await readAppConfig(RUNTIME_DATA_DIR).catch(
             () => ({} as Record<string, unknown>),
           );
@@ -932,7 +978,7 @@ export function createRunAnalyticsLifecycle(
               })
             : null;
           if (deliverable) {
-            design.runs.setDeliverableValidation?.(run, deliverable);
+            if (isCurrentAttempt()) design.runs.setDeliverableValidation?.(input.run, deliverable);
           }
           const activationMilestones = deriveActivationMilestones({
             result,
@@ -983,10 +1029,11 @@ export function createRunAnalyticsLifecycle(
           const supportingAssetFilesChanged = artifactDiff
             ? supportingAssetFilesChangedForRun(artifactDiff, runProjectKind)
             : undefined;
-          design.runs.beginAnalyticsDelivery?.(run);
+          if (isCurrentAttempt()) design.runs.beginAnalyticsDelivery?.(input.run);
           await waitForTerminalClaimSettlementBoundary();
-          const terminalLifecycle = run.terminalLifecycle
-            ? terminalLifecycleForPosthogLocalQueue(run.terminalLifecycle)
+          const lifecycleRun = isCurrentAttempt() ? input.run : run;
+          const terminalLifecycle = lifecycleRun.terminalLifecycle
+            ? terminalLifecycleForPosthogLocalQueue(lifecycleRun.terminalLifecycle)
             : undefined;
           const finishedProperties: Record<string, unknown> = {
               ...baseProps,
@@ -1064,9 +1111,9 @@ export function createRunAnalyticsLifecycle(
                       ? { artifact_version_id: run.artifactVersionId }
                       : {}),
                     resume: (run.manualResumeAttemptCount ?? 0) > 0,
-                    attempt_count: (run.manualResumeAttemptCount ?? 0) + 1,
+                    attempt_count: attempt + 1,
                     recharge_wait_duration_ms:
-                      run.rechargeWaitDurationMs ?? 0,
+                      rechargeWaitDurationMs,
                   }
                 : {}),
               ...(artifactsCreated !== undefined ? { artifacts_created: artifactsCreated } : {}),
@@ -1241,7 +1288,7 @@ export function createRunAnalyticsLifecycle(
           // Keep the base insertId here: reconcileDurableRunTerminals appends
           // `-finish` when replaying. Storing `${runInsertId}-finish` would
           // produce `…-finish-finish` and can duplicate PostHog events.
-          design.runs.setAnalyticsRecovery?.(run, {
+          if (isCurrentAttempt()) design.runs.setAnalyticsRecovery?.(input.run, {
             context: analyticsContext,
             properties: finishedProperties,
             insertId: runInsertId,
@@ -1270,9 +1317,9 @@ export function createRunAnalyticsLifecycle(
               errorType: 'enqueue_failed',
             };
           }
-          design.runs.finalizeAnalyticsDelivery?.(run, captureResult);
-          if (captureResult.status !== 'failed') {
-            design.runs.markAnalyticsCompleted?.(run);
+          if (isCurrentAttempt()) design.runs.finalizeAnalyticsDelivery?.(input.run, captureResult);
+          if (isCurrentAttempt() && captureResult.status !== 'failed') {
+            design.runs.markAnalyticsCompleted?.(input.run);
           }
         }).catch(() => {});
       }

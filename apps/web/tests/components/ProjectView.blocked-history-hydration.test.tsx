@@ -45,7 +45,10 @@ vi.mock('../../src/providers/registry', async () => {
 });
 vi.mock('../../src/state/projects', async () => {
   const actual = await vi.importActual<typeof import('../../src/state/projects')>('../../src/state/projects');
-  return { ...actual, createConversation: vi.fn(), listPlugins: vi.fn().mockResolvedValue([]),
+  return { ...actual,
+    registerQueuedSubmission: vi.fn(async (projectId, submission) => ({
+      id: submission.id, projectId, conversationId: submission.conversationId, acceptedAt: submission.submittedAt,
+    })), createConversation: vi.fn(), listPlugins: vi.fn().mockResolvedValue([]),
     getTemplate: vi.fn().mockResolvedValue(null), loadTabs: vi.fn().mockResolvedValue({ tabs: [], active: null }),
     patchConversation: vi.fn().mockResolvedValue(undefined), patchProject: vi.fn().mockResolvedValue(undefined),
     saveTabs: vi.fn().mockResolvedValue(undefined), persistTabsToDaemonNow: vi.fn().mockResolvedValue(undefined) };
@@ -180,7 +183,7 @@ function errorCodesOnAssistant(id = assistantId()) {
 }
 
 async function expectDoneWithoutCard(id = assistantId()) {
-  await expectDisplayedStatus(en['chat.record.done'], id);
+  await expectDisplayedStatus(en['chat.record.turnElapsed'], id);
   expect(errorCodesOnAssistant(id)).toEqual([]);
   expect(screen.queryByTestId('chat-run-error-card')).toBeNull();
   expect(screen.queryByTestId('chat-error-retry')).toBeNull();
@@ -296,7 +299,7 @@ describe('blocked task history hydration through real ProjectView and ChatPane (
     await waitFor(() => expect(observedChat.messages.find(message => message.id === assistantId()))
       .toMatchObject({ runStatus: 'succeeded', strategyTaskBlocked: false, strategyTaskDelivered: false }));
     expect(errorCodesOnAssistant()).toEqual([]);
-    await expectDisplayedStatus(en['chat.record.done']);
+    await expectDisplayedStatus(en['chat.record.turnElapsed']);
   });
 
   it('does not turn the successful request predecessor into the later active run failure', async () => {
@@ -332,7 +335,7 @@ describe('blocked task history hydration through real ProjectView and ChatPane (
     holdProof();
     render(view());
     await settleExistingTaskProbe();
-    await expectDisplayedStatus(en['chat.record.done']);
+    await expectDisplayedStatus(en['chat.record.turnElapsed']);
     expect(screen.queryByTestId('chat-error-retry')).toBeNull();
     expect(screen.queryByTestId('chat-error-switch-to-cloud')).toBeNull();
   });
@@ -345,7 +348,7 @@ describe('blocked task history hydration through real ProjectView and ChatPane (
     holdProof();
     render(view());
     await settleExistingTaskProbe();
-    await expectDisplayedStatus(en['chat.record.done']);
+    await expectDisplayedStatus(en['chat.record.turnElapsed']);
     expect(screen.queryByTestId('chat-error-retry')).toBeNull();
     expect(screen.queryByTestId('chat-error-switch-to-cloud')).toBeNull();
   });
@@ -387,7 +390,7 @@ describe('blocked task history hydration through real ProjectView and ChatPane (
     holdProof();
     render(view());
     await settleExistingTaskProbe();
-    await expectDisplayedStatus(en['chat.record.done']);
+    await expectDisplayedStatus(en['chat.record.turnElapsed']);
     expect(errorCodesOnAssistant()).toEqual([]);
     expect(screen.queryByTestId('chat-error-retry')).toBeNull();
     expect(screen.queryByTestId('chat-error-switch-to-cloud')).toBeNull();
@@ -414,7 +417,7 @@ describe('blocked task history hydration through real ProjectView and ChatPane (
   });
 
   it.each([
-    ['succeeded', 'chat.record.done'], ['canceled', 'chat.record.canceled'], ['failed', 'chat.record.failedTurn'],
+    ['succeeded', 'chat.record.turnElapsed'], ['canceled', 'chat.record.turnStopped'], ['failed', 'chat.record.failedTurn'],
   ] as const)('preserves ordinary physical %s history without a strategy task', async (status, label) => {
     setHistory(persistedAssistant({ runStatus: status, strategyTaskBlocked: undefined,
       strategyTaskExecutionId: undefined, strategyTaskRunIndex: undefined, strategyTaskBlockedText: undefined }));

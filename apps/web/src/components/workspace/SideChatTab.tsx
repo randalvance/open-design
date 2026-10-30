@@ -95,6 +95,7 @@ interface Props {
   recoveryActionsBlockedReason?: RecoveryActionBlockReason | null;
   /** Forward produced-file / tool-card open requests to the workspace. */
   onRequestOpenFile?: (name: string) => void;
+  onTouchProject?: (sentAt: number) => void;
 }
 
 // A ChatPane mounted as a workspace tab, bound to a single (usually
@@ -119,6 +120,7 @@ export function SideChatTab({
   activeConversationChat,
   recoveryActionsBlockedReason = null,
   onRequestOpenFile,
+  onTouchProject,
 }: Props) {
   const t = useT();
   const sessionMode =
@@ -129,6 +131,7 @@ export function SideChatTab({
     agentsById,
     locale,
     sessionMode,
+    onTouchProject,
   });
   const controlledChat =
     activeConversationChat?.conversationId === conversationId

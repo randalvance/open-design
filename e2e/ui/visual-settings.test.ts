@@ -1,4 +1,5 @@
 import type { Locator } from '@playwright/test';
+import type { WorkspaceProjectsResponse } from '@open-design/contracts';
 
 import { expect, test } from '@/playwright/suite';
 import { T } from '@/timeouts';

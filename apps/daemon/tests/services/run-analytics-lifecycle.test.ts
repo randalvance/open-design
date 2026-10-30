@@ -12,12 +12,18 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   createRunAnalyticsLifecycle,
   inheritedRunLineageHints,
+  type RunAnalyticsLifecycleDeps,
 } from '../../src/services/run-analytics-lifecycle.js';
 import {
   createRunSideEffectLedger,
   foldEventIntoRunSideEffectLedger,
 } from '../../src/runtimes/run-lifecycle-analytics.js';
 import { createChatRunService } from '../../src/runtimes/runs.js';
+import type { ChatRun } from '../../src/runtimes/chat-run-records.js';
+import {
+  createRunPerRequestUsageLedger,
+  foldEventIntoPerRequestUsageLedger,
+} from '../../src/run-analytics-observability.js';
 
 type Captured = {
   eventName: string;
@@ -30,12 +36,25 @@ function harness(finishCaptureResult: unknown = {
   status: 'queued',
   acknowledgement: 'local_buffer',
   errorType: null,
-}, db: unknown = {}) {
+}, db: unknown = {}, runs?: ReturnType<typeof createChatRunService>, detectAgents: RunAnalyticsLifecycleDeps['agents']['detectAgents'] = async () => []) {
   const captured: Captured[] = [];
+  const captureWaiters = new Map<string, Array<{ occurrence: number; resolve(event: Captured): void }>>();
+  const signalCapture = (event: Captured) => {
+    const events = captured.filter((entry) => entry.eventName === event.eventName);
+    const remaining = [];
+    for (const waiter of captureWaiters.get(event.eventName) ?? []) {
+      const found = events[waiter.occurrence - 1];
+      if (found) waiter.resolve(found);
+      else remaining.push(waiter);
+    }
+    captureWaiters.set(event.eventName, remaining);
+  };
   const recoveries: Array<{ runId: string; properties: Record<string, unknown>; insertId: string }> = [];
   const completed: string[] = [];
   const deliveryBegun: string[] = [];
   const deliveryFinalized: Array<{ runId: string; result: unknown }> = [];
+  let signalDeliveryFinalized: () => void = () => {};
+  const currentDeliveryFinalized = new Promise<void>((resolve) => { signalDeliveryFinalized = resolve; });
   let settle: (status: { status: string; errorCode?: string | null; exitCode?: number | null }) => void = () => {};
   const terminal = new Promise<{ status: string }>((resolve) => {
     settle = (status) => resolve(status as { status: string });
@@ -45,24 +64,30 @@ function harness(finishCaptureResult: unknown = {
     db: db as never,
     design: {
       runs: {
-        wait: () => terminal as never,
+        wait: (run) => (runs ? runs.wait(run) : terminal) as never,
+        ...(runs ? { persistState: runs.persistState } : {}),
         setAnalyticsRecovery: (run, recovery) => {
+          if (runs) runs.setAnalyticsRecovery(run, recovery);
+          else run.analyticsRecovery = recovery;
           recoveries.push({
             runId: run.id,
             properties: recovery.properties,
             insertId: recovery.insertId,
           });
         },
-        beginAnalyticsDelivery: (run) => { deliveryBegun.push(run.id); },
+        beginAnalyticsDelivery: (run) => { runs?.beginAnalyticsDelivery(run); deliveryBegun.push(run.id); },
         finalizeAnalyticsDelivery: (run, result) => {
+          runs?.finalizeAnalyticsDelivery(run, result);
           deliveryFinalized.push({ runId: run.id, result });
+          signalDeliveryFinalized();
         },
-        markAnalyticsCompleted: (run) => { completed.push(run.id); },
+        markAnalyticsCompleted: (run) => { runs?.markAnalyticsCompleted(run); completed.push(run.id); },
         setDeliverableValidation: () => {},
       },
       analytics: {
         capture: (args) => {
           captured.push(args as Captured);
+          signalCapture(args as Captured);
           return args.eventName === 'run_finished'
             ? finishCaptureResult
             : { status: 'queued', acknowledgement: 'local_buffer', errorType: null };
@@ -71,7 +96,7 @@ function harness(finishCaptureResult: unknown = {
       getAppVersion: () => '0.0.0-test',
     },
     paths: { PROJECTS_DIR: '/nonexistent/projects', RUNTIME_DATA_DIR: '/nonexistent/data' },
-    agents: { detectAgents: async () => [] },
+    agents: { detectAgents },
     telemetry: {
       reportRunCompletionTelemetryFallback: () => {},
       resolveRunProjectKindForAnalytics: () => null,
@@ -88,10 +113,21 @@ function harness(finishCaptureResult: unknown = {
     lifecycle,
     recoveries,
     settle,
+    // Historical attempts still emit their event, but cannot finalize the current run.
+    waitForCurrentDeliveryFinalized: () => currentDeliveryFinalized,
+    waitForCapture(eventName: string, occurrence = 1): Promise<Captured> {
+      const found = captured.filter((event) => event.eventName === eventName)[occurrence - 1];
+      if (found) return Promise.resolve(found);
+      return new Promise((resolve) => {
+        const waiters = captureWaiters.get(eventName) ?? [];
+        waiters.push({ occurrence, resolve });
+        captureWaiters.set(eventName, waiters);
+      });
+    },
   };
 }
 
-function fakeRun(overrides: Record<string, unknown> = {}) {
+function fakeRun(overrides: Record<string, unknown> = {}): ChatRun {
   const now = Date.now();
   return {
     id: 'run-under-test',
@@ -106,20 +142,15 @@ function fakeRun(overrides: Record<string, unknown> = {}) {
     events: [],
     clients: new Set(),
     ...overrides,
-  } as never;
+  };
 }
 
 const CONTEXT = { deviceId: 'device-1', sessionId: 'session-1', clientType: 'web', locale: 'en' };
 
 async function settled(h: ReturnType<typeof harness>, eventName: string) {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
-    const found = h.captured.find((event) => event.eventName === eventName);
-    if (found) return found;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error(
-    `no ${eventName} captured; saw ${JSON.stringify(h.captured.map((e) => e.eventName))}`,
-  );
+  const captured = await h.waitForCapture(eventName);
+  if (eventName === 'run_finished') await h.waitForCurrentDeliveryFinalized();
+  return captured;
 }
 
 describe('run analytics lifecycle', () => {
@@ -185,6 +216,18 @@ describe('run analytics lifecycle', () => {
     const finished = await settled(h, 'run_finished');
     expect(finished.properties).toMatchObject({ comment_ids: ['current'], result: 'cancelled' });
     expect(h.recoveries).toHaveLength(2);
+  });
+
+  it('installs only one created/finished observer for repeated starts of the same attempt', async () => {
+    const h = harness();
+    const input = { run: fakeRun(), body: {}, requestAnalyticsContext: CONTEXT as never };
+    h.lifecycle.install(input);
+    h.lifecycle.install(input);
+    const created = await settled(h, 'run_created');
+    h.settle({ status: 'succeeded' });
+    await settled(h, 'run_finished');
+    expect(h.captured.map((event) => event.eventName)).toEqual(['run_created', 'run_finished']);
+    expect(h.captured[1]?.insertId).toBe(`${created.insertId}-finish`);
   });
 
   it('records text-only settlement as a normal successful reply', async () => {

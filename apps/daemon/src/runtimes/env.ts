@@ -17,6 +17,8 @@ import {
 type RuntimeEnvMap = NodeJS.ProcessEnv | Record<string, string>;
 type SpawnEnvOptions = {
   resolvedBin?: string | null;
+  /** Login replaces credentials, and sends no stored keys to its device-auth endpoint. */
+  allowAmrCredentialMismatch?: boolean;
 };
 
 const RUNTIME_MODULE_PROJECT_ROOT = resolveProjectRootFromNestedModule(
@@ -74,11 +76,11 @@ export function spawnEnvForAgent(
   baseEnv: RuntimeEnvMap,
   configuredEnv: unknown = {},
   systemProxyEnv: RuntimeEnvMap = resolveSystemProxyEnv(),
-  _options: SpawnEnvOptions = {},
+  options: SpawnEnvOptions = {},
 ): NodeJS.ProcessEnv {
   const sandboxRuntime = sandboxRuntimeConfigForBaseEnv(baseEnv);
   const expandedConfiguredEnv = expandConfiguredEnv(configuredEnv);
-  const env = mergeProxyAwareEnv(
+  let env = mergeProxyAwareEnv(
     process.platform,
     systemProxyEnv,
     baseEnv,

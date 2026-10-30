@@ -103,6 +103,9 @@ import type { RouteDeps } from '../../server-context.js';
 import { listSkills } from '../../skills.js';
 import { isSafeId, validateProjectPath } from '../../projects.js';
 import {
+  acceptProjectUserSubmission,
+  getProjectUserSubmission,
+  getConversation,
   getFirstProjectConversation,
   SYNC_KEEPS_UPDATED_AT,
 } from '../../db.js';
@@ -715,6 +718,7 @@ ${COMMENT_IDENTITY_HELPERS}
       type: 'od:comment-target',
       elementId: id,
       selector: selector,
+      domSelector: domSelectorFor(el),
       label: tag + cls,
       text: (el.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 160),
       position: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
@@ -3352,9 +3356,34 @@ export function registerProjectRoutes(app: Express, ctx: RegisterProjectRoutesDe
     res.json(body);
   });
 
+  // Queue ownership stays in the client; only acceptance/recency is registered here.
+  app.post('/api/projects/:id/submissions', async (req, res) => {
+    if (!getProject(db, req.params.id)) return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'not found');
+    if (!await authorizeProjectRequest(req, res, req.params.id, { mode: 'write', capability: 'writeFiles' })) return;
+    const { id, conversationId, submittedAt } = req.body ?? {};
+    if (typeof id !== 'string' || !isSafeId(id) || typeof conversationId !== 'string'
+      || getConversation(db, conversationId)?.projectId !== req.params.id
+      || !Number.isSafeInteger(submittedAt) || submittedAt < 0) {
+      return sendApiError(res, 400, 'BAD_REQUEST', 'invalid queued submission');
+    }
+    const existing = getProjectUserSubmission(db, id);
+    if (existing && (existing.projectId !== req.params.id || existing.conversationId !== conversationId)) {
+      return sendApiError(res, 409, 'IDEMPOTENCY_CONFLICT', 'submission belongs to another conversation');
+    }
+    const userSubmission = acceptProjectUserSubmission(db, {
+      // Preserve enqueue time, but never let a fast client clock put activity
+      // in the future. The ledger retains this first receipt on every replay.
+      id, projectId: req.params.id, conversationId, acceptedAt: Math.min(submittedAt, Date.now()),
+    });
+    return res.json({ userSubmission });
+  });
+
   app.patch('/api/projects/:id', async (req, res) => {
     try {
       const patch = req.body || {};
+      if ('lastUserQueryAt' in patch) {
+        return sendApiError(res, 400, 'BAD_REQUEST', 'recency is owned by accepted submissions');
+      }
       const patchProject = getProject(db, req.params.id);
       if (!patchProject) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'not found');
