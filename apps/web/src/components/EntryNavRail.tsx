@@ -5,6 +5,7 @@
 // local identity row. The GitHub star chip and the update-ready rocket ride
 // the tabs chrome's top-right actions host through `EntryTopRightCluster`,
 // which the project route mounts on its own (see `WorkspaceTopRightAccountCluster`).
+import { compareRecentProjects } from '../lib/project-order';
 import {
   useCallback,
   useEffect,
@@ -203,7 +204,7 @@ function RailRecentSection({
   // rest from the rail entirely). The LIST scrolls past ~11 rows, not the rail
   // — see `.entry-nav-rail__recent-list` in entry-layout.css.
   const items = useMemo(
-    () => [...projects].sort((a, b) => b.updatedAt - a.updatedAt),
+    () => [...projects].sort(compareRecentProjects),
     [projects],
   );
   // Run status for the rows' leading glyph — the same feed, with the same

@@ -15,6 +15,7 @@ const PROJECT_A = {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   resetCoalescedGet();
 });
 

@@ -927,6 +927,9 @@ export interface Dict {
   'notify.failureTitle': string;
   'notify.successBody': string;
   'notify.failureBody': string;
+  'notify.needsReplyBody': string;
+  'notify.runFailedBody': string;
+  'notify.newReplyBody': string;
 
   // Desktop updater
   'updater.available': string;
@@ -2712,6 +2715,7 @@ export interface Dict {
   'chat.comments.attached': string;
   'chat.comments.emptyAttached': string;
   'chat.comments.saved': string;
+  'chat.comments.loadFailed': string;
   'chat.comments.emptySaved': string;
   'chat.comments.add': string;
   'chat.comments.addAll': string;
@@ -5278,6 +5282,10 @@ export interface Dict {
   'chat.record.thinkingTokens': string;
   'chat.record.thoughts': string;
   'chat.record.done': string;
+  'chat.record.turnElapsed': string;
+  'chat.record.elapsedSeconds': string;
+  'chat.record.elapsedMinutes': string;
+  'chat.record.turnStopped': string;
   'chat.record.canceled': string;
   'chat.record.pending': string;
   /**

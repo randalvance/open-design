@@ -130,6 +130,7 @@ import { isMacPlatform } from './utils/platform';
 import { randomUUID } from './utils/uuid';
 import { summarizeProjectNameFromPrompt } from './utils/projectName';
 import { armCompletionFeedbackOnFirstGesture } from './utils/notifications';
+import { useGlobalRunNotices } from './hooks/useGlobalRunNotices';
 import { installFontRecovery } from './runtime/font-recovery';
 import {
   runWithConcurrency,
@@ -177,7 +178,7 @@ import {
   removeProjectFromDisplaySnapshots,
   writeProjectDisplaySnapshot,
 } from './state/project-display-cache';
-import { getOpenDesignHost, type OpenDesignHostProjectImportSuccess } from '@open-design/host';
+import { getOpenDesignHost, isOpenDesignHostAvailable, type OpenDesignHostProjectImportSuccess } from '@open-design/host';
 import { useI18n } from './i18n';
 import { liveArtifactTabId } from './types';
 import type {
@@ -618,11 +619,19 @@ function AppInner() {
   const latestPersistedConfigRef = useRef(config);
   latestPersistedConfigRef.current = config;
   const settingsDraftConfigRef = useRef<AppConfig | null>(null);
+  // P0-24 N10: system notifications for turns that end anywhere on this
+  // machine, wherever the user is. Desktop only; the web keeps the
+  // per-conversation notifier in ProjectView.
+  useGlobalRunNotices({
+    enabled: isOpenDesignHostAvailable(),
+    notifications: config.notifications ?? DEFAULT_NOTIFICATIONS,
+    t,
+  });
   const completionFeedbackGestureConsumedRef = useRef(false);
   useEffect(() => {
-    if (completionFeedbackGestureConsumedRef.current) return undefined;
     const notifications = config.notifications ?? DEFAULT_NOTIFICATIONS;
     if (!notifications.soundEnabled && !notifications.desktopEnabled) return undefined;
+    if (completionFeedbackGestureConsumedRef.current && !notifications.soundEnabled) return undefined;
     return armCompletionFeedbackOnFirstGesture(notifications, ({ desktopPermission }) => {
       completionFeedbackGestureConsumedRef.current = true;
       if (
@@ -644,7 +653,7 @@ function AppInner() {
         saveConfig(next);
         return next;
       });
-    });
+    }, completionFeedbackGestureConsumedRef.current);
   }, [config.notifications?.desktopEnabled, config.notifications?.soundEnabled]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Surfaced when a Home-picked working dir could not be applied to a freshly
@@ -732,6 +741,9 @@ function AppInner() {
   const locallyDeletedProjectIdsRef = useRef<Map<string, number>>(new Map());
   const projectListMutationVersionRef = useRef(0);
   const projectRenameStatesRef = useRef<Map<string, QueuedProjectRenameState>>(new Map());
+  const pendingProjectRecencyRef = useRef(new Map<string, {
+    sentAt: number;
+  }>());
   const pendingProjectNameProjectionsRef = useRef<Map<string, PendingProjectNameProjection>>(
     new Map(),
   );
@@ -897,8 +909,18 @@ function AppInner() {
   }, []);
 
   const reconcileFetchedProjects = useCallback((list: Project[], request: ProjectListRequest) => {
-    const projectedList = list.map((project) => {
+    const projectedList = list.map((fetchedProject) => {
+      let project = fetchedProject;
       const key = project.id;
+      const recency = pendingProjectRecencyRef.current.get(key);
+      if (recency) {
+        if ((project.lastUserQueryAt ?? 0) >= recency.sentAt) {
+          // Retire only when the read observes this durable acceptance or a newer one.
+          pendingProjectRecencyRef.current.delete(key);
+        } else {
+          project = { ...project, lastUserQueryAt: Math.max(project.lastUserQueryAt ?? 0, recency.sentAt) };
+        }
+      }
       const pending = pendingProjectNameProjectionsRef.current.get(key);
       if (!pending) return project;
       if (
@@ -1833,9 +1855,9 @@ function AppInner() {
   /**
    * Enter the project frame for a Home send NOW, before anything is awaited.
    * The id is client-owned and the daemon accepts that exact id for
-   * idempotent retries. Keep the real ProjectView unmounted until the response
-   * settles; the pending surface is deliberately read-free so an unpersisted
-   * project cannot fan out unauthorized conversation/file/presence requests.
+   * idempotent retries. The same ProjectView renders the pending turn and the
+   * persisted project; creationHandoff holds project reads until the response
+   * settles, so an unpersisted project cannot fan out unauthorized requests.
    *
    * Home calls this on the click tick so the user never waits on the create
    * round trip in a frozen composer (OPEND-2614). `handleCreateProject` calls
@@ -2707,18 +2729,23 @@ function AppInner() {
     void patchProject(projectId, { pendingPrompt: null });
   }, [route]);
 
-  const handleTouchProject = useCallback(() => {
+  const handleTouchProject = useCallback((sentAt = Date.now()) => {
     const projectId = route.kind === 'project' ? route.projectId : null;
     if (!projectId) return;
-    const updatedAt = Date.now();
-    setProjects((curr) =>
-      curr.map((p) => (p.id === projectId ? { ...p, updatedAt } : p)),
-    );
+    const key = projectId;
+    const pending: { sentAt: number } = {
+      sentAt: Math.max(pendingProjectRecencyRef.current.get(key)?.sentAt ?? 0, sentAt),
+    };
+    pendingProjectRecencyRef.current.set(key, pending);
+    projectListMutationVersionRef.current += 1;
+    const recordSend = (project: Project): Project => project.id === projectId
+      ? { ...project, lastUserQueryAt: Math.max(project.lastUserQueryAt ?? 0, sentAt) }
+      : project;
+    setProjects((curr) => curr.map(recordSend));
     patchProjectDisplaySnapshots({
-      patch: (cachedProjects) => cachedProjects.map((project) =>
-        project.id === projectId ? { ...project, updatedAt } : project),
+      patch: (cachedProjects) => cachedProjects.map(recordSend),
     });
-    void patchProject(projectId, { updatedAt });
+    // Keep this durable receipt projected until a list observes the same or newer time.
   }, [route]);
 
   const handleProjectChange = useCallback((updated: Project) => {
@@ -2732,7 +2759,7 @@ function AppInner() {
     if (routeSnapshotMatches) {
       routeProjectSnapshotRef.current = {
         ...routeSnapshot,
-        project: updated,
+        project: { ...updated, lastUserQueryAt: Math.max(routeSnapshot.project.lastUserQueryAt ?? 0, updated.lastUserQueryAt ?? 0) || null },
       };
       setRouteProjectSnapshotRevision((current) => current + 1);
     }
@@ -2748,11 +2775,13 @@ function AppInner() {
       ) {
         iframeKeepAlivePool.evictProject(updated.id, { includeActive: true });
       }
-      return curr.map((p) => (p.id === updated.id ? updated : p));
+      return curr.map((p) => (p.id === updated.id
+        ? { ...updated, lastUserQueryAt: Math.max(p.lastUserQueryAt ?? 0, updated.lastUserQueryAt ?? 0) || null } : p));
     });
     patchProjectDisplaySnapshots({
       patch: (cachedProjects) => cachedProjects.map((project) =>
-        project.id === updated.id ? { ...project, ...updated } : project),
+        project.id === updated.id ? { ...project, ...updated,
+          lastUserQueryAt: Math.max(project.lastUserQueryAt ?? 0, updated.lastUserQueryAt ?? 0) || null } : project),
     });
   }, [iframeKeepAlivePool]);
 

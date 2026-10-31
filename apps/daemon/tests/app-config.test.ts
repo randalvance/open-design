@@ -431,6 +431,10 @@ describe('app-config', () => {
           },
           opencode: {
             OPENCODE_BIN: '  ~/bin/opencode  ',
+            TMPDIR: '  /custom/tmpdir  ',
+            TMP: '  /custom/tmp  ',
+            TEMP: '  /custom/temp  ',
+            HOME: 'should-not-persist',
           },
           'byok-opencode': {
             OPENCODE_BIN: '  ~/bin/byok-opencode  ',
@@ -454,7 +458,7 @@ describe('app-config', () => {
       expect(cfg.agentCliEnv).toEqual({
         claude: { CLAUDE_CONFIG_DIR: '~/.claude-2', ANTHROPIC_BASE_URL: 'https://proxy.example/anthropic', ANTHROPIC_API_KEY: 'sk-proxy-anthropic', ANTHROPIC_AUTH_TOKEN: 'sk-proxy-token', MMD_MODEL_ROUTES_FILE: '~/.config/mms/model-routes.json' },
         codex: { CODEX_HOME: '~/.codex-alt', CODEX_BIN: '~/bin/codex-next', OPENAI_BASE_URL: 'https://proxy.example/openai', OPENAI_API_KEY: 'sk-proxy-openai' },
-        opencode: { OPENCODE_BIN: '~/bin/opencode' },
+        opencode: { OPENCODE_BIN: '~/bin/opencode', TMPDIR: '/custom/tmpdir', TMP: '/custom/tmp', TEMP: '/custom/temp' },
         'trae-cli': { TRAE_CLI_BIN: '~/bin/traecli-public' },
         // pi's config-directory override survives the save (#8093); the
         // neighbouring session-dir key is not in the contract and still does not.
@@ -462,6 +466,9 @@ describe('app-config', () => {
       });
       expect(agentCliEnvForAgent(cfg.agentCliEnv, 'byok-opencode')).toEqual({
         OPENCODE_BIN: '~/bin/opencode',
+        TMPDIR: '/custom/tmpdir',
+        TMP: '/custom/tmp',
+        TEMP: '/custom/temp',
       });
     });
 

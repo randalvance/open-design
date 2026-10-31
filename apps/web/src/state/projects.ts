@@ -1,3 +1,4 @@
+import type { QueuedSubmissionRequest, UserSubmissionReceipt } from "@open-design/contracts";
 // Project / conversation / message / tab persistence — backed by the
 // daemon's SQLite store. All writes round-trip through HTTP so projects
 // stay coherent across multiple browser tabs and across restarts.
@@ -9,7 +10,7 @@
 import { coalescedGet, evictCoalescedGet } from '../lib/coalesced-get';
 import { isDaemonProxyConnectionFailure } from '../runtime/daemon-proxy-failure';
 import { BackoffController, type BackoffOptions } from '../lib/backoff';
-import { API_ERROR_CODES, type ApiErrorCode } from '@open-design/contracts';
+import { API_ERROR_CODES, MESSAGES_STREAM_CONTENT_TYPE, type ApiErrorCode } from '@open-design/contracts';
 import type {
   AppliedPluginSnapshot,
   ApplyResult,
@@ -32,6 +33,7 @@ import type {
   TerminalSession,
 } from '@open-design/contracts';
 import { randomUUID } from '../utils/uuid';
+import { readMessageStream } from './read-message-stream';
 import type {
   ChatMessage,
   Conversation,
@@ -585,6 +587,21 @@ type ProjectPatch = Omit<Partial<Project>, 'pendingPrompt' | 'customInstructions
   customInstructions?: string | null;
 };
 
+/** Idempotent registration; a failed response leaves the saved queue item retryable. */
+export async function registerQueuedSubmission(
+  projectId: string, submission: QueuedSubmissionRequest,
+): Promise<UserSubmissionReceipt | null> {
+  try {
+    const resp = await fetch(`/api/projects/${encodeURIComponent(projectId)}/submissions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(submission),
+    });
+    if (!resp.ok) return null;
+    const result = await resp.json() as { userSubmission: UserSubmissionReceipt };
+    return result.userSubmission;
+  } catch { return null; }
+}
+
 export async function patchProject(
   id: string,
   patch: ProjectPatch,
@@ -899,11 +916,15 @@ export async function listMessages(
   projectId: string,
   conversationId: string,
   signal?: AbortSignal,
+  onProgress?: () => void,
 ): Promise<ChatMessage[]> {
   try {
     const resp = await fetch(
       `/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}/messages`,
-      signal ? { signal } : undefined,
+      {
+        headers: { Accept: MESSAGES_STREAM_CONTENT_TYPE },
+        ...(signal ? { signal } : {}),
+      },
     );
     if (!resp.ok) {
       const failure = await readProjectMessageListError(resp);
@@ -913,6 +934,9 @@ export async function listMessages(
         failure.code,
         failure.retryable,
       );
+    }
+    if (resp.headers.get('content-type')?.split(';')[0]?.trim() === MESSAGES_STREAM_CONTENT_TYPE) {
+      return await readMessageStream(resp, signal, onProgress);
     }
     const json = (await resp.json()) as { messages: ChatMessage[] };
     return json.messages ?? [];

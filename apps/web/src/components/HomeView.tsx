@@ -259,7 +259,13 @@ interface Props {
   defaultDesignSystemId?: string | null;
   onSubmit: (
     payload: PluginLoopSubmit,
-  ) => Promise<boolean | void> | boolean | void;
+  ) => Promise<boolean | 'blocked' | void> | boolean | 'blocked' | void;
+  // EntryShell checks this local cancellation witness during async preflight.
+  // Existing local/plugin submit callbacks retain their single payload argument.
+  onSubmitWithDraftGuard?: (
+    payload: PluginLoopSubmit,
+    isSubmitCurrent: () => boolean,
+  ) => Promise<boolean | 'blocked' | void> | boolean | 'blocked' | void;
   onOpenProject: (id: string, fileName?: string) => void;
   onBrowseRegistry?: () => void;
   onOpenIntegrations?: () => void;
@@ -448,6 +454,7 @@ export function HomeView({
   designSystemsLoading = false,
   defaultDesignSystemId = null,
   onSubmit,
+  onSubmitWithDraftGuard,
   onOpenProject,
   onBrowseRegistry,
   onOpenIntegrations,
@@ -729,6 +736,8 @@ export function HomeView({
   // Composer in-flight guard: disables the send button, shows Sending…, and
   // swallows repeat clicks across the whole async create tail.
   const [sending, setSending] = useState(false);
+  const submitDraftRef = useRef({ prompt, stagedFiles });
+  submitDraftRef.current = { prompt, stagedFiles };
   const [elevenLabsVoices, setElevenLabsVoices] = useState<AudioVoiceOption[]>([]);
   const [elevenLabsVoicesLoading, setElevenLabsVoicesLoading] = useState(false);
   // Live AIHubMix image catalogue merged into the home media composer's model
@@ -2576,6 +2585,9 @@ export function HomeView({
     // The send button disables itself while sending, but the Enter-to-send
     // path lands here directly — swallow re-entry during the in-flight window.
     if (sending || defaultTypePending) return;
+    const submittedDraft = { prompt, stagedFiles };
+    const isSubmitCurrent = () => submitDraftRef.current.prompt === submittedDraft.prompt
+      && submitDraftRef.current.stagedFiles === submittedDraft.stagedFiles;
     const trimmed = prompt.trim();
     if (!trimmed && stagedFiles.length === 0) return;
     // P0 ui_click area=chat_composer element=send_button. Fires before the
@@ -2763,7 +2775,7 @@ export function HomeView({
         examplePromptInfoRef.current != null && localStorage.getItem(examplePromptKey) == null
           ? examplePromptInfoRef.current
           : null;
-      const accepted = await onSubmit({
+      const payload: PluginLoopSubmit = {
         prompt: trimmed,
         pluginId: routedPluginId,
         ...(pluginSelectionProvenance ? { pluginSelectionProvenance } : {}),
@@ -2803,7 +2815,10 @@ export function HomeView({
         ...(contextLinkedDirs.length > 0 ? { linkedDirs: contextLinkedDirs } : {}),
         conversationMode: sessionMode,
         ...(examplePromptToSend ? { examplePromptContext: examplePromptToSend } : {}),
-      });
+      };
+      const accepted = onSubmitWithDraftGuard
+        ? await onSubmitWithDraftGuard(payload, isSubmitCurrent)
+        : await onSubmit(payload);
       if (accepted === false) {
         setError(t('home.createFailed'));
         return;

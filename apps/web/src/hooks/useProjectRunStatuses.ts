@@ -35,6 +35,7 @@ import {
   displayStatusForSummary,
   foldRunsToProjectRunSummaries,
   readStoredAcknowledgedRuns,
+  summaryIsNotice,
   writeStoredAcknowledgedRuns,
   type AcknowledgedRuns,
   type ProjectRunSummary,
@@ -104,7 +105,8 @@ function sameSummary(a: ProjectRunSummary | null | undefined, b: ProjectRunSumma
   if (!a || !b) return (a ?? null) === b;
   return a.status === b.status
     && a.latestTerminalRunId === b.latestTerminalRunId
-    && a.latestTerminalUpdatedAt === b.latestTerminalUpdatedAt;
+    && a.latestTerminalUpdatedAt === b.latestTerminalUpdatedAt
+    && a.stoppedWhileAway === b.stoppedWhileAway;
 }
 
 async function readProject(projectId: string): Promise<void> {
@@ -114,8 +116,11 @@ async function readProject(projectId: string): Promise<void> {
   // An unreadable project yields null; keeping whatever was known leaves the
   // row as it was rather than asserting a status nobody verified.
   if (!result) return;
-  const next = foldRunsToProjectRunSummaries(result.runs, result.awaitingInputProjectIds)
-    .get(projectId) ?? null;
+  const next = foldRunsToProjectRunSummaries(
+    result.runs,
+    result.awaitingInputProjectIds,
+    result.awaitingInputConversationIds,
+  ).get(projectId) ?? null;
   const previous = summaries.get(projectId);
   summaries.set(projectId, next);
   // Nothing drawn changes between "unknown" and "no runs", so no re-render.
@@ -204,7 +209,7 @@ function removeSubscription(subscription: Subscription): void {
  */
 export function acknowledgeProjectCompletion(projectId: string): void {
   const summary = summaries.get(projectId);
-  if (!summary || summary.status !== 'succeeded' || !summary.latestTerminalRunId) return;
+  if (!summary || !summaryIsNotice(summary) || !summary.latestTerminalRunId) return;
   const runId = summary.latestTerminalRunId;
   const current = acknowledgedRuns();
   if (current[projectId] === runId) return;

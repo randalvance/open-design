@@ -574,6 +574,7 @@ function ArtifactCard({
   // the card.
   const [failedCoverUrl, setFailedCoverUrl] = useState<string | null>(null);
   const src = projectFileUrl(projectId, item.name);
+  const coverUrl = item.coverUrl;
   const liveUrl = artifactCardLiveUrl(src, item.revision);
   const [motionSize, setMotionSize] = useState<{ src: string; width: number; height: number }>();
   // Live HTML can have changed since this turn's snapshot. Its announced
@@ -612,7 +613,7 @@ function ArtifactCard({
           <span className="artifact-card-mini is-loading">
             <PixelLiquid />
           </span>
-        ) : item.coverUrl && item.kind !== 'video' && !item.motionPreview && failedCoverUrl !== item.coverUrl ? (
+        ) : coverUrl && item.kind !== 'video' && !item.motionPreview && failedCoverUrl !== coverUrl ? (
           /*
            * **当轮的静态首屏截图**(HTML / 原型 / slide / 文档)。
            *
@@ -628,10 +629,10 @@ function ArtifactCard({
            */
           <img
             className="artifact-card-media"
-            src={item.coverUrl}
+            src={coverUrl}
             alt=""
             loading="lazy"
-            onError={() => setFailedCoverUrl(item.coverUrl ?? null)}
+            onError={() => setFailedCoverUrl(coverUrl ?? null)}
           />
         ) : item.kind === 'html' ? (
           /*
@@ -681,7 +682,7 @@ function ArtifactCard({
           <video
             className="artifact-card-media"
             src={mediaSrc}
-            poster={item.coverUrl}
+            poster={coverUrl}
             muted
             preload="metadata"
             playsInline

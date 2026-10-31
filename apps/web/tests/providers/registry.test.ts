@@ -41,6 +41,7 @@ import {
   patchPreviewCommentStatus,
   updateDeployConfig,
   uploadProjectFiles,
+  fetchPreviewComments,
   upsertPreviewComment,
   writeProjectTextFileDetailed,
 } from '../../src/providers/registry';
@@ -1860,5 +1861,20 @@ describe('deploy provider registry helpers', () => {
       () => { throw new Error('expected deploy to reject'); },
       (err: unknown) => expect((err as { code?: string }).code).toBe('HTTP_404'),
     );
+  });
+});
+
+describe('OPEND-3894 comment reads distinguish errors from empty success', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it.each(['http', 'network', 'invalid'] as const)('rejects a final %s failure instead of reporting an empty list', async kind => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      if (kind === 'network') throw new Error('offline');
+      return kind === 'http' ? new Response(null,{status:500}) : Response.json({});
+    }));
+    await expect(fetchPreviewComments('p','c')).rejects.toThrow();
+  });
+  it('accepts an explicitly empty successful response', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({comments:[]})));
+    await expect(fetchPreviewComments('p','c')).resolves.toEqual([]);
   });
 });

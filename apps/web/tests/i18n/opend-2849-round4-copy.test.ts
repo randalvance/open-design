@@ -20,6 +20,8 @@ function lookup(dict: Dict, key: string): string | undefined {
   return (dict as unknown as Record<string, string | undefined>)[key];
 }
 
+// 席位一期：团队 Admin 不管理充值或订阅，额度不足应联系团队空间所有者。
+// F10/F14 的 r506 冻结文案优先于第四轮措辞；名字不插值、单出口和语言完整性断言保留。
 const PRODUCT_ZH: Record<string, string> = {
   // S24a / S24c
   'assistant.unfinishedLabel': '任务尚未完成',

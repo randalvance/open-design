@@ -1,7 +1,10 @@
+import { homeAutoSendIdentity, stableIdentityDigest } from '../runtime/home-auto-send-identity';
+import { withLiveArtifactDeliveries } from '../runtime/live-artifact-delivery';
+import { newerTaskDisplay } from '../runtime/chat/task-presentation';
 import { useStartupReady } from '../observability/startup-ready';
 import { navigationTiming, useProjectNavigationReady, observeNavigation } from '../observability/navigation-timing';
-import { withLiveArtifactDeliveries } from '../runtime/live-artifact-delivery';
 import { readRetriedErrorSurface, retriedErrorSurfaceKey, writeRetriedErrorSurface } from '../runtime/chat/retried-error-surface';
+import { runOutcomeAwaitsRunRecord, settleTurnFromRunRecord } from '../runtime/chat/pending-disconnect';
 import {
   startTransition,
   useCallback,
@@ -80,8 +83,11 @@ import {
   strategyTaskParkedOnSucceededRun,
   strategyTaskRunIndex,
 } from '../runtime/strategy-question-continuation';
+import { acknowledgeProjectCompletion, useProjectRunSummaries } from '../hooks/useProjectRunStatuses';
 import {
+  eventsEndedByAskingUser,
   isTodoWriteToolName,
+  turnEndedByAskingUser,
   type ByokChatProviderConfig,
   type ByokMediaDefaults,
   type ByokChatProtocol,
@@ -210,6 +216,7 @@ import {
   loadTabs,
   patchConversation,
   patchProject,
+  registerQueuedSubmission,
   ProjectConversationsHttpError,
   saveMessage,
   startGeneratedPluginShareTask,
@@ -397,6 +404,8 @@ type ProjectChatSendMeta = ChatSendMeta & {
   /** Marks a send replayed from the queued-sends drain. Its payload already
    *  lives in the queue item, so a pre-run block must NOT re-queue it. */
   queueDrain?: boolean;
+  systemSubmission?: boolean;
+  queuedSubmissionId?: string;
   /** The caller owns a payload that must be consumed exactly once — the Home
    *  handoff's separately persisted prompt, an inline question form's single
    *  answer. Once the payload is durably parked in this view's queue, report
@@ -421,6 +430,8 @@ type ProjectChatSendMeta = ChatSendMeta & {
    * 交给队列项保管了,回放时再声称「输入框在等它」就是撒谎。
    */
   composerOwnedDraft?: true;
+  /** Only Home auto-send owns the original Home input and initial request. */
+  initialHomeSend?: true;
   /** Stable task lineage for retries, resumes and clarification answers. */
   taskAnalytics?: ChatTaskExecutionAnalytics;
   /** Explicit daemon-issued OD Next continuation handle. */
@@ -595,6 +606,7 @@ function mergeServerMessageWithLocal(
 ): ChatMessage {
   if (!local) return server;
   const merged: ChatMessage = { ...server };
+  merged.taskDisplay = newerTaskDisplay(local.taskDisplay, server.taskDisplay);
   if (local.role === 'assistant' && server.role === 'assistant' && !absorbedASuccessorRun) {
     if ((local.content?.length ?? 0) > (server.content?.length ?? 0)) {
       merged.content = local.content;
@@ -807,7 +819,7 @@ interface Props {
   onOpenPetSettings?: () => void;
   onBack: () => void;
   onClearPendingPrompt: () => void;
-  onTouchProject: () => void;
+  onTouchProject: (sentAt?: number) => void;
   onProjectChange: (next: Project) => void;
   /** Rename fences from the era of the inline title rename in the chat card.
    *  The card no longer renders a title (OPEND-3128: the project is named once,
@@ -859,6 +871,7 @@ interface Props {
   } | null;
   /** The first transcript is on screen (or failed to load): drop the card. */
   onCreationHandoffSettled?: (projectId: string) => void;
+  onInitialHomeRequestProgress?: (projectId: string, clientRequestId: string) => void;
 }
 
 export type ProjectRenameFenceToken = Readonly<{
@@ -1245,17 +1258,6 @@ function autoSendFirstMessageKey(projectId: string): string {
   return `od:auto-send-first:${projectId}`;
 }
 
-function stableIdentityDigest(value: string): string {
-  // FNV-1a 64-bit keeps the daemon-facing id bounded while preserving a
-  // deterministic identity across retries and ProjectView remounts.
-  let hash = 0xcbf29ce484222325n;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= BigInt(value.charCodeAt(index));
-    hash = BigInt.asUintN(64, hash * 0x100000001b3n);
-  }
-  return hash.toString(36).padStart(13, '0');
-}
-
 /**
  * Whether this view's project resources are off limits: a Home send's project
  * whose create has not answered yet. Every project read waits on this.
@@ -1264,18 +1266,6 @@ export function projectReadsHeldForCreation(
   creationHandoff: { persisted: boolean } | null | undefined,
 ): boolean {
   return Boolean(creationHandoff && !creationHandoff.persisted);
-}
-
-function homeAutoSendIdentity(projectId: string): Pick<
-  ProjectChatSendMeta,
-  'assistantMessageId' | 'clientRequestId' | 'userMessageId'
-> {
-  const handoffId = `home-auto-send-${stableIdentityDigest(projectId)}`;
-  return {
-    clientRequestId: handoffId,
-    userMessageId: `${handoffId}-user`,
-    assistantMessageId: `${handoffId}-assistant`,
-  };
 }
 
 /**
@@ -1932,6 +1922,7 @@ export function ProjectView({
   onRunActivityChange,
   creationHandoff = null,
   onCreationHandoffSettled,
+  onInitialHomeRequestProgress,
 }: Props) {
   const { locale, t } = useI18n();
   // A Home send mounts this view before the project row exists on the daemon
@@ -2172,6 +2163,14 @@ export function ProjectView({
   // attach the runId to.
   const [messagesInitialized, setMessagesInitialized] = useState(false);
   const [previewComments, setPreviewComments] = useState<PreviewComment[]>([]);
+  const [previewCommentsState, setPreviewCommentsState] = useState<'loading' | 'error' | 'success'>('loading');
+  const previewCommentsIdentityRef = useRef('');
+  const previewCommentsReadSeq = useRef(0);
+  const currentCommentsIdentity = `${project.id}\u0000${activeConversationId}\u0000${projectRunAuthorityKey}`;
+  const currentCommentsIdentityRef = useRef(currentCommentsIdentity);
+  currentCommentsIdentityRef.current = currentCommentsIdentity;
+  const visiblePreviewComments = previewCommentsIdentityRef.current === currentCommentsIdentity ? previewComments : [];
+  const visiblePreviewCommentsState = previewCommentsIdentityRef.current === currentCommentsIdentity ? previewCommentsState : 'loading';
   // Every local comment commit invalidates older in-flight list reads. The
   // initial read and the SSE/poll refresher use the same generation as a
   // commit witness, so a slow response can never resurrect a locally deleted
@@ -2524,6 +2523,31 @@ export function ProjectView({
   const streamingConversationIdRef = useRef<string | null>(null);
   const [queuedChatSends, setQueuedChatSends] = useState<QueuedChatSend[]>([]);
   const queuedChatSendsRef = useRef<QueuedChatSend[]>([]);
+  // A busy "Send now" first stops the live run, then the drain effect sends
+  // exactly the queue item the user selected. Keep that one-click intent
+  // distinct from the durable funding pause on every other queued item.
+  const explicitlyStartedQueuedSendIdRef = useRef<string | null>(null);
+  /**
+   * Queued sends whose drain has been handed to `handleSend` but not yet
+   * settled. Invariant: a queue card is visible only while its send is still
+   * waiting — once the drain starts, the turn is already painted in the
+   * transcript (OPEND-2614), so the card leaves with it instead of lingering
+   * through the AMR balance preflight (OPEND-3221). The item itself stays in
+   * the durable queue until `handleSend` settles: a refused drain relies on it
+   * being there (`queueDrain` never re-queues), and clearing the id then shows
+   * the card again.
+   */
+  const [startingQueuedChatSendIds, setStartingQueuedChatSendIds] =
+    useState<ReadonlySet<string>>(() => new Set());
+  const setQueuedChatSendStarting = useCallback((id: string, starting: boolean) => {
+    setStartingQueuedChatSendIds((current) => {
+      if (current.has(id) === starting) return current;
+      const next = new Set(current);
+      if (starting) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
   // A BYOK preflight can reject a send before any Run exists. Keep that
   // submission's task identity in memory so fixing Settings and resubmitting
   // the same draft completes the original task funnel instead of fabricating a
@@ -2785,6 +2809,8 @@ export function ProjectView({
   const currentConversationBusy = currentConversationReadPending
     || currentConversationStreaming
     || currentConversationHasActiveRun;
+  const currentConversationBusyRef = useRef(currentConversationBusy);
+  currentConversationBusyRef.current = currentConversationBusy;
   const currentConversationAwaitingActiveRunAttach =
     currentConversationHasActiveRun
     && !currentConversationStreaming
@@ -2822,7 +2848,9 @@ export function ProjectView({
 
   const currentConversationQueuedItems = activeConversationId
     ? queuedChatSends
-        .filter((item) => item.conversationId === activeConversationId)
+        .filter((item) =>
+          item.conversationId === activeConversationId
+          && !startingQueuedChatSendIds.has(item.id))
         .map((item) => {
           const queuedItem = {
             id: item.id,
@@ -3024,6 +3052,9 @@ export function ProjectView({
   // conversation switches.
   useEffect(() => {
     if (!activeConversationId) {
+      ++previewCommentsReadSeq.current;
+      previewCommentsIdentityRef.current = '';
+      setPreviewCommentsState('loading');
       setMessages([]);
       setMessagesInitialized(false);
       commitPreviewComments([]);
@@ -3098,7 +3129,15 @@ export function ProjectView({
       setArtifact(null);
       savedArtifactRef.current = null;
     }
+    const commentIdentity = `${project.id}\u0000${activeConversationId}\u0000${projectRunAuthorityKey}`;
+    if (previewCommentsIdentityRef.current !== commentIdentity) {
+      previewCommentsIdentityRef.current = commentIdentity;
+      commitPreviewComments([]);
+      setAttachedComments([]);
+    }
+    setPreviewCommentsState('loading');
     const commentsGeneration = previewCommentsGenerationRef.current;
+    const commentsReadSeq = ++previewCommentsReadSeq.current;
     if (!reloadingCurrentConversation && !preservingLiveConversation && !preservingLoadedTranscript) {
       messagesConversationIdRef.current = null;
       messagesAuthorityKeyRef.current = null;
@@ -3115,11 +3154,11 @@ export function ProjectView({
           project.id,
           activeConversationId,
         ).then((comments) => {
-          if (cancelled || previewCommentsGenerationRef.current !== commentsGeneration) return;
-          setPreviewComments((current) => reconcilePreviewComments(current, comments));
+          if (cancelled || previewCommentsReadSeq.current !== commentsReadSeq) return;
+          setPreviewCommentsState('success');
+          if (previewCommentsGenerationRef.current === commentsGeneration) setPreviewComments((current) => reconcilePreviewComments(current, comments));
         }).catch(() => {
-          if (cancelled || previewCommentsGenerationRef.current !== commentsGeneration) return;
-          if (!reloadingCurrentConversation) setPreviewComments([]);
+          if (!cancelled && previewCommentsReadSeq.current === commentsReadSeq) setPreviewCommentsState('error');
         });
         const list = await loadConversationTranscript(
           project.id,
@@ -3265,6 +3304,32 @@ export function ProjectView({
     reattachTextBuffersRef.current.clear();
   }, []);
 
+  /*
+   * P0-24 "已查看": the user has seen this project's latest result whenever this
+   * view is showing it with the window in front — including a run that ends
+   * while they are here in another conversation (product answer P2). Keep the
+   * project's run status live while it is open, and spend its new-result
+   * notice (the sidebar's blue dot) as soon as one appears or the window comes
+   * back to the front. Opening the project from anywhere — the rail, search,
+   * the project list, a notification or a link — goes through here.
+   */
+  const viewedProjectRunSummaries = useProjectRunSummaries([project.id]);
+  const viewedProjectRunSummary = viewedProjectRunSummaries.get(project.id);
+  useEffect(() => {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return undefined;
+    const spendViewedNotice = () => {
+      if (document.hidden || !document.hasFocus()) return;
+      acknowledgeProjectCompletion(project.id);
+    };
+    spendViewedNotice();
+    window.addEventListener('focus', spendViewedNotice);
+    document.addEventListener('visibilitychange', spendViewedNotice);
+    return () => {
+      window.removeEventListener('focus', spendViewedNotice);
+      document.removeEventListener('visibilitychange', spendViewedNotice);
+    };
+  }, [project.id, viewedProjectRunSummary]);
+
   const notifyCompletedRun = useCallback((last: ChatMessage) => {
     // Round 7 (mrcfps @ useDesignMdState.ts:131): a chat turn just
     // settled — conversation updatedAt almost certainly moved, so
@@ -3272,43 +3337,54 @@ export function ProjectView({
     // file mutations or live artifacts.
     setDesignMdRefreshKey((n) => n + 1);
 
-    const status =
-      last.resultDeliveryState === 'no_result' ||
-      last.resultDeliveryState === 'delivery_failed'
-        ? 'failed'
-        : last.runStatus;
+    // P0-24: the run record alone names the outcome. A delivery outcome
+    // (`no_result` / `delivery_failed`) no longer turns a finished run into a
+    // failure notification; a stopped run sends nothing.
+    const status = last.runStatus;
     if (status !== 'succeeded' && status !== 'failed') return;
 
-    const cfg = config.notifications ?? DEFAULT_NOTIFICATIONS;
-    if (cfg.soundEnabled) {
-      playSound(status === 'succeeded' ? cfg.successSoundId : cfg.failureSoundId);
-    }
+    // P0-24 N10: on the desktop every turn is announced by the app-root feed
+    // (`useGlobalRunNotices`), wherever the user is; announcing here too would
+    // notify twice. The web has no global feed and keeps this one.
+    if (isOpenDesignHostAvailable()) return;
 
-    if (cfg.desktopEnabled) {
-      // System notifications are useful only when the task is not already in
-      // front of the user. Sounds remain independent feedback for both states.
-      const isHidden = typeof document !== 'undefined' && document.hidden;
-      const isFocused = typeof document === 'undefined' ? true : document.hasFocus();
-      if (isHidden || !isFocused) {
-        const title = status === 'succeeded'
-          ? t('notify.successTitle')
-          : t('notify.failureTitle');
-        const fallbackBody = status === 'succeeded'
-          ? t('notify.successBody')
-          : t('notify.failureBody');
-        const trimmed = (last.content ?? '').trim();
-        const body = trimmed ? trimmed.slice(0, 80) : fallbackBody;
-        void showCompletionNotification({
-          status,
-          title,
-          body,
-          onClick: () => {
-            if (typeof window !== 'undefined') window.focus();
-          },
-        });
+    // Feedback is only for a turn the user is not watching: this view shows the
+    // active conversation, so "not viewing" is the window being hidden or
+    // unfocused.
+    const isHidden = typeof document !== 'undefined' && document.hidden;
+    const isFocused = typeof document === 'undefined' ? true : document.hasFocus();
+    if (!isHidden && isFocused) return;
+
+    // The sound belongs to the notification (P0-24 rule ④, product answer Q2):
+    // "桌面通知" decides whether one is shown, "提示音" whether it makes a sound.
+    // Desktop notifications off, permission denied or the show failing all
+    // mean no notification, and so no sound either.
+    const cfg = config.notifications ?? DEFAULT_NOTIFICATIONS;
+    if (!cfg.desktopEnabled) return;
+
+    // Fixed copy, never the reply text: a reply can open with markup such as
+    // `<question-form …>` or `<od-done …/>`, which must not reach the body.
+    const asksUser =
+      status === 'succeeded'
+      && (turnEndedByAskingUser(last.content) || eventsEndedByAskingUser(last.events));
+    const body = status === 'failed'
+      ? t('notify.runFailedBody')
+      : asksUser
+        ? t('notify.needsReplyBody')
+        : t('notify.newReplyBody');
+    void showCompletionNotification({
+      status,
+      title: project.name,
+      body,
+      onClick: () => {
+        if (typeof window !== 'undefined') window.focus();
+      },
+    }).then((result) => {
+      if (result === 'shown' && cfg.soundEnabled) {
+        playSound(status === 'succeeded' ? cfg.successSoundId : cfg.failureSoundId);
       }
-    }
-  }, [config.notifications, t]);
+    });
+  }, [config.notifications, project.name, t]);
 
   // Fire completion feedback from assistant run-status transitions rather than
   // from the local SSE listener state. A run can finish while its conversation
@@ -3325,6 +3401,9 @@ export function ProjectView({
       }
       if (message.runStatus !== 'succeeded' && message.runStatus !== 'failed') continue;
       if (message.runStatus === 'succeeded' && designDeliveryVerificationPending(message)) continue;
+      // P0-24 N15: the browser losing the stream is not the run's outcome. Do
+      // not notify, and do not mark it notified: the real result still will.
+      if (runOutcomeAwaitsRunRecord(message)) continue;
       if (!keys.some((key) => activeCompletionNotificationRunsRef.current.has(key))) continue;
       if (keys.some((key) => completedNotificationRunsRef.current.has(key))) continue;
       for (const key of keys) completedNotificationRunsRef.current.add(key);
@@ -4312,8 +4391,10 @@ export function ProjectView({
         const next = curr.map((m) => {
           if (m.id !== messageId) return m;
           const updated = updater(m);
-          saved = updated;
-          return updated;
+          const taskDisplay = newerTaskDisplay(m.taskDisplay, updated.taskDisplay);
+          const merged = taskDisplay === updated.taskDisplay ? updated : {...updated, taskDisplay};
+          saved = merged;
+          return merged;
         });
         // Same phantom guard as persistMessage: skip writes for a daemon
         // assistant row that is still in-flight (active runStatus, no runId).
@@ -4969,21 +5050,32 @@ export function ProjectView({
   // do not suppress it.
   const [runPreviewCommentsRead] = useState(createSingleflightRunner);
   const readPreviewCommentsOnce = useCallback(async () => {
-    if (!activeConversationId) return;
+    // A queued trailing read can outlive the project/conversation that queued it.
+    if (!activeConversationId || currentCommentsIdentityRef.current !== currentCommentsIdentity) return;
     const commentsGeneration = ++previewCommentsGenerationRef.current;
-    const next = await fetchPreviewComments(project.id, activeConversationId);
-    if (previewCommentsGenerationRef.current !== commentsGeneration) return;
-    // Unchanged comments keep their objects and an unchanged list keeps its
-    // array, so a refresh that found nothing new does not re-render.
-    setPreviewComments((current) => reconcilePreviewComments(current, next));
-    setAttachedComments((current) => reconcileAttachedComments(current, next));
-  }, [project.id, activeConversationId]);
+    const commentsReadSeq = ++previewCommentsReadSeq.current;
+    // Poll/SSE refreshes keep the committed list visible and eligible for
+    // acknowledgement. Only an unconfirmed identity needs the loading gate.
+    setPreviewCommentsState(current => current === 'success' ? current : 'loading');
+    try {
+      const next = await fetchPreviewComments(project.id, activeConversationId);
+      if (currentCommentsIdentityRef.current !== currentCommentsIdentity
+        || previewCommentsReadSeq.current !== commentsReadSeq) return;
+      setPreviewCommentsState('success');
+      if (previewCommentsGenerationRef.current !== commentsGeneration) return;
+      setPreviewComments((current) => reconcilePreviewComments(current, next));
+      setAttachedComments((current) => reconcileAttachedComments(current, next));
+    } catch {
+      if (currentCommentsIdentityRef.current === currentCommentsIdentity
+        && previewCommentsReadSeq.current === commentsReadSeq) setPreviewCommentsState('error');
+    }
+  }, [project.id, activeConversationId, currentCommentsIdentity]);
   const refreshPreviewComments = useCallback(
     () => runPreviewCommentsRead(
-      `${project.id}\u0000${activeConversationId ?? ''}`,
+      currentCommentsIdentity,
       readPreviewCommentsOnce,
     ),
-    [runPreviewCommentsRead, project.id, activeConversationId, readPreviewCommentsOnce],
+    [runPreviewCommentsRead, currentCommentsIdentity, readPreviewCommentsOnce],
   );
 
   // Expose the latest refresher to the SSE handler (defined earlier) so a
@@ -5631,13 +5723,16 @@ export function ProjectView({
         // survive, but still apply the daemon's authoritative `resumable` flag so
         // ChatPane's Continue affordance reflects the daemon's view after a reload.
         if (spuriouslyFailedPending && status.status === 'failed') {
-          if (typeof status.resumable !== 'undefined') {
-            updateMessageById(
-              message.id,
-              (prev) => ({ ...prev, resumable: status.resumable }),
-              true,
-            );
-          }
+          // The record confirms the failure, so the disconnect marker (if any)
+          // no longer stands for "outcome unknown" (N15 / Q7).
+          updateMessageById(
+            message.id,
+            (prev) => ({
+              ...settleTurnFromRunRecord(prev),
+              ...(typeof status.resumable !== 'undefined' ? { resumable: status.resumable } : {}),
+            }),
+            true,
+          );
           // Clear stale retry count — this run is authoritatively done.
           transientFailedRetriesRef.current.delete(runId);
           genericDisconnectRetriesRef.current.delete(runId);
@@ -5853,9 +5948,8 @@ export function ProjectView({
               true,
               { telemetryFinalized: true },
             );
-            if (deliveryOutcome === 'no_result' || deliveryOutcome === 'delivery_failed') {
-              setError(artifactPersistenceError ?? DESIGN_RESULT_MISSING_DETAIL);
-            }
+            // P0-24 (PRD C7/C8, Q3): no pane-level failure card for a run that
+            // ended normally without a deliverable; the message keeps the outcome.
             await auditDesignSystemWorkspaceAfterRun(message.id);
             // Clear stale retry count for successfully recovered run.
             transientFailedRetriesRef.current.delete(runId);
@@ -6128,6 +6222,7 @@ export function ProjectView({
                   ? {
                     strategyTaskExecutionId: strategyTask.taskExecutionId,
                     strategyTaskRunIndex: strategyTaskRunIndex(strategyTask, nextRunId),
+                    ...(strategySettledMessageFields(strategyTask) ?? {}),
                   }
                   : {}),
               }),
@@ -6388,9 +6483,8 @@ export function ProjectView({
                   true,
                   { telemetryFinalized: true },
                 );
-                if (deliveryOutcome === 'no_result' || deliveryOutcome === 'delivery_failed') {
-                  setError(artifactPersistenceError ?? DESIGN_RESULT_MISSING_DETAIL);
-                }
+                // P0-24 (PRD C7/C8, Q3): no pane-level failure card for a run that
+                // ended normally without a deliverable; the message keeps the outcome.
                 await auditDesignSystemWorkspaceAfterRun(message.id);
               })();
               onProjectsRefresh();
@@ -6633,7 +6727,7 @@ export function ProjectView({
                     updateMessageById(
                       message.id,
                       (prev) => ({
-                        ...prev,
+                        ...settleTurnFromRunRecord(prev),
                         runStatus: latestRunStatus.status,
                         endedAt: latestRunStatus.updatedAt,
                         ...(latestRunStatus.resumable !== undefined
@@ -7111,8 +7205,13 @@ export function ProjectView({
     }
     const next = [...queuedChatSendsRef.current, item];
     commitQueuedChatSends(next);
+    if (item.meta?.systemSubmission) return true;
+    void registerQueuedSubmission(project.id, { id: item.id, conversationId: item.conversationId,
+      submittedAt: item.createdAt }).then((receipt) => {
+      if (receipt) onTouchProject(receipt.acceptedAt);
+    });
     return true;
-  }, [commitQueuedChatSends]);
+  }, [commitQueuedChatSends, onTouchProject, project.id]);
 
   const removeQueuedChatSend = useCallback((id: string) => {
     const next = queuedChatSendsRef.current.filter((item) => item.id !== id);
@@ -7378,6 +7477,22 @@ export function ProjectView({
         return meta?.acceptDurableQueue === true;
       }
       const runConversationId = activeConversationId;
+      const selectedAgent =
+        config.mode === 'daemon' && config.agentId
+          ? agentsById.get(config.agentId)
+          : null;
+      const selectedAgentChoice =
+        config.mode === 'daemon' && config.agentId
+          ? config.agentModels?.[config.agentId]
+          : undefined;
+      const effectiveSelectedAgentChoice = effectiveAgentModelChoice(
+        selectedAgent,
+        selectedAgentChoice,
+      );
+      const assistantAgentId =
+        config.mode === 'daemon'
+          ? config.agentId ?? undefined
+          : apiProtocolAgentId(config.apiProtocol);
       // This is the accepted retry boundary: all synchronous refusal paths are
       // above it. A later preflight/POST failure supplies its own current surface.
       if (retryTarget && meta?.retryOfAssistantId) {
@@ -7424,22 +7539,6 @@ export function ProjectView({
           chatAttachmentsFromPreviewCommentImages(attachment.imageAttachments),
         ),
       );
-      const selectedAgent =
-        config.mode === 'daemon' && config.agentId
-          ? agentsById.get(config.agentId)
-          : null;
-      const selectedAgentChoice =
-        config.mode === 'daemon' && config.agentId
-          ? config.agentModels?.[config.agentId]
-          : undefined;
-      const effectiveSelectedAgentChoice = effectiveAgentModelChoice(
-        selectedAgent,
-        selectedAgentChoice,
-      );
-      const assistantAgentId =
-        config.mode === 'daemon'
-          ? config.agentId ?? undefined
-          : apiProtocolAgentId(config.apiProtocol);
       const assistantAgentName =
         config.mode === 'daemon'
           ? agentModelDisplayName(
@@ -7563,7 +7662,9 @@ export function ProjectView({
       updateConversationLatestRun(config.mode === 'daemon' ? 'running' : 'queued');
       setArtifact(null);
       savedArtifactRef.current = null;
-      onTouchProject();
+      // Queued sends already recorded their send time when they entered the
+      // queue. A manual retry is a new user action; replaying a queue is not.
+      // Sorting advances only from a server acceptance receipt.
       if (!retryTarget) {
         // A send whose id was decided from its occupancy (an inline question
         // form's answer) claims that row once: the daemon keeps whichever
@@ -7734,6 +7835,13 @@ export function ProjectView({
       let parsedArtifact: Artifact | null = null;
       let liveHtml = '';
       let streamedText = '';
+      let observedModelWork = false;
+      let homeRejectionSourceRetired = false;
+      const retireHomeRejectionSource = () => {
+        if (homeRejectionSourceRetired || !meta?.initialHomeSend) return;
+        homeRejectionSourceRetired = true;
+        onInitialHomeRequestProgress?.(project.id, clientRequestId);
+      };
 
       const updateAssistant = (updater: (prev: ChatMessage) => ChatMessage) => {
         setMessages((curr) => {
@@ -8025,6 +8133,7 @@ export function ProjectView({
       cancelRef.current = cancelController;
       const handlers = {
         onDelta: (delta: string) => {
+          if (delta.trim()) { observedModelWork = true; retireHomeRejectionSource(); }
           // See reattach-path comment above for rationale.  PR #4651 round 9.
           if (currentRunId) {
             transientFailedRetriesRef.current.delete(currentRunId);
@@ -8035,6 +8144,7 @@ export function ProjectView({
           textBuffer.appendContent(delta);
         },
         onAgentEvent: (ev: AgentEvent) => {
+          if (ev.kind === 'text' || ev.kind === 'thinking' || ev.kind === 'tool_use' || ev.kind === 'tool_result') { observedModelWork = true; retireHomeRejectionSource(); }
           if (currentRunId) {
             transientFailedRetriesRef.current.delete(currentRunId);
             genericDisconnectRetriesRef.current.delete(currentRunId);
@@ -8096,6 +8206,7 @@ export function ProjectView({
           });
         },
         onDone: (fullText = '') => {
+          retireHomeRejectionSource();
           liveFocusClosed = true;
           // The daemon delivers onDone even for a canceled run, so a run
           // superseded by a "send now" interrupt can still land here and must
@@ -8134,17 +8245,18 @@ export function ProjectView({
             !liveHtml.trim();
           if (emptyApiResponse) {
             const endedAt = Date.now();
-            const diagnostic = t('assistant.emptyResponseMessage');
+            // P0-24 Q6 (same as P7): a model stream that ends with no reply is a
+            // normal end, not a failure. The turn keeps the `empty_response`
+            // marker other logic reads, without a 运行失败 body text.
             updateMessageById(
               assistantId,
               (prev) => ({
                 ...prev,
                 endedAt,
-                runStatus: 'failed',
+                runStatus: 'succeeded',
                 events: [
                   ...(prev.events ?? []),
                   { kind: 'status', label: 'empty_response', detail: config.model },
-                  { kind: 'text', text: diagnostic },
                 ],
               }),
               true,
@@ -8156,7 +8268,7 @@ export function ProjectView({
               controller,
               cancelController,
             );
-            if (ownsCurrentRun) updateConversationLatestRun('failed', endedAt);
+            if (ownsCurrentRun) updateConversationLatestRun('succeeded', endedAt);
             void refreshProjectFiles().catch(() => {
               // Retain the last accepted file list while the daemon recovers.
             });
@@ -8385,7 +8497,9 @@ export function ProjectView({
                 return updated;
               });
               if (deliveryOutcome === 'no_result' || deliveryOutcome === 'delivery_failed') {
-                setError(artifactPersistenceError ?? DESIGN_RESULT_MISSING_DETAIL);
+                // P0-24 (PRD C7/C8, Q3): a run that ended normally but delivered no
+                // file is not a failure, so no pane-level failure card. The outcome stays
+                // recorded on the message (resultDeliveryState), as Q3 accepted.
                 releaseCommentsAfterUnsuccessfulRun(runSavedComments);
               }
               await auditDesignSystemWorkspaceAfterRun(assistantId);
@@ -8397,6 +8511,7 @@ export function ProjectView({
           onProjectsRefresh();
         },
         onError: async (err: Error) => {
+          const canRestoreRejectedInput = !liveFocusClosed;
           liveFocusClosed = true;
           // Disconnect-time stamp, used as-is for non-generic-disconnect
           // failures. When the generic-disconnect retry-cap probe below
@@ -8608,7 +8723,7 @@ export function ProjectView({
                   if (runMayFinalize) {
                     if (latestRunStatus.status === 'canceled') setError(null);
                     updateAssistant((prev) => ({
-                      ...prev,
+                      ...settleTurnFromRunRecord(prev),
                       endedAt: latestRunStatus.updatedAt,
                       runStatus: latestRunStatus.status,
                       ...(latestRunStatus.resumable !== undefined
@@ -8791,6 +8906,11 @@ export function ProjectView({
           userMessageId: userMsg.id,
           assistantMessageId: assistantId,
           clientRequestId,
+          submission: { id: meta?.queuedSubmissionId ?? clientRequestId,
+            source: meta?.systemSubmission ? 'system' : meta?.queueDrain ? 'queue' : 'user' },
+          onUserSubmissionAccepted: (receipt) => {
+            onTouchProject(receipt.acceptedAt);
+          },
           skillId: project.skillId ?? null,
           skillIds: Array.isArray(meta?.skillIds) ? meta.skillIds : [],
           context: runContext,
@@ -8865,6 +8985,7 @@ export function ProjectView({
               ...(strategyTaskExecutionId ? {
                 strategyTaskExecutionId,
                 strategyTaskRunIndex: strategyTaskRunIndex(strategyTask, runId),
+                ...(strategySettledMessageFields(strategyTask) ?? {}),
               } : {}),
               ...(isTaskSuccessor
                 ? {
@@ -8889,6 +9010,7 @@ export function ProjectView({
               ...(strategyTaskExecutionId ? {
                 strategyTaskExecutionId,
                 strategyTaskRunIndex: strategyTaskRunIndex(strategyTask, runId),
+                ...(strategySettledMessageFields(strategyTask) ?? {}),
               } : {}),
               ...(isTaskSuccessor
                 ? {
@@ -9037,6 +9159,11 @@ export function ProjectView({
           userMessageId: userMsg.id,
           assistantMessageId: assistantId,
           clientRequestId,
+          submission: { id: meta?.queuedSubmissionId ?? clientRequestId,
+            source: meta?.systemSubmission ? 'system' : meta?.queueDrain ? 'queue' : 'user' },
+          onUserSubmissionAccepted: (receipt) => {
+            onTouchProject(receipt.acceptedAt);
+          },
           skillId: project.skillId ?? null,
           skillIds: Array.isArray(meta?.skillIds) ? meta.skillIds : [],
           context: runContext,
@@ -9084,6 +9211,13 @@ export function ProjectView({
             recoveryActionType: taskAnalytics.recoveryActionType,
             recoveryActionInstanceId: taskAnalytics.recoveryActionInstanceId,
           },
+          onStrategyTaskSettled: (strategyTask) => {
+            const settledFields = strategySettledMessageFields(strategyTask);
+            if (!settledFields) return;
+            latestAssistantMsg = {...latestAssistantMsg, ...settledFields,
+              taskDisplay:newerTaskDisplay(latestAssistantMsg.taskDisplay,strategyTask.display)};
+            updateMessageById(assistantId, prev => ({...prev,...settledFields}), true);
+          },
           onRunCreated: (runId, strategyTask) => {
             observeMemoryRun(project.id, runConversationId, assistantId, runId);
             manualFileWriteRegistration.bindRun(runId);
@@ -9107,6 +9241,7 @@ export function ProjectView({
               ...(strategyTaskExecutionId ? {
                 strategyTaskExecutionId,
                 strategyTaskRunIndex: strategyTaskRunIndex(strategyTask, runId),
+                ...(strategySettledMessageFields(strategyTask) ?? {}),
               } : {}),
               ...(isTaskSuccessor
                 ? {
@@ -9127,6 +9262,7 @@ export function ProjectView({
               ...(strategyTaskExecutionId ? {
                 strategyTaskExecutionId,
                 strategyTaskRunIndex: strategyTaskRunIndex(strategyTask, runId),
+                ...(strategySettledMessageFields(strategyTask) ?? {}),
               } : {}),
               ...(isTaskSuccessor
                 ? {
@@ -9412,11 +9548,20 @@ export function ProjectView({
   const startQueuedChatSend = useCallback(async (item: QueuedChatSend): Promise<boolean> => {
     let started = false;
     try {
+      if (!item.meta?.systemSubmission) {
+        const receipt = await registerQueuedSubmission(project.id, { id: item.id,
+          conversationId: item.conversationId, submittedAt: item.createdAt });
+        if (!mountedRef.current) return false;
+        if (!receipt) {
+          releaseCommentsOfSendWithoutRun(item);
+          return false;
+        }
+      }
       started = await handleSend(
         item.prompt,
         item.attachments,
         item.commentAttachments,
-        { ...(item.meta ?? {}), queueDrain: true },
+        { ...(item.meta ?? {}), queueDrain: true, queuedSubmissionId: item.id },
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -9424,11 +9569,16 @@ export function ProjectView({
     if (!started) releaseCommentsOfSendWithoutRun(item);
     return started;
   }, [handleSend, releaseCommentsOfSendWithoutRun]);
+  // An awaited preflight may outlive the active run. Dispatch through the
+  // current render so handleSend sees its settled busy state, after the
+  // explicit item's scope/account/model guards have been checked again.
+  const startQueuedChatSendRef = useRef(startQueuedChatSend);
+  startQueuedChatSendRef.current = startQueuedChatSend;
 
   const sendQueuedChatSendNow = useCallback((id: string) => {
     const item = queuedChatSendsRef.current.find((candidate) => candidate.id === id);
     if (!item) return;
-    if (currentConversationBusy) {
+    const stopAndPrioritize = () => {
       // "Send now" while the agent is still working: the user has explicitly
       // chosen this turn over the in-flight one, so interrupt the running run
       // and move this item to the front. Stopping flips the conversation out
@@ -9446,16 +9596,25 @@ export function ProjectView({
         supersededRunsRef.current.add(controller);
       }
       // handleStop releases the interrupted turn's comments back to 'open'.
+      explicitlyStartedQueuedSendIdRef.current = id;
       prioritizeQueuedChatSend(id);
       handleStop();
+    };
+    if (currentConversationBusy) {
+      stopAndPrioritize();
       return;
     }
+    setQueuedChatSendStarting(id, true);
     void (async () => {
-      armSlideNavForQueuedSend(item);
-      const started = await startQueuedChatSend(item);
-      if (started) removeQueuedChatSend(id);
+      try {
+        armSlideNavForQueuedSend(item);
+        const started = await startQueuedChatSend(item);
+        if (started) removeQueuedChatSend(id);
+      } finally {
+        setQueuedChatSendStarting(id, false);
+      }
     })();
-  }, [armSlideNavForQueuedSend, currentConversationBusy, handleStop, prioritizeQueuedChatSend, removeQueuedChatSend, startQueuedChatSend]);
+  }, [armSlideNavForQueuedSend, currentConversationBusy, handleStop, prioritizeQueuedChatSend, removeQueuedChatSend, setQueuedChatSendStarting, startQueuedChatSend]);
 
   /*
    * B11 「引导对话」 —— 队列行领头那颗按钮走的就是上面的
@@ -9496,10 +9655,19 @@ export function ProjectView({
       (item) => item.conversationId === activeConversationId,
     );
     if (!next) return;
+    const explicitlyStarted = explicitlyStartedQueuedSendIdRef.current === next.id;
+    // Funding refusal belongs to this queued input, not the currently
+    // selected agent. Switching away from AMR must not turn the old input
+    // into an automatic run with another provider.
     startingQueuedChatSendIdRef.current = next.id;
+    setQueuedChatSendStarting(next.id, true);
     armSlideNavForQueuedSend(next);
     void (async () => {
       const started = await startQueuedChatSend(next);
+      if (explicitlyStartedQueuedSendIdRef.current === next.id) {
+        explicitlyStartedQueuedSendIdRef.current = null;
+      }
+      if (!started) setQueuedChatSendStarting(next.id, false);
       if (!started) {
         if (startingQueuedChatSendIdRef.current === next.id) {
           startingQueuedChatSendIdRef.current = null;
@@ -9507,6 +9675,7 @@ export function ProjectView({
         return;
       }
       removeQueuedChatSend(next.id);
+      setQueuedChatSendStarting(next.id, false);
       scheduleProjectTimeout(() => {
         if (startingQueuedChatSendIdRef.current !== next.id) return;
         startingQueuedChatSendIdRef.current = null;
@@ -9524,6 +9693,7 @@ export function ProjectView({
     startQueuedChatSend,
     removeQueuedChatSend,
     scheduleProjectTimeout,
+    setQueuedChatSendStarting,
   ]);
 
   /*
@@ -9669,7 +9839,7 @@ export function ProjectView({
     const repairText = autoAuditRepairSeed.value.trim();
     setAutoAuditRepairSeed(null);
     if (!repairText) return;
-    void handleSend(repairText, [], []);
+    void handleSend(repairText, [], [], { systemSubmission: true });
   }, [
     activeConversationId,
     autoAuditRepairSeed,
@@ -12003,6 +12173,7 @@ export function ProjectView({
     void handleSend(seed, attachments, [], {
         ...(context ? { context } : {}),
         ...homeAutoSendIdentity(project.id),
+        initialHomeSend: true,
         acceptDurableQueue: true,
       })
       .then((accepted) => {
@@ -12240,7 +12411,7 @@ export function ProjectView({
               projectResolvedDir={projectDetail.resolvedDir}
               skills={skills}
               onEnsureProject={handleEnsureProject}
-              previewComments={previewComments}
+              previewComments={visiblePreviewComments}
               attachedComments={attachedComments}
               onAttachComment={attachPreviewComment}
               onDetachComment={detachPreviewComment}
@@ -12534,7 +12705,9 @@ export function ProjectView({
           designSystemActivityEvents={designSystemActivityEvents}
           tabsState={openTabsState}
           onTabsStateChange={persistTabsState}
-          previewComments={previewComments}
+          previewComments={visiblePreviewComments}
+          previewCommentsState={visiblePreviewCommentsState}
+          onRetryPreviewComments={refreshPreviewComments}
           onSavePreviewComment={savePreviewComment}
           onRemovePreviewComment={removePreviewComment}
           onReorderPreviewComment={reorderPreviewComment}
@@ -12569,6 +12742,7 @@ export function ProjectView({
           commentPortalId={commentInspectorPortalId}
           onCommentModeChange={setCommentInspectorActive}
           chatConfig={config}
+          onTouchProject={onTouchProject}
           chatAgentsById={agentsById}
           handoffAgents={agents}
           handoffArtifactId={headerArtifact.artifact_id}
@@ -13111,6 +13285,7 @@ function stripQueueOnlyFromMeta(
     // 回放走,否则一条排过队的输入框消息在回放时被拦下,会去撤一个早就清空的
     // 草稿,而队列里那条反而被扔掉。见 `composerOwnedDraft` 的说明。
     composerOwnedDraft: _composerOwnedDraft,
+    initialHomeSend: _initialHomeSend,
     ...rest
   } = meta as ProjectChatSendMeta;
   return Object.keys(rest).length > 0 ? rest : undefined;

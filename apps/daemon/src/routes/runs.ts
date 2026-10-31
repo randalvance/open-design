@@ -35,6 +35,7 @@ import type { AnalyticsContext } from '../analytics.js';
 import { spawnEnvForAgent } from '../agents.js';
 import { agentCliEnvForAgent, readAppConfig } from '../app-config.js';
 import { validateLocalDaemonRequest } from '../http/local-daemon-request.js';
+import type { RunNoticeLog } from '../runtimes/run-notices.js';
 import {
   codexSessionIdFromRunEvents,
   readCodexRolloutFirstCall,
@@ -45,8 +46,11 @@ import {
   getFirstProjectConversation,
   getConversation,
   getProject,
+  listConversationsAwaitingInput,
   listProjectsAwaitingInput,
   normalizeConversationSessionMode,
+  acceptProjectUserSubmission,
+  getProjectUserSubmission,
   updateProject,
   upsertMessage,
 } from '../db.js';
@@ -662,6 +666,8 @@ export interface RegisterRunRoutesDeps {
    * instance around their injected run registry.
    */
   internalRuns?: InternalRunCreationService<RunCreateMeta, ChatRun>;
+  /** Global run notices (P0-24 N10); omitted in fixtures that do not exercise them. */
+  runNotices?: RunNoticeLog;
 }
 
 const AGUI_NATIVE_EVENT_KINDS: ReadonlySet<OdNativeEvent['kind']> = new Set([
@@ -948,7 +954,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
     let projectedSnapshotId: string | undefined;
     try {
       const strategyTask = strategyTaskForRun(run, true);
-      const projection = strategyTask ? projectStrategyTask(strategyTask, run.id) : null;
+      const projection = strategyTask ? projectStrategyTask(strategyTask, run.id, db) : null;
       if (projection) run.strategyTask = projection;
       if (strategyTask && isLegacyHydratedRunWithoutAppliedSnapshot(run)) {
         projectedSnapshotId = strategyTask.snapshotId;
@@ -1076,6 +1082,11 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
       return sendApiError(res, 503, 'UPSTREAM_UNAVAILABLE', 'daemon is shutting down');
     }
     const requestBody = toJsonRecord(req.body);
+    const submission = requestBody.submission as { id?: unknown; source?: unknown } | undefined;
+    if (submission !== undefined && (!submission || typeof submission.id !== 'string'
+      || !isSafeId(submission.id) || !['user', 'system', 'queue'].includes(String(submission.source)))) {
+      return sendApiError(res, 400, 'BAD_REQUEST', 'invalid submission');
+    }
     const requestAnalyticsContext = readAnalyticsContext(req);
     const mediaExecution = parseMediaExecutionPolicyInput(requestBody.mediaExecution);
     if (!mediaExecution.ok) {
@@ -1112,6 +1123,21 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
       ) {
         return sendApiError(res, 404, 'CONVERSATION_NOT_FOUND', 'conversation not found for project');
       }
+    }
+    const previousSubmission = submission ? getProjectUserSubmission(db, submission.id as string) : undefined;
+    // Resolve ownership before plugin resolution, which can persist bindings.
+    // Project-only retries use the same default-conversation rule as the run.
+    const submissionConversationId = typeof requestBody.conversationId === 'string' && requestBody.conversationId
+      ? requestBody.conversationId
+      : !stream && typeof requestBody.projectId === 'string' && requestBody.projectId
+        ? getFirstProjectConversation(db, requestBody.projectId)?.id
+        : undefined;
+    if (previousSubmission && (previousSubmission.projectId !== requestBody.projectId
+      || previousSubmission.conversationId !== submissionConversationId)) {
+      return sendApiError(res, 409, 'IDEMPOTENCY_CONFLICT', 'submission belongs to another conversation');
+    }
+    if (submission?.source === 'queue' && !previousSubmission) {
+      return sendApiError(res, 409, 'BAD_REQUEST', 'queued submission must be registered before execution');
     }
     // Keep enrichment's specific recovery response ahead of generic task handoff.
     // Same-request retries still reach the idempotent claim below.
@@ -1717,6 +1743,11 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
         return sendApiError(res, 404, 'CONVERSATION_NOT_FOUND', 'conversation not found for project');
       }
     }
+    // Compare against the actual binding, including the project-only fallback.
+    // Replaying an accepted request may still omit conversationId on the wire.
+    if (previousSubmission && previousSubmission.conversationId !== meta.conversationId) {
+      return sendApiError(res, 409, 'IDEMPOTENCY_CONFLICT', 'submission belongs to another conversation');
+    }
     // Resolve session mode before omit-pin seed so the user turn stores the
     // same mode the run will use (matches web PUT /messages persistence).
     meta.sessionMode =
@@ -1897,9 +1928,19 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
         };
       }
     }
-    const seedRunUserMessage = () => {
-      if (!runUserSeed) return;
+    const seedRunUserMessage = (candidate: { id: string }) => {
+      const blockingRun = activeRunBlockingDesignSystemEnrichment(design.runs, {
+        conversationId: meta.conversationId, analyticsHints: meta.analyticsHints, excludeRunId: candidate.id,
+      });
+      if (blockingRun) throw new StrategyHandoffError(409, 'DESIGN_SYSTEM_ENRICHMENT_IN_PROGRESS',
+        'a design-system enrichment run is already active for this conversation');
       const now = Date.now();
+      if (submission?.source !== 'system' && typeof meta.projectId === 'string'
+        && typeof meta.conversationId === 'string') {
+        acceptProjectUserSubmission(db, { id: typeof submission?.id === 'string' ? submission.id : clientUserMessageId ?? `run-${candidate.id}`,
+          projectId: meta.projectId, conversationId: meta.conversationId, acceptedAt: now });
+      }
+      if (!runUserSeed) return;
       upsertMessage(db, runUserSeed.conversationId, {
         id: runUserSeed.id,
         role: 'user',
@@ -2160,7 +2201,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
     try {
       preparedRun = internalRuns.prepare({
         meta,
-        ...((runUserSeed || strategyRolloutDecision?.effectiveMode === 'active')
+        ...(((meta.projectId && meta.conversationId) || strategyRolloutDecision?.effectiveMode === 'active')
           ? {
               beforeClaimCommit: (candidate) => {
                 if (previousStrategyTask) {
@@ -2180,7 +2221,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
                   // falls back to mutable request paths.
                   design.runs.persistState(candidate);
                 }
-                seedRunUserMessage();
+                seedRunUserMessage(candidate);
                 if (
                   strategyRolloutDecision?.effectiveMode === 'active'
                   && resolvedSnapshot?.ok
@@ -2248,7 +2289,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
         if (!await fallbackAutomaticBeforeStart(error.preparationCause)) return;
         preparedRun = internalRuns.prepare({
           meta,
-          ...(runUserSeed ? { beforeClaimCommit: () => seedRunUserMessage() } : {}),
+          beforeClaimCommit: (candidate) => seedRunUserMessage(candidate),
         });
       } else {
         if (error instanceof StrategyHandoffError) return sendApiError(res, error.status, error.code, error.message);
@@ -2293,29 +2334,6 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
         'clientRequestId is already associated with a different logical run request',
       );
     }
-    if (preparedRun.kind === 'ready' && preparedRun.creationKind === 'created') {
-      const blockingRun = activeRunBlockingDesignSystemEnrichment(design.runs, {
-        conversationId: meta.conversationId,
-        analyticsHints: meta.analyticsHints,
-        excludeRunId: preparedRun.run.id,
-      });
-      if (blockingRun) {
-        design.runs.drop(preparedRun.run);
-        return sendApiError(
-          res,
-          409,
-          'DESIGN_SYSTEM_ENRICHMENT_IN_PROGRESS',
-          'a design-system enrichment run is already active for this conversation',
-          {
-            details: {
-              kind: 'design_system_enrichment_in_progress',
-              runId: blockingRun.id,
-              conversationId: blockingRun.conversationId ?? '',
-            },
-          },
-        );
-      }
-    }
     const run = preparedRun.run;
     const analyticsAttributionMismatch =
       (preparedRun.kind !== 'ready' || preparedRun.creationKind === 'reused')
@@ -2323,11 +2341,14 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
         run.externalPluginAnalytics,
         meta.analyticsHints,
       );
+    const submissionId = typeof submission?.id === 'string' ? submission.id : clientUserMessageId ?? `run-${run.id}`;
+    const acceptedSubmission = () => submission?.source === 'system'
+      ? undefined : getProjectUserSubmission(db, submissionId);
     if (preparedRun.kind === 'reused') {
       let strategyTask;
       try {
         const task = strategyTaskForRun(run);
-        strategyTask = task ? projectStrategyTask(task, run.id) : null;
+        strategyTask = task ? projectStrategyTask(task, run.id, db) : null;
       } catch (error) {
         if (
           error instanceof InvalidFrozenSkillPackageError
@@ -2346,6 +2367,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
       }
       if (stream) { design.runs.stream(run, req, res); return; }
       return res.status(202).json({
+        userSubmission: acceptedSubmission(),
         runId: run.id,
         conversationId: run.conversationId ?? null,
         assistantMessageId: run.assistantMessageId ?? null,
@@ -2403,7 +2425,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
     let strategyTask;
     try {
       const task = strategyTaskForRun(run);
-      strategyTask = task ? projectStrategyTask(task, run.id) : null;
+      strategyTask = task ? projectStrategyTask(task, run.id, db) : null;
     } catch (error) {
       if (
         !(error instanceof InvalidFrozenSkillPackageError)
@@ -2418,6 +2440,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
       );
       if (stream) { design.runs.stream(run, req, res); return; }
       return res.status(202).json({
+        userSubmission: acceptedSubmission(),
         runId: run.id,
         conversationId: run.conversationId ?? null,
         assistantMessageId: run.assistantMessageId ?? null,
@@ -2428,6 +2451,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
     }
     if (strategyTask) run.strategyTask = strategyTask;
     const body = {
+      userSubmission: acceptedSubmission(),
       runId: run.id,
       conversationId: run.conversationId ?? null,
       assistantMessageId: run.assistantMessageId ?? null,
@@ -2513,6 +2537,29 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
     res.json({ activeRunCount });
   });
 
+  /*
+   * P0-24 推测项 A-06 (N10): the notices the desktop client turns into
+   * system notifications. This fork has no Workspace bindings, so every
+   * project on this machine is local and every notice is visible to the
+   * loopback caller. Notices carry no reply text. The response is loopback-only.
+   */
+  app.get('/api/run-notices', async (req: ApiRequest, res: ApiResponse) => {
+    // Same loopback / DNS-rebinding guard as the active-count probe: the feed
+    // names projects, so a foreign page must not read it through the browser.
+    const local = validateLocalDaemonRequest(req);
+    if (!local.ok) {
+      return sendApiError(res, 403, 'FORBIDDEN', local.message, { details: local.details });
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    const afterRaw = typeof req.query?.after === 'string' ? Number(req.query.after) : 0;
+    const after = Number.isFinite(afterRaw) && afterRaw > 0 ? Math.floor(afterRaw) : 0;
+    if (!ctx.runNotices) {
+      return res.json({ epoch: 'unavailable', latestSeq: 0, notices: [] });
+    }
+    const body = await ctx.runNotices.read(after);
+    res.json(body);
+  });
+
   app.get('/api/runs', async (req: ApiRequest, res: ApiResponse) => {
     const { projectId, conversationId, status } = req.query;
     const runs = design.runs.list({ projectId, conversationId, status });
@@ -2534,9 +2581,21 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
     const awaitingInputProjectIds = visibleProjectIds.size
       ? [...listProjectsAwaitingInput(db)].filter((id) => visibleProjectIds.has(id))
       : [];
+    // Per conversation too: a project shows "needs your reply" only when the
+    // conversation that most recently started a Run is the one waiting
+    // (P0-24). Same visibility rule — only conversations the runs expose.
+    const visibleConversationIds = new Set(
+      visibleRuns
+        .map((run) => run.conversationId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0),
+    );
+    const awaitingInputConversationIds = visibleConversationIds.size
+      ? [...listConversationsAwaitingInput(db)].filter((id) => visibleConversationIds.has(id))
+      : [];
     const body = {
       runs: visibleRuns.map(statusWithStrategyTask),
       awaitingInputProjectIds,
+      awaitingInputConversationIds,
     };
     res.json(body);
   });
@@ -2848,7 +2907,7 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
           'strategy task changed while cancellation was being applied',
         );
       }
-      cancelRun.strategyTask = projectStrategyTask(canceled, cancelRun.id);
+      cancelRun.strategyTask = projectStrategyTask(canceled, cancelRun.id, db);
     }
     // Logical CAS wins before physical finish: the emitted end frame therefore
     // carries the terminal task projection and can never advertise a running
@@ -2920,17 +2979,22 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
     // — which is exactly when the user said it.
     const messageId = randomUUID();
     if (run.conversationId) {
-      const now = Date.now();
-      upsertMessage(db, run.conversationId, {
-        id: messageId,
-        role: 'user',
-        content: text,
-        startedAt: now,
-        endedAt: now,
-      });
-      if (typeof run.projectId === 'string' && run.projectId) {
-        updateProject(db, run.projectId, {});
-      }
+      const conversationId = run.conversationId;
+      db.transaction(() => {
+        const now = Date.now();
+        upsertMessage(db, conversationId, {
+          id: messageId,
+          role: 'user',
+          content: text,
+          startedAt: now,
+          endedAt: now,
+        });
+        if (typeof run.projectId === 'string' && run.projectId) {
+          updateProject(db, run.projectId, {});
+          acceptProjectUserSubmission(db, { id: `steer-${messageId}`, projectId: run.projectId,
+            conversationId, acceptedAt: now });
+        }
+      })();
     }
     res.json({
       ok: true,

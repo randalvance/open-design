@@ -111,6 +111,7 @@ describe('InlineModelSwitcher', () => {
     cleanup();
     vi.mocked(fetchProviderModels).mockReset();
     analyticsMocks.track.mockReset();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
     vi.useRealTimers();
     try {

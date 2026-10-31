@@ -125,6 +125,12 @@ const MCP_INSTALL_BOOLEAN_FLAGS = new Set([
   'remove',
 ]);
 
+// Hoisted for the same TDZ reason as the MEDIA / MCP flags above: `od run
+// notices` dispatches through SUBCOMMAND_MAP during module evaluation.
+const RUN_NOTICES_STRING_FLAGS = new Set(['daemon-url', 'workspace', 'workspace-member', 'after']);
+const RUN_NOTICES_BOOLEAN_FLAGS = new Set(['help', 'h', 'json', 'watch']);
+const RUN_NOTICES_POLL_MS = 3_000;
+
 const RESEARCH_SEARCH_STRING_FLAGS = new Set([
   'query',
   'max-sources',
@@ -285,7 +291,7 @@ const SHARE_BOOLEAN_FLAGS = new Set([
   'help', 'h', 'json',
 ]);
 const COMMENT_STRING_FLAGS = new Set([
-  'daemon-url', 'prompt', 'prompt-file', 'target', 'status', 'read-at',
+  'daemon-url', 'prompt', 'prompt-file', 'target', 'status', 'read-at', 'file', 'comment-ids',
 ]);
 const COMMENT_BOOLEAN_FLAGS = new Set(['help', 'h', 'json']);
 // Defined near the top because `runFigma` is reachable through the
@@ -397,7 +403,7 @@ function printCommentHelp() {
   od comment update <projectId> <conversationId> <commentId> --target <json> (--prompt <text> | --prompt-file <path|->) [--json]
   od comment status <projectId> <conversationId> <commentId> --status <open|attached|applying|needs_review|resolved|failed> [--json]
   od comment delete <projectId> <conversationId> <commentId> [--json]
-  od comment read <projectId> [--read-at <epoch-ms>] [--json]
+  od comment read <projectId> [--read-at <epoch-ms>] [--file <path> --comment-ids <ids>] [--json]
 
 Manage local preview comments through the same daemon HTTP API as the web UI.
 
@@ -405,7 +411,9 @@ Options:
   --target <json>             PreviewCommentTarget JSON for create/update.
   --prompt <text>             Comment body.
   --prompt-file <path|->      Read the comment body from a file or stdin; mutually exclusive with --prompt.
-  --read-at <epoch-ms>        Mark comments read at this time (defaults to now; server clamps).
+  --read-at <epoch-ms>        Legacy project read timestamp (defaults to now; server clamps).
+  --file <path>               Project file whose displayed comments are being acknowledged.
+  --comment-ids <ids>         With --file, acknowledge only these displayed IDs (comma-separated).
   --daemon-url <url>          Override daemon URL.
   --json                      Emit the daemon response as JSON.`);
 }
@@ -457,12 +465,14 @@ async function runComment(args) {
   if (sub === 'read') {
     const readAt = flags['read-at'] === undefined ? Date.now() : Number(flags['read-at']);
     if (!Number.isFinite(readAt)) commentUsageError('--read-at must be a finite epoch milliseconds value');
+    const commentIds = typeof flags['comment-ids'] === 'string' ? flags['comment-ids'].split(',').filter(Boolean) : undefined;
+    if (commentIds && !flags.file) commentUsageError('--comment-ids requires --file');
     let response;
     try {
       response = await fetch(`${base}/api/projects/${encodeURIComponent(projectId)}/comments/read`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ readAt }),
+        body: JSON.stringify({ readAt, ...(commentIds ? { filePath: flags.file, commentIds } : {}) }),
       });
     } catch (error) {
       surfaceFetchError(error, base);
@@ -1132,6 +1142,14 @@ function printRootHelp() {
       Create a deterministic HyperFrames composition without npx or global
       skill installation, before dispatching it through media generate.
 
+  od media reference --source <file|link>
+      Measure a reference video (shot cuts, frames, contact sheet) before
+      replicating it as a Motion film.
+
+  od media compare --reference <video> --candidate <film>
+      Put the produced film beside the reference at the same timestamps and
+      score how far apart the frames are, so a check reads real evidence.
+
   od mcp [--daemon-url <url>]
       Run a stdio MCP server that proxies project tool calls to a
       running OpenDesign daemon. Wire it into a coding agent
@@ -1252,7 +1270,7 @@ async function runMedia(args) {
     printMediaHelp();
     return;
   }
-  if (sub !== 'generate' && sub !== 'wait' && sub !== 'scaffold' && sub !== 'models') {
+  if (sub !== 'generate' && sub !== 'wait' && sub !== 'scaffold' && sub !== 'models' && sub !== 'reference' && sub !== 'compare') {
     console.error(`unknown subcommand: od media ${sub}`);
     printMediaHelp();
     process.exit(1);
@@ -1275,7 +1293,107 @@ async function runMedia(args) {
   }
   if (sub === 'wait') return runMediaWait(subArgs);
   if (sub === 'scaffold') return runMediaScaffold(subArgs);
+  if (sub === 'reference') return runMediaReference(subArgs);
+  if (sub === 'compare') return runMediaCompare(subArgs);
   return runMediaGenerate(subArgs);
+}
+
+async function runMediaReference(rawArgs) {
+  let flags;
+  try {
+    flags = parseFlags(rawArgs, { string: ['daemon-url', 'project', 'source', 'id'], boolean: ['json', 'help', 'h'] });
+  } catch (err) {
+    console.error(err.message);
+    printMediaHelp();
+    process.exit(2);
+  }
+  if (flags.help || flags.h) { printMediaHelp(); return; }
+  const source = flags.source;
+  if (!source) {
+    console.error('--source required: a project file path (an attached video) or an http(s) link');
+    process.exit(2);
+  }
+  const daemonUrl = await cliDaemonUrl(flags);
+  const projectId = flags.project || process.env.OD_PROJECT_ID;
+  const token = process.env.OD_TOOL_TOKEN;
+  if (!projectId && !token) {
+    console.error('project id required. Pass --project <id> or set OD_PROJECT_ID.');
+    process.exit(2);
+  }
+  const url = token
+    ? `${daemonUrl.replace(/\/$/, '')}/api/tools/media/motion-reference`
+    : `${daemonUrl.replace(/\/$/, '')}/api/projects/${encodeURIComponent(projectId)}/media/motion-reference`;
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ source, ...(flags.id ? { id: flags.id } : {}) }),
+    });
+  } catch (err) {
+    surfaceFetchError(err, daemonUrl);
+    process.exit(3);
+  }
+  const text = await resp.text();
+  if (!resp.ok) {
+    console.error(`daemon ${resp.status}: ${text}`);
+    process.exit(resp.status === 422 ? 5 : 4);
+  }
+  process.stdout.write(`${text.trim()}\n`);
+}
+
+async function runMediaCompare(rawArgs) {
+  let flags;
+  try {
+    flags = parseFlags(rawArgs, { string: ['daemon-url', 'project', 'reference', 'candidate', 'times', 'id'], boolean: ['json', 'help', 'h'] });
+  } catch (err) {
+    console.error(err.message);
+    printMediaHelp();
+    process.exit(2);
+  }
+  if (flags.help || flags.h) { printMediaHelp(); return; }
+  const reference = flags.reference;
+  const candidate = flags.candidate;
+  if (!reference || !candidate) {
+    console.error('--reference and --candidate required: two project file paths (the video the film was made from, and the film just produced)');
+    process.exit(2);
+  }
+  const daemonUrl = await cliDaemonUrl(flags);
+  const projectId = flags.project || process.env.OD_PROJECT_ID;
+  const token = process.env.OD_TOOL_TOKEN;
+  if (!projectId && !token) {
+    console.error('project id required. Pass --project <id> or set OD_PROJECT_ID.');
+    process.exit(2);
+  }
+  const times = typeof flags.times === 'string' && flags.times.trim()
+    ? flags.times.split(',').map((t) => Number(t.trim())).filter((t) => Number.isFinite(t))
+    : undefined;
+  const url = token
+    ? `${daemonUrl.replace(/\/$/, '')}/api/tools/media/motion-compare`
+    : `${daemonUrl.replace(/\/$/, '')}/api/projects/${encodeURIComponent(projectId)}/media/motion-compare`;
+  let resp;
+  try {
+    resp = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ reference, candidate, ...(times ? { times } : {}), ...(flags.id ? { id: flags.id } : {}) }),
+    });
+  } catch (err) {
+    surfaceFetchError(err, daemonUrl);
+    process.exit(3);
+  }
+  const text = await resp.text();
+  if (!resp.ok) {
+    console.error(`daemon ${resp.status}: ${text}`);
+    process.exit(4);
+  }
+  process.stdout.write(`${text.trim()}\n`);
 }
 
 async function runMediaScaffold(rawArgs) {
@@ -1763,7 +1881,17 @@ function printMediaHelp() {
   console.log(`Usage: od media models --json
        od media scaffold --composition-dir .hyperframes-cache/<id> [opts]
        od media generate --surface <image|video|audio> --model <id> [opts]
+       od media reference --source <project-file|http(s)-link> [--id <id>]
+       od media compare --reference <video> --candidate <film> [--times t1,t2] [--id <id>]
        "$OD_NODE_BIN" "$OD_BIN" media generate --surface <image|video|audio> --model <id> [opts]
+
+Reference:
+  Measures a reference video for replication: copies an attached project file
+  (or downloads a link with yt-dlp when installed, else a direct video file
+  link) into .motion-reference/<id>/, and writes facts.json (duration, size,
+  fps, audio, shot cuts), one frame per shot under frames/ and contact.jpg.
+  Up to 200 MB and 180 s. Exit 5 means the link needs the user to upload the
+  file instead; the JSON error says why.
 
 Scaffold:
   Creates hyperframes.json, meta.json, and index.html without running
@@ -6929,6 +7057,12 @@ async function runRun(args) {
   od run info   <runId>                     One run's status.
   od run result-package <runId> [--json]    Inspect run outputs and workspace
                                             provenance without applying them.
+  od run notices [--after <seq>] [--watch] [--json]
+                                            Turns that ended on this machine and
+                                            should reach the user (needs reply /
+                                            new reply / failed) — the feed the
+                                            desktop client turns into system
+                                            notifications. --watch keeps polling.
 
 BYOK start options:
   BYOK requires --model <id>; Azure also requires --byok-base-url.
@@ -6947,6 +7081,7 @@ Common options:
   }
   const sub = args[0];
   const rest = args.slice(1);
+  if (sub === 'notices') return runRunNotices(rest);
   const flags = parseFlags(rest, {
     string: sub === 'start' ? RUN_START_STRING_FLAGS : PROJECT_STRING_FLAGS,
     boolean: sub === 'start' ? RUN_START_BOOLEAN_FLAGS : PROJECT_BOOLEAN_FLAGS,

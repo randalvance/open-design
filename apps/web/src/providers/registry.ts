@@ -2382,14 +2382,11 @@ export async function fetchPreviewComments(
   conversationId: string,
 ): Promise<PreviewComment[]> {
   const url = `/api/projects/${encodeURIComponent(projectId)}/conversations/${encodeURIComponent(conversationId)}/comments`;
-  try {
-    const resp = await fetch(url);
-    if (!resp.ok) return [];
-    const json = (await resp.json()) as { comments: PreviewComment[] };
-    return json.comments ?? [];
-  } catch {
-    return [];
-  }
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`comments ${resp.status}`);
+  const json = (await resp.json()) as { comments?: PreviewComment[] };
+  if (!Array.isArray(json.comments)) throw new Error('Invalid comment list response');
+  return json.comments;
 }
 
 export async function upsertPreviewComment(
