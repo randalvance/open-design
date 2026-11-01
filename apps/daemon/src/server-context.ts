@@ -127,21 +127,6 @@ export interface TelemetryDeps {
       reportTrigger?: 'final_message' | 'terminal_fallback';
     },
   ) => void;
-  /**
-   * Best-effort Langfuse score emission for assistant-turn user ratings.
-   * Returns the categorical outcome so the API surface in chat-routes can
-   * report back to the web client whether the report was accepted or
-   * skipped (consent off / no sink). The handler must not await this in
-   * the request hot path — fire-and-forget.
-   */
-  reportFeedback?: (req: {
-    runId: string;
-    rating: 'positive' | 'negative';
-    reasonCodes: string[];
-    hasCustomReason: boolean;
-    customReason: string;
-    scoreMetadata?: Record<string, unknown>;
-  }) => Promise<{ status: 'accepted' | 'skipped_consent' | 'skipped_no_sink' }>;
   reportRunCompletionTelemetryFallback: (...args: any[]) => any;
   resolveRunProjectKindForAnalytics: (...args: any[]) => any;
   runArtifactBaselines: any;

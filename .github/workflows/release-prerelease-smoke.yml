@@ -70,11 +70,6 @@ concurrency:
   group: release-prerelease-smoke-${{ inputs.origin_run_id || inputs.version }}
   cancel-in-progress: false
 
-env:
-  OPEN_DESIGN_TELEMETRY_RELAY_URL: ${{ vars.OPEN_DESIGN_TELEMETRY_RELAY_URL }}
-  POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
-  POSTHOG_HOST: ${{ vars.POSTHOG_HOST }}
-
 jobs:
   plan:
     name: Resolve published prerelease targets

@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 import { BrowserWindow, Menu, app, ipcMain, powerMonitor, shell, type MenuItemConstructorOptions } from "electron";
 import { attachStartupReadyIpc, createStartupTiming, type StartupTiming } from "./startup-timing.js";
 import { beginLaunchMarker } from "./launch-type.js";
-import { startMemorySampler } from "./memory-sampler.js";
 export { createStartupTiming, type StartupTiming } from "./startup-timing.js";
 
 import {
@@ -46,12 +45,7 @@ import {
 import { createDesktopRuntime, type DesktopRuntime } from "./runtime.js";
 import { setUpDesktopCrashReporter, writeDesktopGpuInfo } from "./crash-diagnostics.js";
 import { beginDesktopSession, clearReportedCrash, endDesktopSessionCleanly, markDesktopSessionRunning, recordDesktopHostEvent, recordDesktopSessionExit } from "./session-lifecycle.js";
-import {
-  attachDesktopChildProcessCrashReporter,
-  reportDesktopObservabilityEvent,
-  attachDesktopHostLifecycleRecorder,
-  reportPriorDesktopUncleanExits,
-} from "./observability.js";
+import { attachDesktopChildProcessCrashLogger, attachDesktopHostLifecycleRecorder } from "./host-lifecycle.js";
 import { attachDesktopProcessErrorFilter } from "./uncaught-exception.js";
 import {
   DEFAULT_DESKTOP_UPDATE_MENU_LABELS,
@@ -191,7 +185,6 @@ export function applyLoopbackConnectionLimitSwitch(electronApp: Electron.App): v
 }
 
 export type DesktopMainOptions = {
-  electronReadyAtMs?: number;
   /** Carries the packaged process origin and sidecar phases into desktop. */
   startupTiming?: StartupTiming | null;
   beforeShutdown?: (record?: (event: UpdateLifecycleObservation) => Promise<void>) => Promise<void>;
@@ -544,9 +537,6 @@ async function runDesktopMainWithTiming(
   initialStartupTiming: StartupTiming,
 ): Promise<DesktopMainHandle> {
   const startupTiming = initialStartupTiming;
-  startupTiming.setReporter((event, properties) => reportDesktopObservabilityEvent(resolveDaemonBaseUrl(options),
-    event, { ...properties, client_type: "desktop", capture_source: "desktop/startup",
-      os_version: process.getSystemVersion(), platform: process.platform, arch: process.arch }));
   startupTiming.mark("desktop_entry");
   // Install the defensive uncaughtException filter BEFORE awaiting
   // app.whenReady, so a setTypeOfService EINVAL thrown by undici during
@@ -569,25 +559,6 @@ async function runDesktopMainWithTiming(
 
   await app.whenReady();
   startupTiming.mark("electron_ready");
-  const memorySampler = startMemorySampler({
-    readyAtMs: options.electronReadyAtMs ?? performance.now(),
-    context: { app_session_id: startupTiming.context().app_session_id, app_version: options.update?.currentVersion ?? app.getVersion(),
-      environment: null, platform: process.platform, arch: process.arch, os_version: process.getSystemVersion() },
-    app,
-    getManagedRendererPids: () => BrowserWindow.getAllWindows()
-      .filter(window => !window.isDestroyed() && !window.webContents.isDestroyed())
-      .map(window => window.webContents.getOSProcessId()),
-    report: async (samples, signal) => {
-      for (const sample of samples) {
-        if (signal.aborted) break;
-        await reportDesktopObservabilityEvent(resolveDaemonBaseUrl(options),
-          "client_process_memory_sample", { ...sample, metric_schema_version: 1, telemetry_capability: "supported",
-          client_type: "desktop", capture_source: "desktop/memory", occurred_at: sample.sampled_at }, signal);
-      }
-    },
-  });
-  app.on("before-quit", () => memorySampler.stop());
-  app.on("will-quit", () => memorySampler.stop());
   configureAboutPanel(options);
 
   // PR #974: mint a per-process auth secret and hand it to the daemon
@@ -751,7 +722,6 @@ async function runDesktopMainWithTiming(
   // Every quit entry point joins the same cleanup, including repeated updater
   // requests while sidecars are still draining.
   function shutdown(): Promise<void> {
-    memorySampler.stop();
     startupTiming.finish("cancelled", "quit_before_ready");
     shutdownRequestCount += 1;
     if (shutdownPromise == null) recordDesktopHostEvent({ stateFilePath: sessionStatePath }, { kind: "quit-requested" });
@@ -877,7 +847,6 @@ async function runDesktopMainWithTiming(
   startupTiming.mark("window_creating");
   desktop = await createDesktopRuntime({
     desktopAuthSecret,
-    telemetryContext: { ...startupTiming.context(), launch_attempt_id: options.startupTiming === null ? null : startupTiming.context().launch_attempt_id, app_version: options.update?.currentVersion ?? app.getVersion() },
     discoverUrl: options.discoverWebUrl,
     discoverDaemonUrl: options.discoverDaemonUrl,
     osLocale,
@@ -944,31 +913,20 @@ async function runDesktopMainWithTiming(
     },
   });
 
-  const discoverDaemonBaseUrl = resolveDaemonBaseUrl(options);
-  // Report each abnormal exit of a prior run now that the daemon is up to relay
-  // it (best-effort; the events carry no user content). Each is dropped from the
-  // queue only once the daemon acks it, so a failed report is retried next launch.
+  // Each abnormal exit of a prior run is logged once and then dropped from the
+  // marker's queue; the desktop log is its only destination.
   if (previousUncleanSessions.length > 0) {
     console.warn("[open-design desktop] prior session(s) ended abnormally (no clean shutdown)", {
       count: previousUncleanSessions.length,
     });
-    void reportPriorDesktopUncleanExits({
-      previousUncleanSessions,
-      currentVersion: options.update?.currentVersion ?? app.getVersion(),
-      stateFilePath: sessionStatePath,
-      report: (event, properties) => reportDesktopObservabilityEvent(discoverDaemonBaseUrl, event, properties),
-      clearReported: clearReportedCrash,
-    });
+    for (const crash of previousUncleanSessions) {
+      clearReportedCrash({ stateFilePath: sessionStatePath }, crash.sessionId);
+    }
   }
   // GPU / utility child-process crashes: the window keeps running but degraded
   // (a GPU-process crash is a common cause of a window that then goes blank or
   // vanishes), and the child can't report itself. `clean-exit` is normal teardown.
-  attachDesktopChildProcessCrashReporter(
-    app,
-    (event, properties) => reportDesktopObservabilityEvent(discoverDaemonBaseUrl, event, {
-      ...startupTiming.context(), launch_attempt_id: options.startupTiming === null ? null : startupTiming.context().launch_attempt_id, app_version: options.update?.currentVersion ?? app.getVersion(), ...properties,
-    }),
-  );
+  attachDesktopChildProcessCrashLogger(app);
   removeDiagnosticsIpc = registerDesktopDiagnosticsIpc({
     discoverDaemonBaseUrl: resolveDaemonBaseUrl(options),
   });

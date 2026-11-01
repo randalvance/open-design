@@ -1754,7 +1754,6 @@ interface Props {
   agents?: AgentInfo[];
   artifactId?: string;
   artifactKind?: TrackingArtifactKind;
-  metricsConsent?: boolean;
   installationId?: string | null;
   /** False while this viewer is retained offscreen for an instant tab revisit. */
   workspaceActive?: boolean;
@@ -1841,7 +1840,6 @@ export const FileViewer = memo(function FileViewer({
   agents,
   artifactId,
   artifactKind,
-  metricsConsent,
   installationId,
   workspaceActive = true,
   onRetainActivityChange,
@@ -1902,7 +1900,6 @@ export const FileViewer = memo(function FileViewer({
         agents={agents}
         artifactId={artifactId}
         artifactKind={artifactKind}
-        metricsConsent={metricsConsent}
         installationId={installationId}
         workspaceActive={workspaceActive}
         onRetainActivityChange={onRetainActivityChange}
@@ -1923,7 +1920,6 @@ export const FileViewer = memo(function FileViewer({
         agents={agents}
         artifactId={artifactId}
         artifactKind={artifactKind}
-        metricsConsent={metricsConsent}
         installationId={installationId}
         workspaceActive={workspaceActive}
       />
@@ -6520,7 +6516,6 @@ function ReactComponentViewer({
   agents,
   artifactId,
   artifactKind: handoffArtifactKind,
-  metricsConsent = false,
   installationId,
   workspaceActive = true,
 }: {
@@ -6533,7 +6528,6 @@ function ReactComponentViewer({
   agents?: AgentInfo[];
   artifactId?: string;
   artifactKind?: TrackingArtifactKind;
-  metricsConsent?: boolean;
   installationId?: string | null;
   workspaceActive?: boolean;
 }) {
@@ -6747,7 +6741,6 @@ function ReactComponentViewer({
                 agents={agents}
                 artifactId={artifactId}
                 artifactKind={handoffArtifactKind}
-                metricsConsent={metricsConsent}
                 installationId={installationId}
               />
             </>
@@ -6920,7 +6913,6 @@ function HtmlViewer({
   agents,
   artifactId,
   artifactKind: handoffArtifactKind,
-  metricsConsent = false,
   installationId,
   workspaceActive = true,
   onRetainActivityChange,
@@ -6957,7 +6949,6 @@ function HtmlViewer({
   agents?: AgentInfo[];
   artifactId?: string;
   artifactKind?: TrackingArtifactKind;
-  metricsConsent?: boolean;
   installationId?: string | null;
   workspaceActive?: boolean;
   onRetainActivityChange?: (fileName: string, retain: boolean) => void;
@@ -16375,7 +16366,6 @@ function HtmlViewer({
                   agents={agents}
                   artifactId={artifactId}
                   artifactKind={handoffArtifactKind}
-                  metricsConsent={metricsConsent}
                   installationId={installationId}
                 />
               )}

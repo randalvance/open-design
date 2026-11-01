@@ -3,7 +3,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { mergeProxyAwareEnv, resolveSystemProxyEnv } from '@open-design/platform';
-import { readAppConfigSync } from '../app-config.js';
 import { resolveProjectRelativePath } from '../home-expansion.js';
 import { expandConfiguredEnv } from './paths.js';
 import { resolveProjectRootFromNestedModule } from '../project-root.js';

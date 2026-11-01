@@ -1,7 +1,10 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { recordingAnalyticsModule } from './helpers/recording-analytics.js';
+
+vi.mock('../src/analytics.js', (original) => recordingAnalyticsModule(original));
 
 import { startServer } from '../src/server.js';
 import {
@@ -175,8 +178,6 @@ describe('first_visible_output is stamped at emission, not at first token', () =
   }): Promise<RunTiming> {
     posthog = await startCaptureSink();
     clearTelemetryEnv();
-    process.env.POSTHOG_KEY = 'phc_first_visible_output_test';
-    process.env.POSTHOG_HOST = posthog.url;
     process.env.OD_NEXT_STRATEGY_ROLLOUT = options.strategyRollout;
     if (options.strategyRollout === 'active') {
       // Local-only escape hatch for the runtime-capability fixture gate, which

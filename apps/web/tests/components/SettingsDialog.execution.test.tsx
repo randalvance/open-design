@@ -462,57 +462,6 @@ afterEach(() => {
   restoreOpenDesignHost = null;
 });
 
-describe('SettingsDialog privacy settings interactions', () => {
-  afterEach(() => {
-    cleanup();
-    vi.unstubAllGlobals();
-  });
-
-  it('preserves a pending privacy choice when an unrelated parent config update arrives', async () => {
-    const randomUUID = vi.fn(() => 'inst-new');
-    vi.stubGlobal('crypto', { randomUUID });
-    const initial: AppConfig = {
-      ...baseConfig,
-      mode: 'daemon',
-      agentId: null,
-      installationId: null,
-      // Undecided: the consent card (and its Share button) only renders before
-      // a choice exists — deciding swaps it for the toggles it just set.
-      telemetry: { metrics: false, content: false, artifactManifest: true },
-    };
-    const view = renderSettingsDialog(initial, { initialSection: 'privacy' });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Share' }));
-
-    await waitFor(() => {
-      expect((screen.getByLabelText('Anonymous ID') as HTMLInputElement).value).toBe('inst-new');
-    });
-
-    view.rerender(
-      <SettingsDialog
-        initial={{ ...initial, agentId: 'codex' }}
-        agents={availableAgents}
-        daemonLive={true}
-        appVersionInfo={null}
-        initialSection="privacy"
-        onPersist={view.onPersist}
-        onPersistComposioKey={view.onPersistComposioKey}
-        onClose={view.onClose}
-        onRefreshAgents={view.onRefreshAgents}
-      />,
-    );
-
-    // The pending choice survives the unrelated parent update: the card is
-    // gone (a decision exists now) and the toggles it set are still on.
-    expect(screen.queryByRole('button', { name: 'Share' })).toBeNull();
-    expect((screen.getByLabelText('Anonymous ID') as HTMLInputElement).value).toBe('inst-new');
-    expect(screen.getByRole('button', { name: /Anonymous metrics/ }).getAttribute('aria-pressed'))
-      .toBe('true');
-    expect(screen.getByRole('button', { name: /Conversation and tool content/ }).getAttribute('aria-pressed'))
-      .toBe('true');
-  });
-});
-
 describe('SettingsDialog execution settings BYOK interactions', () => {
   afterEach(() => {
     cleanup();

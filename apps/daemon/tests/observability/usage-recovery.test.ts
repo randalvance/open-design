@@ -13,7 +13,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { closeDatabase } from '../../src/db.js';
 import { codexTurnUsageFromEvents } from '../../src/observability/codex-turn-usage.js';
-import { buildEvalContext } from '../../src/observability/eval-context.js';
 import { scanRunEventsForUsageAnalytics } from '../../src/run-analytics-observability.js';
 import { startServer } from '../../src/server.js';
 
@@ -41,13 +40,6 @@ function usageProjection(events: Row[]) {
   return {
     cumulative: analytics.total_tokens,
     turn,
-    evaluation: buildEvalContext({ runStatus: 'succeeded', toolErrorCount: 0,
-      attachmentManifest: [], artifactManifest: [], agentId: 'codex',
-      usage: {
-        ...(analytics.input_tokens !== undefined ? { inputTokens: analytics.input_tokens } : {}),
-        ...(analytics.output_tokens !== undefined ? { outputTokens: analytics.output_tokens } : {}),
-        ...(analytics.total_tokens !== undefined ? { totalTokens: analytics.total_tokens } : {}),
-      }, turnUsage: turn }).usage,
   };
 }
 
@@ -166,11 +158,8 @@ describe('recorded cumulative usage durable recovery', () => {
       expect(projected.cumulative).toBe(50052);
       if (expectedUnknown) {
         expect(projected.turn).toBeNull();
-        expect(projected.evaluation.status).toBe('unavailable');
-        expect(projected.evaluation).not.toHaveProperty('turn');
       } else {
         expect(projected.turn).toEqual({ input: 49802, output: 250, total: 50052, modelCalls: 3 });
-        expect(projected.evaluation.status).toBe('derived');
       }
       const statusResponse = await fetch(`${url}/api/runs/${runId}`);
       const status = await statusResponse.json() as { status: string; eventsLogPath: string };

@@ -1159,17 +1159,15 @@ function popupBlockedMessage(): string {
 }
 
 export async function openExternalUrl(url: string): Promise<boolean> {
-  const bridgedUrl = await bridgeFirstPartyUrl(url);
-  const targetUrl = bridgedUrl ?? url;
   if (isOpenDesignHostAvailable()) {
-    const opened = await openHostExternalUrl(targetUrl);
+    const opened = await openHostExternalUrl(url);
     if (opened.ok) return true;
   }
   try {
     const resp = await fetch('/api/system/open-external', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: targetUrl }),
+      body: JSON.stringify({ url }),
     });
     if (resp.ok) {
       const json = (await resp.json().catch(() => null)) as { ok?: unknown } | null;
@@ -1179,28 +1177,11 @@ export async function openExternalUrl(url: string): Promise<boolean> {
     // Fall through to current-tab navigation below.
   }
   try {
-    window.location.assign(targetUrl);
+    window.location.assign(url);
   } catch {
     return false;
   }
   return false;
-}
-
-async function bridgeFirstPartyUrl(url: string): Promise<string | null> {
-  try {
-    const target = new URL(url);
-    if (!['open-design.ai', 'www.open-design.ai', 'staging.open-design.ai'].includes(target.hostname)) return null;
-    const resp = await fetch('/api/attribution/bridge-url', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: target.toString() }),
-    });
-    if (!resp.ok) return null;
-    const body = await resp.json() as { url?: unknown };
-    return typeof body.url === 'string' ? body.url : null;
-  } catch {
-    return null;
-  }
 }
 
 async function decodeConnectorError(resp: Response): Promise<string> {

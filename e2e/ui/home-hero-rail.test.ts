@@ -464,10 +464,6 @@ async function seedBrowserLocale(page: Page, locale: string) {
 async function gotoEntryHome(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
-  const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve OpenDesign' });
-  if (await privacyDialog.isVisible().catch(() => false)) {
-    await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
-  }
   // #5517 moved the settings entry into the collapsed-by-default nav rail, so it
   // is not in the accessibility tree on load; the hero is the ready signal now.
   await expect(page.getByTestId('home-hero')).toBeVisible();

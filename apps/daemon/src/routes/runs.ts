@@ -59,10 +59,6 @@ import {
   getDetectedRuntimeVersions,
 } from '../runtimes/detection.js';
 import { mintRunDoneKey } from '../runtimes/run-done-key.js';
-import {
-  deriveLangfuseDeliveryState,
-  readTelemetrySinkConfig,
-} from '../langfuse-trace.js';
 import { parseMediaExecutionPolicyInput } from '../media/policy.js';
 import { isManagedProjectCwd } from '../mcp-config.js';
 import {
@@ -636,7 +632,6 @@ export interface RegisterRunRoutesDeps {
     ) => Promise<boolean>;
   };
   telemetry: {
-    taskTelemetryForRun?: (runId: string) => ChatRunStatusResponse['taskTelemetry'];
     reportRunCompletionTelemetryFallback: (input: RunCreatedFallbackInput) => void;
     resolveRunProjectKindForAnalytics: (input: RunProjectKindInput) => string | null;
     runArtifactBaselines: RunArtifactBaselines;
@@ -976,8 +971,6 @@ export function registerRunRoutes(app: Express, ctx: RegisterRunRoutesDeps) {
       }
     }
     const status = design.runs.statusBody(run);
-    const taskTelemetry = status.strategyTask ? ctx.telemetry.taskTelemetryForRun?.(run.id) : undefined;
-    if (taskTelemetry) status.taskTelemetry = taskTelemetry;
     // A read can derive display identity from the validated task, but must not
     // stamp the source Run and bypass clarification's linked-snapshot witness.
     return projectedSnapshotId

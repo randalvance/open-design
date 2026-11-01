@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { gunzipSync } from 'node:zlib';
 import {
   createServer,
   type IncomingMessage,
@@ -8,10 +7,13 @@ import {
 } from 'node:http';
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { recordedAnalyticsEvents, recordingAnalyticsModule } from '../helpers/recording-analytics.js';
 import { closeDatabase } from '../../src/db.js';
 import { startServer } from '../../src/server.js';
+
+vi.mock('../../src/analytics.js', (original) => recordingAnalyticsModule(original));
 
 const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2uoAAAAASUVORK5CYII=';
 const PRIVATE_PROMPT = 'PRIVATE_PROMPT_NEVER_REPORT';
@@ -33,37 +35,20 @@ describe('media generation analytics', () => {
   const originalEnv = snapshotEnv();
   let daemon: StartedServer | null = null;
   let provider: Server | null = null;
-  let ingestion: Server | null = null;
 
   afterEach(async () => {
     await Promise.resolve(daemon?.shutdown?.());
     await closeServer(daemon?.server ?? null);
     await closeServer(provider);
-    await closeServer(ingestion);
     daemon = null;
     provider = null;
-    ingestion = null;
     closeDatabase();
     restoreEnv(originalEnv);
   });
 
-  it('reports one consent-gated final event for retried success and failure without private payloads', async () => {
-    const captured: PostHogEvent[] = [];
-    const ingestionStarted = await listen((req, res) => {
-      const chunks: Buffer[] = [];
-      req.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
-      req.on('end', () => {
-        const compressed = Buffer.concat(chunks);
-        const raw = req.headers['content-encoding'] === 'gzip'
-          ? gunzipSync(compressed)
-          : compressed;
-        const body = JSON.parse(raw.toString('utf8')) as { batch?: PostHogEvent[] };
-        captured.push(...(body.batch ?? []));
-        res.writeHead(200, { 'content-type': 'application/json' });
-        res.end('{}');
-      });
-    });
-    ingestion = ingestionStarted.server;
+  it('reports one final event for retried success and failure without private payloads', async () => {
+    const captured = recordedAnalyticsEvents as PostHogEvent[];
+    captured.length = 0;
 
     const attemptsByPrompt = new Map<string, number>();
     const providerStarted = await listen((req, res) => {
@@ -89,8 +74,6 @@ describe('media generation analytics', () => {
     });
     provider = providerStarted.server;
 
-    process.env.POSTHOG_KEY = 'phc_media_test';
-    process.env.POSTHOG_HOST = ingestionStarted.url;
     process.env.NO_PROXY = '127.0.0.1,localhost';
     delete process.env.HTTP_PROXY;
     delete process.env.HTTPS_PROXY;
@@ -134,7 +117,6 @@ describe('media generation analytics', () => {
       projectId,
       `${PRIVATE_PROMPT} retry-success`,
       'done',
-      false,
     );
     const failedTaskId = await generateAndWait(daemon.url, projectId, `${PRIVATE_PROMPT} always-fail`, 'failed');
     const mediaEvents = await waitForMediaEvents(captured, 2);
@@ -145,8 +127,6 @@ describe('media generation analytics', () => {
     expect(success?.properties).toMatchObject({
       page_name: 'studio',
       area: 'media_generation',
-      client_type: 'desktop',
-      device_id: 'media-installation-test',
       project_id: projectId,
       surface: 'image',
       provider_id: 'custom-image',
@@ -163,8 +143,6 @@ describe('media generation analytics', () => {
       used_stub_fallback: false,
     });
     expect(failure?.properties).toMatchObject({
-      client_type: 'web',
-      device_id: 'media-device-test',
       result: 'failed',
       initial_response_status: 429,
       response_status: 429,
@@ -180,13 +158,6 @@ describe('media generation analytics', () => {
     expect(serializedEvents).not.toContain(PRIVATE_RESPONSE_BODY);
     expect(serializedEvents).not.toContain(PRIVATE_API_KEY);
     expect(serializedEvents).not.toContain(providerStarted.url);
-
-    await putAppConfig(daemon.url, {
-      telemetry: { metrics: false, content: false, artifactManifest: false },
-    });
-    await generateAndWait(daemon.url, projectId, `${PRIVATE_PROMPT} opted-out`, 'done', false);
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    expect(captured.filter((event) => event.event === 'media_generation_result')).toHaveLength(2);
   });
 });
 
@@ -267,8 +238,6 @@ async function waitForMediaEvents(events: PostHogEvent[], count: number): Promis
 
 function snapshotEnv(): Record<string, string | undefined> {
   return Object.fromEntries([
-    'POSTHOG_KEY',
-    'POSTHOG_HOST',
     'NO_PROXY',
     'HTTP_PROXY',
     'HTTPS_PROXY',

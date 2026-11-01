@@ -1036,94 +1036,6 @@ test('[P1] project detail keeps local-code context when linkedDirs PATCH removal
   );
 });
 
-test('[P1] project detail composer context actions emit analytics event fields', async ({ page }) => {
-  test.fail(true, 'Inline workspace mention deletion does not yet emit context_remove analytics');
-  const analyticsBodies: string[] = [];
-
-  await page.route('**/api/app-config', async (route) => {
-    if (route.request().method() !== 'GET') {
-      await route.continue();
-      return;
-    }
-    await route.fulfill({
-      json: {
-        config: {
-          mode: 'daemon',
-          apiKey: '',
-          baseUrl: 'https://api.anthropic.com',
-          model: 'claude-sonnet-4-5',
-          agentId: 'codex',
-          skillId: null,
-          designSystemId: null,
-          onboardingCompleted: true,
-          agentModels: { codex: { model: 'default', reasoning: 'default' } },
-          privacyDecisionAt: 1,
-          telemetry: { metrics: true, content: false, artifactManifest: false },
-        },
-      },
-    });
-  });
-  await page.route('**/api/analytics/config', async (route) => {
-    await route.fulfill({
-      json: {
-        enabled: true,
-        env: 'e2e',
-        key: 'phc_e2e',
-        host: 'https://analytics.open-design.test',
-        installationId: 'e2e-installation',
-      },
-    });
-  });
-  await page.route('https://analytics.open-design.test/**', async (route) => {
-    analyticsBodies.push(route.request().postData() ?? '');
-    await route.fulfill({ status: 200, json: { status: 1 } });
-  });
-  await routeComposerPlusFixtures(page);
-  await page.route('**/api/dialog/open-folder', async (route) => {
-    await route.fulfill({ json: { path: '/tmp/open-design/local-code-analytics' } });
-  });
-  await page.route('**/api/dir-exists', async (route) => {
-    await route.fulfill({ json: { exists: true } });
-  });
-  await page.route('**/api/projects/*', async (route) => {
-    if (route.request().method() === 'PATCH') {
-      const body = route.request().postDataJSON() as Record<string, unknown>;
-      await route.fulfill({
-        json: {
-          project: {
-            id: route.request().url().split('/api/projects/')[1]?.split(/[/?#]/)[0] ?? 'project',
-            name: 'Composer context analytics',
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            metadata: body.metadata ?? { kind: 'prototype' },
-          },
-        },
-      });
-      return;
-    }
-    await route.continue();
-  });
-
-  await page.goto('/');
-  await createProject(page, 'Composer context analytics');
-  await expectWorkspaceReady(page);
-  const composer = page.getByTestId('chat-composer');
-
-  await composer.getByTestId('chat-plus-trigger').click();
-  await page.getByTestId('composer-plus-working-dir').click();
-  await page.getByTestId('composer-plus-local-code').click();
-  const chip = composer.locator('.staged-context--workspace', { hasText: 'local-code-analytics' });
-  await expect(chip).toBeVisible();
-  await chip.getByRole('button', { name: /local-code-analytics/i }).click();
-  await expect(chip).toHaveCount(0);
-
-  await expect.poll(() => analyticsBodies.join('\n')).toContain('plus_pick');
-  const raw = analyticsBodies.join('\n');
-  expect(raw).toContain('context_remove');
-  expect(raw).toContain('workspace');
-  expect(raw).toContain('local-code');
-});
-
 test('[P0] @critical project detail composer agent menu lets the user switch the model', async ({ page }) => {
   test.setTimeout(60_000);
   await page.goto('/');
@@ -2106,8 +2018,7 @@ test('[P1] project detail assistant completion actions support copy, fork, and f
     .not.toBe(conversationId);
 });
 
-test('[P1] project detail fork emits correlated click and result analytics', async ({ page }) => {
-  const analyticsBodies: string[] = [];
+test('[P1] project detail fork posts the new conversation to the daemon', async ({ page }) => {
   await page.unroute('**/api/app-config').catch(() => {});
   await page.addInitScript((key) => {
     window.localStorage.setItem(
@@ -2144,21 +2055,6 @@ test('[P1] project detail fork emits correlated click and result analytics', asy
       },
     });
   });
-  await page.route('**/api/analytics/config', async (route) => {
-    await route.fulfill({
-      json: {
-        enabled: true,
-        env: 'e2e',
-        key: 'phc_e2e',
-        host: 'https://analytics.open-design.test',
-        installationId: 'e2e-installation',
-      },
-    });
-  });
-  await page.route('https://analytics.open-design.test/**', async (route) => {
-    analyticsBodies.push(route.request().postData() ?? '');
-    await route.fulfill({ status: 200, json: { status: 1 } });
-  });
 
   const { projectId, conversationId } = await seedProjectWithAssistantCompletion(page);
   await page.goto(`/projects/${projectId}/conversations/${conversationId}`);
@@ -2170,24 +2066,6 @@ test('[P1] project detail fork emits correlated click and result analytics', asy
   });
   await page.getByTestId('assistant-fork-button').click();
   expect((await forkResponsePromise).ok()).toBe(true);
-
-  await expect
-    .poll(() => analyticsBodies.join('\n'), { timeout: T.medium })
-    .toContain('conversation_fork_result');
-  const raw = analyticsBodies.join('\n');
-  expect(raw).toContain('assistant_fork_button');
-  expect(raw).toContain('fork_conversation');
-  expect(raw).toContain('"result":"success"');
-  expect(raw).toContain('"fork_point":"latest"');
-  expect(raw).toContain(projectId);
-  expect(raw).toContain(conversationId);
-  const requestIdCounts = new Map<string, number>();
-  for (const match of raw.matchAll(/"request_id":"([^"]+)"/g)) {
-    const requestId = match[1];
-    if (!requestId) continue;
-    requestIdCounts.set(requestId, (requestIdCounts.get(requestId) ?? 0) + 1);
-  }
-  expect([...requestIdCounts.values()].some((count) => count >= 2)).toBe(true);
 });
 
 test('[P1] project detail forks histories larger than the daemon JSON body limit', async ({ page }) => {
@@ -3400,7 +3278,6 @@ async function routeComposerPlusFixtures(page: Page) {
 async function expectWorkspaceReady(page: Page) {
   await expect(page).toHaveURL(/\/projects\//);
   await page.getByText('Loading OpenDesign…').waitFor({ state: 'hidden', timeout: T.long }).catch(() => {});
-  await dismissPrivacyDialog(page);
   await expect(page.getByTestId('workspace-tabs-dropdown-trigger')).toBeVisible();
   await expect(page.getByTestId('chat-composer')).toBeVisible();
   await expect(page.getByTestId('chat-composer-input')).toBeVisible();
@@ -3444,14 +3321,6 @@ async function openHandoffCliTab(page: Page): Promise<Locator> {
   await expect(menu).toBeVisible();
   await menu.getByRole('tab', { name: /^Copy for CLI$/ }).click();
   return menu;
-}
-
-async function dismissPrivacyDialog(page: Page) {
-  const privacyRegion = page.getByRole('region', { name: /Help us improve OpenDesign/i });
-  if (await privacyRegion.isVisible().catch(() => false)) {
-    await privacyRegion.getByRole('button', { name: /I get it|not now|got it/i }).click();
-    await expect(privacyRegion).toBeHidden();
-  }
 }
 
 /**

@@ -32,12 +32,12 @@ describe("desktop render-process-gone teardown guard", () => {
     expect(handlerBlock).toMatch(/url:\s*gone \? null : window\.webContents\.getURL\(\),/);
   });
 
-  test("short-circuits crash-report / recovery work once the window is gone", () => {
-    // Once destroyed we bail before reportRendererCrash / markRendererFailed,
-    // which would otherwise keep operating on a torn-down window.
+  test("short-circuits recovery work once the window is gone", () => {
+    // Once destroyed we bail before the breaker / markRendererFailed, which
+    // would otherwise keep operating on a torn-down window.
     const returnIndex = handlerBlock.indexOf("if (gone) return;");
-    const reportIndex = handlerBlock.indexOf("reportRendererCrash");
     expect(returnIndex).toBeGreaterThan(-1);
-    expect(reportIndex).toBeGreaterThan(returnIndex);
+    expect(handlerBlock.indexOf("rendererCrashLoop.recordCrash")).toBeGreaterThan(returnIndex);
+    expect(handlerBlock.indexOf("markRendererFailed")).toBeGreaterThan(returnIndex);
   });
 });

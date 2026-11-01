@@ -110,7 +110,6 @@ vi.mock('../../src/components/EntryView', () => ({
   },
 }));
 
-vi.mock('../../src/components/PrivacyConsentModal', () => ({ PrivacyConsentModal: () => <div data-testid="privacy-consent">Privacy consent</div> }));
 
 vi.mock('../../src/components/ProjectView', () => ({
   ProjectView: () => <div>Project view</div>,
@@ -477,13 +476,4 @@ describe('App onboarding completion persistence', () => {
     expect(mockedFetchDaemonConfig).toHaveBeenCalledTimes(1);
     expect(await navigatedToOnboarding()).toBe(false);
   });
-  it('defers consent while the actual registration surface is active and restores disclosure after exit', async () => {
-    const config = returningUserConfig(); mockedLoadConfig.mockReturnValue(config);
-    mockedFetchDaemonConfig.mockResolvedValue(config); mockedSyncConfigToDaemon.mockResolvedValue(undefined);
-    render(<App />); await screen.findByTestId('privacy-consent');
-    expect(entryViewCapture.registrationActiveChange).toBeTypeOf('function');
-    act(() => entryViewCapture.registrationActiveChange?.(true)); expect(screen.queryByTestId('privacy-consent')).toBeNull();
-    act(() => entryViewCapture.registrationActiveChange?.(false)); expect(screen.getByTestId('privacy-consent')).toBeTruthy();
-  });
-
 });

@@ -222,5 +222,4 @@ does not change the build's artifact validity.
 A changed outer cache prefix starts cold. Measure a second run at the same
 commit to assess the warm-cache tradeoff, and compare equivalent runner images,
 artifact targets and signing modes. A single run is observational evidence,
-not a stable percentage saving. `publish=false` also skips PostHog sourcemap
-upload, so its total duration is not directly comparable with a publishing run.
+not a stable percentage saving.

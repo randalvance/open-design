@@ -1,18 +1,18 @@
 // @vitest-environment jsdom
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { installChatInteractionObserver, __resetChatInteractionForTest } from '../../src/observability/chat-interaction';
-import { clearExceptionTrackingContext, setExceptionTrackingContext } from '../../src/analytics/error-tracking';
+import { reportedSafetyEventsNamed, watchSafetyEvents } from '../helpers/safety-events';
+
 let callback: PerformanceObserverCallback;
 let stop: () => void;
 let keydown: (event: KeyboardEvent) => void;
-const fetchMock = vi.fn();
 const observe = vi.fn();
-const named = (name: string) => fetchMock.mock.calls.map((c) => JSON.parse(c[1].body as string)).filter((e) => e.event === name).map((e) => e.properties);
+const named = reportedSafetyEventsNamed;
 beforeEach(() => {
   vi.useFakeTimers(); vi.setSystemTime(1_700_000_000_000);
   vi.spyOn(performance, 'now').mockImplementation(() => Date.now() - 1_700_000_000_000);
   vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
-  vi.stubGlobal('fetch', fetchMock.mockReset().mockResolvedValue(new Response('')));
+  watchSafetyEvents();
   observe.mockReset();
   vi.stubGlobal('PerformanceObserver', class {
     static supportedEntryTypes = ['event'];
@@ -20,7 +20,6 @@ beforeEach(() => {
     observe = observe;
     disconnect() {}
   });
-  setExceptionTrackingContext({ apiKey: 'test', host: 'https://example.test', distinctId: 'test-install', clientType: 'web', osName: 'Mac OS X' });
   __resetChatInteractionForTest();
   document.body.innerHTML = '<div data-testid="chat-composer"><textarea></textarea></div><input type="search"><div class="modal-settings"><input></div><input type="password">';
   const add = document.addEventListener.bind(document);
@@ -30,7 +29,7 @@ beforeEach(() => {
   });
   stop = installChatInteractionObserver();
 });
-afterEach(() => { stop(); __resetChatInteractionForTest(); clearExceptionTrackingContext(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
+afterEach(() => { stop(); __resetChatInteractionForTest(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 function emit(duration: number, target: Element = document.querySelector('textarea')!, name = 'keydown', startTime = performance.now()) {
   callback({ getEntries: () => [{ duration, name, target, startTime, processingStart: startTime + 40 }] } as unknown as PerformanceObserverEntryList, {} as PerformanceObserver);
 }
@@ -55,12 +54,10 @@ it('covers search/settings and excludes password fields and synthetic attempts',
   expect(named('client_input_responsiveness').map((e) => e.area)).toEqual(['search', 'settings']);
   expect(named('client_input_responsiveness').every((e) => e.input_attempt_count === 0)).toBe(true);
 });
-it('rejects pre-observation and duplicate timing records and keeps sampling after opt-out', async () => {
-  const { applyConsent } = await import('../../src/analytics/client');
-  applyConsent(false);
+it('rejects pre-observation and duplicate timing records and keeps sampling', () => {
   emit(600, undefined, 'keydown', -1); emit(600, undefined, 'keydown', 1); emit(600, undefined, 'keydown', 1);
   vi.advanceTimersByTime(30_000);
-  expect(named('client_input_responsiveness')[0].qualified_sample_count).toBe(1);
+  expect(named('client_input_responsiveness')[0]!.qualified_sample_count).toBe(1);
   emit(700); vi.advanceTimersByTime(30_000);
   expect(named('client_input_responsiveness')).toHaveLength(2);
 });

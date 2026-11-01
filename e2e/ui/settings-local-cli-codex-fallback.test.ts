@@ -75,10 +75,6 @@ async function gotoEntryHome(page: Page) {
   await suppressWhatsNew(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
-  const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve OpenDesign' });
-  if (await privacyDialog.isVisible()) {
-    await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
-  }
   await expect(
     page
       .getByTestId('entry-settings-button')

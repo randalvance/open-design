@@ -28,6 +28,20 @@ export interface RunTelemetryDeliveryResult {
   langfuse_attempt_count?: number;
 }
 
+/**
+ * The answer for every Run's terminal telemetry checkpoint: nothing is sent, so
+ * there is nothing to wait for. Settling as `not_expected` keeps the durable
+ * Run checkpoint terminal; restart reconciliation does not replay it.
+ */
+export function reportNoRunTelemetry(): RunTelemetryDeliveryResult {
+  return {
+    langfuse_expected: false,
+    langfuse_delivery_status: 'not_expected',
+    langfuse_drop_reason: 'telemetry_removed',
+    langfuse_attempt_count: 0,
+  };
+}
+
 export function runTelemetryDeliveryIdempotencyKey(runId: string): string {
   const digest = createHash('sha256')
     .update(`open-design/run-telemetry/v1\n${runId}`, 'utf8')

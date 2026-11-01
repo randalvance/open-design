@@ -331,7 +331,6 @@ interface Props {
   handoffAgents?: AgentInfo[];
   handoffArtifactId?: string;
   handoffArtifactKind?: TrackingArtifactKind;
-  metricsConsent?: boolean;
   installationId?: string | null;
   chatLocale?: string;
   conversations?: Conversation[];
@@ -1354,7 +1353,6 @@ export function FileWorkspace({
   handoffAgents,
   handoffArtifactId,
   handoffArtifactKind,
-  metricsConsent,
   installationId,
   chatLocale,
   conversations = [],
@@ -3428,7 +3426,6 @@ export function FileWorkspace({
       agents={handoffAgents}
       artifactId={handoffArtifactId}
       artifactKind={handoffArtifactKind}
-      metricsConsent={metricsConsent}
       installationId={installationId}
       workspaceActive={workspaceActive}
       onRetainActivityChange={handleHtmlViewerRetainActivityChange}

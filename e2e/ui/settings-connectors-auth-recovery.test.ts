@@ -92,10 +92,6 @@ async function waitForLoadingToClear(page: Page) {
 async function gotoConnectors(page: Page) {
   await page.goto('/integrations', { waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
-  const privacyRegion = page.getByRole('region', { name: /Help us improve OpenDesign/i });
-  if (await privacyRegion.isVisible().catch(() => false)) {
-    await privacyRegion.getByRole('button', { name: /I get it|not now|got it/i }).click();
-  }
   const integrations = page.locator('.integrations-view');
   await expect(integrations).toBeVisible();
   await integrations.getByTestId('integrations-tab-connectors').click();

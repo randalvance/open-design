@@ -168,7 +168,7 @@ describe('EntryNavRail local shell', () => {
   it('docks the social links above a local identity row at the rail foot', () => {
     renderLocalRail();
     const dock = screen.getByTestId('entry-nav-local-account-dock');
-    expect(within(dock).getByTestId('entry-nav-rail-social')).toBeTruthy();
+    expect(screen.queryByTestId('entry-nav-rail-social')).toBeNull();
     expect(within(dock).getByTestId('entry-nav-local-account')).toBeTruthy();
     // No account, no message centre, no sign-in affordance anywhere in the rail.
     expect(screen.queryByTestId('entry-nav-message-center')).toBeNull();

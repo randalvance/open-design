@@ -98,17 +98,10 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
   // Run lifecycle routes live in `routes/runs.ts`; this file owns feedback,
   // connection tests, critique handoff, and provider proxy routes.
 
-  // Receives the user's thumbs-up/down (+ reason codes) for an assistant
-  // turn and forwards it to Langfuse as a `score-create`. Web persists the
-  // feedback itself via PUT /messages/:id; this endpoint exists only as a
-  // telemetry side channel — the daemon is the single network egress for
-  // Langfuse and gates on `telemetry.metrics + telemetry.content` consent.
-  //
-  // The consent + sink decision is fast (awaits a small file read, no
-  // network); we await it so the response status honestly reflects whether
-  // the score was enqueued, skipped for consent, or skipped because no
-  // Langfuse sink is configured. The actual Langfuse network call happens
-  // as a detached promise inside the bridge.
+  // Validates the user's thumbs-up/down for an assistant turn. The rating
+  // itself is persisted through PUT /messages/:id; this endpoint keeps its
+  // validation and response shape, and always answers `skipped_no_sink` because
+  // the daemon relays feedback nowhere.
   app.post('/api/runs/:id/feedback', async (req, res) => {
     const runId = req.params.id;
     const body = (req.body ?? {}) as Partial<{
@@ -146,46 +139,7 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
       run.projectId,
       { mode: 'write', capability: 'writeFiles' },
     )) return;
-    // Drop anything outside the contract-side reason allowlist and
-    // deduplicate; otherwise a malformed or replayed client payload could
-    // create unknown Langfuse categories or duplicate score ids in the
-    // same batch.
-    const reasonCodes = Array.isArray(body.reasonCodes)
-      ? Array.from(
-          new Set(
-            body.reasonCodes.filter(
-              (c): c is string =>
-                typeof c === 'string' && FEEDBACK_REASON_ALLOWLIST.has(c),
-            ),
-          ),
-        )
-      : [];
-    const customReason = typeof body.customReason === 'string' ? body.customReason : '';
-    const reportFeedback = ctx.telemetry?.reportFeedback;
-    if (!reportFeedback) {
-      res.status(202).json({ status: 'skipped_no_sink' });
-      return;
-    }
-    // Build score metadata bag that lands in the Langfuse score body.
-    // Mirrors the PostHog event so analysts can cross-reference. Every
-    // identity field comes from the daemon-owned run object; request bodies
-    // cannot retarget a score to another project/conversation/message.
-    const scoreMetadata: Record<string, unknown> = {
-      projectId: run.projectId,
-      conversationId: run.conversationId ?? null,
-      assistantMessageId: run.assistantMessageId ?? null,
-      hasCustomReason: body.hasCustomReason === true,
-      customReason,
-    };
-    const outcome = await reportFeedback({
-      runId,
-      rating: body.rating,
-      reasonCodes,
-      hasCustomReason: body.hasCustomReason === true,
-      customReason,
-      scoreMetadata,
-    });
-    res.status(202).json(outcome);
+    res.status(202).json({ status: 'skipped_no_sink' });
   });
 
   // ---- Connection tests (single-shot JSON; no SSE) ------------------------

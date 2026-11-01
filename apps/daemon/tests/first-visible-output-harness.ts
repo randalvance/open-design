@@ -1,17 +1,16 @@
 // Shared wiring for the `first_visible_output` regression suites.
 //
 // Both suites drive the REAL daemon (`startServer` + a fake agent CLI on the
-// real spawn path) and read the two timing fields off the real PostHog
-// `run_finished` payload, because the bug this instrumentation exists for was
-// never in a helper — it was in which call site owns the mark. Anything that
-// stubs the emission path would prove the wrong thing.
+// real spawn path) and read the two timing fields off the real `run_finished`
+// payload at the analytics boundary, because the bug this instrumentation exists
+// for was never in a helper — it was in which call site owns the mark. Each
+// suite swaps only the analytics service, via `recordingAnalyticsModule`.
 import type { Server } from 'node:http';
-import { createServer } from 'node:http';
-import { gunzipSync } from 'node:zlib';
 import { randomUUID } from 'node:crypto';
 import { chmod, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect } from 'vitest';
+import { recordedAnalyticsEvents } from './helpers/recording-analytics.js';
 
 /**
  * Per-test timeout every case in these suites is declared with. Every wait
@@ -23,9 +22,8 @@ export const TEST_BUDGET_MS = 90_000;
 export const RUN_TERMINAL_WAIT_MS = 30_000;
 /**
  * The daemon captures `run_finished` from an async chain that only starts once
- * the run row is terminal; posthog-node then posts it (flushAt: 1). Neither
- * step is synchronous with the status flip, so the sink is polled rather than
- * sampled once.
+ * the run row is terminal, which is not synchronous with the status flip, so
+ * the sink is polled rather than sampled once.
  */
 export const CAPTURE_WAIT_MS = 30_000;
 /**
@@ -60,12 +58,10 @@ export type RunTiming = {
 };
 
 export type CaptureSink = {
-  url: string;
   /**
    * Resolve the run's `run_finished` timing, or throw. `flush` must drive the
-   * daemon's own analytics shutdown (`startServer(...).shutdown`), which awaits
-   * posthog-node's drain — that is what makes delivery deterministic instead of
-   * hostage to an arbitrary sleep. The throw is preserved on purpose: a run
+   * daemon's own shutdown (`startServer(...).shutdown`), after which the daemon
+   * has nothing left to capture. The throw is preserved on purpose: a run
    * that never reports is a real regression, not something to wait out.
    */
   waitForRunFinished(runId: string, flush: () => Promise<void>): Promise<RunTiming>;
@@ -86,47 +82,9 @@ export function expectVisibleOutputNotBeforeFirstToken(timing: RunTiming): void 
   ).toBeGreaterThanOrEqual(0);
 }
 
-// Minimal stand-in for PostHog ingestion. posthog-node runs with `flushAt: 1`,
-// so each daemon capture arrives as its own `/batch/` POST.
 export async function startCaptureSink(): Promise<CaptureSink> {
-  const events: Array<{ event: string; properties: Record<string, unknown> }> = [];
-  const server = createServer((req, res) => {
-    const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => {
-      chunks.push(chunk);
-    });
-    req.on('end', () => {
-      // posthog-node gzips its batch payloads.
-      const raw = Buffer.concat(chunks);
-      let body = '';
-      try {
-        body = /gzip/iu.test(req.headers['content-encoding'] ?? '')
-          ? gunzipSync(raw).toString('utf8')
-          : raw.toString('utf8');
-      } catch {
-        body = '';
-      }
-      try {
-        const parsed = JSON.parse(body) as {
-          batch?: Array<{ event?: unknown; properties?: unknown }>;
-        };
-        for (const record of parsed.batch ?? []) {
-          if (typeof record.event !== 'string') continue;
-          events.push({
-            event: record.event,
-            properties: (record.properties ?? {}) as Record<string, unknown>,
-          });
-        }
-      } catch {
-        // Non-batch probes (flags, etc.) are not interesting here.
-      }
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end('{"status":1}');
-    });
-  });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('no capture port');
+  const events = recordedAnalyticsEvents;
+  events.length = 0;
 
   const find = (runId: string): RunTiming | null => {
     const match = events.find(
@@ -146,13 +104,11 @@ export async function startCaptureSink(): Promise<CaptureSink> {
   };
 
   return {
-    url: `http://127.0.0.1:${address.port}`,
     async waitForRunFinished(runId, flush): Promise<RunTiming> {
       const captured = await poll(runId, CAPTURE_WAIT_MS);
       if (captured) return captured;
-      // Force it rather than waiting longer: the daemon's shutdown awaits
-      // `analytics.shutdown()`, which drains posthog-node, so once this
-      // resolves the sink holds everything the daemon will ever send.
+      // Force it rather than waiting longer: once the daemon's shutdown
+      // resolves, the sink holds everything the daemon will ever capture.
       await flush();
       const afterFlush = await poll(runId, FLUSHED_CAPTURE_WAIT_MS);
       if (afterFlush) return afterFlush;
@@ -162,9 +118,7 @@ export async function startCaptureSink(): Promise<CaptureSink> {
         }`,
       );
     },
-    close(): Promise<void> {
-      return new Promise<void>((resolve) => server.close(() => resolve()));
-    },
+    async close(): Promise<void> {},
   };
 }
 
@@ -217,12 +171,6 @@ setTimeout(finish, 1500);
 }
 
 export const TELEMETRY_ENV_KEYS = [
-  'LANGFUSE_PUBLIC_KEY',
-  'LANGFUSE_SECRET_KEY',
-  'LANGFUSE_BASE_URL',
-  'OPEN_DESIGN_TELEMETRY_RELAY_URL',
-  'POSTHOG_KEY',
-  'POSTHOG_HOST',
   'OD_NEXT_STRATEGY_ROLLOUT',
   'OD_NEXT_STRATEGY_LOCAL_SYNTHETIC_CANARY',
 ] as const;

@@ -10,24 +10,9 @@ export async function waitForLoadingToClear(page: Page) {
   await page.getByText('Loading OpenDesign…').waitFor({ state: 'hidden', timeout: T.long }).catch(() => {});
 }
 
-export async function dismissPrivacyDialog(page: Page) {
-  const privacySurface = page
-    .getByRole('region', { name: /Help us improve OpenDesign/i })
-    .or(page.locator('.privacy-consent-banner'))
-    .first();
-  await privacySurface.waitFor({ state: 'visible', timeout: 1_000 }).catch(() => {});
-  if (await privacySurface.isVisible().catch(() => false)) {
-    await privacySurface
-      .getByRole('button', { name: /don['’]?t share|不分享|not now|i get it|got it/i })
-      .click();
-    await expect(privacySurface).toBeHidden();
-  }
-}
-
 export async function gotoEntryHome(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
-  await dismissPrivacyDialog(page);
 }
 
 export async function expectWorkspaceReady(page: Page) {
@@ -112,7 +97,6 @@ async function openSettingsFromProjectSurface(page: Page): Promise<boolean> {
 
 export async function openSettingsDialog(page: Page) {
   await waitForLoadingToClear(page);
-  await dismissPrivacyDialog(page);
   await ensureEntryRailOpenIfPresent(page);
   const dialog = settingsSurface(page);
   // On the entry, `entry-settings-button` is the rail nav item that carries
@@ -127,8 +111,6 @@ export async function openSettingsDialog(page: Page) {
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (await dialog.isVisible().catch(() => false)) return dialog;
-
-    await dismissPrivacyDialog(page);
     await dismissWhatsNewPopup(page);
     if (await settingsTrigger.isVisible({ timeout: 1_000 }).catch(() => false)) {
       await settingsTrigger.evaluate((element: HTMLElement) => element.click());
@@ -210,7 +192,6 @@ export async function gotoProject(page: Page, projectId: string) {
     const message = error instanceof Error ? error.message : String(error);
     if (!/ERR_ABORTED|frame was detached/i.test(message)) throw error;
   }
-  await dismissPrivacyDialog(page);
   await expectWorkspaceReady(page);
 }
 

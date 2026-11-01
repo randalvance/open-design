@@ -20,13 +20,11 @@ import { forwardRef } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { SideChatTab } from '../../../src/components/workspace/SideChatTab';
-import {
-  clearExceptionTrackingContext,
-  setExceptionTrackingContext,
-} from '../../../src/analytics/error-tracking';
 import { __resetChatContextForTest } from '../../../src/observability/chat-context';
 import { __resetChatHealthForTest } from '../../../src/observability/chat-health';
 import type { AppConfig, ChatMessage, Conversation } from '../../../src/types';
+import { reportedSafetyEventsNamed, watchSafetyEvents } from '../../helpers/safety-events';
+
 
 const translate = (key: string) => key;
 
@@ -89,16 +87,10 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  watchSafetyEvents();
   fetchMock.mockReset();
   fetchMock.mockResolvedValue(new Response('', { status: 200 }));
   globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-  setExceptionTrackingContext({
-    apiKey: 'phc_test',
-    host: 'https://us.i.posthog.com',
-    distinctId: 'side-chat-correlation-test',
-    clientType: 'web',
-    osName: 'Mac OS X',
-  });
   __resetChatHealthForTest();
   __resetChatContextForTest();
 });
@@ -107,23 +99,12 @@ afterEach(() => {
   cleanup();
   __resetChatHealthForTest();
   __resetChatContextForTest();
-  clearExceptionTrackingContext();
   globalThis.fetch = ORIGINAL_FETCH;
   vi.clearAllMocks();
 });
 
 function safetyEvents(name: string): Array<Record<string, unknown>> {
-  const decoded: Array<{ event?: string; properties?: Record<string, unknown> }> = [];
-  for (const call of fetchMock.mock.calls) {
-    const init = call[1] as RequestInit | undefined;
-    if (typeof init?.body !== 'string') continue;
-    try {
-      decoded.push(JSON.parse(init.body) as { event?: string; properties?: Record<string, unknown> });
-    } catch {
-      // not a telemetry beacon
-    }
-  }
-  return decoded.filter((e) => e.event === name).map((e) => e.properties ?? {});
+  return reportedSafetyEventsNamed(name);
 }
 
 const conversations = [

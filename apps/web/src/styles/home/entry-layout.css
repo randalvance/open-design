@@ -376,40 +376,6 @@
 .entry-nav-rail__footer .entry-rail-actions:empty {
   display: none;
 }
-/* Community/contact links (Discord / X / mail), the footer's last
-   row. They moved here out of the account menu so the rail's bottom strip
-   carries something instead of reading as a dead white band. */
-.entry-nav-rail__social {
-  order: 3;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: calc(100% - 18px);
-  margin: 0 auto;
-  padding: 2px 0 2px;
-}
-.entry-nav-rail__social-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 30px;
-  border-radius: var(--radius-md);
-  color: var(--text-soft);
-  text-decoration: none;
-  transition: background 200ms cubic-bezier(0.23, 1, 0.32, 1),
-    color 200ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.entry-nav-rail__social-btn:hover {
-  background: var(--vibrancy-fill-secondary);
-  color: var(--text);
-}
-.entry-nav-rail__social-btn svg,
-.entry-nav-rail__social-btn .od-icon { color: inherit; }
-.entry-nav-rail__social-btn .entry-nav-rail__menu-x {
-  flex: 0 0 auto;
-  color: inherit;
-}
 .entry-nav-rail__footer .entry-nav-rail__account {
   order: 2;
   width: calc(100% - 18px);
@@ -5930,9 +5896,8 @@ body[data-web-modal-scroll-lock] .entry-main--scroll {
   display: contents;
 }
 
-/* Bottom dock: the social links stack directly above the identity row, and the
-   pair sinks to the foot of the nav column together. The auto margin lives
-   here, so `.entry-nav-rail__account` inside it gives up its own. */
+/* Bottom dock: sinks the identity row to the foot of the nav column. The auto
+   margin lives here, so `.entry-nav-rail__account` inside it gives up its own. */
 .entry-nav-rail__account-dock {
   order: 99;
   margin-top: auto;
@@ -5946,17 +5911,6 @@ body[data-web-modal-scroll-lock] .entry-main--scroll {
   order: 0;
   margin: 0;
   padding-top: 0;
-}
-
-.entry-nav-rail__account-dock .entry-nav-rail__menu-social {
-  /* Icon only (OPEND-3180): the three squares sit left-aligned on the
-     identity row's edge at one equal gap, rather than spreading across the
-     dock the way the labelled links did. No side inset, so the first square
-     starts where the account trigger starts and its glyph lands on the
-     avatar's own left edge (28px square, 16px glyph → 6px in, the trigger's
-     6px side padding). */
-  padding: 0;
-  justify-content: flex-start;
 }
 
 .entry-nav-rail__account {
@@ -6805,71 +6759,6 @@ body[data-web-modal-scroll-lock] .entry-main--scroll {
   max-width: 110px;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-/* X's own mark (inline SVG — it is not in the Remix set the Icon component
-   draws from). Sized in the markup like its Discord / mail neighbours; the
-   colour rides the link so hover moves all three together. */
-.entry-nav-rail__menu-x {
-  flex: 0 0 auto;
-  display: block;
-  color: inherit;
-}
-/* Icon-only social row (Discord / X / mail, OPEND-3180): the labels are gone
-   and the three links sit side by side as equal square icon targets, one gap
-   apart. Zero side padding keeps the first icon on the same column as the
-   avatar in the identity row below. */
-.entry-nav-rail__menu-social {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.entry-nav-rail__menu-social-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  /* The same square the message-centre bell occupies on the identity row,
-     so the two rows share one rhythm and the 16px glyph sits 6px in — on the
-     avatar's left edge. */
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border-radius: var(--radius-md);
-  color: var(--text-soft);
-  text-decoration: none;
-  transition: background 200ms cubic-bezier(0.23, 1, 0.32, 1),
-    color 200ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.entry-nav-rail__menu-social-btn:hover {
-  background: var(--vibrancy-fill-secondary);
-  color: var(--text);
-}
-/* All three marks at 16 (per product), pinned here rather than left to the
-   markup: `<Icon>` writes width/height as HTML ATTRIBUTES, which are
-   presentational hints and lose to any rule at all — so the size only holds as
-   long as nothing else in the cascade reaches these glyphs. */
-.entry-nav-rail__menu-social-btn svg,
-.entry-nav-rail__menu-social-btn .od-icon {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
-  color: inherit;
-}
-/* GitHub 按钮附带实时 star 数时放开固定宽度，图标 + 数字并排 */
-.entry-nav-rail__menu-social-btn:has(.entry-nav-rail__menu-social-count) {
-  width: auto;
-  padding: 0 9px;
-  gap: 5px;
-}
-.entry-nav-rail__menu-social-count {
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  color: inherit;
-  font-variant-numeric: tabular-nums;
-}
-.entry-nav-rail__menu-social-btn .entry-nav-rail__menu-x {
-  flex: 0 0 auto;
-  color: inherit;
 }
 /* Plan + credits block under the identity header (upgrade CTA on the plan
    row, then remaining/bonus credit rows), mirroring the reference card. */

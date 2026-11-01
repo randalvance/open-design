@@ -18,14 +18,12 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 import { ChatPane } from '../../src/components/ChatPane';
 import {
-  clearExceptionTrackingContext,
-  setExceptionTrackingContext,
-} from '../../src/analytics/error-tracking';
-import {
   __resetChatHealthForTest,
   chatSurfaceSample,
 } from '../../src/observability/chat-health';
 import type { AppConfig, ChatMessage } from '../../src/types';
+import { clearReportedSafetyEvents, reportedSafetyEventsNamed, watchSafetyEvents } from '../helpers/safety-events';
+
 
 const translate = (key: string, vars?: Record<string, string | number>) => {
   if (vars && Object.keys(vars).length > 0) {
@@ -75,39 +73,22 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  watchSafetyEvents();
   fetchMock.mockReset();
   fetchMock.mockResolvedValue(new Response('', { status: 200 }));
   globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-  setExceptionTrackingContext({
-    apiKey: 'phc_test',
-    host: 'https://us.i.posthog.com',
-    distinctId: 'chat-health-surface-test',
-    clientType: 'web',
-    osName: 'Mac OS X',
-  });
   __resetChatHealthForTest();
 });
 
 afterEach(() => {
   cleanup();
   __resetChatHealthForTest();
-  clearExceptionTrackingContext();
   globalThis.fetch = ORIGINAL_FETCH;
   vi.clearAllMocks();
 });
 
 function safetyEvents(name: string): Array<Record<string, unknown>> {
-  const decoded: Array<{ event?: string; properties?: Record<string, unknown> }> = [];
-  for (const call of fetchMock.mock.calls) {
-    const init = call[1] as RequestInit | undefined;
-    if (typeof init?.body !== 'string') continue;
-    try {
-      decoded.push(JSON.parse(init.body) as { event?: string; properties?: Record<string, unknown> });
-    } catch {
-      // not a telemetry beacon
-    }
-  }
-  return decoded.filter((e) => e.event === name).map((e) => e.properties ?? {});
+  return reportedSafetyEventsNamed(name);
 }
 
 function userMessage(id: string, events?: unknown[]): ChatMessage {
@@ -260,7 +241,7 @@ describe('ChatPane — chat-health surface lifecycle', () => {
     );
     rerender(chatPane({ messages: [userMessage('m1')], activeConversationId: 'conv-2' }));
 
-    fetchMock.mockClear();
+    clearReportedSafetyEvents();
     chatSurfaceSample('interval');
 
     const samples = safetyEvents('client_chat_dom_growth');

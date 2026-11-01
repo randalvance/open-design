@@ -21,15 +21,11 @@ async function startChatServer(options: {
     conversationId: string | null;
     assistantMessageId: string | null;
   } | null;
-  reportFeedback?: any;
   onArtifact?: any;
   onInterrupt?: any;
 }) {
   const app = express();
   app.use(express.json());
-  const reportFeedback =
-    options.reportFeedback ??
-    vi.fn(async () => ({ status: 'accepted' as const }));
   const onArtifact = options.onArtifact ?? vi.fn();
   const onInterrupt = options.onInterrupt ?? vi.fn();
   registerChatRoutes(app, {
@@ -71,7 +67,7 @@ async function startChatServer(options: {
     appConfig: { readAppConfig: async () => ({}) },
     validation: {},
     lifecycle: { isDaemonShuttingDown: () => false },
-    telemetry: { reportFeedback },
+    telemetry: {},
     authorizeProjectRequest: options.authorizeProjectRequest,
   } as any);
 
@@ -81,7 +77,6 @@ async function startChatServer(options: {
   if (!address || typeof address === 'string') throw new Error('server did not bind');
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
-    reportFeedback,
     onArtifact,
     onInterrupt,
   };
@@ -261,7 +256,6 @@ describe('chat-owned project route authority', () => {
     });
 
     expect(response.status).toBe(403);
-    expect(api.reportFeedback).not.toHaveBeenCalled();
     expect(authorizeProjectRequest).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
@@ -297,10 +291,9 @@ describe('chat-owned project route authority', () => {
     });
 
     expect(response.status).toBe(400);
-    expect(api.reportFeedback).not.toHaveBeenCalled();
   });
 
-  it('derives feedback metadata from the run after exact authorization', async () => {
+  it('accepts feedback after exact authorization and relays it nowhere', async () => {
     const authorizeProjectRequest = vi.fn(async () => true);
     const api = await startChatServer({
       authorizeProjectRequest,
@@ -328,15 +321,6 @@ describe('chat-owned project route authority', () => {
     });
 
     expect(response.status).toBe(202);
-    expect(api.reportFeedback).toHaveBeenCalledWith(expect.objectContaining({
-      runId: 'run-a',
-      scoreMetadata: {
-        projectId: 'project-a',
-        conversationId: 'conversation-a',
-        assistantMessageId: 'message-a',
-        hasCustomReason: true,
-        customReason: 'clear result',
-      },
-    }));
+    expect(await response.json()).toEqual({ status: 'skipped_no_sink' });
   });
 });

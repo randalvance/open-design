@@ -12,7 +12,7 @@ bottom of their facet rather than topping it by default-usage.
 
 | File | Owner | What |
 |---|---|---|
-| `pluginPopularity.generated.ts` | **generated — do not hand-edit** | `id → blended popularity score [0,1]` snapshot + build metadata |
+| `pluginPopularity.generated.ts` | **frozen snapshot** | `id → blended popularity score [0,1]` snapshot + build metadata |
 | `pluginPopularity.ts` | source | accessor + the `comparePluginGalleryOrder` comparator + the policy knobs |
 | `usePluginFacets.ts` → `filtered` | source | grid: master/All keeps visual order; a selected facet re-sorts via the comparator |
 | `visualScore.ts` → `sortByVisualAppeal` | source | master / All browse order (visual appeal), unchanged |
@@ -97,29 +97,8 @@ valve for freshly launched or strategically promoted templates that have not
 accrued usage yet (they would otherwise sink below the min-sample threshold).
 Add an id and it jumps to the front; keep the list short.
 
-## Refresh (weekly)
+## Refresh
 
-The rebuild runs in-repo — the same pattern as `refresh-contributors-wall` and
-`tutorials-youtube-sync`, which already run credentialed scheduled fetches here.
-
-- Generator: `scripts/refresh-plugin-popularity.ts` — queries PostHog
-  `run_finished` for the trailing 28-day `plugin_id` counts (runs + distinct
-  users), joins against the live bundled catalog (drops retired ids), blends,
-  and rewrites `pluginPopularity.generated.ts`.
-- Workflow: `.github/workflows/refresh-plugin-popularity.yml` — weekly cron +
-  `workflow_dispatch`; opens a PR with only the generated file changed via
-  `peter-evans/create-pull-request` (self-PR, no cross-repo token).
-
-Regenerate locally:
-
-```bash
-POSTHOG_PERSONAL_API_KEY=... pnpm exec tsx scripts/refresh-plugin-popularity.ts --write
-```
-
-Only the fetch needs credentials — HogQL requires a PostHog **personal** API key
-(`phx_…`). The workflow prefers `POSTHOG_PERSONAL_API_KEY` and falls back to the
-existing `POSTHOG_CLI_API_KEY` (already a personal key, used for release
-sourcemap uploads), so it may need no new secret; add `POSTHOG_PERSONAL_API_KEY`
-only if neither can query project `420348`. Until a working key resolves, the
-workflow no-ops (green) and opens no PR. The transform is deterministic and
-creds-free, so a reviewer can reproduce the generated file from the raw counts.
+The scores no longer refresh. They came from a weekly PostHog query, and telemetry
+is removed, so `pluginPopularity.generated.ts` is a frozen snapshot of the last run.
+The comparator and its policy knobs still apply to it.

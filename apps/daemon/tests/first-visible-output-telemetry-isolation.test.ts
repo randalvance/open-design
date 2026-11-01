@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { recordingAnalyticsModule } from './helpers/recording-analytics.js';
 
 import type { RunLifecycleMark } from '../src/run-lifecycle-tracer.js';
 

@@ -135,7 +135,6 @@ import {
 import { PetSettings } from './pet/PetSettings';
 import { McpClientSection } from './McpClientSection';
 import { DesignSystemsSection } from './DesignSystemsSection';
-import { PrivacySection } from './PrivacySection';
 import { ProjectLocationsSection } from './ProjectLocationsSection';
 import { RoutinesSection } from './RoutinesSection';
 import { ConnectorsBrowser } from './ConnectorsBrowser';
@@ -194,7 +193,6 @@ export type SettingsSection =
   | 'designSystems'
   | 'projectLocations'
   | 'memory'
-  | 'privacy'
   // 'library' is consumed by the EntryShell library route — App opens it
   // via this same openSettings entry point, so SettingsSection must
   // accept the token even though SettingsDialog itself has no Library
@@ -216,9 +214,9 @@ export type SettingsSection =
 // (mcpClient, composio, designSystems) must NOT be listed: they
 // stay individually addressable through `initialSection`, and folding them
 // here would silently swallow a deep link into the wrong section.
-// `privacy` and `about` must not be listed either — they own nav items, and
-// mapping them to General used to send deep links to the wrong section with
-// the wrong nav item highlighted.
+// `about` must not be listed either — it owns a nav item, and mapping it to
+// General used to send deep links to the wrong section with the wrong nav item
+// highlighted.
 function normalizeSettingsSection(section: SettingsSection): SettingsSection {
   switch (section) {
     case 'language':
@@ -3444,7 +3442,6 @@ export function SettingsDialog({
       subtitle: t('critiqueTheater.settingsNavHint'),
     },
     notifications: { title: t('settings.notifications'), subtitle: t('settings.notificationsHint') },
-    privacy: { title: t('settings.privacy'), subtitle: t('settings.privacyHint') },
     pet: { title: t('pet.title'), subtitle: t('pet.subtitle') },
     designSystems: {
       title: t('settings.designSystems'),
@@ -3894,17 +3891,6 @@ export function SettingsDialog({
               <span>
                 <strong>{t('settings.mcpServerTitle')}</strong>
                 <small>{t('settings.mcpServerHint')}</small>
-              </span>
-            </button>
-            <button
-              type="button"
-              className={`settings-nav-item${activeSection === 'privacy' ? ' active' : ''}`}
-              onClick={() => setActiveSection('privacy')}
-            >
-              <Icon name="eye" size={18} />
-              <span>
-                <strong>{t('settings.privacy')}</strong>
-                <small>{t('settings.privacyHint')}</small>
               </span>
             </button>
             <button
@@ -5176,10 +5162,6 @@ export function SettingsDialog({
               chatAgentId={cfg.mode === 'daemon' ? cfg.agentId ?? null : null}
               chatModel={selectedMemoryChatModel}
             />
-          ) : null}
-
-          {activeSection === 'privacy' ? (
-            <PrivacySection cfg={cfg} setCfg={setCfg} />
           ) : null}
 
           {activeSection === 'about' ? (

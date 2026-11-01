@@ -7,7 +7,6 @@ import { captureJsonBodySize } from './http/json-body-size.js';
 import { usesProductionMarker, composeResumedRequest } from './strategies/od-next/request-resume.js';
 import { todoSnapshotHasUnfinishedWork } from '@open-design/contracts';
 import { createUserDesignSystem } from './design-systems/index.js';
-import { startEvidenceDelivery } from './services/evidence-delivery.js';
 import type {
   DesktopExportArtifactInput,
   DesktopExportArtifactResult,
@@ -520,18 +519,12 @@ import {
   artifactOriginForRun,
   snapshotAiHtmlVersionsForRun,
 } from './run-html-version-snapshots.js';
-import { reportRunCompletedFromDaemon } from './langfuse-bridge.js';
-import {
-  describeRunTelemetrySink,
-  readRunTelemetrySinkConfig,
-} from './langfuse-trace.js';
+import { reportNoRunTelemetry } from './observability/delivery-state.js';
 import { reconcileDurableRunTerminals } from './runtimes/run-terminal-reconciliation.js';
 import {
   startMessageEventPayloadHeal,
   type MessageEventPayloadHealHandle,
 } from './storage/message-event-payload-heal.js';
-import { createTaskObservationRolloutService } from './observability/task-observation-rollout.js';
-import { strategyTaskRunObservationId } from './observability/task-observation-aggregation.js';
 import { collectCodexChildEvidence } from './runtimes/codex-child-evidence.js';
 import {
   collectOpenCodeChildEvidenceFacts,
@@ -624,12 +617,7 @@ import {
   validateTarget as validateRoutineTarget,
 } from './routines.js';
 import { buildMcpInstallPayload } from './mcp-install-info.js';
-import { createDiagnosticsExportHandler, buildAutomaticDiagnosticSources, resolveDaemonPreviousLogPath } from './diagnostics-export.js';
-import { AutomaticDiagnostics } from './services/automatic-diagnostics.js';
-import { createDiagnosticRunObserver, diagnosticFaultFromApi, diagnosticFaultFromLifecycle } from './services/diagnostic-faults.js';
-import { diagnosticRelayUrl } from './integrations/diagnostic-relay.js';
-import { automaticDiagnosticsConsent, observeAppConfig } from './app-config.js';
-import { observeApiFailures } from './http/api-failure-journal.js';
+import { createDiagnosticsExportHandler, resolveDaemonPreviousLogPath } from './diagnostics-export.js';
 import { configureDiagnosticsEvidence } from './services/diagnostics-evidence.js';
 import { beginDaemonHealthSession } from './services/daemon-health.js';
 import { readSqlitePageStats } from './storage/db-inspect.js';
@@ -638,7 +626,7 @@ import {
   chatScrollForensicsBodyParser,
   chatScrollForensicsHandler,
 } from './diagnostics-client-evidence.js';
-import { DIAGNOSTIC_DELIVERY_LOG_PREFIX, DIAGNOSTICS_EXPORT_PATH } from '@open-design/diagnostics';
+import { DIAGNOSTICS_EXPORT_PATH } from '@open-design/diagnostics';
 import {
   createProjectArchiveStream,
   createBatchArchiveStream,
@@ -784,7 +772,6 @@ import {
 import { registerConnectorRoutes } from './connectors/routes.js';
 import { registerActiveContextRoutes } from './routes/active-context.js';
 import { registerAutomationRoutes } from './routes/automation.js';
-import { registerAttributionRoutes } from './routes/attribution.js';
 import { registerDaemonRoutes } from './routes/daemon.js';
 import { registerGenuiRoutes } from './routes/genui.js';
 import { registerDesignSystemRoutes } from './routes/design-systems.js';
@@ -832,7 +819,7 @@ import { registerOpenDesignPublicMetadataRoutes } from './routes/open-design-pub
 import { registerWhatsNewRoutes } from './routes/whats-new.js';
 import { registerMemoryRoutes } from './routes/memory.js';
 
-import { registerTelemetryRoutes } from './routes/telemetry.js';
+import { createDaemonTelemetry } from './routes/telemetry.js';
 import {
   assembleExample,
   registerAtomRoutes,
@@ -1853,30 +1840,15 @@ export function createFinalizedMessageTelemetryReporter({
   db,
   dataDir,
   reportedRuns,
-  taskObservationRollout,
   getAppVersion = () => null,
-  report = reportRunCompletedFromDaemon,
+  report = reportNoRunTelemetry,
 }: {
   design: any;
   db: unknown;
   dataDir: string;
   reportedRuns: Set<string>;
-  taskObservationRollout?: {
-    modeForRun(runId: string): 'off' | 'observe' | 'send';
-    representationForRun(runId: string):
-      | 'single_run'
-      | 'task_pending'
-      | 'task_accepted'
-      | 'task_not_expected';
-    beginFinalizeForRun(runId: string): {
-      durableTaskTruth: boolean;
-      suppressSingleRun: boolean;
-      completion: Promise<unknown>;
-    };
-    finalizeForRun(runId: string): Promise<unknown>;
-  };
   getAppVersion?: () => any;
-  report?: typeof reportRunCompletedFromDaemon;
+  report?: (args: any) => unknown;
 }) {
   const appVersionForCapture = () => {
     const appVersion = getAppVersion();
@@ -1972,53 +1944,6 @@ export function createFinalizedMessageTelemetryReporter({
         status: saved.runStatus,
       });
       return;
-    }
-    let taskObservationMode = 'off';
-    try {
-      taskObservationMode = taskObservationRollout?.modeForRun(run.id) ?? 'off';
-    } catch (error) {
-      // Representation persistence is a best-effort optimization. A SQLite
-      // claim/insert failure must leave the ordinary single-Run obligation
-      // intact instead of aborting the reporter before it reaches that path.
-      console.warn('[telemetry] task observation representation failed', String(error));
-    }
-    if (taskObservationMode === 'observe') {
-      void taskObservationRollout!.finalizeForRun(run.id).catch((error) => {
-        console.warn('[telemetry] task observation failed in observe mode', String(error));
-      });
-    } else if (taskObservationMode === 'send') {
-      let taskCompletion: Promise<unknown> | null = null;
-      try {
-        // Establish task-level durable truth before erasing the compatibility
-        // single-Run obligation. The returned completion may continue across
-        // network I/O, but the SQLite claim is already committed here.
-        const handle = taskObservationRollout!.beginFinalizeForRun(run.id);
-        if (handle.suppressSingleRun) taskCompletion = handle.completion;
-      } catch (error) {
-        // A claim/storage failure leaves this Run on the compatibility path;
-        // never suppress the only recoverable telemetry obligation.
-        console.warn('[telemetry] task observation claim failed', String(error));
-      }
-      if (!taskCompletion) {
-        // Fall through to the existing single-Run reporter below.
-      } else {
-        // The pending Task row owns this Run, but ownership alone is not a
-        // delivery checkpoint. Keep the Run unfinished until the Task is
-        // accepted/not-expected. A deterministic pre-network release removes
-        // the process-local gate and immediately resumes this same Run through
-        // the compatibility reporter.
-        reportedRuns.add(run.id);
-        void taskCompletion.then(() => {
-          if (taskObservationRollout!.representationForRun(run.id) !== 'single_run') {
-            return;
-          }
-          reportedRuns.delete(run.id);
-          reportFinalized(saved, body, options);
-        }).catch((error) => {
-          console.warn('[telemetry] task observation delivery failed', String(error));
-        });
-        return;
-      }
     }
     const existingDelivery = run.telemetryDelivery;
     if (
@@ -3286,21 +3211,9 @@ export async function startServer({
   // follow-up — see reconcile decision log.
   // (legacy POST /api/projects body deleted — see registerProjectRoutes below.)
 
-  let automaticDiagnostics: AutomaticDiagnostics | null = null;
-  const telemetry = registerTelemetryRoutes(app, {
+  const telemetry = createDaemonTelemetry({
     dataDir: RUNTIME_DATA_DIR,
     namespace: runtime?.namespace,
-    readAppConfig,
-    writeAppConfig,
-    onClientExperience: (evidence) => automaticDiagnostics?.record({
-      sourceId: `client:${evidence.occurrenceId}`, kind: evidence.category,
-      at: Date.now(), runId: evidence.runId, projectId: evidence.projectId,
-      conversationId: evidence.conversationId, errorCode: evidence.errorCode, detail: evidence,
-    }) ?? null,
-    onHostFault: (event, properties) => automaticDiagnostics?.record({
-      sourceId: `host:${event}:${typeof properties.previous_session_id === 'string' ? properties.previous_session_id : randomUUID()}`,
-      kind: event, at: Date.now(), detail: properties,
-    }) ?? null,
   });
   const resolvedAppVersionInfo = normalizeTelemetryAppVersionInfo(
     await telemetry.resolveAppVersion(),
@@ -3317,39 +3230,6 @@ export async function startServer({
     // an error when the config cannot be read, never `off` / `default`.
     readOdNextPreference: () => readAppConfig(RUNTIME_DATA_DIR),
   });
-  console.info(
-    '[telemetry] effective run sink',
-    describeRunTelemetrySink(
-      readRunTelemetrySinkConfig(process.env),
-    ),
-  );
-  try {
-    automaticDiagnostics = new AutomaticDiagnostics({
-      dataRoot: RUNTIME_DATA_DIR,
-      relayOrigin: diagnosticRelayUrl(process.env),
-      consent: () => automaticDiagnosticsConsent(RUNTIME_DATA_DIR),
-      sources: (incident) => buildAutomaticDiagnosticSources({ runtime, projectRoot: PROJECT_ROOT,
-        runsDir: path.join(RUNTIME_DATA_DIR, 'runs'), dataDir: RUNTIME_DATA_DIR }, incident),
-      baselineSources: () => buildAutomaticDiagnosticSources({ runtime, projectRoot: PROJECT_ROOT,
-        runsDir: path.join(RUNTIME_DATA_DIR, 'runs'), dataDir: RUNTIME_DATA_DIR }, { agentId: '*' }),
-      context: () => currentAppVersionInfo(),
-      onDelivered: (incidentId, receipt, evidence) => {
-        console.info(DIAGNOSTIC_DELIVERY_LOG_PREFIX, incidentId, JSON.parse(receipt).object_key);
-        void analyticsService.captureSafety({ eventName: 'diagnostic_bundle_uploaded',
-          appVersion: currentAppVersion(), properties: { diagnostic_incident_id: incidentId,
-            diagnostic_object_key: JSON.parse(receipt).object_key, run_id: evidence.runId,
-            fault_kind: evidence.kind } }).catch(() => {});
-      },
-    });
-    automaticDiagnostics.start();
-  } catch { console.warn('[diagnostics] local outbox unavailable'); }
-  const stopDiagnosticConfigObserver = observeAppConfig(RUNTIME_DATA_DIR, () => automaticDiagnostics?.consentChanged());
-  const stopDiagnosticApiObserver = observeApiFailures((failure) => {
-    const fault = diagnosticFaultFromApi(failure);
-    if (fault) automaticDiagnostics?.record(fault);
-  });
-  const observeDiagnosticRun = createDiagnosticRunObserver();
-  const stopEvidenceDelivery = startEvidenceDelivery(RUNTIME_DATA_DIR);
   const strategyWriteEvidence = createStrategyRunWriteEvidenceRecorder(db);
   const codexThreadCleanupOwner = createCodexThreadCleanupOwner();
   const design = {
@@ -3362,10 +3242,6 @@ export async function startServer({
       // each event is emitted, so the finalization verdict (retry safety gate,
       // artifact_count, close-status artifactProducedThisRun) does not depend on
       // early tool_use/artifact events surviving the run.events ring buffer.
-      onDiagnosticLifecycle: (run, kind, at, errorType) => {
-        const incidentId = automaticDiagnostics?.record(diagnosticFaultFromLifecycle(run, kind, at, errorType));
-        if (incidentId) run.diagnosticIncidentIds = [...new Set([...(run.diagnosticIncidentIds ?? []), incidentId])].slice(-100);
-      },
       onEventEmitted: (run, record) => {
         if (record.event === 'start' || record.event === 'end' || record.event === 'run_resume_attempted') {
           try {
@@ -3378,22 +3254,6 @@ export async function startServer({
             record.data.strategyTask = run.strategyTask;
           }
           } catch (error) { console.warn('[task-display] lifecycle projection unavailable', error instanceof Error ? error.message : 'unknown'); }
-        }
-        if (record.event === 'start') automaticDiagnostics?.trackRun(run.id, {
-          sourceId: `run:${run.id}:interrupted:${run.manualResumeAttemptCount ?? 0}:${record.timestamp}`,
-          kind: 'active_run', at: record.timestamp, runId: run.id, agentId: run.agentId,
-          projectId: run.projectId, conversationId: run.conversationId,
-        });
-        const fault = observeDiagnosticRun(run, record);
-        if (fault) {
-          const incidentId = automaticDiagnostics?.record(fault);
-          if (incidentId) run.diagnosticIncidentIds = [...new Set([...(run.diagnosticIncidentIds ?? []), incidentId])].slice(-100);
-        }
-        if (record.event === 'end') {
-          automaticDiagnostics?.finishRun(run.id);
-        }
-        if (record.event === 'run_retry_finished' && record.data?.retry_result === 'success') {
-          automaticDiagnostics?.recovered(run.id, record.timestamp);
         }
         if (!run.sideEffectLedger) run.sideEffectLedger = createRunSideEffectLedger();
         foldEventIntoRunSideEffectLedger(run.sideEffectLedger, record);
@@ -3437,35 +3297,6 @@ export async function startServer({
     getAppVersion: currentAppVersion,
     readAnalyticsContext,
   };
-  const taskObservationRollout = createTaskObservationRolloutService({
-    db,
-    dataDir: RUNTIME_DATA_DIR,
-    getRun: (runId) => design.runs.get(runId),
-    readTelemetry: async () => {
-      const appConfig = await readAppConfig(RUNTIME_DATA_DIR);
-      return {
-        prefs: appConfig.telemetry ?? {},
-        installationId: appConfig.installationId ?? null,
-        appVersionInfo: telemetry.getCachedAppVersion(),
-      };
-    },
-    checkpointMappedRun: (runId, reason) => {
-      const mappedRun = design.runs.get(runId);
-      if (!mappedRun) return;
-      design.runs.beginTelemetryDelivery?.(mappedRun);
-      design.runs.finalizeTelemetryDelivery?.(mappedRun, {
-        langfuse_expected: false,
-        langfuse_delivery_status: 'not_expected',
-        langfuse_drop_reason: reason,
-        langfuse_attempt_count: 0,
-      });
-    },
-  });
-  console.info(
-    '[telemetry] effective task observation rollout',
-    taskObservationRollout.diagnostic(),
-  );
-
   // Interactive Terminal sessions (node-pty). In-memory, process-local, and
   // killed on daemon shutdown — see shutdownDaemonRuns below.
   const terminalService = createTerminalService();
@@ -3483,7 +3314,6 @@ export async function startServer({
     db,
     dataDir: RUNTIME_DATA_DIR,
     reportedRuns,
-    taskObservationRollout,
     getAppVersion: telemetry.getCachedAppVersion,
   });
   const reportRunCompletionTelemetryFallback = ({
@@ -3556,50 +3386,23 @@ export async function startServer({
     analyticsLifecycle: runAnalyticsLifecycle,
   });
   // Runs are process-local, but their terminal obligations are durable. On a
-  // fresh daemon boot, repair stale message rows and replay any PostHog or
-  // Langfuse terminal work whose checkpoint was not committed. Network work
-  // stays off the startup critical path.
+  // fresh daemon boot, repair stale message rows and settle any terminal
+  // bookkeeping whose checkpoint was not committed. This stays off the startup
+  // critical path.
   void reconcileDurableRunTerminals({
     analytics: analyticsService,
     appVersion: currentAppVersion(),
     appVersionInfo: currentAppVersionInfo(),
     db,
-    reportLangfuse: reportRunCompletedFromDaemon,
-    taskObservationModeForRun: (runId) => taskObservationRollout.modeForRun(runId),
-    taskObservationRepresentationForRun: (runId) =>
-      taskObservationRollout.representationForRun(runId),
-    taskObservationNotExpectedReasonForRun: (runId) =>
-      taskObservationRollout.notExpectedReasonForRun(runId),
-    seedTaskObservationRunFact: (runId, fact) =>
-      taskObservationRollout.seedRepresentationFromRunFact(runId, fact),
-    beginTaskObservationForRun: (runId) => taskObservationRollout.beginFinalizeForRun(runId),
+    reportLangfuse: reportNoRunTelemetry,
     runsLogDir: path.join(RUNTIME_DATA_DIR, 'runs'),
-  }).then(async (reconciled) => {
+  }).then((reconciled) => {
     if (reconciled.interrupted > 0 || reconciled.messagesReconciled > 0) {
       console.warn('[runs] reconciled interrupted run terminals', reconciled);
-    }
-    const taskObservationsRecovered = await taskObservationRollout.reconcileCrashWindows();
-    if (taskObservationsRecovered > 0) {
-      console.warn('[telemetry] reconciled task observation crash windows', {
-        recovered: taskObservationsRecovered,
-      });
     }
   }).catch((error) => {
     console.warn('[runs] terminal reconciliation failed', error);
   });
-
-  const reportFeedback = (req) => {
-    // Resolve Task ownership on the server, using the same representation as
-    // completed-run telemetry. The client does not choose a trace or sink.
-    const representation = taskObservationRollout.representationForRun(req.runId);
-    const task = (representation === 'task_accepted' || representation === 'task_pending')
-      ? getStrategyTaskExecutionByRunId(db, req.runId)
-      : null;
-    return telemetry.reportFeedback({
-      ...req,
-      ...(task ? { traceId: `strategy-task:${task.taskExecutionId}` } : {}),
-    });
-  };
 
   // DNS-aware wrapper. The sync `validateBaseUrl` only inspects the literal
   // hostname string, so a public DNS name pointing at an internal address
@@ -3628,13 +3431,6 @@ export async function startServer({
     isLocalSameOrigin,
     resolvedPortRef,
   };
-  const attributionService = registerAttributionRoutes(app, {
-    analytics: analyticsService,
-    appConfig: { readAppConfig },
-    http: httpDeps,
-    paths: { RUNTIME_DATA_DIR },
-    env: process.env,
-  });
   const pathDeps = {
     PROJECT_ROOT,
     PROJECTS_DIR,
@@ -3788,7 +3584,6 @@ export async function startServer({
       projectRoot: PROJECT_ROOT,
       runsDir: path.join(RUNTIME_DATA_DIR, 'runs'),
       dataDir: RUNTIME_DATA_DIR,
-      automaticUploadStatus: () => automaticDiagnostics?.outbox.diagnostics() ?? { available: false },
     }),
   );
 
@@ -3933,9 +3728,6 @@ export async function startServer({
     readAppConfig,
     writeAppConfig,
     onAppConfigWritten: () => {
-      void attributionService.processPending().catch((err: unknown) => {
-        console.warn('[attribution] pending claim failed', err);
-      });
     },
   };
   const orbitDeps = { orbitService };
@@ -10682,10 +10474,7 @@ export async function startServer({
               runId: run.id,
               taskRunIndex: mapping.taskRunIndex,
               stage: mapping.inputStage,
-              parentObservationId: strategyTaskRunObservationId(
-                strategyTaskAtStart.taskExecutionId,
-                run.id,
-              ),
+              parentObservationId: `task-run:${strategyTaskAtStart.taskExecutionId}:${run.id}`,
               ...(run.preflightAgentCliVersion
                 ? { agentCliVersion: run.preflightAgentCliVersion }
                 : {}),
@@ -11859,7 +11648,6 @@ export async function startServer({
       getLocalPluginBySource: (id, source) => getLocalPluginBySource(db, id, source),
     },
     telemetry: {
-      taskTelemetryForRun: (runId) => taskObservationRollout.telemetryForRun(runId),
       reportRunCompletionTelemetryFallback,
       resolveRunProjectKindForAnalytics,
       runArtifactBaselines,
@@ -12334,7 +12122,7 @@ export async function startServer({
     appConfig: { readAppConfig },
     validation: validationDeps,
     lifecycle: { isDaemonShuttingDown: () => daemonShuttingDown },
-    telemetry: { reportFinalizedMessage, reportFeedback },
+    telemetry: { reportFinalizedMessage },
   });
 
   registerStaticSpaFallback(app, staticDir);
@@ -12358,13 +12146,9 @@ export async function startServer({
     // work below.
     let messageEventPayloadHeal: MessageEventPayloadHealHandle | null = null;
     const cleanupDaemonBackgroundWork = () => {
-      stopDiagnosticConfigObserver();
-      stopDiagnosticApiObserver();
-      void automaticDiagnostics?.stop();
       daemonHealth?.markCleanShutdown();
       daemonHealth?.stop();
       void messageEventPayloadHeal?.stop();
-      stopEvidenceDelivery();
       clearTerminalTelemetryFallbackTimers();
       telemetry.disposeFatalHandlers();
       composioConnectorProvider.stopCatalogRefreshLoop();
@@ -12443,17 +12227,9 @@ export async function startServer({
         // the log tail that packaged startup telemetry samples.
         daemonHealth?.enableFatalReports();
         daemonHealth?.setAppVersion(currentAppVersion());
-        daemonHealth?.attachSink(({ eventName, properties, insertId }) => {
-          const capture = { eventName, appVersion: currentAppVersion(), properties, insertId };
-          // Periodic health/metric events wait for the installation identity
-          // like every other stability metric (OPEND-4220 retest 2). Fault
-          // signals (unclean exit, memory pressure) stay immediate.
-          return eventName === 'client_process_memory_sample'
-            || eventName === 'daemon_storage_snapshot'
-            || eventName === 'daemon_health_summary'
-            ? telemetry.captureStabilityMetric(capture)
-            : analyticsService.captureSafety(capture);
-        });
+        daemonHealth?.attachSink(({ eventName, properties, insertId }) => (
+          analyticsService.captureSafety({ eventName, appVersion: currentAppVersion(), properties, insertId })
+        ));
         // When binding to all interfaces report localhost for local callers;
         // when binding to a specific address (e.g. a Tailscale IP) report that
         // address so remote callers and the sidecar use the correct URL.

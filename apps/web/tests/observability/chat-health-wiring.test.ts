@@ -3,16 +3,14 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  clearExceptionTrackingContext,
-  setExceptionTrackingContext,
-} from '../../src/analytics/error-tracking';
 import { __resetChatContextForTest } from '../../src/observability/chat-context';
 import {
   __resetChatHealthForTest,
   openChatSurface,
 } from '../../src/observability/chat-health';
 import { streamViaDaemon } from '../../src/providers/daemon';
+import { clearReportedSafetyEvents, reportedSafetyEventsNamed, watchSafetyEvents } from '../helpers/safety-events';
+
 
 /**
  * `client_chat_stream_health` is the one chat-health event that is EMITTED by
@@ -64,17 +62,7 @@ function emitLongTask(durationMs: number): void {
 }
 
 function safetyEvents(name: string): Array<Record<string, unknown>> {
-  const decoded: Array<{ event?: string; properties?: Record<string, unknown> }> = [];
-  for (const call of fetchMock.mock.calls) {
-    const init = call[1] as RequestInit | undefined;
-    if (typeof init?.body !== 'string') continue;
-    try {
-      decoded.push(JSON.parse(init.body) as { event?: string; properties?: Record<string, unknown> });
-    } catch {
-      // not a telemetry beacon
-    }
-  }
-  return decoded.filter((e) => e.event === name).map((e) => e.properties ?? {});
+  return reportedSafetyEventsNamed(name);
 }
 
 function chatLogElement(): HTMLElement {
@@ -139,16 +127,10 @@ async function runOneTurn(handlers: ReturnType<typeof daemonHandlers>): Promise<
 beforeEach(() => {
   longTaskCallbacks = [];
   document.body.innerHTML = '';
+  watchSafetyEvents();
   fetchMock.mockReset();
   fetchMock.mockResolvedValue(new Response('', { status: 200 }));
   globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-  setExceptionTrackingContext({
-    apiKey: 'phc_test',
-    host: 'https://us.i.posthog.com',
-    distinctId: 'chat-health-wiring-test',
-    clientType: 'web',
-    osName: 'Mac OS X',
-  });
   (globalThis as unknown as { PerformanceObserver: unknown }).PerformanceObserver =
     FakePerformanceObserver;
   __resetChatHealthForTest();
@@ -159,7 +141,6 @@ afterEach(() => {
   __resetChatHealthForTest();
   __resetChatContextForTest();
   vi.restoreAllMocks();
-  clearExceptionTrackingContext();
   globalThis.fetch = ORIGINAL_FETCH;
   document.body.innerHTML = '';
 });
@@ -193,7 +174,7 @@ describe('client_chat_stream_health — the flush must still know its run', () =
 
     await runOneTurn(daemonHandlers(() => emitLongTask(320)));
 
-    fetchMock.mockClear();
+    clearReportedSafetyEvents();
     // A second surface opened after the run is over must find nothing in
     // flight to adopt, so its window stays shut and a stray long task is
     // attributed to nobody.

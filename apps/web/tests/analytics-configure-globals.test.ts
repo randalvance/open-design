@@ -1,23 +1,11 @@
-// Regression test for the v2 configure-state globals
+// Pins `deriveConfigureGlobals`: the v2 configure-state derivation
 // (has_available_configure_cli / configure_type / configure_availability).
-//
-// Reviewer comment on PR #2285 (mrcfps, 2026-05-19) flagged that
-// `setConfigureGlobals` was defined but never called, so every browser
-// capture inherited the boot defaults `{ false, 'unknown', 'unknown' }`.
-// App.tsx now drives the setter from a useEffect that watches mode /
-// agentId / apiKey / apiProtocolConfigs / agents; these tests pin the
-// derive-then-register behavior end-to-end against the client module so a
-// future refactor can't silently regress it back to a no-op setter.
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   deriveConfigureGlobals,
   type DeriveConfigureGlobalsInput,
 } from '@open-design/contracts/analytics';
-import {
-  getConfigureGlobals,
-  setConfigureGlobals,
-} from '../src/analytics/client';
 
 const BOOT_DEFAULTS = {
   has_available_configure_cli: false,
@@ -326,51 +314,5 @@ describe('deriveConfigureGlobals — independent runnable flags', () => {
       byok_runnable: false,
       amr_runnable: true,
     });
-  });
-});
-
-describe('setConfigureGlobals (web client)', () => {
-  // Reset the module-level state so other suites do not bleed in.
-  beforeEach(() => {
-    setConfigureGlobals(BOOT_DEFAULTS);
-  });
-  afterEach(() => {
-    setConfigureGlobals(BOOT_DEFAULTS);
-  });
-
-  it('stores the latest configure-state for downstream captures', () => {
-    expect(getConfigureGlobals()).toEqual(BOOT_DEFAULTS);
-    setConfigureGlobals({
-      has_available_configure_cli: true,
-      configure_type: 'local_cli',
-      configure_availability: 'available',
-      runtime_type: 'local_cli',
-      cli_runnable: true,
-      byok_runnable: false,
-      amr_runnable: false,
-    });
-    expect(getConfigureGlobals()).toEqual({
-      has_available_configure_cli: true,
-      configure_type: 'local_cli',
-      configure_availability: 'available',
-      runtime_type: 'local_cli',
-      cli_runnable: true,
-      byok_runnable: false,
-      amr_runnable: false,
-    });
-  });
-
-  it('never throws when no PostHog client is initialized', () => {
-    expect(() =>
-      setConfigureGlobals({
-        has_available_configure_cli: true,
-        configure_type: 'both',
-        configure_availability: 'available',
-        runtime_type: 'local_cli',
-        cli_runnable: true,
-        byok_runnable: true,
-        amr_runnable: false,
-      }),
-    ).not.toThrow();
   });
 });

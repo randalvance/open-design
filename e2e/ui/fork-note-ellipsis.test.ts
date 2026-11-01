@@ -3,7 +3,6 @@ import type { Locator, Page } from '@playwright/test';
 
 import {
   createProjectViaApi,
-  dismissPrivacyDialog,
   expectWorkspaceReady,
   putAppConfig,
   seedBrowserConfig,
@@ -119,7 +118,6 @@ async function seedForkedConversation(page: Page): Promise<Locator> {
   await page.goto(`/projects/${projectId}/conversations/${conversation!.id}`, {
     waitUntil: 'domcontentloaded',
   });
-  await dismissPrivacyDialog(page);
   await expectWorkspaceReady(page);
 
   // Let the divider paint at the default width first, so the squeeze below has

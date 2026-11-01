@@ -4,7 +4,6 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as repairDecision from '../../src/artifacts/deliverable-syntax-repair.js';
-import { projectDeliverableSyntaxTelemetry } from '../../src/langfuse-bridge.js';
 
 import { finalizeSuccessfulRunDeliverable } from '../../src/artifacts/successful-run-deliverable-finalization.js';
 import { deliverableSyntaxFinalizerEnabled } from '../../src/artifacts/successful-run-deliverable-finalization.js';
@@ -45,10 +44,6 @@ describe('successful physical Run deliverable finalization', () => {
     expect(log).toHaveBeenCalledWith('[deliverable-syntax] internal_error');
     expect(JSON.stringify(log.mock.calls)).not.toContain(source);
     await expect(fs.readFile(fixture.target, 'utf8')).resolves.toBe(source);
-    if (result.syntax.action === 'skip') throw new Error('Missing syntax evidence');
-    expect(projectDeliverableSyntaxTelemetry({ deliverableSyntaxValidation: result.syntax.validation, status: 'succeeded' })).toMatchObject({
-      finalization: { reason: 'internal_error' }, recoveredDeliveryCount: 0, deliveredWithSyntaxWarningCount: 1,
-    });
   });
 
   it('provides an environment kill switch while defaulting the candidate on', () => {

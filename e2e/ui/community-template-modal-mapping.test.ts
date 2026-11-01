@@ -115,11 +115,6 @@ async function routeMappingFixtures(page: Page) {
 async function gotoCommunity(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByText('Loading OpenDesign…').waitFor({ state: 'hidden', timeout: T.long });
-  const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve OpenDesign' });
-  if (await privacyDialog.isVisible().catch(() => false)) {
-    await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
-    await expect(privacyDialog).toHaveCount(0);
-  }
   await ensureRailOpen(page);
   await page.getByTestId('entry-nav-community').click();
   await expect(page).toHaveURL(/\/community$/);

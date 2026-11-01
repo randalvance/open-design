@@ -4,10 +4,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  clearExceptionTrackingContext,
-  setExceptionTrackingContext,
-} from '../../src/analytics/error-tracking';
-import {
   ACTIVITY_CAPACITY,
   ACTIVITY_COALESCE_MS,
   ACTIVITY_NEAR_WINDOW_MS,
@@ -38,6 +34,8 @@ import {
   installChatScrollFreezeObserver,
   subscribeChatScrollFreeze,
 } from '../../src/observability/chat-scroll-freeze';
+import { reportedSafetyEvents, watchSafetyEvents } from '../helpers/safety-events';
+
 
 /**
  * The defect these specs encode
@@ -68,8 +66,6 @@ import {
  * browser can confirm is listed in the handoff notes, not faked here.
  */
 
-const fetchMock = vi.fn();
-const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_RAF = globalThis.requestAnimationFrame;
 const ORIGINAL_CAF = globalThis.cancelAnimationFrame;
 
@@ -81,18 +77,8 @@ function advanceClock(ms: number): void {
   clock += ms;
 }
 
-function sentEvents(): Array<{ event: string; properties: Record<string, unknown> }> {
-  return fetchMock.mock.calls.map((call) => {
-    const init = call[1] as RequestInit;
-    return JSON.parse(init.body as string) as {
-      event: string;
-      properties: Record<string, unknown>;
-    };
-  });
-}
-
 function eventsNamed(name: string): Array<Record<string, unknown>> {
-  return sentEvents()
+  return reportedSafetyEvents()
     .filter((e) => e.event === name)
     .map((e) => e.properties);
 }
@@ -240,16 +226,7 @@ function scrolled(target: HTMLElement): void {
 
 beforeEach(() => {
   clock = 0;
-  fetchMock.mockReset();
-  fetchMock.mockResolvedValue(new Response('', { status: 200 }));
-  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-  setExceptionTrackingContext({
-    apiKey: 'phc_test',
-    host: 'https://us.i.posthog.com',
-    distinctId: 'chat-scroll-freeze-test',
-    clientType: 'web',
-    osName: 'Mac OS X',
-  });
+  watchSafetyEvents();
   // A synchronous rAF makes the probe deterministic: one wheel event in,
   // one geometry sample out, no frame scheduling to await. It is a spy as
   // well as a stub, because "scheduled nothing" is an assertion the guard
@@ -271,8 +248,6 @@ beforeEach(() => {
 afterEach(() => {
   __resetChatScrollFreezeForTest();
   vi.restoreAllMocks();
-  clearExceptionTrackingContext();
-  globalThis.fetch = ORIGINAL_FETCH;
   globalThis.requestAnimationFrame = ORIGINAL_RAF;
   globalThis.cancelAnimationFrame = ORIGINAL_CAF;
   document.body.innerHTML = '';

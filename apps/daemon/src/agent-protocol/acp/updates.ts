@@ -469,7 +469,6 @@ function acpToolNameFromTitle(title: string): string | null {
  * lexical masking, not full payload replacement). Custom `kind:other` tools must
  * never inherit these labels — a malicious or misconfigured MCP adapter can
  * otherwise place private content in `rawInput` and bypass fail-closed redaction.
- * Keep in sync with `PARTIAL_REDACT_TOOL_NAMES_LOWER` in langfuse-trace.ts.
  */
 const ACP_PARTIAL_REDACT_TOOL_NAMES_LOWER: ReadonlySet<string> = new Set([
   'bash',

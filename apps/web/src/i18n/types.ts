@@ -482,24 +482,6 @@ export interface Dict {
   'settings.mediaProviderSaveHint': string;
   'settings.mediaProviderNoKeyRequired': string;
   'settings.mediaProviderNoKeyHint': string;
-  'settings.privacy': string;
-  'settings.privacyHint': string;
-  'settings.privacyConsentKicker': string;
-  'settings.privacyConsentLead': string;
-  'settings.privacyConsentFooter': string;
-  'settings.privacyConsentShare': string;
-  'settings.privacyConsentDecline': string;
-  'settings.privacyConsentAccept': string;
-  'settings.privacyConsentBannerFooter': string;
-  'settings.privacyConsentPolicyLink': string;
-  'settings.privacyMetrics': string;
-  'settings.privacyMetricsHint': string;
-  'settings.privacyContent': string;
-  'settings.privacyContentHint': string;
-  'settings.privacyInstallationId': string;
-  'settings.privacyOptedOut': string;
-  'settings.privacyDataDeletion': string;
-  'settings.privacyDataDeletionHint': string;
   'settings.about': string;
   'settings.aboutHint': string;
   'settings.appVersion': string;
@@ -1001,12 +983,8 @@ export interface Dict {
   'entry.openSettingsTitle': string;
   'entry.openSettingsAria': string;
   'entry.communityLabel': string;
-  'entry.communityAria': string;
   'entry.discordAriaWithOnline': string;
   'entry.discordOnlineLabel': string;
-  'entry.xAria': string;
-  'entry.mailAria': string;
-  /** Label beside the mail glyph in the rail's account dock social row. */
   'entry.accountSettings': string;
   'chat.collapsePane': string;
   'comment.sharePageCommentReadOnly': string;
@@ -5237,26 +5215,6 @@ export interface Dict {
   'skillDetail.previewAria': string;
   'common.dismiss': string;
 
-  'experienceSurvey.tag': string;
-  'experienceSurvey.close': string;
-  'experienceSurvey.recommendation': string;
-  'experienceSurvey.recommendationLow': string;
-  'experienceSurvey.recommendationHigh': string;
-  'experienceSurvey.improvement': string;
-  'experienceSurvey.improvement.wrongOutput': string;
-  'experienceSurvey.improvement.falseDone': string;
-  'experienceSurvey.improvement.hardToUse': string;
-  'experienceSurvey.improvement.upgradePrompts': string;
-  'experienceSurvey.improvement.stuck': string;
-  'experienceSurvey.improvement.slow': string;
-  'experienceSurvey.improvement.looks': string;
-  'experienceSurvey.improvement.regression': string;
-  'experienceSurvey.improvement.other': string;
-  'experienceSurvey.otherPlaceholder': string;
-  'experienceSurvey.submit': string;
-  'experienceSurvey.skip': string;
-  'experienceSurvey.thanksTitle': string;
-  'experienceSurvey.thanksBody': string;
 
   /* 执行记录(chat 重构):动词、状态词、计数。数值与措辞来自 wangchenglong 交付稿 */
   'chat.record.verb.read': string;

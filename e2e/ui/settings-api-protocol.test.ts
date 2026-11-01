@@ -22,10 +22,6 @@ async function waitForLoadingToClear(page: Page) {
 async function gotoEntryHome(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
-  const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve OpenDesign' });
-  if (await privacyDialog.isVisible()) {
-    await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
-  }
   const settingsButton = page
     .getByTestId('entry-settings-button')
     .or(page.getByTestId('entry-nav-settings'))

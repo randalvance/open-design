@@ -97,21 +97,3 @@ export function keyEvent(
   (init.target ?? document.activeElement ?? document.body).dispatchEvent(event);
   return event;
 }
-
-export function decodeSafetyEvents(
-  fetchMock: { mock: { calls: unknown[][] } },
-): Array<{ event: string; properties: Record<string, unknown> }> {
-  const decoded: Array<{ event: string; properties: Record<string, unknown> }> = [];
-  for (const call of fetchMock.mock.calls) {
-    const init = call[1] as RequestInit | undefined;
-    if (typeof init?.body !== 'string') continue;
-    try {
-      decoded.push(
-        JSON.parse(init.body) as { event: string; properties: Record<string, unknown> },
-      );
-    } catch {
-      // not a telemetry beacon
-    }
-  }
-  return decoded;
-}

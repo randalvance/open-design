@@ -7,31 +7,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.hoisted(() => vi.resetModules());
 vi.mock('../../src/observability/experience-diagnostics', () => ({ reportExperienceEvent: vi.fn() }));
 
-import {
-  clearExceptionTrackingContext,
-  setExceptionTrackingContext,
-} from '../../src/analytics/error-tracking';
 import { installResourceErrorObserver } from '../../src/observability/resource-error';
+import { reportedSafetyEvents, watchSafetyEvents } from '../helpers/safety-events';
 
-const fetchMock = vi.fn();
-const ORIGINAL_FETCH = globalThis.fetch;
+
 
 let uninstall: (() => void) | null = null;
 
 beforeEach(() => {
   vi.useFakeTimers();
-  fetchMock.mockReset();
-  fetchMock.mockResolvedValue(new Response('', { status: 200 }));
-  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-  clearExceptionTrackingContext();
-  setExceptionTrackingContext({
-    apiKey: 'phc_test',
-    host: 'https://us.i.posthog.com',
-    distinctId: 'device-1',
-    clientType: 'web',
-    osName: 'Mac OS X',
-    sessionId: 'session-1',
-  });
+  watchSafetyEvents();
   window.history.replaceState(
     {},
     '',
@@ -43,8 +28,6 @@ beforeEach(() => {
 afterEach(() => {
   uninstall?.();
   uninstall = null;
-  clearExceptionTrackingContext();
-  globalThis.fetch = ORIGINAL_FETCH;
   vi.useRealTimers();
 });
 
@@ -59,15 +42,6 @@ function dispatchResourceError(tag: string, url: string): void {
   document.body.append(element);
   element.dispatchEvent(new Event('error'));
   element.remove();
-}
-
-function fetchedProperties(index: number): Record<string, unknown> {
-  const init = fetchMock.mock.calls[index]?.[1] as RequestInit | undefined;
-  expect(init?.body).toEqual(expect.any(String));
-  const body = JSON.parse(init!.body as string) as {
-    properties: Record<string, unknown>;
-  };
-  return body.properties;
 }
 
 describe('resource error privacy and volume boundary', () => {
@@ -126,20 +100,19 @@ describe('resource error privacy and volume boundary', () => {
 
     for (const item of cases) dispatchResourceError(item.tag, item.url);
 
-    expect(fetchMock).toHaveBeenCalledTimes(cases.length);
+    expect(reportedSafetyEvents()).toHaveLength(cases.length);
     for (const [index, item] of cases.entries()) {
-      expect(fetchedProperties(index)).toMatchObject({
+      expect(reportedSafetyEvents()[index]!.properties).toMatchObject({
         ...item.expected,
         monitoring_kind: `${item.expected.category}|first`,
         tag: item.tag,
         event_kind: 'first',
         repeat_count: 0,
-        $current_url: `${origin}/projects/:project_id/conversations/:conversation_id/files/:file`,
       });
     }
 
-    const serialized = fetchMock.mock.calls
-      .map((call) => String((call[1] as RequestInit).body))
+    const serialized = reportedSafetyEvents()
+      .map((reported) => JSON.stringify(reported))
       .join('\n');
     for (const secret of [
       'project-secret',
@@ -167,19 +140,19 @@ describe('resource error privacy and volume boundary', () => {
     dispatchResourceError('link', productLookingPrivateUrl);
     dispatchResourceError('img', customSchemeUrl);
 
-    expect(fetchedProperties(0)).toMatchObject({
+    expect(reportedSafetyEvents()[0]!.properties).toMatchObject({
       category: 'product_asset',
       resource_route: '/fonts/:asset',
       resource_extension: 'pdf',
     });
-    expect(fetchedProperties(1)).toMatchObject({
+    expect(reportedSafetyEvents()[1]!.properties).toMatchObject({
       category: 'user_artifact',
       resource_route: 'opaque',
       normalized_resource: 'opaque:image',
     });
 
-    const serialized = fetchMock.mock.calls
-      .map((call) => String((call[1] as RequestInit).body))
+    const serialized = reportedSafetyEvents()
+      .map((reported) => JSON.stringify(reported))
       .join('\n');
     expect(serialized).not.toContain('Customer%20Contract.pdf');
     expect(serialized).not.toContain('customer-project-123');
@@ -192,13 +165,13 @@ describe('resource error privacy and volume boundary', () => {
       `${window.location.origin}/_next/static/chunks/Customer%20Contract-a1b2c3.js`,
     );
 
-    expect(fetchedProperties(0)).toMatchObject({
+    expect(reportedSafetyEvents()[0]!.properties).toMatchObject({
       category: 'next_chunk',
       normalized_resource: 'next:a1b2c3.js',
       resource_route: '/_next/static/chunks/:chunk',
     });
-    expect(JSON.stringify(fetchedProperties(0))).not.toContain('Customer');
-    expect(JSON.stringify(fetchedProperties(0))).not.toContain('Contract');
+    expect(JSON.stringify(reportedSafetyEvents()[0]!.properties)).not.toContain('Customer');
+    expect(JSON.stringify(reportedSafetyEvents()[0]!.properties)).not.toContain('Contract');
   });
 
   it('emits one immediate event and one bounded repeat summary per resource window', () => {
@@ -209,8 +182,8 @@ describe('resource error privacy and volume boundary', () => {
       dispatchResourceError('iframe', resource);
     }
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchedProperties(0)).toMatchObject({
+    expect(reportedSafetyEvents()).toHaveLength(1);
+    expect(reportedSafetyEvents()[0]!.properties).toMatchObject({
       category: 'user_artifact',
       event_kind: 'first',
       repeat_count: 0,
@@ -218,16 +191,16 @@ describe('resource error privacy and volume boundary', () => {
 
     vi.advanceTimersByTime(60_000);
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchedProperties(1)).toMatchObject({
+    expect(reportedSafetyEvents()).toHaveLength(2);
+    expect(reportedSafetyEvents()[1]!.properties).toMatchObject({
       category: 'user_artifact',
       monitoring_kind: 'user_artifact|repeat_summary',
       event_kind: 'repeat_summary',
       repeat_count: 4,
     });
-    expect(JSON.stringify(fetchedProperties(1))).not.toContain('private-project');
-    expect(JSON.stringify(fetchedProperties(1))).not.toContain('Private%20deck.pdf');
-    expect(JSON.stringify(fetchedProperties(1))).not.toContain('private-token');
+    expect(JSON.stringify(reportedSafetyEvents()[1]!.properties)).not.toContain('private-project');
+    expect(JSON.stringify(reportedSafetyEvents()[1]!.properties)).not.toContain('Private%20deck.pdf');
+    expect(JSON.stringify(reportedSafetyEvents()[1]!.properties)).not.toContain('private-token');
   });
 
   it('closes a repeat window once the resource loads and starts fresh after recovery', () => {
@@ -239,15 +212,15 @@ describe('resource error privacy and volume boundary', () => {
     resource.dispatchEvent(new Event('error'));
     resource.dispatchEvent(new Event('load'));
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchedProperties(1)).toMatchObject({
+    expect(reportedSafetyEvents()).toHaveLength(2);
+    expect(reportedSafetyEvents()[1]!.properties).toMatchObject({
       event_kind: 'repeat_summary',
       repeat_count: 1,
     });
 
     resource.dispatchEvent(new Event('error'));
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchedProperties(2)).toMatchObject({
+    expect(reportedSafetyEvents()).toHaveLength(3);
+    expect(reportedSafetyEvents()[2]!.properties).toMatchObject({
       event_kind: 'first',
       repeat_count: 0,
     });
@@ -266,21 +239,21 @@ describe('resource error privacy and volume boundary', () => {
     second.dispatchEvent(new Event('error'));
     second.dispatchEvent(new Event('error'));
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchedProperties(0).normalized_resource).toBe(
-      fetchedProperties(1).normalized_resource,
+    expect(reportedSafetyEvents()).toHaveLength(2);
+    expect(reportedSafetyEvents()[0]!.properties.normalized_resource).toBe(
+      reportedSafetyEvents()[1]!.properties.normalized_resource,
     );
 
     first.dispatchEvent(new Event('load'));
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchedProperties(2)).toMatchObject({
+    expect(reportedSafetyEvents()).toHaveLength(3);
+    expect(reportedSafetyEvents()[2]!.properties).toMatchObject({
       event_kind: 'repeat_summary',
       repeat_count: 1,
     });
 
     vi.advanceTimersByTime(60_000);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect(fetchedProperties(3)).toMatchObject({
+    expect(reportedSafetyEvents()).toHaveLength(4);
+    expect(reportedSafetyEvents()[3]!.properties).toMatchObject({
       event_kind: 'repeat_summary',
       repeat_count: 1,
     });
@@ -295,11 +268,11 @@ describe('resource error privacy and volume boundary', () => {
     dispatchResourceError('iframe', resource);
     dispatchResourceError('iframe', resource);
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(reportedSafetyEvents()).toHaveLength(1);
     window.dispatchEvent(new Event('pagehide'));
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchedProperties(1)).toMatchObject({
+    expect(reportedSafetyEvents()).toHaveLength(2);
+    expect(reportedSafetyEvents()[1]!.properties).toMatchObject({
       event_kind: 'repeat_summary',
       repeat_count: 1,
     });
@@ -314,14 +287,14 @@ describe('resource error privacy and volume boundary', () => {
         `${origin}/_next/static/chunks/chunk-${chunkId}.js`,
       );
     }
-    expect(fetchMock).toHaveBeenCalledTimes(129);
+    expect(reportedSafetyEvents()).toHaveLength(129);
 
     dispatchResourceError(
       'script',
       `${origin}/_next/static/chunks/chunk-000000.js`,
     );
-    expect(fetchMock).toHaveBeenCalledTimes(130);
-    expect(fetchedProperties(129)).toMatchObject({
+    expect(reportedSafetyEvents()).toHaveLength(130);
+    expect(reportedSafetyEvents()[129]!.properties).toMatchObject({
       category: 'next_chunk',
       normalized_resource: 'next:000000.js',
       event_kind: 'first',

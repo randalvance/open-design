@@ -1131,25 +1131,11 @@ export class McpObservabilitySession {
     baseUrl: string,
     clientInfo: { name?: unknown; version?: unknown } | null | undefined,
   ): Promise<McpObservabilitySession> {
-    let identity: McpAnalyticsContextResponse = {
-      enabled: false,
-      deviceId: null,
-      locale: 'en',
-    };
-    try {
-      identity = await postJson<McpAnalyticsContextResponse>(
-        `${baseUrl}/api/analytics/mcp/context`,
-        {},
-      );
-    } catch {
-      // A telemetry bootstrap failure must not block the MCP server.
-    }
-    const session = new McpObservabilitySession(baseUrl, identity, clientInfo);
-    await session.emit('mcp_session_initialized', null, {
-      mcp_session_id: session.id,
-      host_product: session.hostProduct,
-    });
-    return session;
+    return new McpObservabilitySession(
+      baseUrl,
+      { enabled: false, deviceId: null, locale: 'en' },
+      clientInfo,
+    );
   }
 
   private async restoreAcceptedWorkflow(
@@ -1357,34 +1343,15 @@ export class McpObservabilitySession {
     return { correlation_status: 'matched' };
   }
 
+  /** Tool lifecycle call sites stay in place; nothing records or sends them. */
   async emit(
-    event:
+    _event:
       | 'mcp_session_initialized'
       | 'mcp_tool_started'
       | 'mcp_tool_finished',
-    attribution: McpPluginAttribution | null,
-    properties: Record<string, unknown>,
-  ): Promise<void> {
-    if (!this.identity.enabled || !this.identity.deviceId) return;
-    try {
-      const attributionQuality =
-        properties.attribution_quality === 'session_correlated'
-          ? 'session_correlated'
-          : 'self_reported';
-      await postJson(
-        `${this.baseUrl}/api/analytics/mcp/event`,
-        {
-          event,
-          eventId: randomUUID(),
-          occurredAt: new Date().toISOString(),
-          properties,
-        },
-        this.headers(attribution, undefined, attributionQuality),
-      );
-    } catch {
-      // Analytics is deliberately best-effort.
-    }
-  }
+    _attribution: McpPluginAttribution | null,
+    _properties: Record<string, unknown>,
+  ): Promise<void> {}
 
   headers(
     attribution: McpPluginAttribution | null,

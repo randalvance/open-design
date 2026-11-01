@@ -1,8 +1,7 @@
 // Entry nav rail — the left column of the entry shell.
 //
 // Destinations (首页 / 社区 / 项目 / 设计系统 / 插件 / 设置), the 最近浏览过
-// disclosure under them, and a footer dock with the community links and the
-// local identity row. The GitHub star chip and the update-ready rocket ride
+// disclosure under them, and a footer dock with the local identity row. The GitHub star chip and the update-ready rocket ride
 // the tabs chrome's top-right actions host through `EntryTopRightCluster`,
 // which the project route mounts on its own (see `WorkspaceTopRightAccountCluster`).
 import { compareRecentProjects } from '../lib/project-order';
@@ -28,12 +27,9 @@ import { useProjectDuplicateFlow } from './project-actions/useProjectDuplicateFl
 import { acknowledgeProjectCompletion, useProjectRunStatuses } from '../hooks/useProjectRunStatuses';
 import type { EntrySettingsSection } from './EntrySettingsMenu';
 import type { Project } from '../types';
-import { isRtlLocale, useI18n } from '../i18n';
-import { communityForLocale } from '../lib/community-links';
-import { FeishuIcon } from './chat/support-brand-icons';
+import { useI18n } from '../i18n';
 import type { EntryHomeView } from '../router';
 import type {
-  AccountMenuClickProps,
   TrackingProjectCollectionPage,
   TrackingWorkspacePage,
 } from '@open-design/contracts/analytics';
@@ -43,8 +39,6 @@ import { entryViewToTracking } from '../analytics/workspace';
 import { workspaceChromeActionsHost } from './entryRailBridge';
 
 const REPO_URL = 'https://github.com/nexu-io/open-design';
-const X_URL = 'https://x.com/OpenDesignHQ';
-const CONTACT_EMAIL_URL = 'mailto:support@open-design.ai';
 const externalLinkProps = { target: '_blank', rel: 'noreferrer noopener' } as const;
 
 // The rail's destination ids are the entry-shell home views (kept in sync with
@@ -453,103 +447,6 @@ export function WorkspaceTopRightAccountCluster({
   return <EntryTopRightCluster page="project" updaterSlot={updaterSlot} />;
 }
 
-/** X's own mark (inline SVG — it is not in the Remix set the Icon component
- *  draws from). Sized like its Discord / mail neighbours; the colour rides
- *  the link so hover moves all three together. */
-function XMark({ size }: { size: number }) {
-  return (
-    <svg
-      className="entry-nav-rail__menu-x"
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      width={size}
-      height={size}
-      fill="currentColor"
-      aria-hidden
-      focusable="false"
-    >
-      <path d="M10.4883 14.651L15.25 21H22.25L14.3917 10.5223L20.9308 3H18.2808L13.1643 8.88578L8.75 3H1.75L9.26086 13.0145L2.31915 21H4.96917L10.4883 14.651ZM16.25 19L5.75 5H7.75L18.25 19H16.25Z" />
-    </svg>
-  );
-}
-
-/**
- * Community / contact links (Discord / X / mail), icon only (OPEND-3180),
- * stacked directly above the identity row in the rail's footer dock. The glyph
- * is all a sighted user sees — the name lives on `aria-label` and rides the
- * shared `.od-tooltip` layer on hover, so the icon still explains itself
- * without a label beside it. Analytics keeps reporting these under
- * `area: 'account_menu'` so the existing funnel stays comparable across the
- * move out of that menu.
- */
-function RailSocialRow({ page }: { page: TrackingWorkspacePage }) {
-  const { t, locale } = useI18n();
-  const analytics = useAnalytics();
-  // The rail sits on the leading edge, so tooltips open away from it —
-  // right in LTR, left once RTL moves the whole rail to the right edge.
-  // Without the flip the bubble would be clamped against the viewport
-  // and land back on top of the icons it describes.
-  const tooltipPlacement = isRtlLocale(locale) ? 'left' : 'right';
-  // One string per link doubles as the accessible name and the hover
-  // tooltip: the bubble is the only place the icons say what they do.
-  const community = communityForLocale(locale);
-  const communityLabel = t('entry.communityAria');
-  const xLabel = t('entry.xAria');
-  const mailLabel = t('entry.mailAria');
-  const btnClass = 'entry-nav-rail__menu-social-btn od-tooltip';
-  const hint = (label: string) => ({
-    'data-tooltip': label,
-    'data-tooltip-placement': tooltipPlacement,
-  });
-  const glyph = 16;
-
-  function track(element: AccountMenuClickProps['element']) {
-    trackAccountMenuClick(analytics.track, {
-      page_name: page,
-      area: 'account_menu',
-      element,
-    });
-  }
-
-  return (
-    <div className="entry-nav-rail__menu-social" data-testid="entry-nav-rail-social">
-      <a
-        className={btnClass}
-        href={community.href}
-        {...externalLinkProps}
-        aria-label={communityLabel}
-        {...hint(communityLabel)}
-        data-testid="entry-nav-rail-discord"
-        data-community-platform={community.platform}
-        onClick={() => track(community.platform)}
-      >
-        {community.platform === 'feishu'
-          ? <FeishuIcon monochrome width={glyph} height={glyph} />
-          : <Icon name="discord" size={glyph} />}
-      </a>
-      <a
-        className={btnClass}
-        href={X_URL}
-        {...externalLinkProps}
-        aria-label={xLabel}
-        {...hint(xLabel)}
-        onClick={() => track('twitter')}
-      >
-        <XMark size={glyph} />
-      </a>
-      <a
-        className={btnClass}
-        href={CONTACT_EMAIL_URL}
-        aria-label={mailLabel}
-        {...hint(mailLabel)}
-        onClick={() => track('email')}
-      >
-        <Icon name="mail" size={glyph} />
-      </a>
-    </div>
-  );
-}
-
 export function EntryNavRail({
   view,
   onViewChange,
@@ -698,7 +595,7 @@ export function EntryNavRail({
       </div>
       <div className="entry-nav-rail__footer">
         {footerNotice}
-        {/* Local dock (OPEND-3140): social links above an identity row. The
+        {/* Local dock (OPEND-3140): the identity row. The
             identity is the local mode itself (there is no account to name),
             and opening it lands in Settings, where the local CLI / BYOK
             configuration lives. It is the rail's last line. */}
@@ -706,7 +603,6 @@ export function EntryNavRail({
           className="entry-nav-rail__account-dock entry-nav-rail__account-dock--local"
           data-testid="entry-nav-local-account-dock"
         >
-          <RailSocialRow page={analyticsPage} />
           <div className="entry-nav-rail__account">
             <button
               type="button"

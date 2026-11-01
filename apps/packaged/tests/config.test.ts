@@ -1,9 +1,17 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('electron', () => ({
+  app: { getAppPath: () => '/app', getPath: () => '/user-data' },
+}));
 
 import {
+  PACKAGED_CONFIG_PATH_ENV,
   PACKAGED_NAMESPACE_BASE_ROOT_ENV,
+  readPackagedConfig,
   resolvePackagedNamespaceBaseRoot,
 } from '../src/config.js';
 
@@ -25,5 +33,40 @@ describe('resolvePackagedNamespaceBaseRoot', () => {
     expect(resolvePackagedNamespaceBaseRoot(undefined, userDataRoot, {})).toBe(
       join(userDataRoot, 'namespaces'),
     );
+  });
+});
+
+describe('readPackagedConfig', () => {
+  it('still loads a config file that carries retired keys, and ignores them', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'od-packaged-legacy-config-'));
+    const configPath = join(root, 'open-design-config.json');
+    const savedResourcesPath = process.resourcesPath;
+    vi.stubEnv(PACKAGED_CONFIG_PATH_ENV, configPath);
+    Object.defineProperty(process, 'resourcesPath', { configurable: true, value: root });
+    try {
+      await writeFile(configPath, JSON.stringify({
+        appVersion: '1.2.3',
+        namespace: 'legacy',
+        posthogHost: 'https://ingest.example',
+        posthogKey: 'legacy-key',
+        telemetryRelayUrl: 'https://relay.example/v1',
+        updateMetadataUrl: 'https://updates.example/latest.json',
+      }));
+
+      const config = await readPackagedConfig();
+
+      expect(config).toMatchObject({
+        appVersion: '1.2.3',
+        namespace: 'legacy',
+        updateMetadataUrl: 'https://updates.example/latest.json',
+      });
+      expect(config).not.toHaveProperty('telemetryRelayUrl');
+      expect(config).not.toHaveProperty('posthogKey');
+      expect(config).not.toHaveProperty('posthogHost');
+    } finally {
+      vi.unstubAllEnvs();
+      Object.defineProperty(process, 'resourcesPath', { configurable: true, value: savedResourcesPath });
+      await rm(root, { force: true, recursive: true });
+    }
   });
 });

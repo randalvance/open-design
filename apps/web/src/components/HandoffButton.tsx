@@ -113,10 +113,9 @@ interface Props {
   // Undefined when no artifact tab is active.
   artifactId?: string;
   artifactKind?: TrackingArtifactKind;
-  // Retained on the props contract for the callers that still pass them
+  // Retained on the props contract for the callers that still pass it
   // (FileViewer / ProjectView). No longer read here since the OpenDesign
   // Cloud website link was removed from the CLI tab (acceptance #101).
-  metricsConsent?: boolean;
   installationId?: string | null;
   embedded?: boolean;
   // Optional fallback "always open in OS file manager" — falls back to the

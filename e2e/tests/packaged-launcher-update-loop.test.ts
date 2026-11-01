@@ -9,8 +9,6 @@ import { describe, expect, it } from "vitest";
 const LAUNCHER_SCHEMA_VERSION = 1;
 const PACKAGED_SOURCE = "packaged";
 const UPDATE_DOWNLOADED = "downloaded";
-const HISTORICAL_OUTER_RELAY_URL = "https://relay.outer.example/v1";
-const PAYLOAD_RELAY_URL = "https://relay.payload.example/v2";
 
 type PackagedConfigLike = {
   appVersion: string;
@@ -19,10 +17,7 @@ type PackagedConfigLike = {
   namespace: string;
   namespaceBaseRoot: string;
   nodeCommand: null;
-  posthogHost: null;
-  posthogKey: null;
   resourceRoot: string;
-  telemetryRelayUrl: string | null;
   webOutputMode: "server";
   webSidecarEntry: null;
   webStandaloneRoot: null;
@@ -73,10 +68,7 @@ type PackagedLauncherRuntime = {
     daemonCliEntry: string | null;
     daemonSidecarEntry: string | null;
     nodeCommand: string | null;
-    posthogHost: string | null;
-    posthogKey: string | null;
     resourceRoot: string;
-    telemetryRelayUrl: string | null;
     webOutputMode: "server" | "standalone";
     webSidecarEntry: string | null;
     webStandaloneRoot: string | null;
@@ -117,10 +109,7 @@ type PackagedSidecarsModule = {
       mcpBootstrapArgs: readonly string[];
       mcpBootstrapCommand: string | null;
       nodeCommand: string | null;
-      posthogHost: string | null;
-      posthogKey: string | null;
       requireDesktopAuth: boolean;
-      telemetryRelayUrl: string | null;
       webOutputMode: "server" | "standalone";
       webSidecarEntry: string | null;
       webStandaloneRoot: string | null;
@@ -194,7 +183,7 @@ const client = SidecarFactory.create({
         await mkdir(resources.dataRoot, { recursive: true });
         await writeFile(
           join(resources.dataRoot, "captured-daemon-env.json"),
-          JSON.stringify({ telemetryRelayUrl: process.env.OPEN_DESIGN_TELEMETRY_RELAY_URL ?? null }),
+          JSON.stringify({ appVersion: process.env.OD_APP_VERSION ?? null }),
         );
       }
       return {
@@ -223,10 +212,7 @@ function fakePackagedConfig(root: string, testCase: PlatformCase): PackagedConfi
     namespace: testCase.namespace,
     namespaceBaseRoot: join(root, "namespaces"),
     nodeCommand: null,
-    posthogHost: null,
-    posthogKey: null,
     resourceRoot: join(root, "installed", "resources", "open-design"),
-    telemetryRelayUrl: HISTORICAL_OUTER_RELAY_URL,
     webOutputMode: "server",
     webSidecarEntry: null,
     webStandaloneRoot: null,
@@ -323,7 +309,6 @@ async function writeExtractedWindowsPayload(destinationRoot: string, testCase: P
       appVersion: testCase.promotedVersion,
       daemonSidecarEntryRelative: "prebundled/daemon/daemon-sidecar.mjs",
       nodeCommandRelative: "open-design/bin/node.exe",
-      telemetryRelayUrl: PAYLOAD_RELAY_URL,
       webOutputMode: "standalone",
       webSidecarEntryRelative: "prebundled/web/web-sidecar.mjs",
     })}\n`,
@@ -359,7 +344,6 @@ async function writeExtractedMacPayload(destinationRoot: string, testCase: Platf
       appVersion: testCase.promotedVersion,
       daemonSidecarEntryRelative: "prebundled/daemon/daemon-sidecar.mjs",
       nodeCommandRelative: "open-design/bin/node",
-      telemetryRelayUrl: PAYLOAD_RELAY_URL,
       webOutputMode: "standalone",
       webSidecarEntryRelative: "prebundled/web/web-sidecar.mjs",
     })}\n`,
@@ -529,8 +513,7 @@ describe("packaged launcher payload update loop", () => {
       expect(promoted.targetVersion).toBe(testCase.promotedVersion);
       expect(promoted.config.appVersion).toBe(testCase.promotedVersion);
       expect(promoted.config.resourceRoot).toBe(testCase.expectedResourceRoot(paths.installationRoot, config.namespace));
-      expect(promoted.config.telemetryRelayUrl).toBe(PAYLOAD_RELAY_URL);
-      const sidecarNamespace = `payload-relay-${process.pid}-${Date.now()}`;
+      const sidecarNamespace = `payload-config-${process.pid}-${Date.now()}`;
       const sidecars = await startPackagedSidecars({
         app: "desktop",
         base: promoted.paths.runtimeRoot,
@@ -549,10 +532,7 @@ describe("packaged launcher payload update loop", () => {
         // binary. Use the test process's Node while preserving the real
         // startPackagedSidecars -> spawnSidecarChild environment path.
         nodeCommand: process.execPath,
-        posthogHost: promoted.config.posthogHost,
-        posthogKey: promoted.config.posthogKey,
         requireDesktopAuth: true,
-        telemetryRelayUrl: promoted.config.telemetryRelayUrl,
         webOutputMode: promoted.config.webOutputMode,
         webSidecarEntry: promoted.config.webSidecarEntry,
         webStandaloneRoot: promoted.config.webStandaloneRoot,
@@ -560,8 +540,9 @@ describe("packaged launcher payload update loop", () => {
       try {
         const daemonEnv = JSON.parse(
           await readFile(join(promoted.paths.dataRoot, "captured-daemon-env.json"), "utf8"),
-        ) as { telemetryRelayUrl: string | null };
-        expect(daemonEnv.telemetryRelayUrl).toBe(PAYLOAD_RELAY_URL);
+        ) as { appVersion: string | null };
+        // The daemon receives the promoted payload's config, not the outer install's.
+        expect(daemonEnv.appVersion).toBe(testCase.promotedVersion);
       } finally {
         await sidecars.close();
       }
@@ -1015,10 +996,7 @@ async function checkPackagedUpdate(scenario: FloorScenario): Promise<{
       namespace: "default",
       namespaceBaseRoot: join(root, "namespaces"),
       nodeCommand: null,
-      posthogHost: null,
-      posthogKey: null,
       resourceRoot: join(root, "installed", "resources", "open-design"),
-      telemetryRelayUrl: null,
       webOutputMode: "server",
       webSidecarEntry: null,
       webStandaloneRoot: null,

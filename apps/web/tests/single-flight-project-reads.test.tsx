@@ -4,7 +4,7 @@
 //
 // Evidence baseline (electron-project-waterfall-20260727): opening one shared
 // project issued duplicated GETs before the first stable frame — /files ×2,
-// /conversations ×2, /tabs ×2, /analytics/config ×2 and /recent-dirs ×2.
+// /conversations ×2, /tabs ×2 and /recent-dirs ×2.
 //
 // The contract under test: every one of these display reads has a single
 // request owner per (resource, project) — concurrent consumers of
@@ -16,10 +16,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fetchProjectFiles, fetchRecentLinkedDirs } from '../src/providers/registry';
 import { listConversations, loadTabs } from '../src/state/projects';
-import {
-  bootstrapExceptionTracking,
-  getAnalyticsClient,
-} from '../src/analytics/client';
 
 const fetchCalls: string[] = [];
 
@@ -37,7 +33,6 @@ function bodyForUrl(url: string): unknown {
   if (url.includes('/conversations')) return { conversations: [] };
   if (url.includes('/tabs')) return { tabs: [], active: null };
   if (url.includes('/recent-dirs')) return { dirs: [] };
-  if (url.includes('/analytics/config')) return { enabled: false, key: null, host: null };
   if (url.endsWith('/files')) return { files: [] };
   return {};
 }
@@ -141,21 +136,6 @@ describe('project-open single-flight reads (Batch A §4.3)', () => {
   it('shares one /recent-dirs request between concurrent readers', async () => {
     await Promise.all([fetchRecentLinkedDirs(), fetchRecentLinkedDirs()]);
     expect(callsMatching('/recent-dirs')).toHaveLength(1);
-  });
-
-  it('shares one /analytics/config request between error tracking and analytics init', async () => {
-    const context = {
-      anonymousId: 'anon-1',
-      sessionId: 'session-1',
-      clientType: 'web',
-      locale: 'en',
-      appVersion: '0.0.0-test',
-    } as Parameters<typeof getAnalyticsClient>[0];
-    await Promise.all([
-      bootstrapExceptionTracking(context),
-      getAnalyticsClient(context),
-    ]);
-    expect(callsMatching('/analytics/config')).toHaveLength(1);
   });
 
 });

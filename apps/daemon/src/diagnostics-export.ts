@@ -11,7 +11,6 @@ import {
   DIAGNOSTICS_CONTENT_TYPE,
   DIAGNOSTICS_FILENAME_PREFIX,
   diagnosticsFileName,
-  type AutomaticDiagnosticSource,
   type LogSource,
 } from '@open-design/diagnostics';
 import {
@@ -99,7 +98,6 @@ export interface DiagnosticsHandlerOptions {
   runsDir?: string | null;
   /** OpenDesign data dir (OD_DATA_DIR), used to locate the AMR OpenCode home. */
   dataDir?: string | null;
-  automaticUploadStatus?: () => Record<string, unknown>;
 }
 
 const TAIL_BYTES_PER_LOG = 4 * 1024 * 1024;
@@ -258,28 +256,6 @@ function resolveDesktopCrashDumpsDir(runtime: SidecarRuntimeContext<LegacySideca
   return join(dirname(desktopLog), 'crashes');
 }
 
-/** Automatic uploads select the failing run and its runtime; manual exports remain broader. */
-export async function buildAutomaticDiagnosticSources(
-  options: DiagnosticsHandlerOptions,
-  incident: { runId?: string; agentId?: string },
-): Promise<AutomaticDiagnosticSource[]> {
-  const sources: AutomaticDiagnosticSource[] = [];
-  if (incident.runId && /^[A-Za-z0-9_-]{1,128}$/.test(incident.runId) && options.runsDir) {
-    sources.push({ name: `runs/${incident.runId}/events.jsonl`,
-      absolutePath: join(options.runsDir, incident.runId, 'events.jsonl'), kind: 'text', tailBytes: TAIL_BYTES_PER_LOG });
-  }
-  sources.push(...await buildSidecarLogSources(options.runtime));
-  if (incident.agentId) {
-    const environment = await resolveDiagnosticsAgentEnvironment(options.dataDir);
-    const agentSources = await buildAgentCliLogSources({ homeDir: homedir(), dataDir: options.dataDir ?? null,
-      claudeConfigDir: environment.claudeConfigDir,
-      codexHome: environment.codexHome, xdgDataHome: environment.openCodeXdgDataHome ?? null });
-    const selected = agentSources.filter((source) => incident.agentId === '*' || source.name.startsWith(`agent-cli-logs/${incident.agentId}/`));
-    sources.push(...selected);
-  }
-  return sources;
-}
-
 export function createDiagnosticsExportHandler(options: DiagnosticsHandlerOptions): RequestHandler {
   const evidence = options.evidence ?? getDiagnosticsEvidence() ?? createDiagnosticsEvidence();
   return async (_req, res) => {
@@ -355,10 +331,7 @@ export function createDiagnosticsExportHandler(options: DiagnosticsHandlerOption
         },
         sources,
         summaries: {
-          'automatic-log-upload.json': (() => {
-            try { return options.automaticUploadStatus?.() ?? { available: false }; }
-            catch { return { available: false, reason: 'status_unavailable' }; }
-          })(),
+          'automatic-log-upload.json': { available: false },
           'environment-evidence.json': evidence.snapshot(),
           // Renderer-side scene for the chat scroll freeze. Always written,
           // even when nothing was posted, so an empty slot reads as a stated

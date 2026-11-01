@@ -167,17 +167,6 @@ describe("buildDockerArgs", () => {
     expect(args).toContain("ELECTRON_BUILDER_CACHE=/home/builder/.cache/electron-builder");
   });
 
-  it("passes the telemetry relay URL into containerized builds when configured", () => {
-    const args = buildDockerArgs(
-      {
-        ...makeConfig(),
-        telemetryRelayUrl: "https://telemetry.open-design.ai/api/langfuse",
-      },
-      { uid: 1000, gid: 1000 },
-    );
-    expect(args).toContain("OPEN_DESIGN_TELEMETRY_RELAY_URL=https://telemetry.open-design.ai/api/langfuse");
-  });
-
   it("runs the built tools-pack CLI through node inside the container without generated package-bin shims", () => {
     const args = buildDockerArgs(makeConfig(), { uid: 1000, gid: 1000 });
     const last = args[args.length - 1];

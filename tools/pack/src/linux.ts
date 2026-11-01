@@ -216,9 +216,6 @@ export function buildDockerArgs(
     "-e",
     `${PRODUCTION_INSTALL_PNPM_BIN_ENV}=${CONTAINER_PNPM_PATH}`,
   ];
-  if (config.telemetryRelayUrl != null) {
-    dockerArgs.push("-e", `OPEN_DESIGN_TELEMETRY_RELAY_URL=${config.telemetryRelayUrl}`);
-  }
   dockerArgs.push(
     "-w",
     "/project",
@@ -524,9 +521,6 @@ async function writeAssembledApp(
         appVersion: version,
         namespace: config.namespace,
         nodeCommandRelative: "open-design/bin/node",
-        ...(config.telemetryRelayUrl == null ? {} : { telemetryRelayUrl: config.telemetryRelayUrl }),
-        ...(config.posthogKey == null ? {} : { posthogKey: config.posthogKey }),
-        ...(config.posthogHost == null ? {} : { posthogHost: config.posthogHost }),
         ...(config.portable ? {} : { namespaceBaseRoot: config.roots.runtime.namespaceBaseRoot }),
       },
       null,

@@ -16,10 +16,6 @@ async function waitForLoadingToClear(page: Page) {
 async function gotoEntryHome(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
-  const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve OpenDesign' });
-  if (await privacyDialog.isVisible().catch(() => false)) {
-    await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
-  }
   // The settings button moved into the collapsed-by-default rail (#5517), so
   // the hero is the reliable "entry is ready" signal now.
   await expect(page.getByTestId('home-hero')).toBeVisible();

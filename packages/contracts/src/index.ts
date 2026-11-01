@@ -9,7 +9,6 @@ export * from './api/app-config.js';
 export * from './api/strategy-rollout.js';
 export * from './api/agent-sessions.js';
 export * from './api/agent-setup.js';
-export * from './api/attribution.js';
 export * from './api/automations.js';
 export * from './api/artifacts.js';
 export * from './api/artifact-lint.js';

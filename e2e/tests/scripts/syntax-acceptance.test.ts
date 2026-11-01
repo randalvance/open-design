@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createToolsDevSuite } from '../../lib/tools-dev/runtime.ts';
 import { runToolsDevJson } from '../../lib/tools-dev/cli.ts';
-import { captureUntrackedSourceIdentity, loadReplayFixtures, replayCaseVerdict, runSyntaxAcceptance, resolveSyntaxTelemetryCanary, syntaxTelemetryDeliveryOutcome, syntaxTelemetryFinalizationMessage } from '../../scripts/syntax-acceptance.ts';
+import { captureUntrackedSourceIdentity, loadReplayFixtures, replayCaseVerdict, runSyntaxAcceptance } from '../../scripts/syntax-acceptance.ts';
 
 const { runtime } = vi.hoisted(() => ({ runtime: {
   startWeb: vi.fn(), logs: vi.fn(async () => ({})), stopWeb: vi.fn(async () => ({ stopped: true })),
@@ -37,46 +37,6 @@ const warningFinalization = {
 };
 
 describe('syntax acceptance evidence contract', () => {
-  it('[P1] keeps telemetry offline unless explicitly requested', () => {
-    expect(resolveSyntaxTelemetryCanary({ enabled: false, mode: 'real', externalInputs: true, profile: 'prod' })).toBeNull();
-  });
-
-  it('[P1] finalizes only the matching durable terminal message without inventing telemetry', () => {
-    const run = { id: 'run-1', assistantMessageId: 'message-1', status: 'succeeded' };
-    const message = { id: 'message-1', runId: 'run-1', role: 'assistant', runStatus: 'succeeded', content: 'actual output', producedFiles: [{ path: 'index.html' }] };
-    const result = syntaxTelemetryFinalizationMessage([message], run);
-    expect(result).toEqual({ ...message, telemetryFinalized: true });
-    expect(result).not.toHaveProperty('metrics');
-    expect(message).not.toHaveProperty('telemetryFinalized');
-    for (const invalid of [[], [{ ...message, runId: 'other' }], [{ ...message, runStatus: 'running' }], [{ ...message, role: 'user' }]]) {
-      expect(() => syntaxTelemetryFinalizationMessage(invalid, run)).toThrow();
-    }
-  });
-
-  it('[P1] confines upload to one repeat of built-in synthetic fixtures and the test relay', () => {
-    const input = { enabled: true, mode: 'replay', externalInputs: false, profile: 'test', token: 'abc12345', relayUrl: 'https://telemetry-test.open-design.ai/api/langfuse' };
-    const plan = resolveSyntaxTelemetryCanary(input)!;
-    expect(plan.prefs).toEqual({ metrics: true, content: true, artifactManifest: false });
-    expect(plan.env).toMatchObject({ OD_INSTALLATION_DIR: '', OD_LEGACY_DATA_DIR: '', POSTHOG_KEY: '', LANGFUSE_PUBLIC_KEY: '', LANGFUSE_SECRET_KEY: '', OD_TELEMETRY_ENV: 'synthetic-test-abc12345' });
-    expect(plan.fixtures.map(fixture => fixture.id)).toEqual(['synthetic-clean', 'synthetic-repaired', 'synthetic-warning']);
-    expect(plan.fixtures.every(fixture => fixture.source.length < 256 && fixture.expected !== undefined)).toBe(true);
-    for (const invalid of [{ mode: 'real' }, { externalInputs: true }, { repeat: '2' }, { profile: 'prod' }, { relayUrl: 'https://telemetry.open-design.ai/api/langfuse' }, { relayUrl: undefined }]) {
-      expect(() => resolveSyntaxTelemetryCanary({ ...input, ...invalid })).toThrow();
-    }
-  });
-
-  it('[P1] never treats a completed Run or skipped telemetry as accepted delivery', () => {
-    expect(syntaxTelemetryDeliveryOutcome({ status: 'succeeded' })).toBe('pending');
-    expect(syntaxTelemetryDeliveryOutcome({ telemetryDelivery: { status: 'in_flight' } })).toBe('pending');
-    for (const status of ['failed', 'not_expected']) {
-      expect(syntaxTelemetryDeliveryOutcome({ telemetryDelivery: { status, finalizedAt: 1 } })).toBe('failed');
-      expect(syntaxTelemetryDeliveryOutcome({ telemetryDelivery: { status, attemptCount: 1, crashWindow: false } })).toBe('failed');
-    }
-    expect(syntaxTelemetryDeliveryOutcome({ telemetryDelivery: { status: 'accepted', attemptCount: 0, finalizedAt: 1 } })).toBe('failed');
-    expect(syntaxTelemetryDeliveryOutcome({ telemetryDelivery: { status: 'accepted', attemptCount: 1 } })).toBe('pending');
-    expect(syntaxTelemetryDeliveryOutcome({ telemetryDelivery: { status: 'accepted', attemptCount: 1, finalizedAt: 1 } })).toBe('accepted');
-  });
-
   it('[P1] includes sorted untracked source paths and detects helper content changes outside git diff', async () => {
     const root = await scratch();
     const exec = promisify(execFile);

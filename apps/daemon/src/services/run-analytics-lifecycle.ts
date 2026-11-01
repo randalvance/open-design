@@ -44,10 +44,6 @@ import {
   updateProject,
 } from '../db.js';
 import {
-  deriveLangfuseDeliveryState,
-  readTelemetrySinkConfig,
-} from '../langfuse-trace.js';
-import {
   agentProviderIdForRunAnalytics,
   hasExplicitRequestedModelForAnalytics,
   perRequestUsageForRun,
@@ -773,10 +769,6 @@ export function createRunAnalyticsLifecycle(
           const appCfgAtFinish = await readAppConfig(RUNTIME_DATA_DIR).catch(
             () => ({} as Record<string, unknown>),
           );
-          const langfuseDeliveryForAnalytics = deriveLangfuseDeliveryState(
-            (appCfgAtFinish as { telemetry?: Record<string, unknown> }).telemetry ?? {},
-            readTelemetrySinkConfig(),
-          );
           const result = runResultFromStatus(status.status);
           const errorCode = deriveRunErrorCode(status);
           // C14/C15: AI-optimize (enrichment) run settled. Emit the dedicated
@@ -1166,7 +1158,9 @@ export function createRunAnalyticsLifecycle(
                 ? { last_progress_age_ms: Math.max(0, analyticsCapturedAt - run.lastAgentActivityAt) }
                 : {}),
               langfuse_trace_id: run.id,
-              ...langfuseDeliveryForAnalytics,
+              langfuse_expected: false,
+              langfuse_delivery_status: 'not_expected',
+              langfuse_drop_reason: 'telemetry_removed',
               ...(errorCode ? { error_code: errorCode } : {}),
               ...(failure ?? {}),
               ...(usageAnalytics.input_tokens !== undefined

@@ -4,11 +4,9 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FileViewer } from '../../src/components/FileViewer';
-import {
-  clearExceptionTrackingContext,
-  setExceptionTrackingContext,
-} from '../../src/analytics/error-tracking';
 import type { ProjectFile } from '../../src/types';
+import { reportedSafetyEventsNamed, watchSafetyEvents } from '../helpers/safety-events';
+
 
 function htmlFile(overrides: Partial<ProjectFile> = {}): ProjectFile {
   return {
@@ -47,18 +45,11 @@ function transportGeneration(frame: HTMLIFrameElement): string {
 
 beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 800, height: 600, top: 0, left: 0, bottom: 600, right: 800 } as DOMRect);
-  setExceptionTrackingContext({
-    apiKey: 'phc_preview_test',
-    host: 'https://posthog.test',
-    distinctId: 'preview-test-user',
-    clientType: 'web',
-    osName: 'Mac OS X',
-  });
+  watchSafetyEvents();
 });
 
 afterEach(() => {
   cleanup();
-  clearExceptionTrackingContext();
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -296,13 +287,7 @@ describe('FileViewer srcDoc file-watch refresh recovery', () => {
 
   it('recovers when a settled partial document answers the probe without completing its body', () => {
     vi.useFakeTimers();
-    const fetchMock = vi.fn(async (
-      input: RequestInfo | URL,
-      _init?: RequestInit,
-    ) => new Response('', {
-      status: String(input).includes('/i/v0/e/') ? 200 : 404,
-    }));
-    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })));
 
     render(
       <FileViewer
@@ -347,40 +332,27 @@ describe('FileViewer srcDoc file-watch refresh recovery', () => {
     expect(recoveredFrame).not.toBe(partialFrame);
     expect(recoveredFrame.srcdoc).toContain('data-od-lazy-srcdoc-transport');
 
-    const postHogCalls = fetchMock.mock.calls.filter(([input, init]) =>
-      String(input).includes('/i/v0/e/') && JSON.parse(String(init?.body ?? '{}')).event === 'client_preview_white_screen');
-    expect(postHogCalls).toHaveLength(1);
-    const [, postHogInit] = postHogCalls[0]!;
-    expect(postHogInit).toBeDefined();
-    const payload = JSON.parse(
-      String(postHogInit?.body),
-    ) as { event?: string; properties?: Record<string, unknown> };
-    expect(payload).toMatchObject({
-      event: 'client_preview_white_screen',
-      properties: {
-        reason: 'srcdoc_transport_unverified',
-        transport_signal: 'body_incomplete',
-        transport_stage: 'head_bridge_alive_body_tail_missing',
-        activation_acknowledged: true,
-        body_complete: false,
-        frame_ready_state: 'complete',
-        frame_body_present: true,
-        frame_body_child_count: 2,
-        frame_document_element_child_count: 2,
-        recovery_attempted: true,
-        recovery_path: 'lazy_shell_remount',
-      },
+    const whiteScreens = reportedSafetyEventsNamed('client_preview_white_screen');
+    expect(whiteScreens).toHaveLength(1);
+    expect(whiteScreens[0]).toMatchObject({
+      reason: 'srcdoc_transport_unverified',
+      transport_signal: 'body_incomplete',
+      transport_stage: 'head_bridge_alive_body_tail_missing',
+      activation_acknowledged: true,
+      body_complete: false,
+      frame_ready_state: 'complete',
+      frame_body_present: true,
+      frame_body_child_count: 2,
+      frame_document_element_child_count: 2,
+      recovery_attempted: true,
+      recovery_path: 'lazy_shell_remount',
     });
-    expect(JSON.stringify(payload)).not.toContain('partial-document');
+    expect(JSON.stringify(whiteScreens[0])).not.toContain('partial-document');
   });
 
   it('does not remount a healthy document while a parser-blocking script is still loading', () => {
     vi.useFakeTimers();
-    const fetchMock = vi.fn(async (
-      _input: RequestInfo | URL,
-      _init?: RequestInit,
-    ) => new Response('', { status: 404 }));
-    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })));
 
     render(
       <FileViewer
@@ -441,8 +413,7 @@ describe('FileViewer srcDoc file-watch refresh recovery', () => {
     });
 
     expect(screen.getByTestId('artifact-preview-frame')).toBe(parsingFrame);
-    expect(fetchMock.mock.calls.some(([input, init]) => String(input).includes('/i/v0/e/')
-      && JSON.parse(String(init?.body ?? '{}')).event === 'client_preview_white_screen')).toBe(false);
+    expect(reportedSafetyEventsNamed('client_preview_white_screen')).toHaveLength(0);
   });
 
   it('recovers when a truncated document stays loading through the parsing grace period', () => {

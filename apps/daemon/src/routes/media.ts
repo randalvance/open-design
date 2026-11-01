@@ -279,25 +279,9 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
       : null;
     if (runContext) return runContext;
 
-    // Standalone `od media generate` requests do not carry browser analytics
-    // headers or a parent run. Match the updater's daemon-internal identity
-    // fallback, but only after explicit metrics consent; capture() re-checks
-    // the same consent before sending.
-    const appConfig = await readAppConfig(RUNTIME_DATA_DIR).catch(() => null);
-    const installationId =
-      appConfig?.telemetry?.metrics === true
-      && typeof appConfig.installationId === 'string'
-      && appConfig.installationId
-        ? appConfig.installationId
-        : null;
-    if (!installationId) return null;
-    return {
-      deviceId: installationId,
-      sessionId: installationId,
-      clientType: 'desktop',
-      locale: 'en',
-      requestId: null,
-    };
+    // Standalone `od media generate` requests carry no browser analytics
+    // headers or parent run, so they have no analytics identity.
+    return null;
   };
 
   const handleGenerate = async (

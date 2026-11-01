@@ -33,18 +33,23 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const posthogCapture = vi.hoisted(() => vi.fn());
-const posthogShutdown = vi.hoisted(() => vi.fn(async () => undefined));
-vi.mock('posthog-node', () => ({
-  PostHog: vi.fn(function PostHogMock() {
-    return {
-      capture: posthogCapture,
-      groupIdentify: vi.fn(),
-      on: vi.fn(),
-      shutdown: posthogShutdown,
-    };
-  }),
-}));
+const analyticsCapture = vi.hoisted(() => vi.fn());
+vi.mock('../../src/analytics.js', async (original) => {
+  const actual = await original<typeof import('../../src/analytics.js')>();
+  return {
+    ...actual,
+    createAnalyticsService: () => ({
+      capture: async ({ eventName, properties }: { eventName: string; properties: Record<string, unknown> }) => {
+        analyticsCapture({ event: eventName, properties });
+        return { status: 'queued', acknowledgement: 'local_buffer', errorType: null };
+      },
+      captureSafety: async () => undefined,
+      mergeAnonymousPerson: async () => undefined,
+      identifyGroup: async () => undefined,
+      shutdown: async () => undefined,
+    }),
+  };
+});
 
 const { startServer } = await import('../../src/server.js');
 
@@ -100,14 +105,12 @@ describe('ACP stall progress age', () => {
     if (binDir) await rm(binDir, { recursive: true, force: true });
     binDir = null;
     restoreEnv(originalEnv);
-    posthogCapture.mockReset();
+    analyticsCapture.mockReset();
   });
 
   it('reports the real silence in last_progress_age_ms when the ACP stage watchdog ends a stalled run', async () => {
     binDir = await mkdtemp(path.join(os.tmpdir(), 'od-acp-stall-age-bin-'));
     const fakeVela = await writeSilentlyStallingVela(binDir, 'vela-silent-stall');
-
-    process.env.POSTHOG_KEY = 'phc_test_acp_stall';
     delete process.env.POSTHOG_HOST;
     delete process.env.LANGFUSE_PUBLIC_KEY;
     delete process.env.LANGFUSE_SECRET_KEY;
@@ -168,8 +171,6 @@ describe('ACP stall progress age', () => {
     const fakeVela = await writeSilentlyStallingVela(binDir, 'vela-silent-stall-open-tool', {
       openToolBeforeStall: true,
     });
-
-    process.env.POSTHOG_KEY = 'phc_test_acp_stall_tool';
     delete process.env.POSTHOG_HOST;
     delete process.env.LANGFUSE_PUBLIC_KEY;
     delete process.env.LANGFUSE_SECRET_KEY;
@@ -239,8 +240,6 @@ describe('ACP stall progress age', () => {
     const fakeVela = await writeSilentlyStallingVela(binDir, 'vela-silent-stall-teardown-log', {
       stderrOnSigterm: true,
     });
-
-    process.env.POSTHOG_KEY = 'phc_test_acp_stall_teardown';
     delete process.env.POSTHOG_HOST;
     delete process.env.LANGFUSE_PUBLIC_KEY;
     delete process.env.LANGFUSE_SECRET_KEY;
@@ -300,8 +299,6 @@ describe('ACP stall progress age', () => {
     const fakeVela = await writeSilentlyStallingVela(binDir, 'vela-silent-stall-linger', {
       ignoreSigterm: true,
     });
-
-    process.env.POSTHOG_KEY = 'phc_test_acp_stall_linger';
     delete process.env.POSTHOG_HOST;
     delete process.env.LANGFUSE_PUBLIC_KEY;
     delete process.env.LANGFUSE_SECRET_KEY;
@@ -353,8 +350,6 @@ describe('ACP stall progress age', () => {
       descendantActivityFile: activityFile,
       descendantPidFile,
     });
-
-    process.env.POSTHOG_KEY = 'phc_test_acp_terminal_silence';
     delete process.env.POSTHOG_HOST;
     delete process.env.LANGFUSE_PUBLIC_KEY;
     delete process.env.LANGFUSE_SECRET_KEY;
@@ -410,8 +405,6 @@ describe('ACP stall progress age', () => {
       ignoreSigterm: true,
       stderrOnSigterm: true,
     });
-
-    process.env.POSTHOG_KEY = 'phc_test_acp_stall_chatty';
     delete process.env.POSTHOG_HOST;
     delete process.env.LANGFUSE_PUBLIC_KEY;
     delete process.env.LANGFUSE_SECRET_KEY;
@@ -508,7 +501,7 @@ function readRunEvents(eventsLogPath: string | null | undefined): unknown[] {
 async function waitForRunFinished(runId: string): Promise<Record<string, any>> {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
-    for (const call of posthogCapture.mock.calls) {
+    for (const call of analyticsCapture.mock.calls) {
       const payload = call[0] as { event?: string; properties?: Record<string, unknown> };
       if (payload?.event === 'run_finished' && payload.properties?.run_id === runId) {
         return payload.properties as Record<string, any>;

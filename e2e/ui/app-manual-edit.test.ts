@@ -1,6 +1,5 @@
 import { expect, test } from '@/playwright/suite';
 import { ACTIVE_ARTIFACT_PREVIEW_SELECTOR } from '@/playwright/artifact-preview';
-import { expectStableCount } from '@/playwright/assertions';
 import { applyStandardMocks, routeAgents, routeSuccessfulRuns } from '@/playwright/mock-factory';
 import {
   clickDeckNextSlide,
@@ -707,10 +706,9 @@ test('[P1] draw annotation composer floats near the selected mark and can be que
   await expect(queuedStrip.getByTestId('chat-queued-send-row')).toHaveCount(1);
 });
 
-test('[P1] first-loop onboarding completes once after a successful artifact export', async ({ page }) => {
+test('[P1] a first-loop artifact can be exported as standalone HTML more than once', async ({ page }) => {
   test.setTimeout(60_000);
-  const analyticsBodies: string[] = [];
-  const analyticsConfig = {
+  const appConfig = {
     mode: 'daemon',
     apiKey: '',
     baseUrl: 'https://api.anthropic.com',
@@ -721,35 +719,19 @@ test('[P1] first-loop onboarding completes once after a successful artifact expo
     onboardingCompleted: true,
     agentModels: {},
     privacyDecisionAt: 1,
-    telemetry: { metrics: true, content: false, artifactManifest: false },
   };
   await page.addInitScript(
     ({ key, value }) => {
       window.localStorage.setItem(key, JSON.stringify(value));
     },
-    { key: STORAGE_KEY, value: analyticsConfig },
+    { key: STORAGE_KEY, value: appConfig },
   );
   await page.route('**/api/app-config', async (route) => {
     if (route.request().method() === 'GET') {
-      await route.fulfill({ json: { config: analyticsConfig } });
+      await route.fulfill({ json: { config: appConfig } });
       return;
     }
     await route.continue();
-  });
-  await page.route('**/api/analytics/config', async (route) => {
-    await route.fulfill({
-      json: {
-        enabled: true,
-        env: 'e2e',
-        key: 'phc_e2e',
-        host: 'https://analytics.open-design.test',
-        installationId: 'e2e-installation',
-      },
-    });
-  });
-  await page.route('https://analytics.open-design.test/**', async (route) => {
-    analyticsBodies.push(route.request().postData() ?? '');
-    await route.fulfill({ status: 200, json: { status: 1 } });
   });
 
   await routeMockAgents(page);
@@ -782,28 +764,12 @@ test('[P1] first-loop onboarding completes once after a successful artifact expo
   ]);
   expect(download.suggestedFilename()).toMatch(/first-loop-export.*\.html$/i);
 
-  await expect.poll(() => analyticsBodies.join('\n'), { timeout: 15_000 }).toContain('onboarding_completed');
-  const raw = analyticsBodies.join('\n');
-  expect(raw).toContain('home_recommendation');
-  expect(raw).toContain('e2e-recommendation-card');
-  expect(raw).toContain('prompt_sent');
-  expect(raw).toContain('generated');
-  expect(raw).toContain('artifact_viewed');
-  expect(raw).toContain('delivered');
-
   await openShareExportMenu(page);
-  await Promise.all([
+  const [secondDownload] = await Promise.all([
     page.waitForEvent('download'),
     shareMenu.getByRole('menuitem', { name: /Export as standalone HTML/ }).click(),
   ]);
-  await expectStableCount(
-    () => analyticsBodies.join('\n').match(/onboarding_completed/g)?.length ?? 0,
-    1,
-    {
-      timeout: 750,
-      message: 're-exporting the same first-loop artifact should not emit a duplicate completion event',
-    },
-  );
+  expect(secondDownload.suggestedFilename()).toMatch(/first-loop-export.*\.html$/i);
 });
 
 test('[P0] manual edit mode keeps deck navigation available for deck-shaped HTML', async ({ page }) => {
@@ -1020,11 +986,6 @@ async function gotoEntryHome(page: Page) {
     }
     await waitForLoadingToClear(page).catch(() => {});
     if (await page.getByTestId('home-hero').isVisible({ timeout: 3_000 }).catch(() => false)) break;
-  }
-  const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve OpenDesign' });
-  if (await privacyDialog.isVisible()) {
-    await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
-    await expect(privacyDialog).toHaveCount(0);
   }
   await expect(page.getByTestId('home-hero')).toBeVisible();
   await expect(page.getByTestId('home-hero-input')).toBeVisible();
