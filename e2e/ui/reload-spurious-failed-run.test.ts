@@ -163,7 +163,6 @@ async function createProject(page: Page, name: string, agentId: FakeAgentId = 'c
   await waitForLoadingToClear(page);
   await setBrowserAgentConfig(page, agentId);
   await configureFakeAgent(page, agentId);
-  await dismissPrivacyDialog(page);
   await openNewProjectModalFromProjects(page);
   await page.getByTestId('new-project-tab-prototype').click();
   await page.getByTestId('new-project-name').fill(name);
@@ -173,22 +172,10 @@ async function createProject(page: Page, name: string, agentId: FakeAgentId = 'c
 async function gotoEntryHome(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
-  const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve OpenDesign' });
-  if (await privacyDialog.isVisible()) {
-    await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
-    await expect(privacyDialog).toHaveCount(0);
-  }
   await expect(page.getByTestId('home-hero')).toBeVisible();
   await expect(page.getByTestId('home-hero-input')).toBeVisible();
 }
 
-async function dismissPrivacyDialog(page: Page) {
-  const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve OpenDesign' });
-  if (await privacyDialog.isVisible()) {
-    await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
-    await expect(privacyDialog).toHaveCount(0);
-  }
-}
 
 async function expectWorkspaceReady(page: Page) {
   await waitForLoadingToClear(page);

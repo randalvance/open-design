@@ -33,7 +33,7 @@ import { classifyRunFailure } from '../src/run-failure-classification.js';
 
 /**
  * The line a user read on packaged `0.21.2-beta.1`, verbatim. The
- * `(event=session.error, session=…)` tail is vela's own
+ * `(event=session.error, session=…)` tail is the bridge's own
  * (`openCodeEventStreamPromptErrorMessage`); the `json-rpc id 4: ` prefix is the
  * daemon's `rpcErrorMessage`.
  */
@@ -82,9 +82,7 @@ const ROWS: Row[] = [
   { id: 'A9 Internal error: 429 rate limit', text: 'json-rpc id 2: Internal error: 429 rate limit exceeded', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'RATE_LIMITED', category: 'rate_limit', detail: 'rate_limit_429', retryable: false, userAction: 'none' },
   { id: 'A10 opencode never ready', text: 'json-rpc id 2: start opencode server: opencode exited before readiness: exit status 3', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'AGENT_EXECUTION_FAILED', category: 'process_exit', detail: 'fatal_rpc_error', retryable: false, userAction: 'none' },
   { id: 'A11 cpu unsupported', text: 'json-rpc id 2: start opencode server: opencode exited before readiness: exit status 0xc0000409', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'AGENT_EXECUTION_FAILED', category: 'process_exit', detail: 'fatal_rpc_error', retryable: false, userAction: 'none' },
-  { id: 'A12 AMR catalog unavailable', text: 'json-rpc id 2: AMR model catalog is unavailable.', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'AGENT_EXECUTION_FAILED', category: 'upstream_unavailable', detail: 'provider_routing_error', retryable: false, userAction: 'none' },
-  { id: 'A13 AMR catalog TEMPORARILY unavailable', text: 'json-rpc id 2: AMR model catalog is temporarily unavailable. Please retry.', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'UPSTREAM_UNAVAILABLE', category: 'upstream_unavailable', detail: 'provider_routing_error', retryable: false, userAction: 'none' },
-  { id: 'A14 AMR catalog + 401', text: ['json-rpc id 2: AMR model catalog is unavailable.', 'Error: list Link models: API request failed with status 401: invalid_api_key'].join('\n'), shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'AGENT_AUTH_REQUIRED', category: 'auth', detail: 'auth_required', retryable: false, userAction: 'login' },
+  { id: 'A14 model list 401', text: 'Error: list models: API request failed with status 401: invalid_api_key', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'AGENT_AUTH_REQUIRED', category: 'auth', detail: 'auth_required', retryable: false, userAction: 'login' },
 
   // ---- post-session (id 3/4) ----
   { id: 'B1 upstream_error stream idle timeout', text: 'json-rpc id 4: opencode event stream: {"type":"session.error","properties":{"error":{"data":{"message":"\\"[code=upstream_error] stream idle timeout: no data received within configured window\\""}}}}', shape: 'structured', payloadRetryable: true, codeBefore: 'AGENT_EXECUTION_FAILED', code: 'AGENT_EXECUTION_FAILED', category: 'upstream_unavailable', detail: 'stream_disconnected', retryable: true, userAction: 'retry' },
@@ -112,12 +110,11 @@ const ROWS: Row[] = [
   // This row used to read `auth / auth_required / login`, and that verdict was
   // a substring collision rather than a reading of the failure: the daemon's own
   // `invalid session/new response: …` line contains `invalid session`, which
-  // `classifyAmrAccountFailure` accepted as "the AMR sign-in session is
-  // invalid". The agent answering `session/new` with an unparseable frame is a
+  // the account classifier accepted as "the sign-in session is invalid". The agent answering `session/new` with an unparseable frame is a
   // defect in the agent's build, and no sign-in changes it — so the card told
   // the user to log in for something logging in cannot fix. The classifier now
-  // requires the credential noun to be the whole word (`vela-errors.ts`
-  // `reportsInvalidAuthSession`), and this text stops being an account failure.
+  // requires the credential noun to be the whole word
+  // (`reportsInvalidAuthSession`), and this text stops being an account failure.
   // It lands `unknown` because nothing else names it yet; naming ACP protocol
   // violations is catalogue work, not part of un-mislabelling this one.
   { id: 'C5 invalid session/new', text: 'invalid session/new response: {"jsonrpc":"2.0","id":2,"result":{}}', shape: 'bare', codeBefore: null, code: null, category: 'unknown', detail: 'unknown', retryable: false, userAction: 'none' },
@@ -154,25 +151,9 @@ const ROWS: Row[] = [
   { id: 'D4 exit code 401 noise', text: 'json-rpc id 2: start opencode server: opencode exited before readiness: exit code 401', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'AGENT_EXECUTION_FAILED', category: 'process_exit', detail: 'fatal_rpc_error', retryable: false, userAction: 'none' },
   { id: 'D5 line 502 noise', text: 'json-rpc id 4: opencode event stream: parse error at line 502', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'AGENT_EXECUTION_FAILED', category: 'process_exit', detail: 'fatal_rpc_error', retryable: false, userAction: 'none' },
   { id: 'D6 session limit reached', text: 'json-rpc id 4: session limit reached for this workspace', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'RATE_LIMITED', category: 'rate_limit', detail: 'hard_quota', retryable: false, userAction: 'none' },
-  { id: 'D7 amr insufficient wallet balance', text: 'json-rpc id 4: opencode event stream: insufficient wallet balance', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'AGENT_EXECUTION_FAILED', category: 'insufficient_balance', detail: 'amr_insufficient_balance', retryable: false, userAction: 'recharge' },
+  { id: 'D7 insufficient wallet balance', text: 'json-rpc id 4: opencode event stream: insufficient wallet balance', shape: 'structured', codeBefore: 'AGENT_EXECUTION_FAILED', code: 'AGENT_EXECUTION_FAILED', category: 'insufficient_balance', detail: 'amr_insufficient_balance', retryable: false, userAction: 'recharge' },
   { id: 'D8 provider overloaded 529', text: 'json-rpc id 4: opencode event stream: {"properties":{"error":{"data":{"message":"[code=upstream_error] 529 overloaded_error: Overloaded"}}}}', shape: 'structured', payloadRetryable: true, codeBefore: 'AGENT_EXECUTION_FAILED', code: 'UPSTREAM_UNAVAILABLE', category: 'upstream_unavailable', detail: 'upstream_5xx', retryable: true, userAction: 'retry' },
 
-  // ---- R-053: the platform's own provider credentials, not the user's ----
-  // `run-error-catalog.md:215` recorded this as mislanded and it stayed that
-  // way: vela's link gateway rewrites an upstream 401/403 into an HTTP 500
-  // carrying its OWN code (`services/link/internal/handlers/openai.go:2074`,
-  // `normalizeUpstreamAuthFailure`), and three separate classifiers each read
-  // it as the caller being signed out — `classifyAmrAccountFailure` off
-  // `unauthenticated`, `classifyAgentServiceFailure` and `isAuthDetailText`
-  // off "credentials are missing". The user was shown "Sign-in required" for a
-  // credential they do not hold and cannot fix.
-  { id: 'E1 upstream_provider_unauthenticated (R-053)', text: 'json-rpc id 4: opencode event stream: {"properties":{"error":{"data":{"message":"\\"[code=upstream_provider_unauthenticated] Upstream provider credentials are missing or invalid.\\""}}}}', shape: 'structured', payloadRetryable: false, codeBefore: 'AGENT_EXECUTION_FAILED', code: 'UPSTREAM_UNAVAILABLE', category: 'upstream_unavailable', detail: 'upstream_5xx', retryable: false, userAction: 'none' },
-  { id: 'E2 upstream_provider_unauthenticated bare', text: 'API request failed with status 500: upstream_provider_unauthenticated', shape: 'structured', payloadRetryable: false, codeBefore: 'AGENT_EXECUTION_FAILED', code: 'UPSTREAM_UNAVAILABLE', category: 'upstream_unavailable', detail: 'upstream_5xx', retryable: false, userAction: 'none' },
-  // The sibling code from the same vela switch (upstream 403). It never
-  // reached the auth branch — it landed `process_exit / fatal_rpc_error`, an
-  // opaque "Task failed" — so naming it here moves it onto the same service
-  // card rather than un-mislabelling it.
-  { id: 'E3 upstream_provider_forbidden', text: 'json-rpc id 4: opencode event stream: [code=upstream_provider_forbidden] Upstream provider rejected access for the configured credentials.', shape: 'structured', payloadRetryable: false, codeBefore: 'AGENT_EXECUTION_FAILED', code: 'UPSTREAM_UNAVAILABLE', category: 'upstream_unavailable', detail: 'upstream_5xx', retryable: false, userAction: 'none' },
 ];
 
 /** The ACP `send('error', …)` bridge in server.ts, as one function. */
@@ -304,8 +285,7 @@ describe('ACP failure landing table', () => {
       'A7 HTTP 503 Service Unavailable',
       'A8 Internal error: 401 Unauthorized',
       'A9 Internal error: 429 rate limit',
-      'A13 AMR catalog TEMPORARILY unavailable',
-      'A14 AMR catalog + 401',
+      'A14 model list 401',
       // D1 has LEFT this list. It moved onto `AGENT_AUTH_REQUIRED` when this
       // table was written and has moved back off it: the credential it reports
       // belongs to the curl the agent ran, so there is no auth class for the ACP
@@ -314,14 +294,6 @@ describe('ACP failure landing table', () => {
       'D3 internal server error text',
       'D6 session limit reached',
       'D8 provider overloaded 529',
-      // R-053 and its sibling. These three move because the service classifier
-      // now reads vela's `upstream_provider_*` codes as what they say they are
-      // — the gateway's own credentials — instead of letting the sentence they
-      // travel with ("credentials are missing or invalid") be read as the
-      // caller's.
-      'E1 upstream_provider_unauthenticated (R-053)',
-      'E2 upstream_provider_unauthenticated bare',
-      'E3 upstream_provider_forbidden',
     ]);
   });
 
@@ -359,8 +331,7 @@ describe('withAcpServiceFailureCode', () => {
   it('never overwrites a code some layer already chose', () => {
     // Text that WOULD classify as an upstream outage, under codes that were
     // decided with more evidence than a text match. Each must survive intact:
-    // AMR's model/account promotions and the handshake verdict all key their
-    // whole card off these.
+    // the handshake verdict and named promotions key their whole card off these.
     const message = 'json-rpc id 3: the model is currently overloaded';
     for (const code of [
       'AMR_MODEL_UNAVAILABLE',

@@ -134,10 +134,9 @@ export function evictSharedCancellableGet(key: string): void {
   entries.delete(key);
 }
 
-// Mirror of `forceCoalescedGet`'s burst window (see coalesced-get.ts): when a
-// broadcast identity-change event makes several mounted consumers force a
-// fresh read in the same dispatch pass, only the first eviction wins and the
-// rest join its fetch instead of destroying it.
+// Burst window: when several mounted consumers force a fresh read in the same
+// dispatch pass, only the first eviction wins and the rest join its fetch
+// instead of destroying it.
 const FORCE_BURST_MS = 250;
 const forcedAt = new Map<string, number>();
 

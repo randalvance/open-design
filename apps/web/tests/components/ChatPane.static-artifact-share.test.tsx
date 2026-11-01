@@ -4,7 +4,6 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { forwardRef, useImperativeHandle } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ChatPane } from '../../src/components/ChatPane';
-import { notifyProjectShareHistoryChanged } from '../../src/components/share/share-publication-events';
 import { REMIX_ICON_PATHS } from '../../src/components/remix-icon-paths';
 import type { ChatMessage } from '../../src/types';
 
@@ -60,14 +59,12 @@ it.each(['unpublished', 'published', 'stopped', 'unknown', 'loading', 'error'])(
     expect(statusRequests()).toHaveLength(0);
 
     // Share receipts, rerenders and project changes must not start status reads.
-    await act(async () => { notifyProjectShareHistoryChanged('project-1'); });
     view.rerender(<ChatPane {...props} />);
     expect(share).toHaveTextContent(/^Share$/);
     fireEvent.click(share);
     expect(onArtifactShare).toHaveBeenCalledExactlyOnceWith('result.html', share.getAttribute('data-artifact-anchor'));
     expect(onRequestOpenFile).not.toHaveBeenCalled();
     view.rerender(<ChatPane {...props} projectId="project-2" />);
-    await act(async () => { notifyProjectShareHistoryChanged('project-2'); });
     expect(screen.getByTestId('artifact-card-publish-result.html')).toHaveTextContent(/^Share$/);
     expect(statusRequests()).toHaveLength(0);
   },

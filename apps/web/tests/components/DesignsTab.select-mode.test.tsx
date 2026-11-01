@@ -7,16 +7,6 @@ import { DesignsTab } from '../../src/components/DesignsTab';
 import { fetchProjectFiles } from '../../src/providers/registry';
 import type { Project } from '../../src/types';
 
-const workspaceContext = vi.hoisted(() => ({
-  workspaceId: 'ws-personal', workspaceType: 'personal', workspaceMemberId: 'wm-1',
-  role: 'owner', memberStatus: 'active', lifecycleState: 'active', permissions: {},
-}));
-
-vi.mock('../../src/collab/useWorkspaceContext', () => ({
-  useWorkspaceContext: () => ({ context: workspaceContext, loading: false, failure: null, refresh: vi.fn() }),
-  useWorkspaceBilling: () => null,
-}));
-
 vi.mock('../../src/providers/registry', () => ({
   deleteLiveArtifact: vi.fn(),
   fetchLiveArtifacts: vi.fn(async () => []),

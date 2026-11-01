@@ -251,42 +251,6 @@ describe('searchable model picker — opening lands on the model in effect', () 
     expect(scrolledElements()).toContain(selected);
   });
 
-  it('brings the selected company into view alongside its model', () => {
-    // The two-level browse (AMR's cross-vendor catalog) scrolls in BOTH panes:
-    // the company rail on the left and that company's models on the right.
-    const crossVendor: AgentModelOption[] = [
-      ...Array.from({ length: 6 }, (_, index) => ({
-        id: `claude-${index}`,
-        label: `Claude ${index}`,
-      })),
-      ...Array.from({ length: 6 }, (_, index) => ({
-        id: `deepseek-${index}`,
-        label: `DeepSeek ${index}`,
-      })),
-    ];
-
-    render(
-      <SearchableModelSelect
-        models={crossVendor}
-        value="deepseek-4"
-        onChange={vi.fn()}
-        groupByCompany
-        searchPlaceholder="Search models"
-        popoverTestId="model-popover"
-      />,
-    );
-
-    const popover = openPicker();
-    const scrolled = scrolledElements();
-    const selectedOption = within(popover)
-      .getAllByRole('option')
-      .find((option) => option.getAttribute('aria-selected') === 'true');
-
-    expect(selectedOption).toBeTruthy();
-    expect(scrolled).toContain(selectedOption);
-    expect(scrolled).toContain(within(popover).getByTestId('model-company-deepseek'));
-    expect(scrolled).not.toContain(within(popover).getByTestId('model-company-claude'));
-  });
 
   it('does not scroll at all when no listed model is in effect', () => {
     render(

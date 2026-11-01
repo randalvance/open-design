@@ -37,10 +37,6 @@ import { app, dialog } from "electron";
 
 import { readPackagedConfig } from "./config.js";
 import {
-  claimPackagedDownloadAttribution,
-  discoverPackagedDownloadAttribution,
-} from "./download-attribution.js";
-import {
   parsePackagedHeadlessRequest,
   resolvePackagedMcpBootstrapLaunch,
   runPackagedMcpActionAgainstExistingDaemon,
@@ -75,39 +71,15 @@ import {
   supportsDeferredHeadlessDesktop,
   watchUserDesktopIntent,
 } from "./managed-headless.js";
-import { findPackagedDeeplinkArg, launchPackagedPayloadDesktop } from "./payload-desktop-launch.js";
+import { launchPackagedPayloadDesktop } from "./payload-desktop-launch.js";
 import { packagedEntryUrl, registerOdProtocol } from "./protocol.js";
 import { startPackagedSidecars } from "./sidecars.js";
-import { classifyStartupFailure, reportLaunchEvent, reportStartupFailure, resolveStartupDistinctId } from "./startup-telemetry.js";
 import { resolvePackagedWindowTitle } from "./window-title.js";
 import { syncWindowsUninstallDisplayVersion } from "./windows-lifecycle.js";
 
 let packagedLogger: PackagedDesktopLogger | null = null;
 let packagedStartupTiming: StartupTiming | null = null;
 const secondInstanceHandoff = createPackagedSecondInstanceHandoff();
-
-// Telemetry context for the fatal-exit path. Populated once config + launcher
-// runtime are resolved so the `main().catch` below can report a startup failure
-// even though the daemon (the PostHog host) never came up. Null until then —
-// failures earlier than config resolution simply skip telemetry. See
-// `startup-telemetry.ts` for the zero-startup-side-effect contract.
-let startupTelemetryContext:
-  | {
-      posthogKey: string | null;
-      posthogHost: string | null;
-      appVersion: string | null;
-      namespace: string;
-      source: string;
-      installationRoot: string;
-      nativeModulePath: string | null;
-      channel: string;
-      dataRoot: string;
-    }
-  | null = null;
-
-async function reportPackagedLaunch(event: Parameters<typeof reportLaunchEvent>[0]["event"], properties: Record<string, unknown>) {
-  if (startupTelemetryContext) await reportLaunchEvent({ ...startupTelemetryContext, event, properties });
-}
 
 function applyPackagedUpdaterEnv(updateMetadataUrl: string | null): void {
   if (updateMetadataUrl == null) return;
@@ -210,7 +182,6 @@ async function main(): Promise<void> {
     return;
   }
   const oppositeDesktop = await inspectExistingDesktopForLauncher(launchStamp, {
-    deeplinkUrl: findPackagedDeeplinkArg(process.argv),
     logger: console,
     modes: [
       headlessRequest.headless ? SIDECAR_MODES.RUNTIME : "headless",
@@ -235,7 +206,6 @@ async function main(): Promise<void> {
     return;
   }
   const existingDesktop = await inspectExistingDesktopForLauncher(launchStamp, {
-    deeplinkUrl: findPackagedDeeplinkArg(process.argv),
     incomingVersion: namespaceConfig.appVersion,
     logger: console,
     paths: initialPaths,
@@ -268,37 +238,9 @@ async function main(): Promise<void> {
     managed: isPackagedManagedLaunch(launcherRuntime),
   });
 
-  // Arm fatal-exit telemetry now that we know the channel key/version. The
-  // startPackagedSidecars call below is THE failure this covers (daemon/web
-  // dying before reporting status, e.g. issue #4638's missing better-sqlite3).
-  startupTelemetryContext = {
-    dataRoot: paths.dataRoot,
-    channel: launchStamp.channel,
-    posthogKey: activeConfig.posthogKey,
-    posthogHost: activeConfig.posthogHost,
-    appVersion: activeConfig.appVersion,
-    namespace,
-    source: convergedArgvStamp?.source ?? SIDECAR_SOURCES.PACKAGED,
-    // Pass installationRoot explicitly: OD_INSTALLATION_DIR is only set in the
-    // daemon child env, not this parent process (see startup-telemetry.ts).
-    installationRoot: paths.installationRoot,
-    // Absolute path where the daemon's better-sqlite3 binding ships in the
-    // packaged bundle (`Contents/Resources/app/node_modules/...` — layout
-    // verified against the shipped 0.13.0 DMG). The fatal-exit report probes
-    // this to record whether the .node actually exists on the crashing machine.
-    nativeModulePath: join(
-      app.getAppPath(),
-      "node_modules",
-      "better-sqlite3",
-      "build",
-      "Release",
-      "better_sqlite3.node",
-    ),
-  };
-
   // Helper/delegating/headless-only processes are excluded. Node's origin
   // includes ESM/config work in this process, but not an earlier OS click or
-  // a separate installed launcher process. Early events wait for identity.
+  // a separate installed launcher process.
   if (!deferredHeadless) {
     packagedStartupTiming = createDesktopStartupTiming({ appVersion: activeConfig.appVersion, startupType: "cold" });
     packagedStartupTiming.mark("runtime_resolved");
@@ -313,10 +255,6 @@ async function main(): Promise<void> {
     runtimeRoot: paths.runtimeRoot,
   });
   stabilizePackagedWorkingDirectory(paths);
-  const downloadAttribution = await discoverPackagedDownloadAttribution(paths, console).catch((error: unknown) => {
-    console.warn("[attribution] failed to discover packaged download attribution", error);
-    return null;
-  });
   packagedLogger = createPackagedDesktopLogger(paths);
   attachPackagedDesktopProcessLogging({ logger: packagedLogger, paths, stamp: convergedStamp });
   const retireObsoleteInstalledOuter = createObsoleteInstalledOuterRetirement({
@@ -330,13 +268,12 @@ async function main(): Promise<void> {
   });
   applyPackagedElectronPathOverrides(paths);
   applyPackagedUpdaterEnv(activeConfig.updateMetadataUrl);
-  if (!claimPackagedSingleInstanceLock(app, (argv) => {
-    secondInstanceHandoff.handle(findPackagedDeeplinkArg(argv));
+  if (!claimPackagedSingleInstanceLock(app, () => {
+    secondInstanceHandoff.handle();
   })) {
     return;
   }
   await app.whenReady();
-  const electronReadyAtMs = performance.now();
   packagedStartupTiming?.mark("electron_ready");
 
   // Show the brand splash IMMEDIATELY, before we await the daemon/web sidecars
@@ -364,18 +301,12 @@ async function main(): Promise<void> {
   const sidecars = await startPackagedSidecars(sidecarRuntime, paths, {
     launchContext: packagedStartupTiming?.context(),
     appVersion: activeConfig.appVersion,
-    amrProfile: activeConfig.amrProfile,
     daemonCliEntry: activeConfig.daemonCliEntry,
     daemonSidecarEntry: activeConfig.daemonSidecarEntry,
     electronNodeCommand: launcherRuntime.electronNodeCommand,
     mcpBootstrapArgs: mcpBootstrap.args,
     mcpBootstrapCommand: mcpBootstrap.command,
     nodeCommand: activeConfig.nodeCommand,
-    telemetryRelayUrl: activeConfig.telemetryRelayUrl,
-    posthogKey: activeConfig.posthogKey,
-    posthogHost: activeConfig.posthogHost,
-    velaWebUrl: activeConfig.velaWebUrl,
-    velaWebUrls: activeConfig.velaWebUrls,
     // PR #974 round-5 (lefarcen P2): the Electron entry runs desktop
     // main alongside the daemon, so the import-folder gate must be
     // pinned ON from request 0. See `apps/packaged/src/headless-runtime.ts`
@@ -391,10 +322,6 @@ async function main(): Promise<void> {
     // Both the "spawning" and "ready" edges are mapped so the step counter
     // advances the instant each long native wait clears.
     onPhase(phase) {
-      // Launch events stay buffered on the tracker until desktop main arms the
-      // daemon-backed reporter, so attempt/ready/result share one delivery path
-      // and one installation identity (OPEND-4220). The direct packaged
-      // reporter is reserved for the fatal path below, where no daemon exists.
       packagedStartupTiming?.mark(phase === "daemon-spawning" ? "daemon_spawning"
         : phase === "daemon-ready" ? "daemon_ready" : phase === "web-spawning" ? "web_spawning" : "web_ready");
       const stage =
@@ -408,14 +335,6 @@ async function main(): Promise<void> {
       setSplashStage(splash?.window ?? null, stage);
     },
   });
-  if (sidecars.daemon.url) {
-    void claimPackagedDownloadAttribution({
-      attribution: downloadAttribution,
-      daemonUrl: sidecars.daemon.url,
-      installerObservationRoot: paths.installerObservationRoot,
-      logger: packagedLogger,
-    });
-  }
   // Sidecars are up; the remaining wait is the hidden main window loading and
   // mounting the web bundle (the runtime re-asserts this stage at its reveal
   // gate, which is a no-op when the label is already current).
@@ -432,7 +351,6 @@ async function main(): Promise<void> {
     return await desktopHandle.invoke(action, input);
   };
   const launchDesktop = async (): Promise<DesktopMainHandle> => await runDesktopMain(runtime, {
-    electronReadyAtMs,
     startupTiming: deferredHeadless ? null : packagedStartupTiming ?? undefined,
     splashWindow: splash?.window,
     splashStartedAt: splash?.startedAt,
@@ -470,8 +388,6 @@ async function main(): Promise<void> {
       }
     },
     windowTitle: resolvePackagedWindowTitle(activeConfig),
-    inviteProtocolClientPath:
-      process.platform === "win32" ? launcherRuntime.installedLaunchPath : null,
     async onExternalShow() {
       await retireObsoleteInstalledOuter();
     },
@@ -486,7 +402,6 @@ async function main(): Promise<void> {
         packagedLogger?.warn("failed to sync Windows uninstall registry version", { error });
       });
       secondInstanceHandoff.attach({
-        dispatchDeeplink: controls.dispatchInviteDeeplink,
         show: controls.show,
       });
     },
@@ -564,12 +479,8 @@ async function main(): Promise<void> {
   }
 }
 
-void main().catch(async (error: unknown) => {
+void main().catch((error: unknown) => {
   const isPathAccess = error instanceof PackagedPathAccessError;
-  if (packagedStartupTiming != null) {
-    packagedStartupTiming.setReporter(reportPackagedLaunch);
-    packagedStartupTiming.finish("failed", classifyStartupFailure(error, isPathAccess).failureKind);
-  }
   if (isPathAccess) {
     try {
       dialog.showErrorBox(error.title, error.message);
@@ -579,28 +490,5 @@ void main().catch(async (error: unknown) => {
   }
   packagedLogger?.error("packaged runtime failed", { error });
   console.error("packaged runtime failed", error);
-  // Best-effort crash telemetry on the way out. This is the ONLY new behavior
-  // on the failure path; the happy path never reaches here. reportStartupFailure
-  // self-caps its runtime (Promise.race timeout) and swallows all errors, so it
-  // can neither block nor crash the exit. No-op when telemetry isn't armed yet
-  // or the build has no PostHog key.
-  if (startupTelemetryContext) {
-    await reportStartupFailure({
-      error,
-      isPathAccess,
-      dataRoot: startupTelemetryContext.dataRoot,
-      launchContext: packagedStartupTiming?.context(),
-      posthogKey: startupTelemetryContext.posthogKey,
-      posthogHost: startupTelemetryContext.posthogHost,
-      distinctId: resolveStartupDistinctId(
-        startupTelemetryContext.namespace,
-        startupTelemetryContext.installationRoot,
-      ),
-      appVersion: startupTelemetryContext.appVersion,
-      namespace: startupTelemetryContext.namespace,
-      source: startupTelemetryContext.source,
-      nativeModulePath: startupTelemetryContext.nativeModulePath,
-    });
-  }
   process.exit(resolveSidecarLauncherExitCode(error));
 });

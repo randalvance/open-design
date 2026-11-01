@@ -160,11 +160,6 @@ export function registerDeliverableSyntaxToolRoutes(
     try {
       const grant = ctx.authorizeToolRequest(req, res, 'deliverable-syntax:check');
       if (!grant) return;
-      if (!await ctx.authorizeProjectToolRequest(
-        res,
-        grant.projectId,
-        { mode: 'read' },
-      )) return;
 
       const project = ctx.getProject(grant.projectId);
       if (!project) {

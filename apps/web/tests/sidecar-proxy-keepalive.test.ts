@@ -6,8 +6,8 @@
 // socket is being picked up, a daemon restart, any server-side close racing
 // the proxy's write — the proxied request dies with ECONNRESET and the proxy
 // synthesizes a 502 the daemon never sent. In the packaged client this
-// surfaced as recurring `PUT /api/workspace/billing/interests/:clientId` 502s
-// even though that daemon route has no 502 path at all.
+// surfaced as recurring 502s on idempotent `PUT` routes that have no 502 path
+// at all.
 //
 // The spec: an idempotent request with a small replayable body that fails
 // with a connection reset on a REUSED pooled socket, before any response
@@ -126,7 +126,7 @@ describe('sidecar daemon proxy keep-alive resilience', () => {
     const daemon = await startFlakyDaemon();
     cleanups.push(daemon.close);
     const proxyPort = await startProxy(daemon.port);
-    const url = `http://127.0.0.1:${proxyPort}/api/workspace/billing/interests/c1`;
+    const url = `http://127.0.0.1:${proxyPort}/api/projects/p1/tabs`;
     const init = {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },

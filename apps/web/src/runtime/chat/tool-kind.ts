@@ -548,7 +548,7 @@ export function isRawCommandTitle(toolName: string, input: unknown): boolean {
  * 判据本身**不在这里** —— 它是全仓唯一的 `isTodoWriteToolName`(契约里),
  * 这里只是给它一个说明「为什么落块器和去重器要认它」的名字。
  * 曾经这里自己写过一份带 `/i` 的正则,而契约那份是精确 `===`,两份口径不一,
- * 于是 AMR 把名字改成 `Todowrite` 之后表现成「一半坏」:这边认得、那边不认。
+ * 于是某条链路把名字改成 `Todowrite` 之后表现成「一半坏」:这边认得、那边不认。
  *
  * 谁要用它:
  *  · `build-turn-blocks` 靠它把快照落成 todo 分段;

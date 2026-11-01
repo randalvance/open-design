@@ -30,7 +30,7 @@ import { forwardRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatPane } from '../../../src/components/ChatPane';
-import type { AppConfig, ChatMessage } from '../../../src/types';
+import type { ChatMessage } from '../../../src/types';
 
 const translate = (key: string, vars?: Record<string, string | number>) =>
   (vars && Object.keys(vars).length > 0 ? `${key} ${Object.values(vars).join(' ')}` : key);
@@ -142,7 +142,6 @@ function renderChat(messages: ChatMessage[]) {
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }
@@ -237,7 +236,6 @@ describe('ChatMessageRail — 流式期间活动点必须收敛', () => {
           activeConversationId="conv-1"
           onSelectConversation={vi.fn()}
           onDeleteConversation={vi.fn()}
-          config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
         />,
       );
       await tick();

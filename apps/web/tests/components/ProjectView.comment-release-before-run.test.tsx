@@ -12,19 +12,12 @@
  */
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
+import { buildWorkspacePermissions, buildWorkspaceSeatSummary, type WorkspaceCollabContext } from '../helpers/workspace-context';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectView } from '../../src/components/ProjectView';
-import type { ProjectWorkspaceScopeState } from '../../src/collab/useProjectWorkspaceScope';
-import { resetWorkspaceContextCache } from '../../src/collab/useWorkspaceContext';
 import { streamViaDaemon } from '../../src/providers/daemon';
-import { checkAmrBalanceGate } from '../../src/runtime/amr-balance-gate';
 import {
   createConversation,
   listConversations,
@@ -69,11 +62,6 @@ const CALLER_CONTEXT: WorkspaceCollabContext = {
   permissions: buildWorkspacePermissions({ role: 'owner', lifecycleState: 'active' }),
 } as WorkspaceCollabContext;
 
-const workspaceScopeMocks = vi.hoisted(() => ({
-  projectScope: { loading: true, scope: null } as ProjectWorkspaceScopeState,
-  ambientContext: null as WorkspaceCollabContext | null,
-  billingResponse: null as unknown,
-}));
 const savedCommentAttachment = vi.hoisted(
   () => ({
     id: 'comment-1',
@@ -89,10 +77,6 @@ const savedCommentAttachment = vi.hoisted(
     source: 'saved-comment',
   }) as ChatCommentAttachment,
 );
-const projectCollabMocks = vi.hoisted(() => ({
-  writerAuthority: 'allowed' as 'allowed' | 'denied' | 'pending',
-  viewerOnly: false,
-}));
 
 vi.mock('../../src/i18n', () => ({
   useI18n: () => ({ locale: 'zh-CN', setLocale: () => undefined, t: (key: string) => key }),
@@ -103,40 +87,8 @@ vi.mock('../../src/router', () => ({ navigate: vi.fn() }));
 
 vi.mock('../../src/providers/anthropic', () => ({ streamMessage: vi.fn() }));
 
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>()),
-  useWorkspaceContext: () => ({
-    context: workspaceScopeMocks.ambientContext,
-    loading: false,
-  }),
-  useWorkspaceBillingResponse: () => workspaceScopeMocks.billingResponse,
-}));
 
-vi.mock('../../src/collab/useProjectWorkspaceScope', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useProjectWorkspaceScope')>()),
-  useProjectWorkspaceScope: () => workspaceScopeMocks.projectScope,
-}));
 
-vi.mock('../../src/collab/useProjectCollab', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useProjectCollab')>()),
-  useProjectCollab: () => ({
-    enabled: true,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: projectCollabMocks.viewerOnly,
-    writerAuthority: projectCollabMocks.writerAuthority,
-    isOwner: projectCollabMocks.writerAuthority === 'allowed',
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: () => undefined,
-    requestPublish: () => undefined,
-    refreshPresence: () => undefined,
-    checkStatusNow: () => undefined,
-  }),
-}));
 
 vi.mock('../../src/providers/daemon', () => ({
   fetchChatRunStatus: vi.fn(),
@@ -145,31 +97,13 @@ vi.mock('../../src/providers/daemon', () => ({
   publishDaemonRunFinishedEvent: vi.fn(),
   reattachDaemonRun: vi.fn(),
   streamViaDaemon: vi.fn(),
-  fetchAmrWalletSnapshot: vi.fn().mockResolvedValue(null),
-  formatVelaBalanceUsd: (value: string | null) => `$${value ?? '0'}`,
-  fetchVelaLoginStatus: vi.fn().mockResolvedValue({ loggedIn: true }),
-  startVelaLogin: vi.fn(),
-  cancelVelaLogin: vi.fn(),
-  canUpgradeVelaPlan: vi.fn().mockReturnValue(false),
 }));
 
-vi.mock('../../src/runtime/amr-balance-gate', async () => {
-  const actual = await vi.importActual<typeof import('../../src/runtime/amr-balance-gate')>(
-    '../../src/runtime/amr-balance-gate',
-  );
-  return { ...actual, checkAmrBalanceGate: vi.fn().mockResolvedValue({ kind: 'allow' }) };
-});
 
 vi.mock('../../src/providers/project-events', () => ({
   useProjectFileEvents: vi.fn(),
 }));
 
-vi.mock('../../src/runtime/amr-low-balance-plan', async () => {
-  const actual = await vi.importActual<
-    typeof import('../../src/runtime/amr-low-balance-plan')
-  >('../../src/runtime/amr-low-balance-plan');
-  return { ...actual, resolveAmrPlan: vi.fn().mockResolvedValue('pro') };
-});
 
 vi.mock('../../src/runtime/brands', async () => {
   const actual = await vi.importActual<typeof import('../../src/runtime/brands')>(
@@ -237,27 +171,6 @@ vi.mock('../../src/components/FileWorkspace', () => ({
         onClick={() => void props.onSendBoardCommentAttachments?.([savedCommentAttachment])}
       >
         send to chat
-      </button>
-    </div>
-  ),
-}));
-vi.mock('../../src/components/AmrBalanceDialog', () => ({
-  AmrBalanceDialog: (props: { onClose: () => void; onResolved: () => void }) => (
-    <div data-testid="balance-dialog">
-      <button type="button" data-testid="balance-dialog-dismiss" onClick={props.onClose}>
-        dismiss
-      </button>
-      <button type="button" data-testid="balance-dialog-resolved" onClick={props.onResolved}>
-        resolved
-      </button>
-    </div>
-  ),
-}));
-vi.mock('../../src/components/chat/AmrOwnerTopUpDialog', () => ({
-  AmrOwnerTopUpDialog: (props: { onClose: () => void }) => (
-    <div data-testid="balance-dialog">
-      <button type="button" data-testid="balance-dialog-dismiss" onClick={props.onClose}>
-        dismiss
       </button>
     </div>
   ),
@@ -347,7 +260,6 @@ vi.mock('../../src/components/ChatPane', async (importOriginal) => ({
 }));
 
 const mockedStreamViaDaemon = vi.mocked(streamViaDaemon);
-const mockedCheckAmrBalanceGate = vi.mocked(checkAmrBalanceGate);
 const mockedListConversations = vi.mocked(listConversations);
 const mockedCreateConversation = vi.mocked(createConversation);
 const mockedListMessages = vi.mocked(listMessages);
@@ -449,34 +361,9 @@ const savedComment: PreviewComment = {
   updatedAt: 1,
 };
 
-const walletSnapshot = {
-  status: 'available',
-  profile: 'prod',
-  user: { plan: 'pro' },
-  balanceUsd: '0',
-  updatedAt: null,
-  fetchedAt: '2026-09-29T00:00:00.000Z',
-  stale: false,
-  source: 'vela_api',
-};
 
-type GateResult = Awaited<ReturnType<typeof checkAmrBalanceGate>>;
 
-const EMPTY_WALLET = { kind: 'hard', reason: 'insufficient', snapshot: walletSnapshot } as GateResult;
-const SIGNED_OUT = { kind: 'hard', reason: 'signed_out', snapshot: walletSnapshot } as GateResult;
-const UNREADABLE_BILLING = { kind: 'unavailable' } as GateResult;
 
-function deferredGate() {
-  let settle: (result: GateResult) => void = () => {};
-  let fail: (error: Error) => void = () => {};
-  mockedCheckAmrBalanceGate.mockReturnValue(
-    new Promise<GateResult>((resolve, reject) => {
-      settle = resolve;
-      fail = reject;
-    }),
-  );
-  return { settle: (result: GateResult) => settle(result), fail: (error: Error) => fail(error) };
-}
 
 function listedComments() {
   return screen.getByTestId('file-workspace').getAttribute('data-preview-comments');
@@ -506,7 +393,6 @@ async function expectCommentReleasedToOpen() {
     CONVERSATION_ID,
     'comment-1',
     'open',
-    expect.anything(),
   );
   expect(writtenStatuses()).not.toContain('failed');
   expect(writtenStatuses()).not.toContain('needs_review');
@@ -518,7 +404,6 @@ describe('a saved comment whose queued send never becomes a run', () => {
   beforeEach(() => {
     window.sessionStorage.clear();
     window.localStorage.clear();
-    resetWorkspaceContextCache();
     stubFetch();
     mockedListConversations.mockImplementation(async (projectId: string) => [
       conversation(projectId),
@@ -530,12 +415,6 @@ describe('a saved comment whose queued send never becomes a run', () => {
     mockedFetchProjectFiles.mockResolvedValue([]);
     mockedFetchBrands.mockResolvedValue([]);
     mockedStreamViaDaemon.mockResolvedValue(undefined);
-    mockedCheckAmrBalanceGate.mockResolvedValue({ kind: 'allow' });
-    workspaceScopeMocks.projectScope = { loading: true, scope: null };
-    workspaceScopeMocks.ambientContext = CALLER_CONTEXT;
-    workspaceScopeMocks.billingResponse = null;
-    projectCollabMocks.writerAuthority = 'allowed';
-    projectCollabMocks.viewerOnly = false;
     mockedLoadTabs.mockResolvedValue({ tabs: [], active: null });
     // The registry double keeps the one status the daemon would hold, so a
     // refresh reads back whatever was written last.
@@ -555,7 +434,6 @@ describe('a saved comment whose queued send never becomes a run', () => {
     cleanup();
     vi.unstubAllGlobals();
     vi.clearAllMocks();
-    resetWorkspaceContextCache();
   });
 
   it('control: holds the comment as applying once its run starts', async () => {
@@ -568,76 +446,10 @@ describe('a saved comment whose queued send never becomes a run', () => {
     expect(writtenStatuses()).not.toContain('open');
   });
 
-  it.each([
-    ['the wallet is empty', EMPTY_WALLET],
-    ['the account is signed out', SIGNED_OUT],
-    ['the billing read is unavailable', UNREADABLE_BILLING],
-  ])('returns the comment to open when the pre-run gate holds the send because %s', async (_name, result) => {
-    const gate = deferredGate();
-    await renderWithSavedComment();
-    await sendCommentToChat();
-    await waitFor(() => expect(mockedCheckAmrBalanceGate).toHaveBeenCalledTimes(1));
 
-    gate.settle(result);
 
-    await expectCommentReleasedToOpen();
-  });
 
-  it('leaves the comment open when the user dismisses the balance dialog', async () => {
-    mockedCheckAmrBalanceGate.mockResolvedValue(EMPTY_WALLET);
-    await renderWithSavedComment();
-    fireEvent.click(screen.getByTestId('send-comment-to-chat'));
-    await screen.findByTestId('balance-dialog');
 
-    fireEvent.click(screen.getByTestId('balance-dialog-dismiss'));
-
-    await waitFor(() => expect(screen.queryByTestId('balance-dialog')).toBeNull());
-    await expectCommentReleasedToOpen();
-  });
-
-  it('holds the comment again when the held send resumes and its run starts', async () => {
-    mockedCheckAmrBalanceGate.mockResolvedValueOnce(SIGNED_OUT);
-    await renderWithSavedComment();
-    fireEvent.click(screen.getByTestId('send-comment-to-chat'));
-    await screen.findByTestId('balance-dialog-resolved');
-    await waitFor(() => expect(listedComments()).toBe('comment-1:open'));
-
-    fireEvent.click(screen.getByTestId('balance-dialog-resolved'));
-
-    await waitFor(() => expect(mockedStreamViaDaemon).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(listedComments()).toBe('comment-1:applying'));
-    expect(screen.getByTestId('queued-count').textContent).toBe('0');
-  });
-
-  it('returns the comment to open when the user stops before the run is created', async () => {
-    const gate = deferredGate();
-    await renderWithSavedComment();
-    await sendCommentToChat();
-    await waitFor(() => expect(screen.getByTestId('streaming').textContent).toBe('yes'));
-
-    fireEvent.click(screen.getByTestId('stop'));
-    await waitFor(() => expect(screen.getByTestId('streaming').textContent).toBe('no'));
-    gate.settle({ kind: 'allow' });
-
-    await expectCommentReleasedToOpen();
-    // Releasing the comment must not send the stopped turn off again.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    });
-    expect(mockedCheckAmrBalanceGate).toHaveBeenCalledTimes(1);
-    expect(mockedStreamViaDaemon).not.toHaveBeenCalled();
-  });
-
-  it('returns the comment to open when the send throws before the run is created', async () => {
-    const gate = deferredGate();
-    await renderWithSavedComment();
-    await sendCommentToChat();
-    await waitFor(() => expect(mockedCheckAmrBalanceGate).toHaveBeenCalledTimes(1));
-
-    gate.fail(new Error('wallet endpoint unreachable'));
-
-    await expectCommentReleasedToOpen();
-  });
 
   describe('while an earlier run keeps the send waiting in the queue', () => {
     async function queueCommentBehindRunningTurn() {
@@ -680,15 +492,4 @@ describe('a saved comment whose queued send never becomes a run', () => {
     });
   });
 
-  it('never marks the comment applying when a composer send is held by the pre-run gate', async () => {
-    mockedCheckAmrBalanceGate.mockResolvedValue(UNREADABLE_BILLING);
-    await renderWithSavedComment();
-
-    fireEvent.click(screen.getByTestId('send-with-comment'));
-
-    await waitFor(() => expect(screen.getByTestId('queued-count').textContent).toBe('1'));
-    expect(listedComments()).toBe('comment-1:open');
-    expect(writtenStatuses()).not.toContain('applying');
-    expect(mockedStreamViaDaemon).not.toHaveBeenCalled();
-  });
 });

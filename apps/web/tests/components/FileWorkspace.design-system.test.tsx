@@ -5,17 +5,8 @@ import { fireEvent, waitFor } from '@testing-library/react';
 import { createRoot, type Root } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
 
 import { FileWorkspace } from '../../src/components/FileWorkspace';
-import {
-  CollabProvider,
-  type CollabContextValue,
-} from '../../src/collab/collab-context';
 import type { AgentEvent, DesignSystemSummary, ProjectFile } from '../../src/types';
 
 const registryMocks = vi.hoisted(() => ({
@@ -102,47 +93,6 @@ function designSystem(overrides: Partial<DesignSystemSummary> = {}): DesignSyste
   };
 }
 
-function teamContext(): WorkspaceCollabContext {
-  return {
-    workspaceId: 'workspace-logo',
-    workspaceType: 'team',
-    workspaceMemberId: 'member-logo',
-    role: 'owner',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: 'team_plus',
-    providerMode: 'platform_credits',
-    teamId: 'team-logo',
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 3, usedSeats: 1 }),
-    permissions: buildWorkspacePermissions({ role: 'owner', lifecycleState: 'active' }),
-  };
-}
-
-function collabValue(workspaceContext: WorkspaceCollabContext): CollabContextValue {
-  return {
-    workspaceContext,
-    workspaceContextLoading: false,
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed',
-    isOwner: true,
-    isEffectiveOwner: true,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: () => {},
-    requestPublish: () => {},
-    refreshPresence: () => {},
-    checkStatusNow: () => {},
-  };
-}
-
 function renderWorkspace(element: React.ReactElement) {
   host = document.createElement('div');
   document.body.appendChild(host);
@@ -175,8 +125,7 @@ function todoWrite(
 }
 
 describe('FileWorkspace design-system project surface', () => {
-  it('keeps a legacy logo-only brand.json visible through server-derived project authority', async () => {
-    const workspaceContext = teamContext();
+  it('keeps a legacy logo-only brand.json visible through the project raw route', async () => {
     registryMocks.fetchProjectFileText.mockImplementation((_projectId: string, name: string) => {
       if (name === 'DESIGN.md') return Promise.resolve('# Legacy Logo');
       if (name === 'brand.json') {
@@ -188,7 +137,7 @@ describe('FileWorkspace design-system project surface', () => {
     });
 
     const container = renderWorkspace(
-      <CollabProvider value={collabValue(workspaceContext)}>
+      <>
         <FileWorkspace
           projectId="ds-legacy-logo"
           projectKind="prototype"
@@ -200,7 +149,7 @@ describe('FileWorkspace design-system project surface', () => {
           onTabsStateChange={vi.fn()}
           designSystemProject={designSystem({ id: 'user:legacy-logo', title: 'Legacy Logo' })}
         />
-      </CollabProvider>,
+      </>,
     );
 
     await flushKit();
@@ -420,7 +369,6 @@ describe('FileWorkspace design-system project surface', () => {
       'DESIGN.md',
       expect.stringContaining('`#FF6A3D`'),
       undefined,
-      null,
     ));
 
     await flushKit();
@@ -444,7 +392,6 @@ describe('FileWorkspace design-system project surface', () => {
       'DESIGN.md',
       expect.stringContaining('`#10B981`'),
       undefined,
-      null,
     ));
   });
 
@@ -484,24 +431,6 @@ describe('FileWorkspace design-system project surface', () => {
       }
       if (url.includes('/raw/fonts/') || url.includes('/raw/system/tokens.')) {
         return new Response(null, { status: 404 });
-      }
-      if (url === '/api/workspace/projects/team') {
-        return new Response(JSON.stringify({ projects: [] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      if (url === '/api/projects/ds-acme/collab/status') {
-        return new Response(JSON.stringify({ syncState: 'local_only' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
       }
       events.push(url);
       return new Response(JSON.stringify({ id: 'brand-acme' }), {
@@ -560,7 +489,6 @@ describe('FileWorkspace design-system project surface', () => {
       'brand.json',
       expect.stringContaining('"hex": "#FF6A3D"'),
       undefined,
-      null,
     ));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
       '/api/brands/brand-acme/finalize',
@@ -618,24 +546,6 @@ describe('FileWorkspace design-system project surface', () => {
       if (url.includes('/raw/fonts/') || url.includes('/raw/system/tokens.')) {
         return new Response(null, { status: 404 });
       }
-      if (url === '/api/workspace/projects/team') {
-        return new Response(JSON.stringify({ projects: [] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      if (url === '/api/projects/ds-acme/collab/status') {
-        return new Response(JSON.stringify({ syncState: 'local_only' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
       events.push(url);
       return new Response(JSON.stringify({ id: 'brand-acme' }), {
         status: 200,
@@ -680,12 +590,10 @@ describe('FileWorkspace design-system project surface', () => {
       'brand.json',
       expect.not.stringContaining('imagery/hero.png'),
       undefined,
-      null,
     ));
     expect(registryMocks.deleteProjectFile).toHaveBeenCalledWith(
       'ds-acme',
       'imagery/hero.png',
-      null,
     );
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/brands/brand-acme/finalize',
@@ -723,24 +631,6 @@ describe('FileWorkspace design-system project surface', () => {
       }
       if (url.includes('/raw/fonts/') || url.includes('/raw/system/tokens.')) {
         return new Response(null, { status: 404 });
-      }
-      if (url === '/api/workspace/projects/team') {
-        return new Response(JSON.stringify({ projects: [] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      if (url === '/api/projects/ds-acme/collab/status') {
-        return new Response(JSON.stringify({ syncState: 'local_only' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      if (url === '/api/workspace/context') {
-        return new Response(JSON.stringify({ context: null }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
       }
       events.push(url);
       if (url === '/api/brands/brand-acme/finalize') {
@@ -1027,7 +917,7 @@ describe('FileWorkspace design-system project surface', () => {
 
     expect(registryMocks.updateDesignSystemDraft).toHaveBeenCalledWith('user:acme', {
       status: 'published',
-    }, null);
+    });
     expect(onRefresh).toHaveBeenCalledOnce();
   });
 

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * OPEND-2772 保留一次失败仅一张卡的守卫。
- * 最新 OPEND-2807 / G16：CLI/BYOK 固定联系我们、导出日志、切换到 OpenDesign Cloud；
+ * 最新 OPEND-2807 / G16：CLI/BYOK 固定联系我们、导出日志、重试；
  * Cloud 固定联系我们、导出日志、重试。旧的额外重试和恢复阶梯已被用户明确撤销。
  * 标题正文仍按批准文案，不随按钮组合改变。
  */
@@ -16,7 +16,6 @@ vi.mock('../../../src/analytics/events', async (importOriginal) => {
     ...actual,
     trackChatPanelClick: vi.fn(),
     trackRunFailedToastSurfaceView: vi.fn(),
-    trackRunFailedToastGoAmrClick: vi.fn(),
     trackRunRecoveryActionClick: vi.fn(),
     trackRunRecoveryActionSurfaceView: vi.fn(),
   };
@@ -24,10 +23,9 @@ vi.mock('../../../src/analytics/events', async (importOriginal) => {
 
 import { ChatPane } from '../../../src/components/ChatPane';
 import {
-  trackRunFailedToastGoAmrClick,
   trackRunRecoveryActionClick,
 } from '../../../src/analytics/events';
-import type { AppConfig, ChatMessage } from '../../../src/types';
+import type { ChatMessage } from '../../../src/types';
 
 /** 真字典 —— 判据钉在用户看到的那行字上,不钉键名 */
 vi.mock('../../../src/i18n', async () => {
@@ -78,8 +76,8 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-/** 产品文案逐字 —— `chat.amrCard.switchCta` */
-const CLOUD_CTA = '切换到 OpenDesign Cloud';
+/** 产品文案逐字 —— `promptTemplates.retry` */
+const RETRY_CTA = '重试';
 
 function failedMessage(opts: { agentId: string; code: string; detail?: string }): ChatMessage {
   return {
@@ -105,9 +103,9 @@ function renderFailure(opts: {
   agentId: string;
   code: string;
   detail?: string;
-  onSwitchToAmrAndRetry?: (m: ChatMessage) => void;
+  onRetry?: (m: ChatMessage, reason: string) => void;
 }) {
-  const onSwitchToAmrAndRetry = opts.onSwitchToAmrAndRetry ?? vi.fn();
+  const onRetry = opts.onRetry ?? vi.fn();
   const rendered = render(
     <ChatPane
       messages={[failedMessage(opts)]}
@@ -118,9 +116,7 @@ function renderFailure(opts: {
       onEnsureProject={async () => 'project-1'}
       onSend={vi.fn()}
       onStop={vi.fn()}
-      onRetry={vi.fn()}
-      onSwitchToAmrAndRetry={onSwitchToAmrAndRetry}
-      amrBalanceCardUsd={null}
+      onRetry={onRetry as never}
       onOpenSettings={vi.fn() as never}
       conversations={[
         { projectId: 'project-1', id: 'conv-1', title: 'Current', createdAt: 1, updatedAt: 1 },
@@ -128,10 +124,9 @@ function renderFailure(opts: {
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: opts.agentId, agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
-  return { ...rendered, onSwitchToAmrAndRetry };
+  return { ...rendered, onRetry };
 }
 
 /** 卡上那一排里的主按钮(`RunErrorCardAction` 给每颗都盖了 `data-run-error-action`) */
@@ -156,7 +151,7 @@ describe('OPEND-2772 · 一次失败只出一张卡', () => {
     const { container } = renderFailure({ agentId: 'claude', code: 'AGENT_AUTH_REQUIRED' });
 
     const hits = Array.from(container.querySelectorAll('button')).filter(
-      (b) => (b.textContent ?? '').trim() === CLOUD_CTA,
+      (b) => (b.textContent ?? '').trim() === RETRY_CTA,
     );
     expect(hits).toHaveLength(1);
   });
@@ -172,12 +167,12 @@ describe('OPEND-2772 · 一次失败只出一张卡', () => {
   });
 });
 
-describe('OPEND-2807 · CLI/BYOK 主按钮固定切换到 OpenDesign Cloud', () => {
-  it('按钮逐字使用工单和 G16 的「切换到 OpenDesign Cloud」', () => {
+describe('OPEND-2807 · CLI/BYOK 主按钮固定重试', () => {
+  it('按钮逐字使用工单和 G16 的「重试」', () => {
     renderFailure({ agentId: 'claude', code: 'AGENT_AUTH_REQUIRED' });
 
-    const cta = screen.getByTestId('chat-error-switch-to-cloud');
-    expect((cta.textContent ?? '').trim()).toBe(CLOUD_CTA);
+    const cta = screen.getByTestId('chat-error-retry');
+    expect((cta.textContent ?? '').trim()).toBe(RETRY_CTA);
   });
 
   it('主按钮就是那颗 CTA,而且整张卡只有一颗主按钮', () => {
@@ -185,16 +180,15 @@ describe('OPEND-2807 · CLI/BYOK 主按钮固定切换到 OpenDesign Cloud', () 
 
     const primaries = primaryActions(container);
     expect(primaries).toHaveLength(1);
-    expect((primaries[0]!.textContent ?? '').trim()).toBe(CLOUD_CTA);
+    expect((primaries[0]!.textContent ?? '').trim()).toBe(RETRY_CTA);
   });
 
   it('CLI/BYOK 不再保留旧重试，整张卡只有固定三颗', () => {
     const { container } = renderFailure({ agentId: 'claude', code: 'AGENT_AUTH_REQUIRED' });
 
-    expect(screen.queryByTestId('chat-error-retry')).toBeNull();
     expect(Array.from(screen.getByTestId('chat-run-error-card').querySelectorAll('button'),
       (button) => button.dataset.testid)).toEqual([
-      'chat-error-contact-support', 'chat-error-export-logs', 'chat-error-switch-to-cloud',
+      'chat-error-contact-support', 'chat-error-export-logs', 'chat-error-retry',
     ]);
     // 常驻两颗照旧在
     expect(container.querySelector('[data-testid="chat-error-contact-support"]')).toBeTruthy();
@@ -223,7 +217,7 @@ describe('OPEND-2807 · CLI/BYOK 主按钮固定切换到 OpenDesign Cloud', () 
 
     const primaries = primaryActions(container);
     expect(primaries).toHaveLength(1);
-    expect((primaries[0]!.textContent ?? '').trim()).toBe(CLOUD_CTA);
+    expect((primaries[0]!.textContent ?? '').trim()).toBe(RETRY_CTA);
   });
 
   /*
@@ -235,62 +229,27 @@ describe('OPEND-2807 · CLI/BYOK 主按钮固定切换到 OpenDesign Cloud', () 
 
     const primaries = primaryActions(container);
     expect(primaries).toHaveLength(1);
-    expect((primaries[0]!.textContent ?? '').trim()).toBe(CLOUD_CTA);
+    expect((primaries[0]!.textContent ?? '').trim()).toBe(RETRY_CTA);
   });
 
-  it('点它走的是现成的切换动作,并且埋点没丢', () => {
-    const onSwitchToAmrAndRetry = vi.fn();
+  it('点它走的是现成的重试动作,并且埋点没丢', () => {
+    const onRetry = vi.fn();
     const { container } = renderFailure({
       agentId: 'claude',
       code: 'AGENT_AUTH_REQUIRED',
-      onSwitchToAmrAndRetry,
+      onRetry,
     });
 
     fireEvent.click(primaryActions(container)[0]!);
 
-    expect(onSwitchToAmrAndRetry).toHaveBeenCalledTimes(1);
-    expect(onSwitchToAmrAndRetry.mock.calls[0]![0]).toMatchObject({ id: 'msg-failed' });
-    // 切换卡挂载/点击时发的那两个事件必须跟着 CTA 一起搬过来
-    expect(trackRunFailedToastGoAmrClick).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(trackRunFailedToastGoAmrClick).mock.calls[0]![1]).toMatchObject({
-      page_name: 'chat_panel',
-      area: 'chat_panel',
-      element: 'go_amr',
-    });
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(onRetry.mock.calls[0]![0]).toMatchObject({ id: 'msg-failed' });
     expect(
       vi
         .mocked(trackRunRecoveryActionClick)
         .mock.calls.some(
-          (call) => call[1]?.recovery_action_type === 'switch_runtime_retry',
+          (call) => call[1]?.recovery_action_type === 'manual_retry',
         ),
     ).toBe(true);
-  });
-});
-
-describe('OPEND-2772 · AMR 自己不许被劝去买 AMR', () => {
-  it.each([
-    ['S04 Cloud 没登录', 'AMR_AUTH_REQUIRED', undefined],
-    ['通用 401', 'UNAUTHORIZED', undefined],
-    ['上游过载', 'UPSTREAM_UNAVAILABLE', undefined],
-    ['被限速', 'RATE_LIMITED', undefined],
-    ['进程崩了', 'AGENT_EXECUTION_FAILED', 'process_crashed'],
-    ['供应商额度用完', 'AGENT_EXECUTION_FAILED', 'hard_quota'],
-  ] as const)('%s:已经在 Cloud 上,卡上不出这颗 CTA', (_name, code, detail) => {
-    const { container } = renderFailure({
-      agentId: 'amr',
-      code,
-      ...(detail ? { detail } : {}),
-    });
-
-    const hits = Array.from(container.querySelectorAll('button')).filter(
-      (b) => (b.textContent ?? '').trim() === CLOUD_CTA,
-    );
-    expect(hits).toHaveLength(0);
-    expect(screen.queryByTestId('amr-guidance')).toBeNull();
-    expect(Array.from(screen.getByTestId('chat-run-error-card').querySelectorAll('button'),
-      (button) => button.dataset.testid)).toEqual([
-      'chat-error-contact-support', 'chat-error-export-logs', 'chat-error-retry',
-    ]);
-    expect(screen.getByTestId('chat-error-retry').dataset.runErrorAction).toBe('primary');
   });
 });

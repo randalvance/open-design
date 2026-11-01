@@ -8,8 +8,6 @@ import {
 } from '@open-design/contracts';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { adaptRuntimeChildObservationsV1 } from '../../src/observability/runtime-child-observations.js';
-import { safeTaskObservationRuntimeVersions } from '../../src/observability/task-observation-aggregation.js';
 import {
   OPENCODE_CHILD_EVIDENCE_ADAPTER_VERSION,
   adaptOpenCodeChildRuntimeFactV1,
@@ -620,10 +618,6 @@ describe('native OpenCode child evidence', () => {
       },
     });
     expect(observations[1]?.attributes).not.toHaveProperty('runtimeCliVersion');
-    expect(safeTaskObservationRuntimeVersions(observations[1]!)).toEqual({
-      agentCliVersion: '1.18.18',
-      runtimeAdapterVersion: OPENCODE_CHILD_EVIDENCE_ADAPTER_VERSION,
-    });
     expect(observations[1]?.turnAccounting).toBeUndefined();
     const parent = normalizeAgentObservationV1({
       identity: {
@@ -639,139 +633,6 @@ describe('native OpenCode child evidence', () => {
     });
     const graph = evaluateRuntimeEvidenceGraphV1([parent, ...observations]);
     expect(graph).toMatchObject({ valid: true, evidenceLevel: 'L2', countedTurnIds: [] });
-  });
-
-  it('promotes the verified export to a paired L2 child lifecycle under the task Run', async () => {
-    const data = fixture();
-    const [candidate] = collectCandidate();
-    const facts = await collectOpenCodeChildEvidenceFacts({
-      candidates: [candidate!],
-      loadSanitizedExport: async () => data.sanitizedChildExport,
-    });
-    const observations = adaptRuntimeChildObservationsV1({
-      events: runEvents(candidate!, facts),
-      ...ADAPT_INPUT,
-    });
-
-    // One child, one observation id, both halves of the lifecycle in replay
-    // order — the exact shape `child_started_missing` was firing on.
-    expect(observations.map((observation) => ([
-      observation.identity.observationId,
-      observation.status,
-    ]))).toEqual([
-      [L2_OBSERVATION_ID, 'running'],
-      [L2_OBSERVATION_ID, 'completed'],
-    ]);
-    expect(observations.every((observation) => (
-      observation.kind === 'child_agent'
-      && observation.identity.parentObservationId === ADAPT_INPUT.taskRunObservationId
-      && observation.identity.runtimeSessionId === 'ses_child_synthetic'
-    ))).toBe(true);
-    // The bounded childInjected Prompt the L1 candidate already provided must
-    // survive the upgrade rather than being traded away for the export.
-    expect(observations[1]?.prompt.childInjected).toMatchObject({
-      availability: 'partial',
-      source: 'runtime',
-      bytes: 35,
-    });
-    expect(observations[1]?.usage).toMatchObject({
-      availability: 'complete',
-      accountingMode: 'additive',
-    });
-
-    const graph = evaluateRuntimeEvidenceGraphV1([
-      taskRunParent('running'),
-      ...observations,
-      taskRunParent('completed'),
-    ]);
-    expect(graph).toMatchObject({
-      valid: true,
-      evidenceLevel: 'L2',
-      issues: [],
-      childObservationIds: [L2_OBSERVATION_ID],
-    });
-  });
-
-  it('keeps the unchanged L1 candidate when the child export is unavailable', async () => {
-    const [candidate] = collectCandidate();
-    const facts = await collectOpenCodeChildEvidenceFacts({
-      candidates: [candidate!],
-      loadSanitizedExport: async () => { throw new Error('export unavailable'); },
-    });
-    expect(facts).toEqual([]);
-
-    const observations = adaptRuntimeChildObservationsV1({
-      events: runEvents(candidate!, facts),
-      ...ADAPT_INPUT,
-    });
-    expect(observations).toHaveLength(1);
-    expect(observations[0]).toMatchObject({
-      identity: {
-        observationId: L1_OBSERVATION_ID,
-        parentObservationId: ADAPT_INPUT.taskRunObservationId,
-      },
-      kind: 'child_agent',
-      status: 'completed',
-      attributes: { evidenceLevel: 'L1' },
-    });
-    expect(observations[0]?.prompt.childInjected).toMatchObject({
-      availability: 'exact',
-      bytes: 35,
-    });
-
-    const graph = evaluateRuntimeEvidenceGraphV1([taskRunParent('running'), ...observations]);
-    expect(graph.evidenceLevel).not.toBe('L2');
-    expect(graph.issues).toContainEqual({
-      code: 'child_started_missing',
-      observationId: L1_OBSERVATION_ID,
-    });
-  });
-
-  it('falls back to the L1 candidate when the export yields only half a lifecycle', async () => {
-    const data = fixture();
-    const [candidate] = collectCandidate();
-    const { startedAtMs: _startedAtMs, ...withoutStart } = candidate!;
-    const facts = await collectOpenCodeChildEvidenceFacts({
-      candidates: [withoutStart],
-      loadSanitizedExport: async () => data.sanitizedChildExport,
-    });
-    expect(facts.map((fact) => fact.state)).toEqual(['completed']);
-
-    // A terminal-only L2 id would fail the graph on `child_started_missing`
-    // while displacing the candidate that still carries the Prompt, so the
-    // half lifecycle is dropped whole.
-    const observations = adaptRuntimeChildObservationsV1({
-      events: runEvents(candidate!, facts),
-      ...ADAPT_INPUT,
-    });
-    expect(observations).toHaveLength(1);
-    expect(observations[0]?.identity.observationId).toBe(L1_OBSERVATION_ID);
-  });
-
-  it('absorbs malformed child facts instead of throwing into the parent Run', async () => {
-    const data = fixture();
-    const [candidate] = collectCandidate();
-    const facts = await collectOpenCodeChildEvidenceFacts({
-      candidates: [candidate!],
-      loadSanitizedExport: async () => data.sanitizedChildExport,
-    });
-    const events = [
-      diagnosticEvent('opencode_child_task_candidate', { ...candidate! }),
-      // Adapter drift, a truncated fact, and an unparseable payload.
-      ...facts.map((fact) => diagnosticEvent('opencode_child_runtime_fact', {
-        ...fact,
-        adapterVersion: 'od-opencode-child-evidence/v9',
-      })),
-      diagnosticEvent('opencode_child_runtime_fact', { childSessionId: 'ses_child_synthetic' }),
-      diagnosticEvent('opencode_child_runtime_fact', {}),
-    ];
-
-    let observations: ReturnType<typeof adaptRuntimeChildObservationsV1> = [];
-    expect(() => {
-      observations = adaptRuntimeChildObservationsV1({ events, ...ADAPT_INPUT });
-    }).not.toThrow();
-    expect(observations).toHaveLength(1);
-    expect(observations[0]?.identity.observationId).toBe(L1_OBSERVATION_ID);
   });
 
   it('requests each child exactly once and stops at the shared wall-clock budget', async () => {

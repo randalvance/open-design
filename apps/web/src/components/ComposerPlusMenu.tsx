@@ -13,7 +13,6 @@ import type {
   InstalledPluginRecord,
   McpServerConfig,
   SkillSummary,
-  WorkspaceCollabContext,
 } from '@open-design/contracts';
 import { useI18n, useT } from '../i18n';
 import { LIBRARY_UI_VISIBLE } from '../features/libraryUi';
@@ -162,7 +161,6 @@ function getFlyoutPlacement(
 }
 
 export interface ComposerPlusMenuProps {
-  workspaceContext?: WorkspaceCollabContext | null;
   /**
    * Connector context options shown under the "Connectors" submenu. The row
    * renders only when `onPickConnector` is provided.
@@ -320,7 +318,6 @@ function mcpMatches(server: McpServerConfig, needle: string): boolean {
  * callers that wire its pick handler.
  */
 export function ComposerPlusMenu({
-  workspaceContext = null,
   connectors = [],
   onPickConnector,
   onAddConnector,
@@ -745,7 +742,6 @@ export function ComposerPlusMenu({
                 <ComposerPluginPreview
                   record={hoveredPlugin}
                   locale={locale}
-                  workspaceContext={workspaceContext}
                 />
               ) : null}
             </div>

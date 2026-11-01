@@ -3,21 +3,14 @@
  * *_result event prop types (run, feedback, settings, packaged).
  */
 import type { ApiFailureReason, ApiFailureStage } from '../../api/failure-detail.js';
-import type {
-  AnalyticsAttributionQuality,
-  AnalyticsDistributionMechanism,
-  AnalyticsEntrySurface,
-  AnalyticsHostProduct,
-  AnalyticsPublisherClass,
-  TrackingRuntimeType,
-} from '../public-params.js';
+import type { AnalyticsAttributionQuality, AnalyticsDistributionMechanism, AnalyticsEntrySurface, AnalyticsHostProduct, AnalyticsPublisherClass, TrackingRuntimeType } from '../public-params.js';
 import type { StrategySettlementFactsV2 } from '../../plugins/strategy-v2.js';
 import type { ReleaseChannel } from '@open-design/release';
 import type { ArtifactOriginEntrySurface, ArtifactOriginStatus } from '../../api/files.js';
 import type { AgentDiagnosticReason, AgentDiagnosticSeverity } from '../../api/registry.js';
 import type { TrackingDesignSystemEditSurface, TrackingDesignSystemKind, TrackingDesignSystemLengthBucket, TrackingDesignSystemOrigin, TrackingDesignSystemRunEntryFrom } from './design-systems.js';
 import type { TrackingSettingsPage } from './event-names.js';
-import type { TrackingAmrOpenCodeErrorPhase, TrackingAmrOpenCodeLastEventType, TrackingAmrOpenCodeLastToolKind, TrackingAmrOpenCodeLastToolStatus, TrackingArtifactKind, TrackingArtifactWriteSource, TrackingArtifactWriteStatus, TrackingByokPreflightBlockReason, TrackingByokProviderId, TrackingCliProviderId, TrackingDesignSystemSource, TrackingExecutionMode, TrackingExportFormat, TrackingExportResult, TrackingFeedbackAction, TrackingFeedbackProviderId, TrackingFeedbackRating, TrackingFeedbackRatingWithNone, TrackingFeedbackReasonCode, TrackingFidelity, TrackingFileSizeBucket, TrackingFileType, TrackingFirstModelEventType, TrackingHarness, TrackingLabsItemId, TrackingLabsOptOutReason, TrackingLabsSystemReason, TrackingLabsToggleSource, TrackingLangfuseDeliveryStatus, TrackingLangfuseDropReason, TrackingLangfuseReportResult, TrackingLangfuseReportSkipReason, TrackingProjectKind, TrackingProjectSource, TrackingPublishErrorCode, TrackingResult, TrackingRunAdmissionPhase, TrackingRunPolicyReason, TrackingRunAdmissionStatus, TrackingRunCancelOrigin, TrackingRunCloseReason, TrackingRunDiagnosticSource, TrackingRunEvidenceLevel, TrackingRunFailureCategory, TrackingRunFailureDetail, TrackingRunFailureDomain, TrackingRunFailureMechanism, TrackingRunFailureStage, TrackingRunFailureUserAction, TrackingRunLifecyclePhase, TrackingRunMatureUnfinishedState, TrackingRunPhaseTimingStatus, TrackingRunPosthogAcknowledgement, TrackingRunPosthogDeliveryStatus, TrackingRunPosthogErrorType, TrackingRunReconciliationIntegrity, TrackingRunRepairOwner, TrackingRunResult, TrackingRunRetryFinalResult, TrackingRunRetryStrategy, TrackingRunRetrySuppressedReason, TrackingRunTerminalIntegrity, TrackingRunTerminalPersistenceErrorType, TrackingRunTerminalPersistenceStatus, TrackingRunTerminalTrigger, TrackingRunTerminationOrigin, TrackingStderrLineCountBucket, TrackingTestResult, TrackingTokenCountSource } from './shared-enums.js';
+import type { TrackingArtifactKind, TrackingArtifactWriteSource, TrackingArtifactWriteStatus, TrackingByokPreflightBlockReason, TrackingByokProviderId, TrackingCliProviderId, TrackingDesignSystemSource, TrackingExecutionMode, TrackingExportFormat, TrackingExportResult, TrackingFeedbackAction, TrackingFeedbackProviderId, TrackingFeedbackRating, TrackingFeedbackRatingWithNone, TrackingFeedbackReasonCode, TrackingFidelity, TrackingFileSizeBucket, TrackingFileType, TrackingFirstModelEventType, TrackingHarness, TrackingLabsItemId, TrackingLabsOptOutReason, TrackingLabsSystemReason, TrackingLabsToggleSource, TrackingLangfuseDeliveryStatus, TrackingLangfuseDropReason, TrackingLangfuseReportResult, TrackingLangfuseReportSkipReason, TrackingProjectKind, TrackingProjectSource, TrackingResult, TrackingRunAdmissionPhase, TrackingRunPolicyReason, TrackingRunAdmissionStatus, TrackingRunCancelOrigin, TrackingRunCloseReason, TrackingRunDiagnosticSource, TrackingRunEvidenceLevel, TrackingRunFailureCategory, TrackingRunFailureDetail, TrackingRunFailureDomain, TrackingRunFailureMechanism, TrackingRunFailureStage, TrackingRunFailureUserAction, TrackingRunLifecyclePhase, TrackingRunMatureUnfinishedState, TrackingRunPhaseTimingStatus, TrackingRunPosthogAcknowledgement, TrackingRunPosthogDeliveryStatus, TrackingRunPosthogErrorType, TrackingRunReconciliationIntegrity, TrackingRunRepairOwner, TrackingRunResult, TrackingRunRetryFinalResult, TrackingRunRetryStrategy, TrackingRunRetrySuppressedReason, TrackingRunTerminalIntegrity, TrackingRunTerminalPersistenceErrorType, TrackingRunTerminalPersistenceStatus, TrackingRunTerminalTrigger, TrackingRunTerminationOrigin, TrackingStderrLineCountBucket, TrackingTestResult, TrackingTokenCountSource } from './shared-enums.js';
 import type { ConversationForkAnalyticsContext, TrackingFileVersionSource, TrackingPluginImportSource, TrackingSessionMode, TrackingSettingsArea } from './ui-click.js';
 // ---- Result events -------------------------------------------------------
 
@@ -546,7 +539,7 @@ export interface RunFinishedProps extends Omit<RunCreatedProps, 'area'> {
   terminal_integrity?: TrackingRunTerminalIntegrity;
   /** Current physical attempt within this Open Design Run. */
   run_attempt?: number;
-  /** Vela-owned runtime generation UUID when explicitly reported back. */
+  /** Runtime generation UUID when explicitly reported back. */
   runtime_generation_id?: string;
   termination_origin?: TrackingRunTerminationOrigin;
   terminal_persistence_status?: TrackingRunTerminalPersistenceStatus;
@@ -585,7 +578,7 @@ export interface RunFinishedProps extends Omit<RunCreatedProps, 'area'> {
   tool_call_seen?: boolean;
   artifact_write_seen?: boolean;
   live_artifact_seen?: boolean;
-  /** Bounded summary of Vela/OpenCode v1 tool-execution lifecycle diagnostics. */
+  /** Bounded summary of OpenCode v1 tool-execution lifecycle diagnostics. */
   tool_execution_lifecycle_seen?: boolean;
   tool_execution_lifecycle_count_bucket?: '1' | '2_5' | '6_20' | 'gt_20';
   tool_execution_trigger?: 'exit' | 'abort' | 'deadline' | 'mixed' | 'unknown';
@@ -770,15 +763,6 @@ export interface RunFinishedProps extends Omit<RunCreatedProps, 'area'> {
   stdin_backpressure?: boolean;
   tool_result_sent?: boolean;
   last_progress_age_ms?: number;
-  // Vela's OpenCode bridge attaches this context to `error.data` when an AMR
-  // prompt fails. Keep only fixed enums in analytics: session/tool call ids,
-  // paths, titles, inputs, and outputs are deliberately not copied.
-  // Together these fields distinguish "tool still pending/running" from
-  // "tool completed, but the agent stream never reached done".
-  amr_opencode_error_phase?: TrackingAmrOpenCodeErrorPhase;
-  amr_opencode_last_event_type?: TrackingAmrOpenCodeLastEventType;
-  amr_opencode_last_tool_status?: TrackingAmrOpenCodeLastToolStatus;
-  amr_opencode_last_tool_kind?: TrackingAmrOpenCodeLastToolKind;
   attempt_index?: number;
   attempt_duration_ms?: number;
   attempt_time_to_first_token_ms?: number;
@@ -1057,7 +1041,7 @@ export type TrackingDeployProvider = 'vercel' | 'cloudflare_pages';
 export interface TrackingFailureDetailProps {
   failed_stage?: ApiFailureStage;
   failure_reason?: ApiFailureReason;
-  // HTTP status / error code returned by the upstream service (Vela API or
+  // HTTP status / error code returned by the upstream service (the
   // deploy provider), when the daemon could read one.
   upstream_status?: number;
   upstream_error_code?: string;
@@ -1103,30 +1087,6 @@ export interface ProjectCommentSendResultProps {
   submitted_comment_ids: string[];
   /** Returned subset of explicitly saved comments; excludes temporary board notes. */
   comment_ids: string[];
-}
-
-export interface ArtifactPublishResultProps extends TrackingFailureDetailProps {
-  page_name: 'artifact';
-  area: 'share_option_popover';
-  artifact_id: string;
-  artifact_kind: TrackingArtifactKind;
-  action: 'publish' | 'unpublish';
-  result: TrackingExportResult;
-  // 'workspace_identity_required' when the workspace context could not be
-  // confirmed (the one actionable failure), 'publish_failed' otherwise.
-  error_code?: TrackingPublishErrorCode;
-  publish_duration_ms: number;
-  /** Stable alias already known to this attempt, never a full public URL. */
-  publish_id?: string;
-  /** Only the committed receipt supplies version and time. */
-  share_version?: number;
-  published_at?: number;
-  project_id: string;
-  project_kind: TrackingProjectKind | null;
-  // The daemon's own error code (e.g. PUBLIC_FILE_PUBLISH_UNAVAILABLE,
-  // WORKSPACE_PROJECT_PUBLISH_DENIED) that `error_code` folds into
-  // 'publish_failed'. Token-shaped; absent when the daemon sent none.
-  daemon_error_code?: string;
 }
 
 // Outcome of an HTML file version restore from the version history modal.

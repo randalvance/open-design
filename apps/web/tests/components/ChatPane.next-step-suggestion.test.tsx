@@ -16,7 +16,7 @@ import { forwardRef, useImperativeHandle, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatPane } from '../../src/components/ChatPane';
-import type { AppConfig, ChatMessage } from '../../src/types';
+import type { ChatMessage } from '../../src/types';
 
 type OnSend = Parameters<typeof ChatPane>[0]['onSend'];
 
@@ -129,7 +129,6 @@ function renderChat(
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'claude', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }

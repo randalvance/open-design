@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { coalescedGet, forceCoalescedGet } from '../../src/lib/coalesced-get';
+import { coalescedGet } from '../../src/lib/coalesced-get';
 
 const tick = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -72,80 +72,3 @@ describe('coalescedGet', () => {
   });
 });
 
-describe('forceCoalescedGet', () => {
-  // Multiple mounted consumers reacting to the SAME broadcast identity-change
-  // event (e.g. every mounted `useWorkspaceContext()` instance hearing one
-  // `notifyWorkspaceContextRefresh()`) call this back-to-back in the same
-  // synchronous dispatch pass. That whole burst must collapse to one real
-  // fetch — the exact scenario a naive evictCoalescedGet()+coalescedGet() at
-  // each call site gets wrong (each eviction destroys the fetch the previous
-  // call in the burst just started).
-  it('collapses a synchronous multi-caller burst into a single run', async () => {
-    let runs = 0;
-    const run = () => {
-      runs += 1;
-      return Promise.resolve(runs);
-    };
-
-    // Simulates N mounted consumers all reacting to one event in the same tick.
-    const [a, b, c] = [
-      forceCoalescedGet('k-burst', run),
-      forceCoalescedGet('k-burst', run),
-      forceCoalescedGet('k-burst', run),
-    ];
-    expect(await a).toBe(1);
-    expect(await b).toBe(1);
-    expect(await c).toBe(1);
-    expect(runs).toBe(1);
-  });
-
-  it('still evicts a settled cache entry so a genuinely fresh read replaces stale data', async () => {
-    let runs = 0;
-    const run = () => {
-      runs += 1;
-      return Promise.resolve(runs);
-    };
-
-    // A normal (non-forced) read settles and would normally be served from
-    // the TTL-shared cache...
-    expect(await coalescedGet('k-force-evict', run, 10_000)).toBe(1);
-    // ...but a forced call must bypass that cache instead of reusing the
-    // stale answer, even though it is well within the TTL window.
-    expect(await forceCoalescedGet('k-force-evict', run, 10_000)).toBe(2);
-    expect(runs).toBe(2);
-  });
-
-  it('joins rather than evicts a still-in-flight forced fetch from a prior burst caller', async () => {
-    let runs = 0;
-    let release!: (v: number) => void;
-    const gate = new Promise<number>((resolve) => {
-      release = resolve;
-    });
-    const run = () => {
-      runs += 1;
-      return gate;
-    };
-
-    const first = forceCoalescedGet('k-inflight-force', run);
-    const second = forceCoalescedGet('k-inflight-force', run);
-    release(42);
-    expect(await first).toBe(42);
-    expect(await second).toBe(42);
-    expect(runs).toBe(1);
-  });
-
-  it('evicts again for a force call outside the burst window, unlike an ordinary coalesced call', async () => {
-    let runs = 0;
-    const run = () => {
-      runs += 1;
-      return Promise.resolve(runs);
-    };
-
-    expect(await forceCoalescedGet('k-later-force', run, 10_000)).toBe(1);
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    // A second, genuinely later forced call (e.g. sign-out then sign-in
-    // again) is outside the burst-collapsing window and must refetch.
-    expect(await forceCoalescedGet('k-later-force', run, 10_000)).toBe(2);
-    expect(runs).toBe(2);
-  });
-});

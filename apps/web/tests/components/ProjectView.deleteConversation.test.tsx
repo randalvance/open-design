@@ -249,18 +249,15 @@ describe('ProjectView conversation delete', () => {
 
     renderProjectView(onProjectsRefresh);
 
-    // ChatPane can expose its callback before workspace scope settles.
-    // Wait for the real permission state to permit deletion as well.
     await waitFor(() => {
       expect(chatPaneProps.onDeleteConversation).toBeDefined();
-      expect(chatPaneProps.viewerOnly).toBe(false);
     });
 
     await act(async () => {
       await chatPaneProps.onDeleteConversation!('conv-1');
     });
 
-    expect(deleteConversation).toHaveBeenCalledWith('project-1', 'conv-1', null);
+    expect(deleteConversation).toHaveBeenCalledWith('project-1', 'conv-1');
     expect(onProjectsRefresh).toHaveBeenCalledTimes(1);
   });
 
@@ -293,7 +290,7 @@ describe('ProjectView conversation delete', () => {
       await chatPaneProps.onDeleteConversation!('conv-1');
     });
 
-    expect(deleteConversation).toHaveBeenCalledWith('project-1', 'conv-1', null);
+    expect(deleteConversation).toHaveBeenCalledWith('project-1', 'conv-1');
     expect(onProjectsRefresh).not.toHaveBeenCalled();
   });
 
@@ -354,11 +351,7 @@ describe('ProjectView conversation delete', () => {
     });
 
     await waitFor(() =>
-      expect(createConversation).toHaveBeenCalledWith(
-        'project-1',
-        undefined,
-        { workspaceContext: null },
-      ),
+      expect(createConversation).toHaveBeenCalledWith('project-1'),
     );
     await waitFor(() => expect(chatPaneProps.activeConversationId).toBe('conv-fresh'));
     expect(chatPaneProps.conversations?.map((conversation) => conversation.id)).toEqual(['conv-fresh']);

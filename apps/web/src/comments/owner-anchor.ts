@@ -18,8 +18,8 @@ export function commentUsesIdentity(comment: Pick<PreviewComment, 'elementId' | 
   return comment.elementId.startsWith('cmt:') || commentSelectorClaimsIdentity(comment.selector);
 }
 
-export function ownerCommentNeedsLocation(comment: PreviewComment, collabEnabled: boolean): boolean {
-  return (collabEnabled || commentUsesIdentity(comment))
+export function ownerCommentNeedsLocation(comment: PreviewComment): boolean {
+  return commentUsesIdentity(comment)
     && !comment.elementId.startsWith('pin-') && comment.selectionKind !== 'pod';
 }
 

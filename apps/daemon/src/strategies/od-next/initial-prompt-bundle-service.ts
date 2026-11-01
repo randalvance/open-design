@@ -39,7 +39,6 @@ import {
   resolveResearchCommandContract,
 } from '../../runtimes/chat-prompt-inputs.js';
 import { renderRunContextPrompt } from '../../runtimes/chat-run-context.js';
-import type { RunWorkspaceScope } from '../../runtimes/project-amr-trace-env.js';
 import type { RuntimeAgentDef } from '../../runtimes/types.js';
 import {
   renderFrozenSkillRosterContext,
@@ -84,7 +83,6 @@ export interface OdNextInitialPromptMeta {
   byokMediaDefaults?: unknown;
   mediaExecution?: unknown;
   appliedPluginSnapshotId?: unknown;
-  workspaceScope?: RunWorkspaceScope | null;
   toolBundle?: unknown;
   strategyRolloutDecision?: {
     syntheticCanary?: boolean;
@@ -264,7 +262,6 @@ export function createOdNextInitialPromptBundleService(
       mediaHintSignal: intentSignals.media,
       platformHintSignal: intentSignals.platform,
       devicePlatformSignal: intentSignals.devicePlatform,
-      workspaceScope: meta.workspaceScope,
       frozenSkillPackage,
     });
     const loadedTaskInputs = loadOdNextTaskInputSnapshot(

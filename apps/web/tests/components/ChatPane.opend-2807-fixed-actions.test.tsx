@@ -7,7 +7,7 @@ import {forwardRef,type ComponentProps} from 'react';
 import {afterEach,describe,expect,it,vi} from 'vitest';
 import {ChatPane} from '../../src/components/ChatPane';
 import {zhCN} from '../../src/i18n/locales/zh-CN';
-import type {AgentEvent,AppConfig,ChatMessage} from '../../src/types';
+import type {AgentEvent,ChatMessage} from '../../src/types';
 
 const translate=(key:string,vars?:Record<string,string|number>)=>{
  const text=zhCN[key as keyof typeof zhCN]??key;
@@ -45,49 +45,41 @@ function failedTurn(agentId:string,event:StatusEvent,resumable=false):ChatMessag
  return {id:'failed-assistant',role:'assistant',content:'',createdAt:1000,endedAt:2000,runId:'failed-run',runStatus:'failed',agentId,resumable,events:[event]};
 }
 function renderPane(message:ChatMessage,extra:Partial<ComponentProps<typeof ChatPane>>={}){
- const onRetry=vi.fn(),onSwitchToAmrAndRetry=vi.fn();
- const actions={onRetry,onSwitchToAmrAndRetry,onResumeRun:vi.fn(),onSwitchModel:vi.fn(),onOpenSettings:vi.fn(),onSwitchToLocalCli:vi.fn(),onLaunchAntigravityOauth:vi.fn().mockResolvedValue(undefined)};
+ const onRetry=vi.fn();
+ const actions={onRetry,onResumeRun:vi.fn(),onSwitchModel:vi.fn(),onOpenSettings:vi.fn(),onSwitchToLocalCli:vi.fn(),onLaunchAntigravityOauth:vi.fn().mockResolvedValue(undefined)};
  render(<ChatPane messages={[{id:'user-1',role:'user',content:'Create the requested page',createdAt:0},message]}
   streaming={false} error={null} projectId="project-2807" projectFiles={[]}
   onEnsureProject={async()=>'project-2807'} onSend={vi.fn()} onStop={vi.fn()}
   conversations={[{projectId:'project-2807',id:'conversation-1',title:'Current',createdAt:0,updatedAt:0}]}
   activeConversationId="conversation-1" onSelectConversation={vi.fn()} onDeleteConversation={vi.fn()}
-  config={{mode:'daemon',agentId:message.agentId,agentCliEnv:{}} as AppConfig}
   showByokRecoveryAction {...actions} {...extra}/>);
  return actions;
 }
-function expectFixedActions(cloud:boolean){
+function expectFixedActions(){
  const card=screen.getByTestId('chat-run-error-card');
  const names=within(card).getAllByRole('button').map(button=>button.textContent?.trim());
- expect(names).toEqual(['联系我们','导出日志',cloud?'重试':'切换到 OpenDesign Cloud']);
+ expect(names).toEqual(['联系我们','导出日志','重试']);
  expect(card.querySelectorAll('[data-run-error-action="primary"]')).toHaveLength(1);
- return within(card).getByRole('button',{name:cloud?'重试':'切换到 OpenDesign Cloud'});
+ return within(card).getByRole('button',{name:'重试'});
 }
 describe('OPEND-2807 fixed actions override the old recovery ladder',()=>{
  it.each(cases)('$name',({agentId,event,resumable})=>{
   const message=failedTurn(agentId,event,resumable),before=structuredClone(message);
-  const actions=renderPane(message);const primary=expectFixedActions(agentId==='amr');
+  const actions=renderPane(message);const primary=expectFixedActions();
   fireEvent.click(primary);
-  if(agentId==='amr'){
-   expect(actions.onRetry).toHaveBeenCalledOnce();
-   expect(actions.onRetry).toHaveBeenCalledWith(expect.objectContaining({id:message.id}),'manual_retry');
-   expect(actions.onSwitchToAmrAndRetry).not.toHaveBeenCalled();
-  }else{
-   expect(actions.onSwitchToAmrAndRetry).toHaveBeenCalledOnce();
-   expect(actions.onSwitchToAmrAndRetry).toHaveBeenCalledWith(expect.objectContaining({id:message.id}));
-   expect(actions.onRetry).not.toHaveBeenCalled();
-  }
+  expect(actions.onRetry).toHaveBeenCalledOnce();
+  expect(actions.onRetry).toHaveBeenCalledWith(expect.objectContaining({id:message.id}),'manual_retry');
   expect(actions.onResumeRun).not.toHaveBeenCalled();expect(actions.onSwitchModel).not.toHaveBeenCalled();
   expect(actions.onOpenSettings).not.toHaveBeenCalled();expect(actions.onSwitchToLocalCli).not.toHaveBeenCalled();
   expect(actions.onLaunchAntigravityOauth).not.toHaveBeenCalled();expect(message).toEqual(before);
  });
- it.each([{failed:'amr',selected:'claude'},{failed:'claude',selected:'amr'}])('uses failed run $failed even after selection changes to $selected',({failed,selected})=>{
-  renderPane(failedTurn(failed,errorEvent()),{config:{mode:'daemon',agentId:selected,agentCliEnv:{}} as AppConfig});
-  expectFixedActions(failed==='amr');
+ it('uses failed run claude even after selection changes',()=>{
+  renderPane(failedTurn('claude',errorEvent()),{});
+  expectFixedActions();
  });
- it('keeps Cloud Retry visible but disabled while this conversation is busy',()=>{
-  const actions=renderPane(failedTurn('amr',errorEvent()),{recoveryActionsBlockedReason:'conversation-busy'});
-  const retry=expectFixedActions(true) as HTMLButtonElement;
+ it('keeps Retry visible but disabled while this conversation is busy',()=>{
+  const actions=renderPane(failedTurn('claude',errorEvent()),{recoveryActionsBlockedReason:'conversation-busy'});
+  const retry=expectFixedActions() as HTMLButtonElement;
   expect(retry.disabled).toBe(true);fireEvent.click(retry);expect(actions.onRetry).not.toHaveBeenCalled();
   expect(screen.queryByTestId('chat-error-actions-blocked')).toBeNull();
  });

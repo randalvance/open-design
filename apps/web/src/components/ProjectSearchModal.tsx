@@ -20,33 +20,15 @@ import { Icon } from './Icon';
 import { useT } from '../i18n';
 import { relativeTimeLong } from '../utils/chatTime';
 import { projectCover, projectCategory, ProjectTag } from './RecentProjectsStrip';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
 interface Props {
   projects: Project[];
-  workspaceContext?: WorkspaceCollabContext | null;
   onOpenProject: (id: string) => Promise<boolean> | Promise<void> | boolean | void;
   onClose: () => void;
 }
 
-/**
- * Search spans both personal drafts and the shared workspace catalog. Shared
- * cards win if a project temporarily appears in both lists because they carry
- * the authoritative workspace-facing title and metadata.
- */
-export function buildProjectSearchCatalog(
-  draftProjects: readonly Project[],
-  sharedProjects: readonly Project[],
-): Project[] {
-  const projectsById = new Map<string, Project>();
-  for (const project of draftProjects) projectsById.set(project.id, project);
-  for (const project of sharedProjects) projectsById.set(project.id, project);
-  return [...projectsById.values()];
-}
-
 export function ProjectSearchModal({
   projects,
-  workspaceContext = null,
   onOpenProject,
   onClose,
 }: Props) {
@@ -149,7 +131,7 @@ export function ProjectSearchModal({
             <div className="project-search-empty">{t('quickSwitcher.noMatches')}</div>
           ) : (
             filtered.map((project, index) => {
-              const cover = projectCover(project, null, workspaceContext);
+              const cover = projectCover(project, null);
               const showImage =
                 (cover.kind === 'image' || cover.kind === 'logo') && Boolean(cover.src);
               const active = index === activeIndex;

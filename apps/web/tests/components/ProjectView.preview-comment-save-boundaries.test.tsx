@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
 import type { ComponentProps } from 'react';
-import type { ProjectWorkspaceScopeResponse } from '@open-design/contracts';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectView } from '../../src/components/ProjectView';
@@ -122,7 +121,7 @@ const savedComment: PreviewComment = {
 };
 const commentsPath = `/api/projects/${project.id}/conversations/${conversation.id}/comments`;
 const uploadPath = `/api/projects/${project.id}/upload`;
-const unboundScope: ProjectWorkspaceScopeResponse = {
+const unboundScope = {
   scope: { kind: 'unbound', projectId: project.id, workspaceId: null, context: null },
 };
 

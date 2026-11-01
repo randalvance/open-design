@@ -223,8 +223,8 @@ describe('od run CLI', () => {
     expect(stub.requests).toHaveLength(1);
     const request = stub.requests[0]!;
     expect(`${request.method} ${request.url}`).toBe('POST /api/runs');
-    expect(request.headers['x-od-workspace-id']).toBe('team-workspace');
-    expect(request.headers['x-od-workspace-member-id']).toBe('creator-member');
+    expect(request.headers['x-od-workspace-id']).toBeUndefined();
+    expect(request.headers['x-od-workspace-member-id']).toBeUndefined();
     expect(JSON.parse(request.body)).toEqual({
       projectId: 'project-1',
       agentId: 'byok-opencode',
@@ -383,8 +383,8 @@ describe('od run CLI', () => {
       'POST /api/runs', 'GET /api/runs/run-1/events', 'GET /api/runs/run-2/events',
     ]);
     for (const request of stub.requests) {
-      expect(request.headers['x-od-workspace-id']).toBe('team-workspace');
-      expect(request.headers['x-od-workspace-member-id']).toBe('creator-member');
+      expect(request.headers['x-od-workspace-id']).toBeUndefined();
+      expect(request.headers['x-od-workspace-member-id']).toBeUndefined();
     }
     const events = result.stdout.trim().split('\n').slice(1).map((line) => JSON.parse(line));
     expect(events).toHaveLength(2);
@@ -469,7 +469,7 @@ describe('od run CLI', () => {
     ]);
   });
 
-  it('forwards explicit Workspace scope through continue status and creation requests', async () => {
+  it('ignores retired Workspace flags through continue status and creation requests', async () => {
     stub = await startRunStubServer(true);
 
     const result = await runCli([
@@ -488,8 +488,8 @@ describe('od run CLI', () => {
     expect(result.stderr).toBe('');
     expect(stub.requests).toHaveLength(2);
     for (const request of stub.requests) {
-      expect(request.headers['x-od-workspace-id']).toBe('team-workspace');
-      expect(request.headers['x-od-workspace-member-id']).toBe('creator-member');
+      expect(request.headers['x-od-workspace-id']).toBeUndefined();
+      expect(request.headers['x-od-workspace-member-id']).toBeUndefined();
     }
   });
 
@@ -539,7 +539,7 @@ describe('od run CLI', () => {
       args: ['run', 'watch', 'run-1'],
       requests: ['GET /api/runs/run-1/events'],
     },
-  ])('forwards explicit Workspace scope for $label requests', async ({ args, requests }) => {
+  ])('ignores retired Workspace flags for $label requests', async ({ args, requests }) => {
     stub = await startRunStubServer(true);
 
     const result = await runCli([
@@ -555,8 +555,8 @@ describe('od run CLI', () => {
     expect(result.code, result.stderr).toBe(0);
     expect(stub.requests.map((request) => `${request.method} ${request.url}`)).toEqual(requests);
     for (const request of stub.requests) {
-      expect(request.headers['x-od-workspace-id']).toBe('team-workspace');
-      expect(request.headers['x-od-workspace-member-id']).toBe('creator-member');
+      expect(request.headers['x-od-workspace-id']).toBeUndefined();
+      expect(request.headers['x-od-workspace-member-id']).toBeUndefined();
     }
   });
 

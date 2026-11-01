@@ -2,27 +2,14 @@ import { validateCommentSaveTarget } from '../comments/validate-save-target';
 import { previewStorageKey, readPreviewStorage, savePreviewStorageMessage } from '../runtime/preview-storage';
 import { commentSelectorsMatch, commentUsesIdentity, ownerCommentNeedsLocation, resolveOwnerCommentAnchor } from '../comments/owner-anchor';
 import { indexCommentTargets } from '../comments/target-index';
-import { useShareSourceGuard } from './share/useShareSourceGuard';
 import { useExperienceError } from '../observability/use-experience-error';
-import { daemonErrorCodeProp, failureDetailProps } from '../analytics/failure-detail';
+import { failureDetailProps } from '../analytics/failure-detail';
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import type { ArtifactExportFormat } from '../runtime/chat/artifact-export';
-import { useSharePlan } from './share/useSharePlan';
-import { boundedPublishProgress, ShareTab, type SharePublishFailureKey } from './share/ShareTab';
-import type { ObservedPublicShareLink, ObservedShareUpdateRequest } from './share/observed-public-share-link';
-import { shareLoginReturnMatches, type ShareLoginReturn } from './share/share-login-return';
-
-import { AfterExportShareGuide } from './share/AfterExportShareGuide';
-import { CommentSyncBanner } from './share/CommentSyncBanner';
-import { invalidateCommentSyncState } from './share/useCommentSyncState';
-import { useAfterExportShareGuide } from './share/useAfterExportShareGuide';
-import { useShareGuideAppUserId } from './share/useShareGuideAppUserId';
-import { useProjectShareHistoryState } from './share/useProjectShareHistory';
-import { notifyProjectShareHistoryChanged } from './share/share-publication-events';
+import { ShareTab } from './share/ShareTab';
 import { ShareFeedbackToast } from './share/ShareFeedbackToast';
 import { TopStackedToast } from './share/TopStackedToast';
 import { SharePanelHeader } from './share/SharePanelHeader';
-import { ShareMoreMenu } from './share/ShareMoreMenu';
 import shareEntryStyles from './share/ShareEntry.module.css';
 import { AnchoredMenuShell } from './chat/AnchoredMenuShell';
 import { createPortal, flushSync } from 'react-dom';
@@ -45,17 +32,10 @@ import {
   hasUnreadComments,
   type ProjectCommentReadState,
   OPEN_DESIGN_GITHUB_REPO_URL,
-  type CollabCloudMemberDirectoryEntry,
-  type CollabMemberRole,
   type AgentInfo,
   type ProjectFileVersion,
-  type ProjectFilePublicShareResponse,
   type SocialShareRequest,
   type SocialShareResponse,
-  type EntryIndexConflictDetails,
-  type ShareContentFreshness,
-  type ShareStatus,
-  type WorkspaceCollabContext,
 } from '@open-design/contracts';
 import { PREVIEW_OBSERVABILITY_HOST_STATE_MESSAGE_TYPE } from '@open-design/contracts/runtime/preview-observability';
 import { PREVIEW_URL_GUARD_MAX_HTML_BYTES } from '@open-design/contracts/runtime/preview-guards';
@@ -63,18 +43,11 @@ import {
   isPreviewRuntimeState,
   type PreviewRuntimeState,
 } from '@open-design/contracts/runtime/preview-runtime-state';
-import {
-  appendResourceQuery,
-  currentWorkspaceAccountGeneration,
-  workspaceAccountScopedCacheKey,
-  workspaceIdentityCacheKey,
-  workspaceProjectHeaders,
-} from '../collab/workspace-identity';
+import { appendResourceQuery } from '../utils/resource-query';
 import {
   anonymizeArtifactId,
   artifactKindToTracking,
   savedCommentIds,
-  type ArtifactPublishResultProps,
   type ArtifactEditResultProps,
   type TrackingArtifactEditKind,
   type TrackingFileVersionSource,
@@ -85,7 +58,6 @@ import {
 import { useAnalytics } from '../analytics/provider';
 import { exportErrorCode } from '../analytics/export-error-code';
 import { deployErrorCode } from '../analytics/deploy-error-code';
-import { publishErrorCode } from '../analytics/publish-error-code';
 import {
   reportPreviewIframeMessage,
   reportPreviewTransportRecovery,
@@ -100,7 +72,6 @@ import {
   trackArtifactExportResult,
   trackArtifactEditResult,
   trackArtifactDeployResult,
-  trackArtifactPublishResult,
   trackArtifactHeaderClick,
   trackArtifactToolbarClick,
   trackCommentPopoverClick,
@@ -114,8 +85,6 @@ import {
   trackDeckViewerClick,
   trackSpeakerNotesSaveResult,
   trackShareOptionPopoverClick,
-  trackShareGuideSurfaceView,
-  trackShareGuideClick,
 } from '../analytics/events';
 import { recordFirstLoopStep } from '../onboarding/first-loop';
 import { observeAnalytics } from '../analytics/observe';
@@ -135,19 +104,6 @@ import {
 } from './markdown-scroll-sync';
 import { useT, useI18n } from '../i18n';
 import { useDismissOnOutsideInteraction } from '../hooks/useDismissOnOutsideInteraction';
-import {
-  notifyTeamProjectsChanged,
-  TEAM_PROJECTS_CHANGED_EVENT,
-} from '../collab/useWorkspaceContext';
-import {
-  PublicFilePublishError,
-  canPublishPublicFile,
-  publicFileEntryIndexConflict,
-  publicFileManualRevokePublication,
-  publicFilePublishFailureKey,
-} from '../collab/public-file-publish';
-import { moveWorkspaceProject } from '../state/projects';
-import { MoveToTeamConfirmDialog, moveConfirmSkipped } from './MoveToTeamConfirmDialog';
 import type { Dict, Locale } from '../i18n/types';
 import {
   fetchLiveArtifact,
@@ -166,8 +122,6 @@ import {
   fetchProjectFilePreview,
   fetchProjectPreviewBaseHref,
   fetchProjectFiles,
-  fetchProjectFilePublicShareState,
-  publicFileShareLinkFromRead,
   fetchProjectFileText,
   fetchProjectFileTextPreview,
   uploadProjectFiles,
@@ -175,8 +129,6 @@ import {
   projectFileUrl,
   projectRawUrl,
   renewProjectPreviewBaseScope,
-  publishProjectFilePublic,
-  unpublishProjectFilePublic,
   LiveArtifactRefreshError,
   refreshLiveArtifact,
   restoreProjectFileVersion,
@@ -186,7 +138,6 @@ import {
   type WebDeploymentInfo,
   type WebDeployProjectFileResponse,
   type WebDeployProviderId,
-  type WebPublicFileShareLink,
   type WebUpdateDeployConfigRequest,
   type ProjectPreviewBaseScope,
   writeProjectTextFile,
@@ -232,7 +183,6 @@ import {
   buildRedirectLoopBlockedDoc,
   buildSrcdoc,
   canActivateSrcDocTransport,
-  htmlHasAuthoredBase,
   PREVIEW_REDIRECT_LOOP_MESSAGE,
 } from '../runtime/srcdoc';
 import { DeckThumbnailRail, type DeckThumbnailViewport } from './DeckThumbnailRail';
@@ -261,11 +211,8 @@ import {
   type UrlLoadDecision,
 } from './file-viewer-render-mode';
 import {
-  collectPreviewAssetPaths,
-  htmlHasRelativeProjectAssetRefs,
   htmlHasRootRelativeProjectAssetRefs,
   normalizeRootRelativeProjectAssetRefs,
-  rewriteProjectAssetRefsToRawUrls,
   rewriteInlinedCssAssetRefs,
   rewriteInlinedScriptAssetRefs,
 } from './file-viewer-preview-assets';
@@ -280,15 +227,8 @@ import type {
   ProjectFile,
 } from '../types';
 import { Icon } from './Icon';
-import {
-  canDeleteComment,
-  canEditComment,
-  canSendCommentToAgent as canSendCommentToAgentPure,
-  type CommentAuthorityContext,
-} from '../comments/comment-authority';
 import { composerHasUnsentWork } from '../comments/composer-unsent-work';
 import { RemixIcon } from './RemixIcon';
-import { projectIsSharedWithWorkspace } from '../collab/project-shared-status';
 import { HandoffButton } from './HandoffButton';
 import { SocialShareGrid } from './SocialShareGrid';
 import { Toast } from './Toast';
@@ -313,17 +253,10 @@ import {
   liveCommentTargetMapsEqual,
   liveSnapshotForComment,
   overlayBoundsFromSnapshot,
-  planLostAnchorWriteBacks,
   provisionalNextPinNumber,
   targetFromSnapshot,
-  type AnchorWriteBack,
   type PreviewCommentSnapshot,
 } from '../comments';
-import {
-  useProjectCollabContext,
-  type ProjectResourceAuthority,
-} from '../collab/collab-context';
-import { currentUserDirectoryEntry, useTeamMembers } from '../collab/useTeamMembers';
 import { applyPodMemberRemoval } from '../lib/pod-members';
 import { AnnotationHoverPopover, BoardComposerPopover } from './BoardComposerPopover';
 import {
@@ -337,7 +270,6 @@ import { bindMotionPreviewActivity, unbindMotionPreviewActivity } from '../runti
 import type {
   ChatCommentAttachment,
   PreviewComment,
-  PreviewCommentAnchorState,
   PreviewCommentAttachment,
   PreviewCommentMember,
   PreviewCommentTarget,
@@ -357,9 +289,11 @@ import {
   getHtmlSourceSnapshot,
   htmlSourceSnapshotRefreshKey,
   invalidateHtmlSourceSnapshotFile,
-  invalidateHtmlSourceSnapshotProject,
   setHtmlSourceSnapshot,
 } from './html-source-snapshot-cache';
+
+// Partition key for the HTML source snapshot cache and persisted preview storage.
+const LOCAL_SOURCE_SCOPE = 'local';
 
 function resolveChromeActionsHost(): HTMLElement | null {
   return document.querySelector<HTMLElement>(APP_CHROME_FILE_ACTIONS_SELECTOR)
@@ -449,9 +383,7 @@ const POWERED_PREVIEW_ALLOW =
 const BASE_PREVIEW_BRIDGE_QUERY = 'odPreviewBridge=scroll&odPreviewBridge=selection&odPreviewBridge=snapshot&odPreviewBridge=observability';
 const HTML_PASSIVE_PREVIEW_FULL_TEXT_LIMIT = 2 * 1024 * 1024;
 const HTML_ROUTING_TEXT_PREVIEW_LIMIT = 96 * 1024;
-const HTML_PREVIEW_ASSET_PREFLIGHT_LIMIT = 32;
 type HtmlSourceLoadMode = 'full' | 'routing-preview';
-type PreviewAssetWarning = { filePath: string };
 
 function previewTextNeedsFullSourceForSafeInline(source: string | null): boolean {
   if (!source) return false;
@@ -461,38 +393,6 @@ function previewTextNeedsFullSourceForSafeInline(source: string | null): boolean
     htmlNeedsRedirectGuard(source) ||
     hasTweaksTemplate(source)
   );
-}
-
-function isBlockedPreviewAssetResponse(body: unknown): boolean {
-  if (typeof body === 'string') {
-    return /path escapes project dir/i.test(body);
-  }
-  if (!body || typeof body !== 'object') return false;
-  const payload = body as { error?: unknown; message?: unknown };
-  const error = payload.error;
-  if (typeof error === 'string') return isBlockedPreviewAssetResponse(error);
-  if (error && typeof error === 'object') {
-    const detail = error as { code?: unknown; message?: unknown };
-    if (detail.code === 'BAD_REQUEST' && isBlockedPreviewAssetResponse(detail.message)) return true;
-    return isBlockedPreviewAssetResponse(detail.message);
-  }
-  return isBlockedPreviewAssetResponse(payload.message);
-}
-
-async function readPreviewAssetResponseBody(resp: Response): Promise<unknown> {
-  const contentType = resp.headers.get('Content-Type') ?? '';
-  if (/json/i.test(contentType)) {
-    try {
-      return await resp.json();
-    } catch {
-      return '';
-    }
-  }
-  try {
-    return await resp.text();
-  } catch {
-    return '';
-  }
 }
 
 const PREVIEW_VIEWPORT_PRESETS: PreviewViewportPreset[] = [
@@ -949,15 +849,12 @@ function rewriteMarkdownImageSources(
   html: string,
   projectId: string,
   markdownPath: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): string {
   return html.replace(/<img\b([^>]*?)\bsrc="([^"]*)"([^>]*)>/g, (match, before: string, src: string, after: string) => {
     const resolved = markdownImageSourceUrl(
       projectId,
       markdownPath,
-      decodeHtmlAttribute(src),
-      workspaceContext,
-    );
+      decodeHtmlAttribute(src));
     if (!resolved) return match;
     const attrs = `${before}${after}`;
     const loadingAttr = /\sloading=/.test(attrs) ? '' : ' loading="lazy"';
@@ -969,7 +866,6 @@ export function markdownImageSourceUrl(
   projectId: string,
   markdownPath: string,
   src: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): string | null {
   const trimmed = src.trim();
   if (!trimmed) return null;
@@ -978,7 +874,7 @@ export function markdownImageSourceUrl(
     ? normalizeMarkdownProjectPath(trimmed.slice(1))
     : normalizeMarkdownProjectPath(`${markdownDirectory(markdownPath)}/${trimmed}`);
   return relativePath
-    ? projectFileUrl(projectId, relativePath, workspaceContext)
+    ? projectFileUrl(projectId, relativePath)
     : null;
 }
 
@@ -1790,13 +1686,6 @@ interface Props {
   onOpenFileReplacing?: (openName: string, closeName: string) => void;
   commentPortalId?: string;
   onCommentModeChange?: (active: boolean) => void;
-  /** Only a fresh authorized active-share GET may witness a copy-only public link. */
-  onObservedPublicShareLink?: (share: ObservedPublicShareLink | null) => void;
-  observedPublicShareLink?: ObservedPublicShareLink | null;
-  loginUpdateRequest?: ObservedShareUpdateRequest | null;
-  onLoginUpdateRequestHandled?: (nonce: number) => void;
-  shareLoginReturn?: ShareLoginReturn | null;
-  onShareLoginReturnChange?: (request: ShareLoginReturn | null) => void;
   // Bumped nonce asking this viewer to open its Share/Export menu (chat-side
   // "Share" next-step action). Only HTML artifacts expose a Share menu.
   shareRequest?: { nonce: number; anchorId?: string } | null;
@@ -1806,16 +1695,11 @@ interface Props {
   // Bumped nonce asking a deck preview to flip to `slideIndex` (a queued chat
   // send for this file just started processing).
   slideNavRequest?: { slideIndex: number; nonce: number } | null;
-  // Read-only viewer of a team-shared project: the viewer can comment but not
-  // edit, export, share, download, or send changes to Chat.
-  viewerOnly?: boolean;
   projectName?: string;
   projectDir?: string | null;
   agents?: AgentInfo[];
   artifactId?: string;
   artifactKind?: TrackingArtifactKind;
-  metricsConsent?: boolean;
-  installationId?: string | null;
   /** False while this viewer is retained offscreen for an instant tab revisit. */
   workspaceActive?: boolean;
   /** Pin viewers that still own an in-progress edit so LRU eviction cannot drop work. */
@@ -1869,9 +1753,6 @@ function FileViewerLoadingSkeleton() {
 // preview iframes below are the most expensive thing on screen. Relies on
 // FileWorkspace passing identity-stable props (see the activeFile* memos
 // there).
-type PendingShareUpdateAfterLogin = {
-  projectId: string; fileName: string; slug: string; authorizationScopeKey: string; expiresAt: number;
-};
 
 export const FileViewer = memo(function FileViewer({
   projectId,
@@ -1895,52 +1776,19 @@ export const FileViewer = memo(function FileViewer({
   onOpenFileReplacing,
   commentPortalId,
   onCommentModeChange,
-  onObservedPublicShareLink,
-  observedPublicShareLink,
-  loginUpdateRequest,
-  onLoginUpdateRequestHandled,
-  shareLoginReturn,
-  onShareLoginReturnChange,
   shareRequest,
   downloadRequest,
   slideNavRequest,
-  viewerOnly = false,
   projectName,
   projectDir,
   agents,
   artifactId,
   artifactKind,
-  metricsConsent,
-  installationId,
   workspaceActive = true,
   onRetainActivityChange,
   onManualEditExitHandlerChange,
   manualEditEntryAllowed = true,
 }: Props) {
-  const t = useT();
-  // Survives a temporary HtmlViewer unmount while workspace authority refreshes.
-  const pendingShareUpdateAfterLoginRef = useRef<PendingShareUpdateAfterLogin | null>(null);
-  const shareLoginReturnRef = useRef<ShareLoginReturn | null>(null);
-  if (shareLoginReturnRef.current && (!workspaceActive || !shareLoginReturnMatches(shareLoginReturnRef.current, projectId, file.name))) {
-    shareLoginReturnRef.current = null;
-  }
-  if (pendingShareUpdateAfterLoginRef.current
-    && (pendingShareUpdateAfterLoginRef.current.projectId !== projectId
-      || pendingShareUpdateAfterLoginRef.current.fileName !== file.name)) {
-    pendingShareUpdateAfterLoginRef.current = null;
-  }
-  const projectCollabContext = useProjectCollabContext();
-  const projectResourceAuthority = projectCollabContext.projectResourceAuthority
-    ?? (projectCollabContext.workspaceContextLoading
-      ? 'pending'
-      : projectCollabContext.workspaceContext
-        ? 'workspace'
-        : 'local');
-  const projectResourceReadAllowed = projectResourceAuthority === 'local'
-    || (
-      projectResourceAuthority === 'workspace'
-      && projectCollabContext.workspaceContext !== null
-    );
   const rendererMatch = artifactRendererRegistry.resolve({
     file,
     isDeckHint: Boolean(isDeck),
@@ -1961,23 +1809,6 @@ export const FileViewer = memo(function FileViewer({
       page_name: 'artifact',
     });
   }, [projectId, projectKind, file.name, file.kind, rendererMatch?.renderer.id, analytics.track, workspaceActive]);
-  useEffect(() => {
-    if (projectResourceReadAllowed) return;
-    invalidateHtmlSourceSnapshotProject(projectId);
-  }, [projectId, projectResourceReadAllowed]);
-
-  if (!projectResourceReadAllowed) {
-    if (projectResourceAuthority === 'denied') {
-      return (
-        <div className="viewer">
-          <div className="viewer-body">
-            <div className="viewer-empty">{t('fileViewer.previewUnavailable')}</div>
-          </div>
-        </div>
-      );
-    }
-    return <FileViewerLoadingSkeleton />;
-  }
 
   if (rendererMatch?.renderer.id === 'html' || rendererMatch?.renderer.id === 'deck-html') {
     return (
@@ -1985,14 +1816,6 @@ export const FileViewer = memo(function FileViewer({
         projectId={projectId}
         projectKind={projectKind}
         file={file}
-        pendingShareUpdateAfterLoginRef={pendingShareUpdateAfterLoginRef}
-        shareLoginReturnRef={shareLoginReturnRef}
-        shareLoginReturn={shareLoginReturn}
-        onShareLoginReturnChange={onShareLoginReturnChange}
-        onObservedPublicShareLink={onObservedPublicShareLink}
-        observedPublicShareLink={observedPublicShareLink}
-        loginUpdateRequest={loginUpdateRequest}
-        onLoginUpdateRequestHandled={onLoginUpdateRequestHandled}
         liveHtml={liveHtml}
         filesRefreshKey={filesRefreshKey}
         isDeck={rendererMatch.renderer.id === 'deck-html'}
@@ -2013,14 +1836,11 @@ export const FileViewer = memo(function FileViewer({
         shareRequest={shareRequest}
         downloadRequest={downloadRequest}
         slideNavRequest={slideNavRequest}
-        viewerOnly={viewerOnly}
         projectName={projectName}
         projectDir={projectDir}
         agents={agents}
         artifactId={artifactId}
         artifactKind={artifactKind}
-        metricsConsent={metricsConsent}
-        installationId={installationId}
         workspaceActive={workspaceActive}
         onRetainActivityChange={onRetainActivityChange}
         onManualEditExitHandlerChange={onManualEditExitHandlerChange}
@@ -2040,10 +1860,6 @@ export const FileViewer = memo(function FileViewer({
         agents={agents}
         artifactId={artifactId}
         artifactKind={artifactKind}
-        metricsConsent={metricsConsent}
-        installationId={installationId}
-        viewerOnly={viewerOnly}
-        workspaceActive={workspaceActive}
       />
     );
   }
@@ -2054,7 +1870,6 @@ export const FileViewer = memo(function FileViewer({
         file={file}
         onFileSaved={onFileSaved}
         onFileWritten={onFileWritten}
-        viewerOnly={viewerOnly}
       />
     );
   }
@@ -2102,7 +1917,6 @@ export function LiveArtifactViewer({
   onRefreshArtifacts?: () => Promise<void> | void;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const tabs = useMemo(() => liveArtifactViewerTabs(t), [t]);
   const [mode, setMode] = useState<LiveArtifactViewerTab>('preview');
   const [detail, setDetail] = useState<LiveArtifact | null>(null);
@@ -2197,14 +2011,12 @@ export function LiveArtifactViewer({
           ? `Live artifact created: ${liveArtifactEvent.title}`
           : `Live artifact updated: ${liveArtifactEvent.title}`,
       );
-      void fetchLiveArtifact(projectId, liveArtifact.artifactId, workspaceContext).then((next) => {
+      void fetchLiveArtifact(projectId, liveArtifact.artifactId).then((next) => {
         if (next) setDetail(next);
       });
       void fetchLiveArtifactRefreshes(
         projectId,
-        liveArtifact.artifactId,
-        workspaceContext,
-      ).then(setRefreshHistory);
+        liveArtifact.artifactId).then(setRefreshHistory);
       setReloadKey((n) => n + 1);
       continue;
     }
@@ -2226,14 +2038,12 @@ export function LiveArtifactViewer({
           error: liveArtifactEvent.error ?? undefined,
         }),
       );
-      void fetchLiveArtifact(projectId, liveArtifact.artifactId, workspaceContext).then((next) => {
+      void fetchLiveArtifact(projectId, liveArtifact.artifactId).then((next) => {
         if (next) setDetail(next);
       });
       void fetchLiveArtifactRefreshes(
         projectId,
-        liveArtifact.artifactId,
-        workspaceContext,
-      ).then(setRefreshHistory);
+        liveArtifact.artifactId).then(setRefreshHistory);
       continue;
     }
 
@@ -2250,45 +2060,41 @@ export function LiveArtifactViewer({
     } else {
       setRefreshError(t('liveArtifact.refresh.noSourceTitle'));
     }
-    void fetchLiveArtifact(projectId, liveArtifact.artifactId, workspaceContext).then((next) => {
+    void fetchLiveArtifact(projectId, liveArtifact.artifactId).then((next) => {
       if (next) setDetail(next);
     });
     void fetchLiveArtifactRefreshes(
       projectId,
-      liveArtifact.artifactId,
-      workspaceContext,
-    ).then(setRefreshHistory);
+      liveArtifact.artifactId).then(setRefreshHistory);
     setReloadKey((n) => n + 1);
     }
-  }, [liveArtifactEvents, liveArtifact.artifactId, projectId, t, workspaceContext]);
+  }, [liveArtifactEvents, liveArtifact.artifactId, projectId, t]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setDetail(null);
-    void fetchLiveArtifact(projectId, liveArtifact.artifactId, workspaceContext).then((next) => {
+    void fetchLiveArtifact(projectId, liveArtifact.artifactId).then((next) => {
       if (cancelled) return;
       setDetail(next);
       setLoading(false);
     });
     void fetchLiveArtifactRefreshes(
       projectId,
-      liveArtifact.artifactId,
-      workspaceContext,
-    ).then((next) => {
+      liveArtifact.artifactId).then((next) => {
       if (!cancelled) setRefreshHistory(next);
     });
     return () => {
       cancelled = true;
     };
-  }, [projectId, liveArtifact.artifactId, liveArtifact.updatedAt, workspaceContext]);
+  }, [projectId, liveArtifact.artifactId, liveArtifact.updatedAt]);
 
   const previewUrl = useMemo(
     () => appendResourceQuery(
-      liveArtifactPreviewUrl(projectId, liveArtifact.artifactId, 'rendered', workspaceContext),
+      liveArtifactPreviewUrl(projectId, liveArtifact.artifactId, 'rendered'),
       `v=${reloadKey}`,
     ),
-    [projectId, liveArtifact.artifactId, reloadKey, workspaceContext],
+    [projectId, liveArtifact.artifactId, reloadKey],
   );
   const previewScale = zoom / 100;
 
@@ -2317,15 +2123,11 @@ export function LiveArtifactViewer({
     try {
       const result = await refreshLiveArtifact(
         projectId,
-        liveArtifact.artifactId,
-        workspaceContext,
-      );
+        liveArtifact.artifactId);
       setDetail(result.artifact);
       void fetchLiveArtifactRefreshes(
         projectId,
-        liveArtifact.artifactId,
-        workspaceContext,
-      ).then(setRefreshHistory);
+        liveArtifact.artifactId).then(setRefreshHistory);
       setReloadKey((n) => n + 1);
       setRefreshEvents((prev) =>
         appendRefreshEvent(prev, {
@@ -2369,7 +2171,7 @@ export function LiveArtifactViewer({
     setPresentMenuOpen(false);
     if (typeof window === 'undefined') return;
     window.open(
-      liveArtifactPreviewUrl(projectId, liveArtifact.artifactId, 'rendered', workspaceContext),
+      liveArtifactPreviewUrl(projectId, liveArtifact.artifactId, 'rendered'),
       '_blank',
       'noopener,noreferrer',
     );
@@ -2528,9 +2330,7 @@ export function LiveArtifactViewer({
               href={liveArtifactPreviewUrl(
                 projectId,
                 liveArtifact.artifactId,
-                'rendered',
-                workspaceContext,
-              )}
+                'rendered')}
               target="_blank"
               rel="noreferrer noopener"
               tabIndex={mode === 'preview' ? 0 : -1}
@@ -2695,7 +2495,6 @@ function LiveArtifactCodePanel({
   reloadKey: number;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const [variant, setVariant] = useState<LiveArtifactCodeVariant>('template');
   const [code, setCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2706,7 +2505,7 @@ function LiveArtifactCodePanel({
     setLoading(true);
     setFailed(false);
     setCode(null);
-    void fetchLiveArtifactCode(projectId, artifactId, variant, workspaceContext).then((next) => {
+    void fetchLiveArtifactCode(projectId, artifactId, variant).then((next) => {
       if (cancelled) return;
       setCode(next);
       setFailed(next == null);
@@ -2715,7 +2514,7 @@ function LiveArtifactCodePanel({
     return () => {
       cancelled = true;
     };
-  }, [artifactId, projectId, reloadKey, variant, workspaceContext]);
+  }, [artifactId, projectId, reloadKey, variant]);
 
   return (
     <div className="live-artifact-code-panel">
@@ -3311,19 +3110,18 @@ function FileActions({
   file: ProjectFile;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   return (
     <div className="viewer-toolbar-actions">
       <a
         className="ghost-link"
-        href={projectFileUrl(projectId, file.name, workspaceContext)}
+        href={projectFileUrl(projectId, file.name)}
         download={file.name}
       >
         {t('fileViewer.download')}
       </a>
       <a
         className="ghost-link"
-        href={projectFileUrl(projectId, file.name, workspaceContext)}
+        href={projectFileUrl(projectId, file.name)}
         target="_blank"
         rel="noreferrer noopener"
       >
@@ -3400,11 +3198,10 @@ export function fileVersionPreviewOptions(
   projectId: string,
   fileName: string,
   source: string | null | undefined,
-  workspaceContext?: WorkspaceCollabContext | null,
 ) {
   return {
     deck: sourceLooksLikeDeckPreview(source),
-    baseHref: projectRawUrl(projectId, baseDirFor(fileName), workspaceContext),
+    baseHref: projectRawUrl(projectId, baseDirFor(fileName)),
   };
 }
 
@@ -3412,10 +3209,9 @@ function fileVersionPreviewSrcDoc(
   projectId: string,
   fileName: string,
   source: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ) {
   return buildSrcdoc(source, {
-    ...fileVersionPreviewOptions(projectId, fileName, source, workspaceContext),
+    ...fileVersionPreviewOptions(projectId, fileName, source),
     previewFocusGuard: true,
   });
 }
@@ -3481,7 +3277,6 @@ function FileVersionManagerModal({
   onExportToastDismiss,
   onClose,
   onRestored,
-  viewerOnly = false,
 }: {
   projectId: string;
   projectKind: TrackingProjectKind;
@@ -3496,12 +3291,9 @@ function FileVersionManagerModal({
   onExportToastDismiss?: () => void;
   onClose: () => void;
   onRestored: (content: string, version: ProjectFileVersion) => Promise<void> | void;
-  // Read-only viewer of a team-shared project can browse versions but not restore.
-  viewerOnly?: boolean;
 }) {
   const { locale, t } = useI18n();
   const analytics = useAnalytics();
-  const { workspaceContext } = useProjectCollabContext();
   const tRef = useRef(t);
   const [versions, setVersions] = useState<ProjectFileVersion[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -3631,7 +3423,7 @@ function FileVersionManagerModal({
   const visibleExportToast = versionExportToast ?? exportToast ?? null;
   const selectedContentMatchesVersion = Boolean(selectedId && selectedContentVersionId === selectedId && selectedContent);
   const restoreDisabled =
-    viewerOnly || !selectedVersion || selectedVersion.current || restoring || loadingContent || !selectedContentMatchesVersion;
+    !selectedVersion || selectedVersion.current || restoring || loadingContent || !selectedContentMatchesVersion;
   const srcDoc = useMemo(() => {
     if (!selectedContent) return '';
     return fileVersionPreviewSrcDoc(projectId, file.name, selectedContent);
@@ -3651,9 +3443,7 @@ function FileVersionManagerModal({
     const request = fetchProjectFileVersion(
       projectId,
       file.name,
-      versionId,
-      workspaceContext,
-    )
+      versionId)
       .then((result) => {
         if (result) contentCacheRef.current.set(versionId, result.content);
       })
@@ -3663,12 +3453,12 @@ function FileVersionManagerModal({
       });
     inFlightRef.current.set(versionId, request);
     return request;
-  }, [file.name, projectId, workspaceContext]);
+  }, [file.name, projectId]);
 
   const loadVersions = useCallback(async (preferredId?: string | null) => {
     setLoading(true);
     setError(null);
-    const result = await fetchProjectFileVersions(projectId, file.name, workspaceContext);
+    const result = await fetchProjectFileVersions(projectId, file.name);
     if (!result) {
       setError(tRef.current('fileViewer.versions.loadFailed'));
       setLoading(false);
@@ -3689,7 +3479,7 @@ function FileVersionManagerModal({
       null;
     setSelectedId(nextSelected?.id ?? null);
     setLoading(false);
-  }, [currentSource, file.name, projectId, workspaceContext]);
+  }, [currentSource, file.name, projectId]);
 
   useEffect(() => {
     void loadVersions();
@@ -4031,9 +3821,7 @@ function FileVersionManagerModal({
       const result = await restoreProjectFileVersion(
         projectId,
         file.name,
-        selectedVersion,
-        workspaceContext,
-      );
+        selectedVersion);
       if (!result) {
         fireRestoreResult('failed', 'restore_request_failed');
         setError(t('fileViewer.versions.restoreFailed'));
@@ -4233,7 +4021,6 @@ function FileVersionManagerModal({
             type="button"
             className={`artifact-version-panel__restore${confirmRestore ? ' active' : ''}`}
             disabled={restoreDisabled}
-            title={viewerOnly ? t('fileViewer.readonlySharedNoExport') : undefined}
             aria-haspopup="dialog"
             aria-expanded={confirmRestore}
             aria-controls={confirmRestore ? restorePopoverId : undefined}
@@ -4579,75 +4366,23 @@ function commentAuthorInitials(name: string): string {
   return (first?.segment ?? '?').toUpperCase();
 }
 
-type CommentAuthorRole = CollabMemberRole | 'sharePage';
-
-function commentAuthorRoleLabel(role: CommentAuthorRole, t: TranslateFn): string {
-  switch (role) {
-    case 'owner': return t('comment.authorRole.owner');
-    case 'admin': return t('comment.authorRole.admin');
-    case 'member': return t('comment.authorRole.member');
-    case 'sharePage': return t('comment.authorRole.sharePage');
-  }
-}
-
 function CommentAuthorIdentity({
   comment,
-  currentUser,
   displayNumber,
   initialOnly = false,
   t,
 }: {
   comment: PreviewComment;
-  currentUser?: CollabCloudMemberDirectoryEntry | null;
   displayNumber: number;
   initialOnly?: boolean;
   t: TranslateFn;
 }) {
-  if (comment.authorKind === 'user') {
-    return (
-      <CommentAuthorIdentityContent
-        comment={comment}
-        displayName={comment.authorDisplayName?.trim() ?? ''}
-        displayNumber={displayNumber}
-        role="sharePage"
-        initialOnly={initialOnly}
-        seed={comment.authorKey}
-        t={t}
-      />
-    );
-  }
-  return (
-    <MemberCommentAuthorIdentity
-      comment={comment}
-      currentUser={currentUser}
-      displayNumber={displayNumber}
-      initialOnly={initialOnly}
-      t={t}
-    />
-  );
-}
-
-function MemberCommentAuthorIdentity({
-  comment,
-  currentUser,
-  displayNumber,
-  initialOnly,
-  t,
-}: {
-  comment: PreviewComment;
-  currentUser?: CollabCloudMemberDirectoryEntry | null;
-  displayNumber: number;
-  initialOnly?: boolean;
-  t: TranslateFn;
-}) {
-  const { resolve: resolveCommentAuthor } = useTeamMembers(currentUser);
-  const directoryAuthor = resolveCommentAuthor(comment.authorMemberId);
   return (
     <CommentAuthorIdentityContent
       comment={comment}
-      displayName={comment.authorDisplayName?.trim() || directoryAuthor?.displayName?.trim() || ''}
+      displayName={comment.authorDisplayName?.trim() ?? ''}
       displayNumber={displayNumber}
-      role={directoryAuthor?.role}
+      showSharePageRole={comment.authorKind === 'user'}
       initialOnly={initialOnly}
       seed={comment.authorKey}
       t={t}
@@ -4659,7 +4394,7 @@ function CommentAuthorIdentityContent({
   comment,
   displayName,
   displayNumber,
-  role,
+  showSharePageRole,
   initialOnly = false,
   seed,
   t,
@@ -4667,7 +4402,7 @@ function CommentAuthorIdentityContent({
   comment: PreviewComment;
   displayName: string;
   displayNumber: number;
-  role?: CommentAuthorRole;
+  showSharePageRole: boolean;
   initialOnly?: boolean;
   seed?: string;
   t: TranslateFn;
@@ -4688,7 +4423,7 @@ function CommentAuthorIdentityContent({
         {displayName ? (
           <small>
             {displayName}
-            {role ? <> · {commentAuthorRoleLabel(role, t)}</> : null}
+            {showSharePageRole ? <> · {t('comment.authorRole.sharePage')}</> : null}
           </small>
         ) : null}
       </span>
@@ -4762,7 +4497,6 @@ function CommentListBody({ note, t }: { note: string; t: TranslateFn }) {
 export function CommentSidePanel({
   comments,
   projectId,
-  filePath,
   selectedIds,
   activeCommentId,
   unavailableCommentId,
@@ -4777,8 +4511,6 @@ export function CommentSidePanel({
   onReply,
   onSendSelected,
   onCreateComment,
-  canSendComment,
-  currentUser,
   sending,
   queueOnSend = false,
   sendDisabled = false,
@@ -4794,7 +4526,6 @@ export function CommentSidePanel({
   /** The file currently open in the viewer, so the sync banner can scope its
    *  per-file backfill answer. Absent means "don't ask for backfill status"
    *  (e.g. no file context yet), never "no file". */
-  filePath?: string;
   selectedIds: Set<string>;
   activeCommentId: string | null;
   unavailableCommentId?: string | null;
@@ -4807,12 +4538,6 @@ export function CommentSidePanel({
   onDismiss?: () => void;
   onToggleSelect: (commentId: string) => void;
   onSelectAll: () => void;
-  canSendComment?: (comment: PreviewComment) => boolean;
-  /** The viewer's own directory entry, so their comments show their avatar +
-   *  name even when the member roster is empty (personal workspace / cold
-   *  roster window). Supplied from the workspace context the caller already
-   *  holds — this panel must not fetch one. */
-  currentUser?: CollabCloudMemberDirectoryEntry | null;
   onClearSelection: () => void;
   onReorder?: (orderedIds: string[], draggedId: string) => void;
   onReply: (comment: PreviewComment) => void;
@@ -4829,7 +4554,6 @@ export function CommentSidePanel({
   /** Total deck slides, when the sidebar is attached to a deck preview. */
   deckSlideCount?: number;
 }) {
-  const { workspaceContext } = useProjectCollabContext();
   const [newCommentDraft, setNewCommentDraft] = useState('');
   const [dragState, setDragState] = useState<CommentSideDragState | null>(null);
   const [commentClock, setCommentClock] = useState(() => Date.now());
@@ -4861,14 +4585,7 @@ export function CommentSidePanel({
   }
   const visibleSelectedIds = new Set(comments.filter((comment) => selectedIds.has(comment.id)).map((comment) => comment.id));
   const selectedCount = visibleSelectedIds.size;
-  // Team-collab send-to-agent gate: only the author or the project owner may
-  // send a comment. When no predicate is supplied (single-user), every comment
-  // is sendable and the select affordances behave exactly as before. Selecting
-  // is the ONLY thing a checkbox drives here (batch send-to-chat), so a comment
-  // the viewer can't send gets no checkbox and "select all" ignores it.
-  const canSend = canSendComment ?? (() => true);
-  const sendableCount = comments.reduce((count, comment) => (canSend(comment) ? count + 1 : count), 0);
-  const allSelected = sendableCount > 0 && selectedCount === sendableCount;
+  const allSelected = comments.length > 0 && selectedCount === comments.length;
   const commentsLabel = t('chat.tabComments');
   const canCreateComment = Boolean(onCreateComment) && newCommentDraft.trim().length > 0 && !sending;
   const canReorder = Boolean(onReorder && sorted.length > 1);
@@ -5005,8 +4722,7 @@ export function CommentSidePanel({
           </button>
         </div>
       </div>
-      <CommentSyncBanner projectId={projectId} workspaceContext={workspaceContext} filePath={filePath} includeBackfill={false} />
-      {sendableCount > 0 ? (
+      {comments.length > 0 ? (
         <div className="comment-side-toolbar">
           <button
             type="button"
@@ -5033,7 +4749,6 @@ export function CommentSidePanel({
         ) : sorted.map((comment, index) => {
           const selected = visibleSelectedIds.has(comment.id);
           const active = comment.id === activeCommentId;
-          const sendable = canSend(comment);
           const isDragging = dragState?.draggingId === comment.id;
           const dropClass = dragState?.overId === comment.id &&
             dragState.draggingId !== comment.id &&
@@ -5074,7 +4789,6 @@ export function CommentSidePanel({
                 </button>
                 <CommentAuthorIdentity
                   comment={comment}
-                  currentUser={currentUser}
                   displayNumber={displayCommentNumber(comment, index)}
                   t={t}
                 />
@@ -5086,20 +4800,18 @@ export function CommentSidePanel({
                 <span className="comment-side-time" title={formatAbsoluteDateTime(commentCreatedAt(comment) || undefined) ?? undefined}>
                   {formatCommentTime(commentCreatedAt(comment), commentClock, t)}
                 </span>
-                {sendable ? (
-                  <button
-                    type="button"
-                    className={`comment-side-check${selected ? ' checked' : ''}`}
-                    aria-label={selected ? t('chat.comments.deselect') : t('chat.comments.select')}
-                    aria-pressed={selected}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onToggleSelect(comment.id);
-                    }}
-                  >
-                    {selected ? <Icon name="check" size={11} /> : null}
-                  </button>
-                ) : null}
+                <button
+                  type="button"
+                  className={`comment-side-check${selected ? ' checked' : ''}`}
+                  aria-label={selected ? t('chat.comments.deselect') : t('chat.comments.select')}
+                  aria-pressed={selected}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onToggleSelect(comment.id);
+                  }}
+                >
+                  {selected ? <Icon name="check" size={11} /> : null}
+                </button>
               </div>
               <CommentListBody key={comment.note} note={comment.note} t={t} />
               {unavailableCommentId === comment.id ? (
@@ -5112,9 +4824,7 @@ export function CommentSidePanel({
                   {comment.attachments.map((attachment) => {
                     const url = projectRawUrl(
                       projectId,
-                      attachment.path,
-                      workspaceContext,
-                    );
+                      attachment.path);
                     return (
                       <a
                         key={attachment.path}
@@ -5277,7 +4987,6 @@ export function computeReorderedSortKey(
 function CommentSideDock({
   comments,
   projectId,
-  filePath,
   selectedIds,
   activeCommentId,
   unavailableCommentId,
@@ -5292,8 +5001,6 @@ function CommentSideDock({
   onReply,
   onSendSelected,
   onCreateComment,
-  canSendComment,
-  currentUser,
   sending,
   queueOnSend = false,
   sendDisabled = false,
@@ -5306,7 +5013,6 @@ function CommentSideDock({
 }: {
   comments: PreviewComment[];
   projectId?: string;
-  filePath?: string;
   selectedIds: Set<string>;
   activeCommentId: string | null;
   unavailableCommentId?: string | null;
@@ -5321,11 +5027,6 @@ function CommentSideDock({
   onReply: (comment: PreviewComment) => void;
   onSendSelected: () => void | Promise<void>;
   onCreateComment?: (note: string) => boolean | Promise<boolean>;
-  /** Team-collab gate: which comments the viewer may send to the agent (author
-   * OR project owner). Defaults to all-sendable when absent (single-user). */
-  canSendComment?: (comment: PreviewComment) => boolean;
-  /** The viewer's own directory entry — see `CommentSidePanel`. */
-  currentUser?: CollabCloudMemberDirectoryEntry | null;
   sending: boolean;
   queueOnSend?: boolean;
   sendDisabled?: boolean;
@@ -5344,7 +5045,6 @@ function CommentSideDock({
       <CommentSidePanel
         comments={comments}
         projectId={projectId}
-        filePath={filePath}
         selectedIds={selectedIds}
         activeCommentId={activeCommentId}
         unavailableCommentId={unavailableCommentId}
@@ -5359,8 +5059,6 @@ function CommentSideDock({
         onReply={onReply}
         onSendSelected={onSendSelected}
         onCreateComment={onCreateComment}
-        canSendComment={canSendComment}
-        currentUser={currentUser}
         sending={sending}
         queueOnSend={queueOnSend}
         sendDisabled={sendDisabled}
@@ -6078,22 +5776,8 @@ export function applyInspectOverridesToSource(source: string, css: string): stri
   return block + out;
 }
 
-function anchorStateLabel(state: PreviewCommentAnchorState, t: TranslateFn): string {
-  switch (state) {
-    case 'reanchored':
-      return t('comment.anchorState.reanchored');
-    case 'stale':
-      return t('comment.anchorState.stale');
-    case 'lost':
-      return t('comment.anchorState.lost');
-    default:
-      return '';
-  }
-}
-
 function CommentPreviewOverlays({
   comments,
-  currentUser,
   provisionalPinNumber,
   liveTargets,
   hoveredTarget,
@@ -6107,15 +5791,10 @@ function CommentPreviewOverlays({
   offsetY,
   strokePoints,
   activeSlideIndex = null,
-  driftLadder = false,
-  currentVersion,
-  targetsReady,
-  onLostAnchors,
   onOpenComment,
   t,
 }: {
   comments: PreviewComment[];
-  currentUser?: CollabCloudMemberDirectoryEntry | null;
   /** Next pin number for a brand-new comment. Computed by the caller over the
    *  file's comments across ALL statuses (see `provisionalNextPinNumber`) —
    *  wider than `comments`, which carries only the open ones the canvas pins. */
@@ -6132,16 +5811,6 @@ function CommentPreviewOverlays({
   offsetY: number;
   strokePoints: StrokePoint[];
   activeSlideIndex?: number | null;
-  /** Team collaboration: resolve anchors through the drift ladder (keep + badge stale/lost)
-   *  instead of the exact-match silent drop. Off for single-user. */
-  driftLadder?: boolean;
-  /** Current content version, used by the ladder to flag reanchored (older vN). */
-  currentVersion?: number;
-  /** An empty map is authoritative only after this preview has reported targets. */
-  targetsReady: boolean;
-  /** Team collaboration: persist the durable `lost` capture (last-good position) so the
-   *  ghost pin survives reload. Only fires in drift-ladder mode. */
-  onLostAnchors?: (writeBacks: AnchorWriteBack[]) => void;
   onOpenComment: (comment: PreviewComment, snapshot: PreviewCommentSnapshot) => void;
   t: TranslateFn;
 }) {
@@ -6158,22 +5827,14 @@ function CommentPreviewOverlays({
           // order (see FileViewer's creationSortedSideComments), so the
           // fallback matches exactly what `pinSeq` would have assigned.
           const markerNumber = typeof comment.pinSeq === 'number' ? comment.pinSeq : globalIndex + 1;
-          if (driftLadder) {
-            // Keep stale/lost comments and carry their state so the marker can
-            // badge them, instead of silently dropping a drifted anchor.
-            const resolution = resolveOwnerCommentAnchor(comment, liveTargets, currentVersion);
-            return { comment, markerNumber, snapshot: resolution.snapshot, anchorState: resolution.state };
-          }
-          // Personal/local comments do not enable team drift persistence. New
-          // identities still require a unique current target, never a ghost box.
+          // New identities require a unique current target, never a ghost box.
           const resolution = commentUsesIdentity(comment)
-            ? resolveOwnerCommentAnchor(comment, liveTargets, currentVersion) : null;
+            ? resolveOwnerCommentAnchor(comment, liveTargets) : null;
           return {
             comment,
             markerNumber,
             snapshot: resolution ? (resolution.state === 'lost' ? null : resolution.snapshot)
               : liveSnapshotForComment(comment, liveTargets),
-            anchorState: 'anchored' as PreviewCommentAnchorState,
           };
         })
         .filter(
@@ -6181,30 +5842,11 @@ function CommentPreviewOverlays({
             comment: PreviewComment;
             markerNumber: number;
             snapshot: PreviewCommentSnapshot;
-            anchorState: PreviewCommentAnchorState;
           } => Boolean(item.snapshot),
         )
         .filter(({ comment }) => commentVisibleOnDeckSlide(comment, activeSlideIndex)),
-    [comments, liveTargets, activeSlideIndex, driftLadder, currentVersion],
+    [comments, liveTargets, activeSlideIndex],
   );
-  // Team collaboration durability: when a comment first drifts to `lost`, persist its
-  // last-good position once so the ghost pin survives reload. The ref set keeps
-  // pointermove re-renders (during pod drawing) from re-firing the same capture;
-  // the server COALESCEs too, so this is belt-and-suspenders idempotency.
-  const persistedLostRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!targetsReady || !driftLadder || !onLostAnchors) return;
-    const plan = planLostAnchorWriteBacks(
-      visibleComments.map(({ comment, snapshot, anchorState }) => ({
-        comment,
-        resolution: { state: anchorState, snapshot },
-      })),
-    );
-    const fresh = plan.filter((writeBack) => !persistedLostRef.current.has(writeBack.commentId));
-    if (fresh.length === 0) return;
-    for (const writeBack of fresh) persistedLostRef.current.add(writeBack.commentId);
-    onLostAnchors(fresh);
-  }, [targetsReady, driftLadder, onLostAnchors, visibleComments]);
   // `onOpenComment` is an inline arrow from the parent (new identity every
   // render), so read it through a ref to keep the saved-marker memo below from
   // busting. The closure only calls stable state setters, so a current ref read
@@ -6218,18 +5860,15 @@ function CommentPreviewOverlays({
   // comments reuses the whole subtree and React skips reconciling it.
   const savedMarkers = useMemo(
     () =>
-      visibleComments.filter(({ comment }) => !(driftLadder || commentUsesIdentity(comment)) || comment.id !== activeExistingCommentId || Boolean(activeTarget)).map(({ comment, markerNumber, snapshot, anchorState }) => {
+      visibleComments.filter(({ comment }) => !commentUsesIdentity(comment) || comment.id !== activeExistingCommentId || Boolean(activeTarget)).map(({ comment, markerNumber, snapshot }) => {
         const bounds = overlayBoundsFromSnapshot(snapshot, scale, overlayOffset);
         const pinColor = commentAuthorAvatarColor(comment.authorKey ?? '');
         const label = commentTargetDisplayName(comment);
-        const drifted = anchorState !== 'anchored';
-        const tooltip = drifted
-          ? `${markerNumber}. ${label} · ${anchorStateLabel(anchorState, t)}`
-          : `${markerNumber}. ${label}: ${comment.note}`;
+        const tooltip = `${markerNumber}. ${label}: ${comment.note}`;
         return (
           <div
             key={comment.id}
-            className={`comment-saved-marker${drifted ? ` comment-saved-marker--${anchorState}` : ''}`}
+            className="comment-saved-marker"
             style={{
               left: bounds.left,
               top: bounds.top,
@@ -6238,7 +5877,6 @@ function CommentPreviewOverlays({
             }}
             data-testid={`comment-saved-marker-${comment.elementId}`}
             data-pin-number={markerNumber}
-            data-anchor-state={anchorState}
             onClick={() => onOpenCommentRef.current(comment, snapshot)}
           >
             <div className="comment-saved-outline" />
@@ -6254,12 +5892,12 @@ function CommentPreviewOverlays({
               aria-label={`Open comment for ${label}`}
               aria-description={tooltip}
             >
-              <CommentAuthorIdentity comment={comment} currentUser={currentUser} displayNumber={markerNumber} initialOnly t={t} />
+              <CommentAuthorIdentity comment={comment} displayNumber={markerNumber} initialOnly t={t} />
             </button>
           </div>
         );
       }),
-    [visibleComments, scale, overlayOffset, t, driftLadder, activeExistingCommentId, activeTarget, currentUser],
+    [visibleComments, scale, overlayOffset, t, activeExistingCommentId, activeTarget],
   );
   const activeSavedIndex = activeExistingCommentId
     ? comments.findIndex((comment) => comment.id === activeExistingCommentId)
@@ -6300,8 +5938,8 @@ function CommentPreviewOverlays({
           aria-hidden="true"
         >
           {activeSavedComment
-            ? <CommentAuthorIdentity comment={activeSavedComment} currentUser={currentUser} displayNumber={activePinNumber} initialOnly t={t} />
-            : commentAuthorInitials(currentUser?.displayName ?? '')}
+            ? <CommentAuthorIdentity comment={activeSavedComment} displayNumber={activePinNumber} initialOnly t={t} />
+            : commentAuthorInitials('')}
         </div>
       ) : null}
       {boardTool === 'pod' && strokePoints.length > 1 ? (
@@ -6746,10 +6384,6 @@ function ReactComponentViewer({
   agents,
   artifactId,
   artifactKind: handoffArtifactKind,
-  metricsConsent = false,
-  installationId,
-  viewerOnly = false,
-  workspaceActive = true,
 }: {
   projectId: string;
   projectKind: TrackingProjectKind;
@@ -6760,52 +6394,30 @@ function ReactComponentViewer({
   agents?: AgentInfo[];
   artifactId?: string;
   artifactKind?: TrackingArtifactKind;
-  metricsConsent?: boolean;
-  installationId?: string | null;
-  viewerOnly?: boolean;
-  workspaceActive?: boolean;
 }) {
   const t = useT();
-  const _analytics = useAnalytics();
-  // `FileWorkspace` keeps a non-active viewer mounted, so an in-flight publish
-  // can settle after the user has switched away. The ref carries the LIVE value
-  // into those continuations; the captured prop would still read the
-  // render-time `true`.
-  const workspaceActiveRef = useRef(workspaceActive);
-  workspaceActiveRef.current = workspaceActive;
-  const { workspaceContext } = useProjectCollabContext();
   const [mode, setMode] = useState<'preview' | 'source'>('preview');
   const [source, setSource] = useState<string | null>(null);
   const [srcDoc, setSrcDoc] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
-  const [shareMenuOpen, setShareMenuOpen] = useState(false);
-  const [unifiedActionTab, setUnifiedActionTab] = useState<'share' | 'export'>('share');
-  const [shareAccess, setShareAccess] = useState<'private' | 'workspace'>('private');
-  const shareRef = useRef<HTMLDivElement | null>(null);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
   // HTML entries that load this file as a Babel module. `null` = still
   // checking; `[]` = standalone artifact; non-empty = a module of a
   // multi-file React prototype, which has no standalone preview. Issue #2744.
   const [moduleEntries, setModuleEntries] = useState<string[] | null>(null);
   const isModule = (moduleEntries?.length ?? 0) > 0;
-  const viewerOnlyDisabledTitle = t('fileViewer.readonlySharedNoExport');
-  // This viewer only renders JSX/TSX sources; public sharing accepts HTML entries.
-  // Keep the sibling scan for preview routing, but never expose an unsupported
-  // public-share action for either standalone or referenced React components.
-  const canShareCurrentFile = false;
-  const shareDisabledTitle = viewerOnly
-    ? viewerOnlyDisabledTitle
-    : t('fileViewer.jsxModuleBody');
 
   useEffect(() => {
     setSource(null);
     let cancelled = false;
-    void fetchProjectFileText(projectId, file.name, { workspaceContext }).then((text) => {
+    void fetchProjectFileText(projectId, file.name).then((text) => {
       if (!cancelled) setSource(text ?? '');
     });
     return () => {
       cancelled = true;
     };
-  }, [projectId, file.name, file.mtime, reloadKey, workspaceContext]);
+  }, [projectId, file.name, file.mtime, reloadKey]);
 
   // Detect whether this .jsx/.tsx is a module loaded by a sibling HTML entry.
   // Runs before any srcdoc is built so a module never flashes the raw
@@ -6815,16 +6427,14 @@ function ReactComponentViewer({
     let cancelled = false;
     void (async () => {
       try {
-        const files = await fetchProjectFiles(projectId, { workspaceContext });
+        const files = await fetchProjectFiles(projectId);
         const htmlNames = files
           .filter((entry) => /\.html?$/i.test(entry.name))
           .map((entry) => entry.name);
         const htmlSources = new Map<string, string>();
         await Promise.all(
           htmlNames.map(async (name) => {
-            const text = await fetchProjectFileText(projectId, name, {
-              workspaceContext,
-            }).catch(() => null);
+            const text = await fetchProjectFileText(projectId, name).catch(() => null);
             if (text != null) htmlSources.set(name, text);
             return text;
           }),
@@ -6838,16 +6448,16 @@ function ReactComponentViewer({
     return () => {
       cancelled = true;
     };
-  }, [projectId, file.name, file.mtime, reloadKey, workspaceContext]);
+  }, [projectId, file.name, file.mtime, reloadKey]);
 
   useEffect(() => {
-    if (!shareMenuOpen) return;
+    if (!exportMenuOpen) return;
     const onDocClick = (e: MouseEvent) => {
-      if (!shareRef.current) return;
-      if (!shareRef.current.contains(e.target as Node)) setShareMenuOpen(false);
+      if (!exportMenuRef.current) return;
+      if (!exportMenuRef.current.contains(e.target as Node)) setExportMenuOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShareMenuOpen(false);
+      if (e.key === 'Escape') setExportMenuOpen(false);
     };
     document.addEventListener('mousedown', onDocClick);
     document.addEventListener('keydown', onKey);
@@ -6855,44 +6465,8 @@ function ReactComponentViewer({
       document.removeEventListener('mousedown', onDocClick);
       document.removeEventListener('keydown', onKey);
     };
-  }, [shareMenuOpen]);
+  }, [exportMenuOpen]);
 
-  // Mirror the selected share access level onto the document body so shell-level
-  // chrome can react to it (matches the demo's `data-artifact-share-access`).
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    document.body.dataset.artifactShareAccess = shareAccess;
-    return () => {
-      delete document.body.dataset.artifactShareAccess;
-    };
-  }, [shareAccess]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let refreshSeq = 0;
-    const refreshShareAccess = (event?: Event) => {
-      const seq = ++refreshSeq;
-      void projectIsSharedWithWorkspace(projectId, workspaceContext, event ? { event } : undefined).then((shared) => {
-        if (!cancelled && seq === refreshSeq) setShareAccess(shared ? 'workspace' : 'private');
-      });
-    };
-    refreshShareAccess();
-    window.addEventListener(TEAM_PROJECTS_CHANGED_EVENT, refreshShareAccess);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(TEAM_PROJECTS_CHANGED_EVENT, refreshShareAccess);
-    };
-  }, [projectId, shareMenuOpen, workspaceContext]);
-
-  useEffect(() => {
-    // A Share popover must not outlive the standalone-file classification it
-    // was opened under. Classification resets to null while a file is checked.
-    // Export remains available during that check, so only close its menu when
-    // the active tab is Share.
-    if (viewerOnly || (unifiedActionTab === 'share' && (moduleEntries === null || isModule))) {
-      setShareMenuOpen(false);
-    }
-  }, [viewerOnly, unifiedActionTab, moduleEntries, isModule]);
 
   const exportTitle = file.name.replace(/\.(jsx|tsx)$/i, '') || file.name;
   const sourceExtension = file.name.toLowerCase().endsWith('.tsx') ? '.tsx' : '.jsx';
@@ -6965,67 +6539,29 @@ function ReactComponentViewer({
           {source !== null ? (
             <>
               <span className="viewer-divider" aria-hidden />
-              <div className="share-menu chrome-share-menu chrome-share-menu--unified" ref={shareRef}>
-                {/* Share and Export are separate toolbar intents again (the
-                    0.18.0 unified tabs buried Export one level deep); they
-                    still share one popover shell so switching keeps the menu
-                    anchored in place. Export leads — it is the far more used
-                    of the two (see the chrome header copy). */}
-                {(['export', 'share'] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    // Export leads and Share is the quieter neighbour — the same
-                    // hierarchy the Html chrome gets from `chrome-action-dark` on
-                    // Export only. One shared class here would give both intents
-                    // the accent fill and flatten that distinction.
-                    className={
-                      tab === 'export'
-                        ? 'viewer-action primary viewer-action-export od-tooltip'
-                        : 'viewer-action od-tooltip'
-                    }
-                    aria-haspopup="menu"
-                    aria-expanded={shareMenuOpen && unifiedActionTab === tab}
-                    disabled={viewerOnly || (tab === 'share' && !canShareCurrentFile)}
-                    title={tab === 'share' ? shareDisabledTitle : viewerOnly ? viewerOnlyDisabledTitle : undefined}
-                    data-tooltip={
-                      tab === 'share' && shareDisabledTitle
-                        ? shareDisabledTitle
-                        : viewerOnly
-                          ? viewerOnlyDisabledTitle
-                        : tab === 'share'
-                          ? t('fileViewer.unifiedShareTab')
-                          : t('fileViewer.unifiedExportTab')
-                    }
-                    data-tooltip-placement="bottom"
-                    onClick={() => {
-                      if (tab === 'share' && !canShareCurrentFile) return;
-                      setShareMenuOpen((v) => !(v && unifiedActionTab === tab));
-                      setUnifiedActionTab(tab);
-                    }}
-                  >
-                    <span className="export-action-spacer" aria-hidden />
-                    <span>
-                      {tab === 'share'
-                        ? t('fileViewer.unifiedShareTab')
-                        : t('fileViewer.unifiedExportTab')}
-                    </span>
-                    <RemixIcon name="arrow-down-s-line" size={14} />
-                  </button>
-                ))}
-                {shareMenuOpen ? (
+              <div className="share-menu chrome-share-menu chrome-share-menu--unified" ref={exportMenuRef}>
+                <button
+                  type="button"
+                  className="viewer-action primary viewer-action-export od-tooltip"
+                  aria-haspopup="menu"
+                  aria-expanded={exportMenuOpen}
+                  data-tooltip={t('fileViewer.unifiedExportTab')}
+                  data-tooltip-placement="bottom"
+                  onClick={() => setExportMenuOpen((v) => !v)}
+                >
+                  <span className="export-action-spacer" aria-hidden />
+                  <span>{t('fileViewer.unifiedExportTab')}</span>
+                  <RemixIcon name="arrow-down-s-line" size={14} />
+                </button>
+                {exportMenuOpen ? (
                   <div className="share-menu-popover chrome-unified-popover" role="menu">
-                    {unifiedActionTab === 'export' ? (
-                      <div className="chrome-unified-panel">
+                                          <div className="chrome-unified-panel">
                         <button
                           type="button"
                           className="share-menu-item"
                           role="menuitem"
-                          disabled={viewerOnly}
-                          title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                           onClick={() => {
-                            if (viewerOnly) return;
-                            setShareMenuOpen(false);
+                            setExportMenuOpen(false);
                             exportAsJsx(source, exportTitle, sourceExtension);
                           }}
                         >
@@ -7036,11 +6572,8 @@ function ReactComponentViewer({
                           type="button"
                           className="share-menu-item"
                           role="menuitem"
-                          disabled={viewerOnly}
-                          title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                           onClick={() => {
-                            if (viewerOnly) return;
-                            setShareMenuOpen(false);
+                            setExportMenuOpen(false);
                             exportReactComponentAsHtml(source, exportTitle);
                           }}
                         >
@@ -7052,11 +6585,8 @@ function ReactComponentViewer({
                           type="button"
                           className="share-menu-item"
                           role="menuitem"
-                          disabled={viewerOnly}
-                          title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                           onClick={() => {
-                            if (viewerOnly) return;
-                            setShareMenuOpen(false);
+                            setExportMenuOpen(false);
                             exportReactComponentAsZip(source, exportTitle, sourceExtension);
                           }}
                         >
@@ -7064,12 +6594,10 @@ function ReactComponentViewer({
                           <span>{t('fileViewer.exportZip')}</span>
                         </button>
                       </div>
-                    ) : null}
                   </div>
                 ) : null}
               </div>
-              {viewerOnly ? null : (
-                <HandoffButton
+                              <HandoffButton
                   projectId={projectId}
                   projectKind={projectKind}
                   projectName={projectName}
@@ -7077,10 +6605,7 @@ function ReactComponentViewer({
                   agents={agents}
                   artifactId={artifactId}
                   artifactKind={handoffArtifactKind}
-                  metricsConsent={metricsConsent}
-                  installationId={installationId}
                 />
-              )}
             </>
           ) : null}
         </div>
@@ -7149,7 +6674,6 @@ function DocumentPreviewViewer({
   file: ProjectFile;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const [preview, setPreview] = useState<ProjectFilePreview | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -7157,7 +6681,7 @@ function DocumentPreviewViewer({
     let cancelled = false;
     setLoading(true);
     setPreview(null);
-    void fetchProjectFilePreview(projectId, file.name, workspaceContext).then((next) => {
+    void fetchProjectFilePreview(projectId, file.name).then((next) => {
       if (!cancelled) {
         setPreview(next);
         setLoading(false);
@@ -7166,7 +6690,7 @@ function DocumentPreviewViewer({
     return () => {
       cancelled = true;
     };
-  }, [projectId, file.name, file.mtime, workspaceContext]);
+  }, [projectId, file.name, file.mtime]);
 
   return (
     <div className="viewer document-viewer">
@@ -7201,20 +6725,6 @@ function DocumentPreviewViewer({
   );
 }
 
-export function fileViewerSourceAuthorizationScopeKey(
-  workspaceContextLoading: boolean,
-  workspaceContext: WorkspaceCollabContext | null,
-  projectResourceAuthority?: ProjectResourceAuthority,
-): string | null {
-  const authority = projectResourceAuthority
-    ?? (workspaceContextLoading ? 'pending' : workspaceContext ? 'workspace' : 'local');
-  if (authority === 'local') return 'local';
-  if (authority === 'workspace' && workspaceContext) {
-    return `workspace:${workspaceIdentityCacheKey(workspaceContext)}`;
-  }
-  return null;
-}
-
 /**
  * A srcdoc document whose `load` completed while the browser tab was hidden
  * has never experienced a real layout pass: Chrome keeps the hidden iframe's
@@ -7239,7 +6749,6 @@ function HtmlViewer({
   projectId,
   projectKind,
   file,
-  pendingShareUpdateAfterLoginRef,
   liveHtml,
   filesRefreshKey = 0,
   isDeck,
@@ -7257,24 +6766,14 @@ function HtmlViewer({
   onOpenFileReplacing,
   commentPortalId,
   onCommentModeChange,
-  onObservedPublicShareLink,
-  observedPublicShareLink: _observedPublicShareLink,
-  loginUpdateRequest,
-  onLoginUpdateRequestHandled,
-  shareLoginReturnRef,
-  shareLoginReturn,
-  onShareLoginReturnChange,
   shareRequest,
   downloadRequest,
   slideNavRequest,
-  viewerOnly = false,
   projectName,
   projectDir,
   agents,
   artifactId,
   artifactKind: handoffArtifactKind,
-  metricsConsent = false,
-  installationId,
   workspaceActive = true,
   onRetainActivityChange,
   onManualEditExitHandlerChange,
@@ -7283,14 +6782,6 @@ function HtmlViewer({
   projectId: string;
   projectKind: TrackingProjectKind;
   file: ProjectFile;
-  pendingShareUpdateAfterLoginRef: { current: PendingShareUpdateAfterLogin | null };
-  onObservedPublicShareLink?: (share: ObservedPublicShareLink | null) => void;
-  observedPublicShareLink?: ObservedPublicShareLink | null;
-  loginUpdateRequest?: ObservedShareUpdateRequest | null;
-  onLoginUpdateRequestHandled?: (nonce: number) => void;
-  shareLoginReturnRef: { current: ShareLoginReturn | null };
-  shareLoginReturn?: ShareLoginReturn | null;
-  onShareLoginReturnChange?: (request: ShareLoginReturn | null) => void;
   liveHtml?: string;
   filesRefreshKey?: number;
   isDeck: boolean;
@@ -7311,15 +6802,11 @@ function HtmlViewer({
   shareRequest?: { nonce: number; anchorId?: string } | null;
   downloadRequest?: { nonce: number; anchorId?: string } | null;
   slideNavRequest?: { slideIndex: number; nonce: number } | null;
-  // Read-only viewer of a team-shared project: comment-only, no edit/export.
-  viewerOnly?: boolean;
   projectName?: string;
   projectDir?: string | null;
   agents?: AgentInfo[];
   artifactId?: string;
   artifactKind?: TrackingArtifactKind;
-  metricsConsent?: boolean;
-  installationId?: string | null;
   workspaceActive?: boolean;
   onRetainActivityChange?: (fileName: string, retain: boolean) => void;
   onManualEditExitHandlerChange?: (
@@ -7334,45 +6821,6 @@ function HtmlViewer({
   // the live metadata here is what lets an agent edit finish loading before
   // the user switches back; activation itself must not promote a stale
   // snapshot and start a visible navigation.
-  const {
-    workspaceContext: observedWorkspaceContext,
-    workspaceContextLoading,
-    projectResourceAuthority,
-  } = useProjectCollabContext();
-  const observedSourceAuthorizationScopeKey = fileViewerSourceAuthorizationScopeKey(
-    workspaceContextLoading,
-    observedWorkspaceContext,
-    projectResourceAuthority,
-  );
-  // Project context providers may re-materialize an equivalent object while
-  // ambient focus/presence settles. Requests are scoped by the fields encoded
-  // in this key, so preserve the existing object until that wire identity
-  // actually changes. Otherwise every provider refresh retriggers raw/file-list
-  // effects and reloads a byte-identical preview.
-  const stableWorkspaceContextRef = useRef<{
-    key: string | null;
-    value: WorkspaceCollabContext | null;
-  }>({
-    key: observedSourceAuthorizationScopeKey,
-    value: observedSourceAuthorizationScopeKey?.startsWith('workspace:')
-      ? observedWorkspaceContext
-      : null,
-  });
-  // ProjectView turns transient scope loading into `workspace` only when an
-  // exact persisted-project/caller witness remains valid. Pending and denied
-  // states deliberately replace a prior key with null, clearing old content.
-  if (stableWorkspaceContextRef.current.key !== observedSourceAuthorizationScopeKey) {
-    stableWorkspaceContextRef.current = {
-      key: observedSourceAuthorizationScopeKey,
-      value: observedSourceAuthorizationScopeKey?.startsWith('workspace:')
-        ? observedWorkspaceContext
-        : null,
-    };
-  }
-  const workspaceContext = stableWorkspaceContextRef.current.value;
-  const sourceAuthorizationScopeKey = stableWorkspaceContextRef.current.key;
-  const projectResourceReadBlocked =
-    sourceAuthorizationScopeKey === null;
   // File-watch pulses are debounced by the URL refresh effect below. Consume
   // them while retained so the hidden document is already current when its tab
   // becomes visible.
@@ -7382,11 +6830,6 @@ function HtmlViewer({
   const filesRefreshPending = filesRefreshKey !== 0
     && appliedFilesRefreshKeyRef.current !== filesRefreshKey;
   const analytics = useAnalytics();
-  // Team collaboration: resolve comment anchors through the drift ladder when
-  // the viewer is a team member of a shared project. Off (exact-match, single
-  // user) otherwise. From the ProjectView-provided collab context — no props to
-  // thread, no second collab client.
-  const collab = useProjectCollabContext();
   // Latest per-slide capture progress for the programmatic exporters, read by
   // the loading-toast ticker in fireShareExport to render elapsed time + ETA.
   const exportProgressRef = useRef<{ done: number; total: number } | null>(null);
@@ -7462,11 +6905,7 @@ function HtmlViewer({
     const started = performance.now();
     const originPromise = resolveArtifactExportOrigin(context)
       .catch(() => unknownExportOrigin());
-    const completeShareGuide = afterExportGuide.beginExport();
-    const finish = async (result: 'success' | 'failed' | 'cancelled', errorCode?: string, saveCompleted = false) => {
-      // Only an acknowledged native save may offer the guide. Older hosts and
-      // browsers report download initiation without claiming disk persistence.
-      if (toastFormats.has(format) && (result !== 'success' || saveCompleted)) completeShareGuide(result);
+    const finish = async (result: 'success' | 'failed' | 'cancelled', errorCode?: string) => {
       const originProps = await originPromise;
       trackArtifactExportResult(
         analytics.track,
@@ -7544,7 +6983,7 @@ function HtmlViewer({
               if (toastFormats.has(format)) setExportToast(null);
               return;
             }
-            void finish('success', undefined, result === 'desktop');
+            void finish('success');
             if (toastFormats.has(format)) setExportToast({ message: t('fileViewer.exportDone'), tone: 'success' });
           },
           (err) => {
@@ -7559,7 +6998,7 @@ function HtmlViewer({
           if (toastFormats.has(format)) setExportToast(null);
           return;
         }
-        void finish('success', undefined, out === 'desktop');
+        void finish('success');
         if (toastFormats.has(format)) setExportToast({ message: t('fileViewer.exportDone'), tone: 'success' });
       }
     } catch (err) {
@@ -7733,9 +7172,9 @@ function HtmlViewer({
   const [mode, setMode] = useState<'preview' | 'source'>('preview');
   const sourceSnapshotRefreshKey = htmlSourceSnapshotRefreshKey(file, filesRefreshKey);
   const [initialSourceSnapshot] = useState(() => (
-    liveHtml === undefined && sourceAuthorizationScopeKey
+    liveHtml === undefined
       ? getHtmlSourceSnapshot(
-          sourceAuthorizationScopeKey,
+          LOCAL_SOURCE_SCOPE,
           projectId,
           file.name,
           sourceSnapshotRefreshKey,
@@ -7746,28 +7185,9 @@ function HtmlViewer({
   const [source, setSource] = useState<string | null>(initialSource);
   const [routingSource, setRoutingSource] = useState<string | null>(initialSource);
   const srcDocPreviewBaseIdentity =
-    `${sourceAuthorizationScopeKey ?? 'pending'}\0${projectId}\0${file.name}`;
+    `${LOCAL_SOURCE_SCOPE}\0${projectId}\0${file.name}`;
   const currentSourceIdentity =
     `${srcDocPreviewBaseIdentity}\0${liveHtml === undefined ? 'raw' : 'live'}`;
-  const [routingSourceIdentity, setRoutingSourceIdentity] = useState<string | null>(
-    initialSource !== null ? currentSourceIdentity : null,
-  );
-  const [scopedSrcDocPreviewBase, setScopedSrcDocPreviewBase] = useState<{
-    identity: string;
-    scope: ProjectPreviewBaseScope;
-  } | null>(null);
-  const activeSrcDocPreviewBaseRef = useRef<{
-    identity: string;
-    scope: ProjectPreviewBaseScope;
-  } | null>(null);
-  const effectiveScopedSrcDocPreviewBase =
-    scopedSrcDocPreviewBase?.identity === srcDocPreviewBaseIdentity
-      ? scopedSrcDocPreviewBase.scope
-      : null;
-  const [auxiliarySrcDocPreviewBase, setAuxiliarySrcDocPreviewBase] = useState<{
-    identity: string;
-    href: string;
-  } | null>(null);
   const [urlLoadedPreviewBase, setUrlLoadedPreviewBase] = useState<{
     identity: string;
     scope: ProjectPreviewBaseScope;
@@ -7777,14 +7197,13 @@ function HtmlViewer({
     scope: ProjectPreviewBaseScope;
   } | null>(null);
   const [serverPoweredPreviewRequired, setServerPoweredPreviewRequired] = useState(false);
-  const [previewAssetWarning, setPreviewAssetWarning] = useState<PreviewAssetWarning | null>(null);
   const [inlinedSource, setInlinedSource] = useState<string | null>(null);
   const fileViewportKey = previewViewportStateKey(projectId, file);
   // Content width is valid only for this exact file revision/authorization
   // snapshot. Viewport and manual zoom preferences intentionally persist
   // across revisions, but an intrinsic-width witness must not.
   const previewContentWidthCacheBaseKey =
-    `${fileViewportKey}:${sourceSnapshotRefreshKey}:${sourceAuthorizationScopeKey ?? ''}`;
+    `${fileViewportKey}:${sourceSnapshotRefreshKey}:${LOCAL_SOURCE_SCOPE}`;
   // Lazily seed from the cache (not a hardcoded 100/'auto') so a remount that
   // lands back on a file the user already zoomed doesn't flash the wrong
   // value for a frame before the reset effect below corrects it.
@@ -7809,48 +7228,6 @@ function HtmlViewer({
   // preselect the tab and open this one popover.
   const [deployMenuOpen, setDeployMenuOpen] = useState(false);
   const [unifiedActionTab, setUnifiedActionTab] = useState<'share' | 'export'>('share');
-  const [shareAccess, setShareAccess] = useState<'private' | 'workspace'>('private');
-  const [shareAccessMenuOpen, setShareAccessMenuOpen] = useState(false);
-  const [shareAccessConfirm, setShareAccessConfirm] = useState<'private' | 'workspace' | null>(null);
-  const [shareAccessBusy, setShareAccessBusy] = useState(false);
-  const [publishedFileUrl, setPublishedFileUrl] = useState('');
-  const [publishedFileSlug, setPublishedFileSlug] = useState('');
-  const [publishingPublicFile, setPublishingPublicFile] = useState(false);
-  const [publishLinkFeedback, setPublishLinkFeedback] = useState<'copied' | 'failed' | null>(null);
-  // Why a publish/unpublish attempt failed, as a message key. `publishLinkFeedback`
-  // only renders inside the already-published branch, so a failed FIRST publish
-  // used to leave no trace on screen at all — the button simply returned to idle.
-  const [publishFailureKey, setPublishFailureKey] = useState<SharePublishFailureKey | null>(null);
-  // Details for `fileViewer.publishFileEntryIndexConflict`; read only while that key is set.
-  const [publishConflict, setPublishConflict] = useState<EntryIndexConflictDetails | null>(null);
-  const [fileShareFreshness, setFileShareFreshness] = useState<ShareContentFreshness>('unknown');
-  const [fileShareStatus, setFileShareStatus] = useState<ShareStatus | null>(null);
-  const [updateToast, setUpdateToast] = useState<'success' | 'failure' | 'uncertain' | null>(null);
-  const sharePanelOpen = deployMenuOpen && unifiedActionTab === 'share';
-  const sharePanelWasOpenRef = useRef(false);
-  useEffect(() => {
-    const wasOpen = sharePanelWasOpenRef.current;
-    sharePanelWasOpenRef.current = sharePanelOpen;
-    // A size rejection describes the previous package. Reopening after edits
-    // starts a fresh manual attempt, not an automatic retry of stale bytes.
-    if (sharePanelOpen && !wasOpen && !publishingPublicFile
-      && (publishFailureKey === 'fileViewer.publishFileTooLarge'
-        || publishFailureKey === 'fileViewer.publishFileEntryIndexConflict')) setPublishFailureKey(null);
-  }, [sharePanelOpen, publishingPublicFile, publishFailureKey]);
-  const updateInFlightRef = useRef(false);
-  // Published is decided by the durable alias, not by the URL: without a
-  // configured Viewer origin a live publication has no URL, and treating it as
-  // unpublished would offer Publish again and upload a duplicate.
-  const filePublished = publishedFileSlug.length > 0;
-  const publishedLinkUnavailable = filePublished && publishedFileUrl.length === 0;
-  // Public links need a signed-in workspace (any type); see canPublishPublicFile.
-  const canPublishPublic = canPublishPublicFile(workspaceContext);
-  const publicFileRequestSeqRef = useRef(0);
-  const publicFileIdentityRef = useRef({ projectId, fileName: file.name });
-  const publicFileReadIdentity = JSON.stringify([projectId, file.name, workspaceAccountScopedCacheKey(workspaceContext)]);
-  const publicFileStateReadRef = useRef<{
-    key: string; promise: Promise<ProjectFilePublicShareResponse>;
-  } | null>(null);
   // False when closed; otherwise records which entry opened the modal so the
   // surface_view impression can carry entry_from.
   const [toolbarMoreOpen, setToolbarMoreOpen] = useState(false);
@@ -7923,680 +7300,6 @@ function HtmlViewer({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [closeDeployModal, deployModalOpen, workspaceActive]);
-  // Mirror the selected share access level onto the document body so shell-level
-  // chrome can react to it (matches the demo's `data-artifact-share-access`).
-  useEffect(() => {
-    if (!workspaceActive || typeof document === 'undefined') return;
-    document.body.dataset.artifactShareAccess = shareAccess;
-    return () => {
-      delete document.body.dataset.artifactShareAccess;
-    };
-  }, [shareAccess, workspaceActive]);
-
-  useEffect(() => {
-    if (!workspaceActive) return;
-    let cancelled = false;
-    let refreshSeq = 0;
-    const refreshShareAccess = (event?: Event) => {
-      const seq = ++refreshSeq;
-      void projectIsSharedWithWorkspace(projectId, workspaceContext, event ? { event } : undefined).then((shared) => {
-        if (!cancelled && seq === refreshSeq) setShareAccess(shared ? 'workspace' : 'private');
-      });
-    };
-    refreshShareAccess();
-    window.addEventListener(TEAM_PROJECTS_CHANGED_EVENT, refreshShareAccess);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(TEAM_PROJECTS_CHANGED_EVENT, refreshShareAccess);
-    };
-  }, [projectId, deployMenuOpen, workspaceActive, workspaceContext]);
-
-  // Collapse the nested workspace-access listbox whenever the unified share
-  // popover itself closes, so it never re-opens mid-flight.
-  useEffect(() => {
-    if (!deployMenuOpen) setShareAccessMenuOpen(false);
-  }, [deployMenuOpen]);
-
-  // Sharing actions require complete content; inspecting the menu does not.
-  // Async publish completions must also observe the current streaming state.
-  const shareContentStreamingRef = useRef(streaming);
-  shareContentStreamingRef.current = streaming;
-
-  const sharePlanState = useSharePlan({
-    projectId, filePath: file.name, workspaceContext,
-    enabled: deployMenuOpen && unifiedActionTab === 'share' && canPublishPublic
-      && !viewerOnly && workspaceActive && fileShareStatus !== 'stopped',
-    contentKey: JSON.stringify([file.mtime, file.size, liveHtml ?? source,
-      streaming, viewerOnly, workspaceActive, canPublishPublic, fileShareStatus]),
-  });
-
-  // Owned by the viewer: closing ShareTab neither cancels nor restarts a publish.
-  const [publishProgress, setPublishProgress] = useState<number | null>(null);
-  const publicFileProgressTimerRef = useRef<number | null>(null);
-  const publicFileProgressCompletionRef = useRef<number | null>(null);
-
-  function clearPublicFileProgressTimers() {
-    if (publicFileProgressTimerRef.current !== null) {
-      window.clearInterval(publicFileProgressTimerRef.current);
-      publicFileProgressTimerRef.current = null;
-    }
-    if (publicFileProgressCompletionRef.current !== null) {
-      window.clearTimeout(publicFileProgressCompletionRef.current);
-      publicFileProgressCompletionRef.current = null;
-    }
-  }
-
-  const publicFileCopySeqRef = useRef(0);
-  const publicFileCopyTimerRef = useRef<number | null>(null);
-
-  // Each clipboard completion and timer belongs to one operation, not just
-  // to its feedback label: two successive successful copies both say "copied".
-  function invalidatePublicFileCopy() {
-    ++publicFileCopySeqRef.current;
-    if (publicFileCopyTimerRef.current !== null) {
-      window.clearTimeout(publicFileCopyTimerRef.current);
-      publicFileCopyTimerRef.current = null;
-    }
-  }
-
-  useEffect(() => () => {
-    ++publicFileRequestSeqRef.current;
-    clearPublicFileProgressTimers();
-    invalidatePublicFileCopy();
-  }, []);
-
-  /** The entry binding check survives opening Share: identical in-flight reads
-   * join it instead of superseding its result with a competing request.
-   * Only pending reads are shared, never cached across files/accounts or mutations. */
-  function readCurrentPublicShareState(): Promise<ProjectFilePublicShareResponse> {
-    const key = JSON.stringify([publicFileReadIdentity, sourceSnapshotRefreshKey, liveHtml, streaming]);
-    const pending = publicFileStateReadRef.current;
-    if (pending?.key === key) return pending.promise;
-    const promise = fetchProjectFilePublicShareState(projectId, file.name, workspaceContext);
-    const entry = { key, promise };
-    publicFileStateReadRef.current = entry;
-    // The callers handle read errors; this chain only releases the pending entry.
-    void promise.finally(() => {
-      if (publicFileStateReadRef.current === entry) publicFileStateReadRef.current = null;
-    }).catch(() => {});
-    return promise;
-  }
-
-  // The one way a share-state read lands in this viewer's share state.
-  function applyPublicShareStateRead(state: ProjectFilePublicShareResponse) {
-    setFileShareStatus(state.status ?? null);
-    setFileShareFreshness(state.freshness ?? 'unknown');
-    const knownLink = publicFileShareLinkFromRead(state);
-    // Missing local metadata is not proof a live remote link was stopped.
-    if (state.status === 'stopped') {
-      onObservedPublicShareLink?.(null);
-      // A confirmed remote stop outranks a previously known local URL.
-      // An unavailable read is not a confirmed stop and keeps the link.
-      setPublishedFileUrl('');
-      setPublishedFileSlug('');
-    } else if (knownLink) {
-      // A live publication without a Viewer address keeps its slug so the
-      // owner can still stop it; only a real URL is observable as a link.
-      setPublishedFileUrl(knownLink.url ?? '');
-      setPublishedFileSlug(knownLink.slug);
-      if (state.status === 'active' && workspaceContext && sourceAuthorizationScopeKey
-        && state.publication?.url && state.publication.slug) {
-        onObservedPublicShareLink?.({ status: 'active', projectId, filePath: file.name,
-          slug: state.publication.slug, url: state.publication.url,
-          workspaceId: workspaceContext.workspaceId, workspaceMemberId: workspaceContext.workspaceMemberId,
-          authorizationScopeKey: sourceAuthorizationScopeKey, freshness: state.freshness ?? 'unknown' });
-      }
-    }
-  }
-
-  useEffect(() => {
-    clearPublicFileProgressTimers();
-    setPublishProgress(null);
-    invalidatePublicFileCopy();
-    const previousIdentity = publicFileIdentityRef.current;
-    // S13 keeps an already observed link copyable on same-file sign-out; a
-    // file/account switch still clears it pending authoritative re-read.
-    const preserveKnownLink = !canPublishPublic && previousIdentity.projectId === projectId
-      && previousIdentity.fileName === file.name && Boolean(publishedFileUrl);
-    publicFileIdentityRef.current = { projectId, fileName: file.name };
-    const requestSeq = ++publicFileRequestSeqRef.current;
-    let cancelled = false;
-    publicFileStateReadRef.current = null;
-    if (!preserveKnownLink) {
-      setPublishedFileUrl('');
-      setPublishedFileSlug('');
-    }
-    setPublishingPublicFile(false);
-    setPublishLinkFeedback(null);
-    setPublishFailureKey(null);
-    setFileShareFreshness('unknown');
-    if (!preserveKnownLink) setFileShareStatus(null);
-    setUpdateToast(null);
-    updateInFlightRef.current = false;
-    if (!workspaceActive) return;
-    // Off-team the read can only 409; don't spend a request per file open on it.
-    if (!canPublishPublic) return;
-    // A readonly viewer's publish surface is disabled outright, and the daemon
-    // answers its probe with a slow fixed 403 (2.1 s in the packaged trace) —
-    // skip it from the already-resolved capability state instead of asking and
-    // failing (Batch A §4.4). `viewerOnly` fails closed while ownership is
-    // still unknown, and this effect re-runs when it flips writable.
-    if (viewerOnly) return;
-    const accountGeneration = currentWorkspaceAccountGeneration();
-    void readCurrentPublicShareState()
-      .then((state) => {
-        const current = publicFileIdentityRef.current;
-        if (cancelled || accountGeneration !== currentWorkspaceAccountGeneration() || publicFileRequestSeqRef.current !== requestSeq
-          || current.projectId !== projectId || current.fileName !== file.name) return;
-        applyPublicShareStateRead(state);
-      })
-      .catch(() => {
-        if (!cancelled && accountGeneration === currentWorkspaceAccountGeneration()
-          && publicFileRequestSeqRef.current === requestSeq) setFileShareFreshness('unknown');
-      });
-    return () => { cancelled = true; };
-    // A workspace context loads asynchronously; re-read when its identity resolves.
-  }, [
-    projectId, file.name, canPublishPublic, viewerOnly, workspaceActive, sourceAuthorizationScopeKey, publicFileReadIdentity,
-  ]);
-
-  // Opening Share or changing this file's content refreshes the one state read
-  // used by card and toolbar. A failed read cannot erase a working old link.
-  useEffect(() => {
-    if (!deployMenuOpen || unifiedActionTab !== 'share' || !workspaceActive || !canPublishPublic || viewerOnly
-      || streaming || publishingPublicFile || updateInFlightRef.current) return;
-    const requestSeq = ++publicFileRequestSeqRef.current;
-    setFileShareFreshness('unknown');
-    const accountGeneration = currentWorkspaceAccountGeneration();
-    void readCurrentPublicShareState()
-      .then((state) => {
-        const current = publicFileIdentityRef.current;
-        if (accountGeneration !== currentWorkspaceAccountGeneration() || requestSeq !== publicFileRequestSeqRef.current
-          || current.projectId !== projectId || current.fileName !== file.name) return;
-        applyPublicShareStateRead(state);
-      })
-      .catch(() => {
-        if (accountGeneration === currentWorkspaceAccountGeneration()
-          && requestSeq === publicFileRequestSeqRef.current) setFileShareFreshness('unknown');
-      });
-  }, [deployMenuOpen, unifiedActionTab, sourceSnapshotRefreshKey, liveHtml, streaming, projectId, file.name, workspaceActive, canPublishPublic, viewerOnly, sourceAuthorizationScopeKey, publicFileReadIdentity]);
-
-  // Shared identity fields for the publish-flow events (HtmlViewer copy).
-  // `artifactKindToTracking` only recognises HTML through the renderer id — an HTML
-  // artifact's `file.kind` is `html`, which would degrade to `unknown` — and this
-  // viewer is reached only through the `html` / `deck-html` renderer matches, which
-  // is exactly what the `isDeck` prop is derived from.
-  function publishTrackingIdentity() {
-    return {
-      artifact_id: anonymizeArtifactId({ projectId, fileName: file.name }),
-      artifact_kind: artifactKindToTracking({
-        rendererId: isDeck ? 'deck-html' : 'html',
-        fileKind: file.kind ?? null,
-      }),
-      project_id: projectId,
-      project_kind: projectKind,
-    } as const;
-  }
-
-  // Background (inert) HtmlViewer instances must never report analytics, same
-  // as every other emission site in this component. Only the tracking is
-  // gated — the publish/unpublish calls themselves stay unconditional.
-  const firePublishFlowClick = (element: 'publish_file' | 'copy_publish_link') => {
-    if (!workspaceActive) return;
-    observeAnalytics(() => trackShareOptionPopoverClick(analytics.track, {
-      page_name: 'artifact',
-      area: 'share_option_popover',
-      element,
-      ...(publishedFileSlug ? { publish_id: publishedFileSlug } : {}),
-      ...publishTrackingIdentity(),
-    }));
-  };
-
-  const firePublishResult = (
-    outcome: Pick<
-      ArtifactPublishResultProps,
-      | 'action' | 'result' | 'error_code' | 'publish_duration_ms' | 'daemon_error_code'
-      | 'failed_stage' | 'failure_reason' | 'upstream_status' | 'upstream_error_code'
-      | 'publish_id' | 'share_version' | 'published_at'
-    >,
-    requestId?: string,
-  ) => {
-    // Read the live ref, not the captured prop: a publish/unpublish request can
-    // start while this viewer is active and settle after the user switches tabs,
-    // and the in-flight continuation still holds the render-time `true`.
-    if (!workspaceActiveRef.current) return;
-    observeAnalytics(() => trackArtifactPublishResult(analytics.track, {
-      page_name: 'artifact',
-      area: 'share_option_popover',
-      ...(publishedFileSlug ? { publish_id: publishedFileSlug } : {}),
-      ...outcome,
-      ...publishTrackingIdentity(),
-    }, requestId ? { requestId } : undefined));
-  };
-
-  /**
-   * A successful stop or publish/resume IS the share's status from that moment;
-   * the panel never waits for its next open to learn it. A publish that answered
-   * without a link re-reads the state once, and a read that fails or has no link
-   * either leaves the publication standing as "link unavailable".
-   *
-   * The panel reports "link unavailable" only after that re-read has settled
-   * without a link. Until then the mutation is still in progress: nothing is
-   * written, and the caller stays busy on the returned promise.
-   */
-  async function settlePublicShareAfterMutation(
-    outcome: { status: 'stopped' } | { status: 'active'; link: WebPublicFileShareLink },
-    requestSeq: number,
-  ): Promise<void> {
-    if (outcome.status === 'stopped') {
-      setFileShareStatus('stopped');
-      setFileShareFreshness('unknown');
-      setPublishedFileUrl('');
-      setPublishedFileSlug('');
-      onObservedPublicShareLink?.(null);
-      return;
-    }
-    let reRead: ProjectFilePublicShareResponse | null = null;
-    if (!outcome.link.url) {
-      reRead = await fetchProjectFilePublicShareState(projectId, file.name, workspaceContext)
-        .catch(() => null);
-      const current = publicFileIdentityRef.current;
-      if (publicFileRequestSeqRef.current !== requestSeq
-        || current.projectId !== projectId || current.fileName !== file.name) return;
-    }
-    setFileShareStatus('active');
-    setPublishedFileUrl(outcome.link.url ?? '');
-    setPublishedFileSlug(outcome.link.slug);
-    if (reRead) applyPublicShareStateRead(reRead);
-  }
-
-  async function publishCurrentFilePublic(mode?: 'resume') {
-    if (!shareSourceGuard.isCurrent()) return;
-    if (streaming || viewerOnly || publishingPublicFile) return;
-    // Sharing publishes authored bytes, independently of comment identity setup
-    // and its preview witness. Never prepare/mutate source as a side effect.
-    // Retained share-plan callbacks must still reject stale or unsettled edits.
-    if (guardShareSource && mode !== 'resume' && !shareSourceGuard.canPublish()) {
-      setPublishFailureKey('fileViewer.publishFileFailed');
-      return;
-    }
-    publicFileStateReadRef.current = null;
-    const requestProjectId = projectId;
-    const requestFileName = file.name;
-    const requestAccountScope = workspaceAccountScopedCacheKey(workspaceContext);
-    const requestAccountGeneration = currentWorkspaceAccountGeneration();
-    let confirmedPublication: { sourceFilePath: string; accountScope: string; generation: number } | undefined;
-    const requestSeq = ++publicFileRequestSeqRef.current;
-    invalidatePublicFileCopy();
-    clearPublicFileProgressTimers();
-    setPublishProgress(boundedPublishProgress(0, false));
-    firePublishFlowClick('publish_file');
-    const publishStarted = performance.now();
-    const publishRequestId = analytics.newRequestId();
-    publicFileProgressTimerRef.current = window.setInterval(() => {
-      if (publicFileRequestSeqRef.current !== requestSeq) return;
-      setPublishProgress((previous) => Math.max(previous ?? 0,
-        boundedPublishProgress(performance.now() - publishStarted, false)));
-    }, 250);
-    setPublishingPublicFile(true);
-    setPublishLinkFeedback(null);
-    setPublishFailureKey(null);
-    try {
-      const response = await publishProjectFilePublic(
-        requestProjectId,
-        requestFileName,
-        workspaceContext,
-        publishRequestId,
-        mode,
-      );
-      firePublishResult({
-        action: 'publish',
-        result: 'success',
-        publish_id: response.slug,
-        ...response.publicationObservation,
-        publish_duration_ms: Math.round(performance.now() - publishStarted),
-      }, publishRequestId);
-      // Project-wide, so announce it even if the viewer moved on meanwhile.
-      confirmedPublication = { sourceFilePath: file.path || requestFileName,
-        accountScope: requestAccountScope, generation: requestAccountGeneration };
-      const current = publicFileIdentityRef.current;
-      if (
-        publicFileRequestSeqRef.current !== requestSeq ||
-        current.projectId !== requestProjectId ||
-        current.fileName !== requestFileName
-      ) {
-        return;
-      }
-      await settlePublicShareAfterMutation({ status: 'active', link: response }, requestSeq);
-      if (
-        publicFileRequestSeqRef.current !== requestSeq ||
-        publicFileIdentityRef.current.projectId !== requestProjectId ||
-        publicFileIdentityRef.current.fileName !== requestFileName
-      ) {
-        return;
-      }
-      clearPublicFileProgressTimers();
-      setPublishProgress(boundedPublishProgress(0, true));
-      // Keep success observable without delaying the link or S3's clipboard window.
-      publicFileProgressCompletionRef.current = window.setTimeout(() => {
-        if (publicFileRequestSeqRef.current !== requestSeq) return;
-        publicFileProgressCompletionRef.current = null;
-        setPublishProgress(null);
-      }, 1000);
-      // Copy this response, not the previous render's URL. Clipboard failure
-      // is not publication failure, and automatic copy is not a user click.
-      // With no Viewer origin there is no link to copy; the panel says so.
-      if (response.url) void copyPublicFileUrl(response.url);
-    } catch (error) {
-      console.warn('[FileViewer] failed to publish public file', error);
-      const recoveryPublication = publicFileManualRevokePublication(error);
-      firePublishResult({
-        action: 'publish',
-        result: 'failed',
-        error_code: publishErrorCode(error),
-        publish_duration_ms: Math.round(performance.now() - publishStarted),
-        ...daemonErrorCodeProp(error),
-        ...failureDetailProps(error),
-      }, publishRequestId);
-      if (publicFileRequestSeqRef.current === requestSeq) {
-        clearPublicFileProgressTimers();
-        setPublishProgress(null);
-        if (recoveryPublication) {
-          setPublishedFileUrl(recoveryPublication.url ?? '');
-          setPublishedFileSlug(recoveryPublication.slug);
-          setPublishLinkFeedback(null);
-          setPublishFailureKey(null);
-        } else {
-          setPublishLinkFeedback('failed');
-          // The provider preserves status/code, but not the plan's byte totals.
-          const conflict = publicFileEntryIndexConflict(error);
-          setPublishConflict(conflict);
-          setPublishFailureKey(conflict
-            ? 'fileViewer.publishFileEntryIndexConflict'
-            : error instanceof PublicFilePublishError
-            && error.status === 413 && error.code === 'too_large'
-            ? 'fileViewer.publishFileTooLarge'
-            : publicFilePublishFailureKey(error));
-        }
-      }
-    } finally {
-      if (publicFileRequestSeqRef.current === requestSeq) {
-        setPublishingPublicFile(false);
-        invalidateCommentSyncState(requestProjectId, file.path || requestFileName);
-        notifyProjectShareHistoryChanged(requestProjectId, undefined, confirmedPublication);
-      }
-    }
-  }
-
-  async function updateCurrentFilePublic() {
-    if (!shareSourceGuard.isCurrent()) return;
-    if (!canPublishPublic || streaming || viewerOnly || !publishedFileSlug || publishingPublicFile
-      || updateInFlightRef.current || fileShareFreshness !== 'outdated' || fileShareStatus !== 'active') return;
-    if (guardShareSource && !shareSourceGuard.canPublish()) {
-      setPublishFailureKey('fileViewer.publishFileFailed');
-      return;
-    }
-    publicFileStateReadRef.current = null;
-    const requestProjectId = projectId;
-    const requestFileName = file.name;
-    const requestAccountScope = workspaceAccountScopedCacheKey(workspaceContext);
-    const requestAccountGeneration = currentWorkspaceAccountGeneration();
-    let confirmedPublication: { sourceFilePath: string; accountScope: string; generation: number } | undefined;
-    const requestSeq = ++publicFileRequestSeqRef.current;
-    updateInFlightRef.current = true;
-    setPublishingPublicFile(true);
-    setUpdateToast(null);
-    const started = performance.now();
-    const requestId = analytics.newRequestId();
-    try {
-      const response = await publishProjectFilePublic(requestProjectId, requestFileName, workspaceContext, requestId);
-      firePublishResult({
-        action: 'publish', result: 'success',
-        publish_id: response.slug,
-        ...response.publicationObservation,
-        publish_duration_ms: Math.round(performance.now() - started),
-      }, requestId);
-      const current = publicFileIdentityRef.current;
-      if (requestSeq !== publicFileRequestSeqRef.current
-        || current.projectId !== requestProjectId || current.fileName !== requestFileName) return;
-      confirmedPublication = { sourceFilePath: file.path || requestFileName,
-        accountScope: requestAccountScope, generation: requestAccountGeneration };
-      setPublishedFileUrl(response.url ?? '');
-      setPublishedFileSlug(response.slug);
-      setFileShareFreshness('unknown');
-      setUpdateToast('success');
-      // The source may change again during upload. Only the daemon's COMPLETE
-      // publish-plan fingerprint comparison can claim the new link is current.
-      void fetchProjectFilePublicShareState(requestProjectId, requestFileName, workspaceContext)
-        .then((state) => {
-          if (requestSeq !== publicFileRequestSeqRef.current) return;
-          setFileShareStatus(state.status ?? null);
-          setFileShareFreshness(state.freshness ?? 'unknown');
-          const knownLink = publicFileShareLinkFromRead(state);
-          if (knownLink) {
-            setPublishedFileUrl(knownLink.url ?? '');
-            setPublishedFileSlug(knownLink.slug);
-          }
-        })
-        .catch(() => {
-          if (requestSeq === publicFileRequestSeqRef.current) setFileShareFreshness('unknown');
-        });
-      // Updating a live alias NEVER auto-copies. The person may still copy it
-      // through the existing independent action above.
-    } catch (error) {
-      firePublishResult({
-        action: 'publish', result: 'failed', error_code: publishErrorCode(error),
-        publish_duration_ms: Math.round(performance.now() - started),
-        ...daemonErrorCodeProp(error), ...failureDetailProps(error),
-      }, requestId);
-      if (requestSeq === publicFileRequestSeqRef.current) {
-        // Local file reads and push fail before the remote alias can move. A snapshot or
-        // persistence failure (or an unclassified response) may have already
-        // advanced it; never promise the old bytes or offer blind retry.
-        if (failureDetailProps(error).failed_stage === 'push'
-          || (error instanceof PublicFilePublishError && error.status === 400 && error.code === 'FILE_UNAVAILABLE')) {
-          setUpdateToast('failure');
-        } else {
-          setFileShareFreshness('unknown');
-          setUpdateToast('uncertain');
-        }
-      }
-    } finally {
-      if (requestSeq === publicFileRequestSeqRef.current) {
-        updateInFlightRef.current = false;
-        setPublishingPublicFile(false);
-        invalidateCommentSyncState(requestProjectId, file.path || requestFileName);
-        notifyProjectShareHistoryChanged(requestProjectId, undefined, confirmedPublication);
-      }
-    }
-  }
-
-  // Only an explicit signed-out update request can queue this one-shot intent.
-  // An authenticated read must confirm the same member, slug and outdated
-  // active publication before the update is allowed to run.
-  useEffect(() => {
-    const explicit = loginUpdateRequest?.nonce !== handledLoginUpdateNonceRef.current
-      ? loginUpdateRequest : null;
-    const finishExplicit = () => {
-      if (!explicit) return;
-      handledLoginUpdateNonceRef.current = explicit.nonce;
-      onLoginUpdateRequestHandled?.(explicit.nonce);
-    };
-    if (explicit && Date.now() > explicit.expiresAt) { finishExplicit(); return; }
-    // An active viewer for a different file cannot consume the requested link.
-    if (explicit && (explicit.link.projectId !== projectId || explicit.link.filePath !== file.name)) return;
-    const pending = pendingShareUpdateAfterLoginRef.current ?? (explicit ? {
-      projectId: explicit.link.projectId, fileName: explicit.link.filePath,
-      slug: explicit.link.slug, authorizationScopeKey: explicit.link.authorizationScopeKey,
-      expiresAt: explicit.expiresAt,
-    } : null);
-    if (!pending) return;
-    if (Date.now() > pending.expiresAt || pending.projectId !== projectId || pending.fileName !== file.name) {
-      pendingShareUpdateAfterLoginRef.current = null;
-      finishExplicit();
-      return;
-    }
-    if (!sourceAuthorizationScopeKey?.startsWith('workspace:')) return;
-    if (sourceAuthorizationScopeKey !== pending.authorizationScopeKey || viewerOnly || !workspaceActive) {
-      pendingShareUpdateAfterLoginRef.current = null;
-      finishExplicit();
-      return;
-    }
-    if (fileShareStatus === 'stopped' || fileShareFreshness === 'current'
-      || (explicit && fileShareStatus === 'active' && publishedFileSlug && publishedFileSlug !== pending.slug)) {
-      pendingShareUpdateAfterLoginRef.current = null;
-      finishExplicit();
-      return;
-    }
-    // This status and freshness must come from this newly mounted viewer's
-    // authorized GET; no saved URL or authentication event alone can publish.
-    if (!canPublishPublic || fileShareStatus !== 'active' || fileShareFreshness !== 'outdated'
-      || !publishedFileUrl || publishedFileSlug !== pending.slug || streaming || publishingPublicFile) return;
-    pendingShareUpdateAfterLoginRef.current = null;
-    finishExplicit();
-    void updateCurrentFilePublic();
-  }, [projectId, file.name, sourceAuthorizationScopeKey, viewerOnly, workspaceActive,
-    canPublishPublic, fileShareStatus, fileShareFreshness, publishedFileUrl, publishedFileSlug, streaming, publishingPublicFile,
-    loginUpdateRequest, onLoginUpdateRequestHandled]);
-
-  async function unpublishCurrentFilePublic() {
-    if (viewerOnly || !publishedFileSlug || publishingPublicFile) return;
-    publicFileStateReadRef.current = null;
-    const requestProjectId = projectId;
-    const requestFileName = file.name;
-    const requestSlug = publishedFileSlug;
-    const requestAccountScope = workspaceAccountScopedCacheKey(workspaceContext);
-    const requestAccountGeneration = currentWorkspaceAccountGeneration();
-    let confirmedStop: { sourceFilePath: string; accountScope: string; generation: number } | undefined;
-    const requestSeq = ++publicFileRequestSeqRef.current;
-    invalidatePublicFileCopy();
-    clearPublicFileProgressTimers();
-    setPublishProgress(null);
-    const unpublishStarted = performance.now();
-    const unpublishRequestId = analytics.newRequestId();
-    setPublishingPublicFile(true);
-    setPublishLinkFeedback(null);
-    setPublishFailureKey(null);
-    try {
-      await unpublishProjectFilePublic(
-        requestProjectId,
-        requestFileName,
-        requestSlug,
-        workspaceContext,
-        unpublishRequestId,
-      );
-      firePublishResult({
-        action: 'unpublish',
-        result: 'success',
-        publish_duration_ms: Math.round(performance.now() - unpublishStarted),
-      }, unpublishRequestId);
-      const current = publicFileIdentityRef.current;
-      if (
-        publicFileRequestSeqRef.current !== requestSeq ||
-        current.projectId !== requestProjectId ||
-        current.fileName !== requestFileName
-      ) {
-        return;
-      }
-      void settlePublicShareAfterMutation({ status: 'stopped' }, requestSeq);
-      confirmedStop = { sourceFilePath: requestFileName, accountScope: requestAccountScope, generation: requestAccountGeneration };
-    } catch (error) {
-      console.warn('[FileViewer] failed to unpublish public file', error);
-      firePublishResult({
-        action: 'unpublish',
-        result: 'failed',
-        error_code: publishErrorCode(error),
-        publish_duration_ms: Math.round(performance.now() - unpublishStarted),
-        ...daemonErrorCodeProp(error),
-        ...failureDetailProps(error),
-      }, unpublishRequestId);
-      if (publicFileRequestSeqRef.current === requestSeq) {
-        // Stopping a link is not a clipboard operation. Keep the URL and copy
-        // feedback independent while preserving actionable identity failures.
-        const failureKey = publicFilePublishFailureKey(error);
-        setPublishFailureKey(failureKey === 'fileViewer.publishFileFailed'
-          ? 'fileViewer.unpublishFileFailed'
-          : failureKey);
-      }
-    } finally {
-      if (publicFileRequestSeqRef.current === requestSeq) {
-        setPublishingPublicFile(false);
-        invalidateCommentSyncState(requestProjectId, file.path || requestFileName);
-        notifyProjectShareHistoryChanged(requestProjectId, confirmedStop);
-      }
-    }
-  }
-
-  async function copyPublicFileUrl(url: string) {
-    if (shareContentStreamingRef.current) return;
-    invalidatePublicFileCopy();
-    const copySeq = publicFileCopySeqRef.current;
-    const requestSeq = publicFileRequestSeqRef.current;
-    const isCurrent = () => publicFileCopySeqRef.current === copySeq &&
-      publicFileRequestSeqRef.current === requestSeq;
-    setPublishLinkFeedback(null);
-    let ok = false;
-    try {
-      if (url && typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(url);
-        ok = true;
-      }
-    } catch {
-      ok = false;
-    }
-    if (!isCurrent()) return;
-    setPublishLinkFeedback(ok ? 'copied' : 'failed');
-    publicFileCopyTimerRef.current = window.setTimeout(() => {
-      if (!isCurrent()) return;
-      publicFileCopyTimerRef.current = null;
-      setPublishLinkFeedback(null);
-    }, 1800);
-  }
-
-  async function copyPublishedFileLink() {
-    firePublishFlowClick('copy_publish_link');
-    await copyPublicFileUrl(publishedFileUrl);
-  }
-  // Same shared 转入/移出团队空间 confirmation as the project grid — see the
-  // ReactComponentViewer copy above for the rationale.
-  function setWorkspaceShareAccess(nextAccess: 'private' | 'workspace') {
-    setShareAccessMenuOpen(false);
-    if (nextAccess === shareAccess || shareAccessBusy || viewerOnly) return;
-    if (moveConfirmSkipped()) {
-      void commitWorkspaceShareAccess(nextAccess);
-      return;
-    }
-    setShareAccessConfirm(nextAccess);
-  }
-
-  async function commitWorkspaceShareAccess(nextAccess: 'private' | 'workspace') {
-    setShareAccessBusy(true);
-    try {
-      await moveWorkspaceProject({
-        projectId,
-        visibility: nextAccess === 'workspace' ? 'team' : 'personal',
-        workspaceContext,
-      });
-      setShareAccess(nextAccess);
-      notifyTeamProjectsChanged();
-      setShareGuideToast({
-        message: nextAccess === 'workspace'
-          ? t('fileViewer.workspaceShareSuccess')
-          : t('fileViewer.workspaceUnshareSuccess'),
-        tone: 'success',
-      });
-    } catch (error) {
-      console.warn('[FileViewer] failed to update workspace project sharing', error);
-      setShareGuideToast({
-        message: nextAccess === 'workspace'
-          ? t('fileViewer.workspaceShareFailed')
-          : t('fileViewer.workspaceUnshareFailed'),
-        tone: 'error',
-      });
-    } finally {
-      setShareAccessBusy(false);
-    }
-  }
   const [inTabPresent, setInTabPresent] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const nextPreviewContentWidthCacheKey = `${previewContentWidthCacheBaseKey}:${reloadKey}`;
@@ -8608,7 +7311,7 @@ function HtmlViewer({
   // revisit skips the loading skeleton entirely — the fetch still runs, but
   // the pane doesn't flash a skeleton for content the user has already seen.
   const sourceLoadedFileKey =
-    `${sourceAuthorizationScopeKey ?? 'pending'}\u0000${projectId}\u0000${file.name}`;
+    `${LOCAL_SOURCE_SCOPE}\u0000${projectId}\u0000${file.name}`;
   const sourceLoadedKeysRef = useRef<Set<string>>(
     new Set(source !== null ? [sourceLoadedFileKey] : []),
   );
@@ -8623,9 +7326,7 @@ function HtmlViewer({
   const [boardMode, setBoardMode] = useState(false);
   const [commentPanelOpen, setCommentPanelOpen] = useState(false);
   const [commentReadState, setCommentReadState] = useState<ProjectCommentReadState | null>(null);
-  // The marker is scoped to the authenticated account as well as the project.
-  // A late response from a previous account must never become this viewer's state.
-  const commentReadScopeKey = `${projectId}\u0000${workspaceAccountScopedCacheKey(workspaceContext)}`;
+  const commentReadScopeKey = projectId;
   const commentReadScopeRef = useRef(commentReadScopeKey);
   const commentPanelToggleRef = useRef<HTMLButtonElement | null>(null);
   const commentPanelReturnFocusRef = useRef<HTMLElement | null>(null);
@@ -9349,67 +8050,6 @@ function HtmlViewer({
       sourceLoadMode: HtmlSourceLoadMode;
     }>;
   } | null>(null);
-  const handledLoginUpdateNonceRef = useRef<number | null>(null);
-  const retainedShareAuthorizationScopeKeyRef = useRef<string | null>(null);
-  const retainedShareWasOutdatedRef = useRef(false);
-  const renderedSourceAuthorizationScopeKeyRef = useRef(sourceAuthorizationScopeKey);
-  if (renderedSourceAuthorizationScopeKeyRef.current !== sourceAuthorizationScopeKey) {
-    const previousScopeKey = renderedSourceAuthorizationScopeKeyRef.current;
-    // S13: an explicitly resolved local/signed-out state may retain only the
-    // previously observed ACTIVE public URL for this exact file, for copy.
-    // Pending/denied authority and every new account still fail closed.
-    const retainKnownPublicUrl = sourceAuthorizationScopeKey === 'local'
-      && previousScopeKey?.startsWith('workspace:')
-      && publicFileIdentityRef.current.projectId === projectId
-      && publicFileIdentityRef.current.fileName === file.name
-      && fileShareStatus === 'active' && Boolean(publishedFileUrl);
-    if (retainKnownPublicUrl) {
-      retainedShareAuthorizationScopeKeyRef.current = previousScopeKey;
-      retainedShareWasOutdatedRef.current = fileShareFreshness === 'outdated';
-    } else if (sourceAuthorizationScopeKey?.startsWith('workspace:')) {
-      retainedShareAuthorizationScopeKeyRef.current = null;
-      retainedShareWasOutdatedRef.current = false;
-      if (pendingShareUpdateAfterLoginRef.current?.authorizationScopeKey !== sourceAuthorizationScopeKey) {
-        pendingShareUpdateAfterLoginRef.current = null;
-      }
-    }
-    renderedSourceAuthorizationScopeKeyRef.current = sourceAuthorizationScopeKey;
-    // A real Workspace/member authority change is not a passive refresh. Fail
-    // closed before this render commits so no frame can briefly expose source,
-    // publication, deployment, or edit state proven under the prior scope.
-    setSource(null);
-    setRoutingSource(null);
-    setRoutingSourceIdentity(null);
-    setServerPoweredPreviewRequired(false);
-    sourceRef.current = null;
-    sourceFileKeyRef.current = null;
-    sourceEverLoadedRef.current = false;
-    lastGoodSourceForRoutingRef.current = null;
-    prevSourceBeforeReloadRef.current = null;
-    publicFileRequestSeqRef.current += 1;
-    if (!retainKnownPublicUrl) {
-      setPublishedFileUrl('');
-      setPublishedFileSlug('');
-    }
-    setPublishingPublicFile(false);
-    setPublishLinkFeedback(null);
-    setPublishFailureKey(null);
-    setDeployment(null);
-    setDeploymentsByProvider({});
-    setDeployResult(null);
-    setDeployError(null);
-    setCopiedDeployLink(null);
-    setDeployPhase('idle');
-    setManualEditModeRaw(false);
-    manualEditLiveStylesRef.current.clear();
-    manualEditPendingStyleRef.current = null;
-    manualEditTextSessionIdRef.current = null;
-    manualEditTextSessionStartSequenceRef.current = null;
-    manualEditTextFinishRef.current = null;
-    manualEditTextCommitInFlightRef.current = null;
-    manualEditTextFailedSessionIdsRef.current.clear();
-    manualEditTextLatestCommitRef.current = null;
-  }
   const templateNameId = useId();
   const templateDescriptionId = useId();
   const imageExportTitleId = useId();
@@ -9648,11 +8288,6 @@ function HtmlViewer({
   const suppressLiveReloadUntilRef = useRef(0);
   const [exportToast, setExportToast] = useState<ExportToastState | null>(null);
   const [shareLinkFeedback, setShareLinkFeedback] = useState<'copied' | 'failed' | null>(null);
-  // Item 5 (2026 refactor): tone travels with the message now, so this can
-  // route through ShareFeedbackToast (success/error) instead of the generic
-  // Toast — the workspace-share success/failure copy below was always one
-  // or the other, never neutral.
-  const [shareGuideToast, setShareGuideToast] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
   const [selectedSideCommentIds, setSelectedSideCommentIds] = useState<Set<string>>(() => new Set());
   const [commentSidePanelCollapsed, setCommentSidePanelCollapsed] = useState(false);
   const [strokePoints, setStrokePoints] = useState<StrokePoint[]>([]);
@@ -9788,7 +8423,7 @@ function HtmlViewer({
   ) {
     const requestSeq = ++deployProviderLoadSeqRef.current;
     setDeployProviderId(providerId);
-    const deployments = await fetchProjectDeployments(projectId, workspaceContext);
+    const deployments = await fetchProjectDeployments(projectId);
     const nextDeploymentsByProvider = deploymentMapForCurrentFile(deployments);
     const exactDeployment = nextDeploymentsByProvider[providerId] ?? null;
     const fallbackDeployment = options?.fallbackToExisting
@@ -9884,20 +8519,6 @@ function HtmlViewer({
    * 试过在这里也清一遍,消融时没有任何用例因此变红 —— 那就是没用的代码,不留。
    */
   const closeDeployMenu = useCallback(() => setDeployMenuOpen(false), []);
-  useEffect(() => {
-    const request = shareLoginReturn ?? shareLoginReturnRef.current;
-    if (!request || !shareLoginReturnMatches(request, projectId, file.name)
-      || !workspaceActive || viewerOnly || !canPublishPublic) return;
-    // Restore only UI intent, after exact authority resolves. Publication still
-    // requires the user's Generate action and all normal plan/permission gates.
-    shareLoginReturnRef.current = null;
-    onShareLoginReturnChange?.(null);
-    setMenuAnchorId(null);
-    setMenuOrigin('toolbar');
-    setUnifiedActionTab('share');
-    setDeployMenuOpen(true);
-  }, [shareLoginReturn, shareLoginReturnRef, projectId, file.name, workspaceActive, viewerOnly,
-    canPublishPublic, onShareLoginReturnChange]);
   // portal 出去的那一份要单独算「点在里面」,否则外点关闭会把它自己关掉
   const anchoredMenuRef = useRef<HTMLDivElement | null>(null);
   const [chromeActionsHost, setChromeActionsHost] = useState<HTMLElement | null>(
@@ -9913,8 +8534,6 @@ function HtmlViewer({
     setZoomMenuOpen(false);
     setPresentMenuOpen(false);
     setDeployMenuOpen(false);
-    setShareAccessMenuOpen(false);
-    setShareAccessConfirm(null);
     setToolbarMoreOpen(false);
     setVersionModalOpen(false);
     setExportReadyNudge(false);
@@ -9947,7 +8566,6 @@ function HtmlViewer({
     setDeploySavedToast(null);
     setDeployActionToast(null);
     setVersionRestoredToast(null);
-    setShareGuideToast(null);
     const popup = presenterWindowRef.current;
     if (popup && !popup.closed) {
       try { popup.close(); } catch { /* already gone */ }
@@ -9974,11 +8592,6 @@ function HtmlViewer({
     // Open HTML tabs stay mounted at the real viewport size. Keep refreshing
     // retained source snapshots in the background so activation is only a
     // visibility swap, including after an agent edits an inactive file.
-    // Never turn a pending or denied bound-project authority into a legal
-    // local/headerless read. The authorization key changes when an exact
-    // Workspace witness resolves, which reruns this effect with scoped URL and
-    // headers. Only an explicit daemon `unbound` result receives the local key.
-    if (projectResourceReadBlocked) return;
     const sourceFileKey = currentSourceIdentity;
     if (liveHtml !== undefined) {
       sourceFileKeyRef.current = sourceFileKey;
@@ -9986,26 +8599,22 @@ function HtmlViewer({
       sourceLoadedKeysRef.current.add(sourceLoadedFileKey);
       setSource(liveHtml);
       setRoutingSource(liveHtml);
-      setRoutingSourceIdentity(sourceFileKey);
       setServerPoweredPreviewRequired(false);
       sourceRef.current = liveHtml;
       return;
     }
     const fileChanged = sourceFileKeyRef.current !== sourceFileKey;
     sourceFileKeyRef.current = sourceFileKey;
-    const cachedSnapshot = sourceAuthorizationScopeKey
-      ? getHtmlSourceSnapshot(
-          sourceAuthorizationScopeKey,
-          projectId,
-          file.name,
-          sourceSnapshotRefreshKey,
-        )
-      : null;
+    const cachedSnapshot = getHtmlSourceSnapshot(
+      LOCAL_SOURCE_SCOPE,
+      projectId,
+      file.name,
+      sourceSnapshotRefreshKey,
+    );
     if (fileChanged) {
       const cachedSource = cachedSnapshot?.source ?? null;
       setSource(cachedSource);
       setRoutingSource(cachedSource);
-      setRoutingSourceIdentity(cachedSource === null ? null : sourceFileKey);
       setServerPoweredPreviewRequired(false);
       sourceRef.current = cachedSource;
       if (cachedSource !== null) {
@@ -10020,9 +8629,8 @@ function HtmlViewer({
       // switches but before the effect has run.
     }
     let cancelled = false;
-    // A snapshot with the exact authorization and content-version identity is
-    // authoritative until the file event path invalidates it or the file
-    // metadata / Workspace identity changes. Re-reading the same bytes on
+    // A snapshot with the exact content-version identity is authoritative until
+    // the file event path invalidates it or the file metadata changes. Re-reading the same bytes on
     // every ordinary viewer remount made Design Files ↔ preview round-trips
     // perform one uncached raw request apiece.
     if (cachedSnapshot !== null) {
@@ -10036,7 +8644,6 @@ function HtmlViewer({
       !previewTextNeedsFullSourceForSafeInline(sourceRef.current)
     ) {
       setRoutingSource(sourceRef.current);
-      setRoutingSourceIdentity(sourceFileKey);
       sourceEverLoadedRef.current = true;
       sourceLoadedKeysRef.current.add(sourceLoadedFileKey);
       return () => {
@@ -10052,7 +8659,7 @@ function HtmlViewer({
     // url-load iframe takes over with its own ?v=mtime cache-bust.
     const cacheBustKey = `${file.mtime}-${reloadKey}-${filesRefreshKey}`;
     const sourceLoadKey = [
-      sourceAuthorizationScopeKey ?? 'pending',
+      LOCAL_SOURCE_SCOPE,
       projectId,
       file.name,
       cacheBustKey,
@@ -10064,14 +8671,12 @@ function HtmlViewer({
         ? fetchProjectFileTextPreview(projectId, file.name, {
           limit: HTML_ROUTING_TEXT_PREVIEW_LIMIT,
           cacheBustKey,
-          workspaceContext,
         }).then(async (preview) => {
           const previewText = preview?.text ?? null;
           if (previewTextNeedsFullSourceForSafeInline(previewText)) {
             const fullText = await fetchProjectFileText(projectId, file.name, {
               cache: 'no-store',
               cacheBustKey,
-              workspaceContext,
             });
             if (fullText !== null) {
               return {
@@ -10090,7 +8695,6 @@ function HtmlViewer({
       : fetchProjectFileText(projectId, file.name, {
           cache: 'no-store',
           cacheBustKey,
-          workspaceContext,
         }).then((text) => ({
         text,
         poweredPreviewRequired: false,
@@ -10115,7 +8719,6 @@ function HtmlViewer({
           sourceEverLoadedRef.current = true;
       sourceLoadedKeysRef.current.add(sourceLoadedFileKey);
           setRoutingSource('');
-          setRoutingSourceIdentity(sourceFileKey);
           setServerPoweredPreviewRequired(false);
           return;
         }
@@ -10138,7 +8741,6 @@ function HtmlViewer({
         ) {
           setSource(snap.source);
           setRoutingSource(snap.source);
-          setRoutingSourceIdentity(sourceFileKey);
           sourceRef.current = snap.source;
           prevSourceBeforeReloadRef.current = null;
         } else if (snap != null) {
@@ -10155,19 +8757,16 @@ function HtmlViewer({
       sourceLoadedKeysRef.current.add(sourceLoadedFileKey);
       lastGoodSourceForRoutingRef.current = text;
       setRoutingSource(text);
-      setRoutingSourceIdentity(sourceFileKey);
       if (sourceLoadMode === 'routing-preview') {
         sourceRef.current = null;
       } else {
-        if (sourceAuthorizationScopeKey) {
-          setHtmlSourceSnapshot({
-            authorizationScopeKey: sourceAuthorizationScopeKey,
-            projectId,
-            fileName: file.name,
-            refreshKey: sourceSnapshotRefreshKey,
-            source: text,
-          });
-        }
+        setHtmlSourceSnapshot({
+          authorizationScopeKey: LOCAL_SOURCE_SCOPE,
+          projectId,
+          fileName: file.name,
+          refreshKey: sourceSnapshotRefreshKey,
+          source: text,
+        });
         setSource(text);
         sourceRef.current = text;
       }
@@ -10183,10 +8782,8 @@ function HtmlViewer({
     reloadKey,
     filesRefreshKey,
     sourceSnapshotRefreshKey,
-    sourceAuthorizationScopeKey,
     currentSourceIdentity,
     shouldDeferPassivePreviewSource,
-    projectResourceReadBlocked,
   ]);
 
   useEffect(() => {
@@ -10197,7 +8794,7 @@ function HtmlViewer({
     setDeployError(null);
     setCopiedDeployLink(null);
     setDeployPhase('idle');
-    void fetchProjectDeployments(projectId, workspaceContext).then((items) => {
+    void fetchProjectDeployments(projectId).then((items) => {
       if (cancelled || deploymentsLoadSeqRef.current !== requestSeq) return;
       const nextDeploymentsByProvider = deploymentMapForCurrentFile(items);
       const current = nextDeploymentsByProvider[deployProviderId] ?? null;
@@ -10208,7 +8805,7 @@ function HtmlViewer({
     return () => {
       cancelled = true;
     };
-  }, [projectId, file.name, deployProviderId, workspaceActive, workspaceContext]);
+  }, [projectId, file.name, deployProviderId, workspaceActive]);
 
   // A retained HtmlViewer stays mounted while the user visits Design Files and
   // comes back, so its initial deployment snapshot can legitimately be older
@@ -10219,7 +8816,7 @@ function HtmlViewer({
     if (!deployMenuOpen) return;
     const requestSeq = ++deploymentsLoadSeqRef.current;
     let cancelled = false;
-    void fetchProjectDeployments(projectId, workspaceContext).then((items) => {
+    void fetchProjectDeployments(projectId).then((items) => {
       if (cancelled || deploymentsLoadSeqRef.current !== requestSeq) return;
       const nextDeploymentsByProvider = deploymentMapForCurrentFile(items);
       const current = nextDeploymentsByProvider[deployProviderId] ?? null;
@@ -10230,7 +8827,7 @@ function HtmlViewer({
     return () => {
       cancelled = true;
     };
-  }, [deployMenuOpen, projectId, file.name, deployProviderId, workspaceContext]);
+  }, [deployMenuOpen, projectId, file.name, deployProviderId]);
 
   const routingHtmlSource = source ?? routingSource ?? lastGoodSourceForRoutingRef.current;
   const passiveLargeHtmlPreview = shouldDeferPassivePreviewSource && source === null;
@@ -10381,21 +8978,7 @@ function HtmlViewer({
     if (!effectiveDeck || source == null) return source;
     return normalizeDeckVisualSource(removeSpeakerNotesFromHtml(source));
   }, [effectiveDeck, source]);
-  const relativeProjectAssetRefs = useMemo(
-    () => source != null && htmlHasRelativeProjectAssetRefs(source, file.name, null),
-    [source, file.name],
-  );
-  // Browser-owned iframe subresource requests cannot attach Workspace headers,
-  // and URL resolution does not inherit the query string from the document's
-  // scoped raw URL. Hold the Team preview until every confirmed relative asset
-  // has been rewritten to its own scoped raw URL; otherwise the first srcDoc
-  // paint can leak an unscoped font/image request before the async rewrite
-  // finishes.
-  const scopedRelativeAssetRefs =
-    workspaceContext?.workspaceType === 'team' && relativeProjectAssetRefs;
-  const livePreviewSource = scopedRelativeAssetRefs && inlinedSource === null
-    ? null
-    : (inlinedSource ?? deckVisualSource);
+  const livePreviewSource = inlinedSource ?? deckVisualSource;
   const assetInliningSource = effectiveDeck ? deckVisualSource : source;
   // Annotation modes that should hold the preview still while open. Manual
   // Edit is handled by its own freeze just below; these are the non-edit
@@ -10419,11 +9002,9 @@ function HtmlViewer({
   //   - Streaming repaints (`liveHtml` defined — an agent run rewriting the
   //     artifact chunk by chunk) must stay invisible until mode exit; that
   //     anti-thrash hold is the snapshot's original purpose.
-  //   - A settled on-disk version (raw lane, `liveHtml === undefined`) — e.g.
-  //     the daemon auto-pull landing an owner's published update into a
-  //     team-shared mirror — must atomically REPLACE the snapshot. Comment
-  //     mode is a read-only member's resting interaction state, so "deferred
-  //     until mode exit" degrades to "never": the slide rail (unfrozen
+  //   - A settled on-disk version (raw lane, `liveHtml === undefined`) must
+  //     atomically REPLACE the snapshot; "deferred until mode exit" can degrade
+  //     to "never": the slide rail (unfrozen
   //     `deckVisualSource`) repaints with the new version while the canvas
   //     pins the stale bytes indefinitely. The srcDoc transport already knows
   //     how to remount cleanly when srcDoc changes under Comment mode (see
@@ -10511,13 +9092,12 @@ function HtmlViewer({
     // (`sharedCancellableGet`): a read that stalls (a request queued behind
     // saturated connections neither resolves nor rejects — every failure path
     // resolves `[]`) then survives unmount forever, and every later viewer
-    // mount for the same project + workspace identity silently rejoins the
-    // same dead promise. For a workspace-scoped deck that hold keeps
-    // `previewSource` at null, i.e. a bare white stage on every return to the
+    // mount for the same project silently rejoins the same dead promise. For a
+    // deck that hold keeps `previewSource` at null, i.e. a bare white stage on every return to the
     // project. Aborting on cleanup lets a fresh mount issue a fresh read.
     const controller = new AbortController();
     setProjectFilePathSet(null);
-    void fetchProjectFiles(projectId, { workspaceContext, signal: controller.signal })
+    void fetchProjectFiles(projectId, { signal: controller.signal })
       .then((files) => {
         if (!controller.signal.aborted) {
           setProjectFilePathSet(new Set(files.map((entry) => entry.name)));
@@ -10530,78 +9110,11 @@ function HtmlViewer({
     return () => {
       controller.abort();
     };
-  }, [projectId, file.mtime, filesRefreshKey, reloadKey, workspaceContext]);
+  }, [projectId, file.mtime, filesRefreshKey, reloadKey]);
   const projectRootAssetRefs = useMemo(
     () => source != null && htmlHasRootRelativeProjectAssetRefs(source, projectFilePathSet),
     [source, projectFilePathSet],
   );
-  useEffect(() => {
-    if (!workspaceActive) return;
-    setPreviewAssetWarning(null);
-    // Personal/local project resources do not need Team authorization
-    // headers, so the iframe's own subresource requests are the source of
-    // truth. Probing
-    // the same paths here duplicates every image/font read before first paint
-    // (large landing pages can exceed 20 MB) and competes with Chromium's
-    // renderer for the exact files it is already loading. Team previews keep
-    // the preflight because browser-owned iframe requests cannot surface the
-    // daemon's scoped raw-route refusal safely to the host UI.
-    if (workspaceContext?.workspaceType !== 'team') return;
-    if (mode !== 'preview' || effectiveDeck) return;
-    const s = routingHtmlSource;
-    if (!s) return;
-    const assetPaths = collectPreviewAssetPaths(s, file.name, projectFilePathSet)
-      .filter((assetPath) => assetPath !== file.name)
-      .slice(0, HTML_PREVIEW_ASSET_PREFLIGHT_LIMIT);
-    if (assetPaths.length === 0) return;
-
-    let cancelled = false;
-    const cacheBust = `${Math.round(file.mtime)}-${reloadKey}-${filesRefreshKey}`;
-    void (async () => {
-      for (const assetPath of assetPaths) {
-        if (cancelled) return;
-        try {
-          const resp = await fetch(
-            appendResourceQuery(
-              projectRawUrl(projectId, assetPath, workspaceContext),
-              `previewAssetCheck=${encodeURIComponent(cacheBust)}`,
-            ),
-            workspaceContext
-              ? { headers: workspaceProjectHeaders(workspaceContext) }
-              : undefined,
-          );
-          if (cancelled) return;
-          if (resp.ok || resp.status === 404) continue;
-          const body = await readPreviewAssetResponseBody(resp);
-          if (cancelled) return;
-          if (isBlockedPreviewAssetResponse(body)) {
-            if (!cancelled) setPreviewAssetWarning({ filePath: assetPath });
-            return;
-          }
-        } catch {
-          // Network/daemon reachability errors are already represented by the
-          // normal preview loading path. This preflight is only for clear raw
-          // route security blocks hidden inside iframe subresource loads.
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    effectiveDeck,
-    file.mtime,
-    file.name,
-    filesRefreshKey,
-    mode,
-    projectFilePathSet,
-    projectId,
-    reloadKey,
-    routingHtmlSource,
-    workspaceActive,
-    workspaceContext,
-  ]);
   // A real WebGL/Worker/WASM/SharedArrayBuffer artifact needs the "powered
   // preview" path — a cross-origin-isolated iframe with allow-same-origin —
   // which the opaque preview sandbox cannot provide (issue #724). Powered mode
@@ -10651,7 +9164,7 @@ function HtmlViewer({
     urlFocusGuard: urlDocumentGuardsAvailable,
     needsRedirectGuard: needsRedirectGuard && !needsPowered,
     urlRedirectGuard: urlDocumentGuardsAvailable,
-    projectRootAssetRefs: projectRootAssetRefs || scopedRelativeAssetRefs,
+    projectRootAssetRefs,
   };
   const urlLoadPreviewSupported = shouldUrlLoadHtmlPreview({
     ...urlLoadDecision,
@@ -10693,50 +9206,6 @@ function HtmlViewer({
     // iframe until a later load event happens to repair it.
     if (!useUrlLoadPreview) iframeRef.current = frame;
   }, [useUrlLoadPreview]);
-  // Wait for source discovery before minting. A committed file switch can
-  // still carry the previous file's state until the source-loading effect
-  // clears/replaces it, so only inspect bytes witnessed for this identity.
-  const authoredSrcDocBase = useMemo(
-    () => (
-      routingSourceIdentity !== currentSourceIdentity || routingHtmlSource == null
-        ? null
-        : htmlHasAuthoredBase(routingHtmlSource)
-    ),
-    [currentSourceIdentity, routingHtmlSource, routingSourceIdentity],
-  );
-  useEffect(() => {
-    if (
-      workspaceContext?.workspaceType !== 'team'
-      ||
-      useUrlLoadPreview
-      || authoredSrcDocBase !== false
-      || effectiveScopedSrcDocPreviewBase
-      || !workspaceActive
-      || projectResourceReadBlocked
-    ) return;
-    let cancelled = false;
-    const identity = srcDocPreviewBaseIdentity;
-    void fetchProjectPreviewBaseHref(projectId, file.name).then((scope) => {
-      if (cancelled || !scope) return;
-      const next = { identity, scope };
-      activeSrcDocPreviewBaseRef.current = next;
-      setScopedSrcDocPreviewBase(next);
-      setAuxiliarySrcDocPreviewBase({ identity, href: scope.href });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    authoredSrcDocBase,
-    effectiveScopedSrcDocPreviewBase,
-    file.name,
-    projectId,
-    projectResourceReadBlocked,
-    srcDocPreviewBaseIdentity,
-    useUrlLoadPreview,
-    workspaceActive,
-    workspaceContext,
-  ]);
   const urlPreviewBaseIdentity = `url\0${srcDocPreviewBaseIdentity}`;
   const effectiveUrlLoadedPreviewBase =
     urlLoadedPreviewBase?.identity === urlPreviewBaseIdentity
@@ -10792,21 +9261,9 @@ function HtmlViewer({
     }
   }, []);
   useEffect(() => {
-    let renewableScope: ProjectPreviewBaseScope | null = null;
-    if (useUrlLoadPreview) {
-      renewableScope = effectiveUrlLoadedPreviewBase;
-    } else if (authoredSrcDocBase === false) {
-      renewableScope = effectiveScopedSrcDocPreviewBase;
-    }
-    if (
-      !workspaceActive
-      || mode !== 'preview'
-      || !renewableScope
-      || projectResourceReadBlocked
-    ) return;
-    const identity = useUrlLoadPreview
-      ? urlPreviewBaseIdentity
-      : srcDocPreviewBaseIdentity;
+    const renewableScope = useUrlLoadPreview ? effectiveUrlLoadedPreviewBase : null;
+    if (!workspaceActive || mode !== 'preview' || !renewableScope) return;
+    const identity = urlPreviewBaseIdentity;
     let cancelled = false;
     let timeout: number | null = null;
 
@@ -10822,11 +9279,7 @@ function HtmlViewer({
       if (cancelled) return;
       if (renewedExpiresAt !== null) {
         const renewed = { href: scope.href, expiresAt: renewedExpiresAt };
-        if (useUrlLoadPreview) {
-          urlLoadedPreviewBaseRef.current = { identity, scope: renewed };
-        } else {
-          activeSrcDocPreviewBaseRef.current = { identity, scope: renewed };
-        }
+        urlLoadedPreviewBaseRef.current = { identity, scope: renewed };
         schedule(renewed);
         return;
       }
@@ -10839,44 +9292,33 @@ function HtmlViewer({
         schedule(scope, true);
         return;
       }
-      if (useUrlLoadPreview) {
-        urlLoadedPreviewBaseRef.current = { identity, scope: replacement };
-      } else {
-        activeSrcDocPreviewBaseRef.current = { identity, scope: replacement };
-        setAuxiliarySrcDocPreviewBase({ identity, href: replacement.href });
-      }
+      urlLoadedPreviewBaseRef.current = { identity, scope: replacement };
       postPreviewBaseUpdate(replacement.href);
       schedule(replacement);
     };
 
-    const active = useUrlLoadPreview
-      ? urlLoadedPreviewBaseRef.current
-      : activeSrcDocPreviewBaseRef.current;
+    const active = urlLoadedPreviewBaseRef.current;
     schedule(active?.identity === identity ? active.scope : renewableScope);
     return () => {
       cancelled = true;
       if (timeout !== null) window.clearTimeout(timeout);
     };
   }, [
-    authoredSrcDocBase,
-    effectiveScopedSrcDocPreviewBase,
     effectiveUrlLoadedPreviewBase,
     file.name,
     mode,
     postPreviewBaseUpdate,
     projectId,
-    projectResourceReadBlocked,
-    srcDocPreviewBaseIdentity,
     useUrlLoadPreview,
     urlPreviewBaseIdentity,
     workspaceActive,
   ]);
   const basePreviewSrcUrl = useMemo(
     () => appendResourceQuery(
-      projectRawUrl(projectId, file.name, workspaceContext),
+      projectRawUrl(projectId, file.name),
       `v=${Math.round(file.mtime)}&r=${reloadKey}&${previewBridgeQuery}`,
     ),
-    [projectId, file.name, file.mtime, previewBridgeQuery, reloadKey, workspaceContext],
+    [projectId, file.name, file.mtime, previewBridgeQuery, reloadKey],
   );
   const [previewSrcUrl, setPreviewSrcUrl] = useState(basePreviewSrcUrl);
   // Hold the iframe URL still (it carries file.mtime) while the user is mid
@@ -11188,30 +9630,23 @@ function HtmlViewer({
     setInlinedSource(null);
     if (useUrlLoadPreview) return;
     if (!assetInliningSource) return;
-    // Personal-project srcDoc previews already have a stable raw-file base,
-    // so Chromium can resolve ordinary relative assets itself. Re-fetching
-    // and inlining every stylesheet/script here replaces an already-visible
-    // document after asynchronous file discovery settles. Team previews are
-    // different: iframe subresource requests cannot carry workspace auth, so
-    // they still require per-asset materialization. Personal root-relative
-    // refs also keep this pass because they first need project-file-list
-    // normalization before the stable base can resolve them correctly.
-    const requiresAssetMaterialization =
-      workspaceContext?.workspaceType === 'team' || projectRootAssetRefs;
-    if (!requiresAssetMaterialization) return;
+    // srcDoc previews already have a stable raw-file base, so Chromium can
+    // resolve ordinary relative assets itself. Re-fetching and inlining every
+    // stylesheet/script here replaces an already-visible document after
+    // asynchronous file discovery settles. Root-relative refs keep this pass
+    // because they first need project-file-list normalization before the
+    // stable base can resolve them correctly.
+    if (!projectRootAssetRefs) return;
     // Root-relative project asset refs need the confirmed file list before
     // they can be normalized; wait for it rather than inlining a half-fixed
     // document (the effect re-runs when the set lands).
-    if ((projectRootAssetRefs || scopedRelativeAssetRefs) && projectFilePathSet === null) return;
-    if (!relativeProjectAssetRefs && !projectRootAssetRefs) return;
+    if (projectFilePathSet === null) return;
     let cancelled = false;
     void inlineRelativeAssets(
       assetInliningSource,
       projectId,
       file.name,
-      projectFilePathSet,
-      workspaceContext,
-    ).then((next) => {
+      projectFilePathSet).then((next) => {
       if (!cancelled) setInlinedSource(next);
     });
     return () => {
@@ -11224,14 +9659,10 @@ function HtmlViewer({
     reloadKey,
     useUrlLoadPreview,
     projectRootAssetRefs,
-    relativeProjectAssetRefs,
-    scopedRelativeAssetRefs,
     projectFilePathSet,
-    workspaceContext,
   ]);
 
-  const srcDocBaseSeedHref = effectiveScopedSrcDocPreviewBase?.href
-    ?? previewRuntimeUrl(projectRawUrl(projectId, baseDirFor(file.name), workspaceContext));
+  const srcDocBaseSeedHref = previewRuntimeUrl(projectRawUrl(projectId, baseDirFor(file.name)));
   const srcDocBaseSelectionIdentity = [
     srcDocPreviewBaseIdentity,
     sourceSnapshotRefreshKey,
@@ -11243,22 +9674,16 @@ function HtmlViewer({
   ].join('\0');
   const srcDocBaseSelectionRef = useRef({ identity: '', href: srcDocBaseSeedHref });
   if (srcDocBaseSelectionRef.current.identity !== srcDocBaseSelectionIdentity) {
-    const active = activeSrcDocPreviewBaseRef.current;
     srcDocBaseSelectionRef.current = {
       identity: srcDocBaseSelectionIdentity,
-      href: active?.identity === srcDocPreviewBaseIdentity
-        ? active.scope.href
-        : srcDocBaseSeedHref,
+      href: srcDocBaseSeedHref,
     };
   }
   // A replacement capability updates the already-running document through
   // postMessage. Pinning this build-time value prevents unrelated React
   // renders (slide state, toolbar state, comments) from changing srcdoc.
   const srcDocBaseHref = srcDocBaseSelectionRef.current.href;
-  const latestSrcDocPreviewBaseHref =
-    auxiliarySrcDocPreviewBase?.identity === srcDocPreviewBaseIdentity
-      ? auxiliarySrcDocPreviewBase.href
-      : srcDocBaseHref;
+  const latestSrcDocPreviewBaseHref = srcDocBaseHref;
   const srcDocTransportIdentity = [
     srcDocPreviewBaseIdentity,
     transportSourceSnapshotRefreshKey,
@@ -11267,7 +9692,7 @@ function HtmlViewer({
     effectiveDeck ? 'deck' : 'html',
     srcDocBaseHref,
   ].join('\0');
-  const previewStorageScopeKey = previewStorageKey(sourceAuthorizationScopeKey, projectId, file.name);
+  const previewStorageScopeKey = previewStorageKey(LOCAL_SOURCE_SCOPE, projectId, file.name);
   const candidateSrcDocTransport = useMemo(
     () => {
       const sourceFingerprint = previewSource === null
@@ -11816,7 +10241,7 @@ function HtmlViewer({
   // (or vice-versa) would leave a stale sandbox attribute on a live iframe.
   const urlPreviewKeepAliveKey =
     `${previewIframeKeepAliveKey(projectId, file.name)}`
-    + `:scope:${encodeURIComponent(sourceAuthorizationScopeKey ?? 'pending')}`
+    + `:scope:${encodeURIComponent(LOCAL_SOURCE_SCOPE)}`
     + (usePoweredPreview ? ':powered' : '');
   const previousUrlPreviewKeepAliveKeyRef = useRef(urlPreviewKeepAliveKey);
   useEffect(() => {
@@ -12170,14 +10595,12 @@ function HtmlViewer({
   // Keep that one browsing context warm so Code -> Preview is a visibility
   // swap, just like returning to an already-open file tab.
   const keepUrlTransportWarmInSourceMode = mode === 'source' && urlLoadPreviewSupported;
-  const urlTransportSrc = projectResourceReadBlocked
-    ? 'about:blank'
-    : useUrlLoadPreview
-        || srcDocForcedOnlyByDraw
-        || keepUrlTransportWarmInSourceMode
-        || keepUrlTransportWarmForManualEdit
-      ? activePreviewSrcUrl
-      : 'about:blank';
+  const urlTransportSrc = useUrlLoadPreview
+      || srcDocForcedOnlyByDraw
+      || keepUrlTransportWarmInSourceMode
+      || keepUrlTransportWarmForManualEdit
+    ? activePreviewSrcUrl
+    : 'about:blank';
   const activePoweredPreviewSrcOverride = poweredPreviewSrcOverride
     && poweredPreviewSrcOverride.projectId === projectId
     && poweredPreviewSrcOverride.fileName === file.name
@@ -12718,25 +11141,11 @@ function HtmlViewer({
   // Only a current target report or a paired locate failure can establish loss.
   // Saved boxes/text never supply location evidence; an unwitnessed document is pending.
   const selectedLocationComment = previewComments.find(comment => comment.id === activePreviewCommentId
-    && comment.filePath === file.name && commentUsesIdentity(comment) && ownerCommentNeedsLocation(comment, collab.enabled));
+    && comment.filePath === file.name && commentUsesIdentity(comment) && ownerCommentNeedsLocation(comment));
   const lostSelectedCommentId = selectedLocationComment && commentTargetsReadyKey === commentTargetsKey
-    && (resolveOwnerCommentAnchor(selectedLocationComment, liveCommentTargets, collab.publishedVersion ?? undefined).state === 'lost'
+    && (resolveOwnerCommentAnchor(selectedLocationComment, liveCommentTargets).state === 'lost'
       || (missingCommentLocation?.commentId === selectedLocationComment.id && missingCommentLocation.previewKey === commentTargetsKey
         && missingCommentLocation.intent === commentLocationIntent)) ? selectedLocationComment.id : null;
-  const guardShareSource = workspaceActive && !viewerOnly && Boolean(workspaceContext?.permissions.canWriteSyncedFiles)
-    && !needsPowered && !passiveLargeHtmlPreview && liveHtml === undefined;
-  const shareSourceSettled = !streaming && !manualEditMode && !manualEditDraftDirty
-    && !manualEditSaving && !manualEditEntryHandoffPending && !manualEditExitHandoffPending
-    && !manualEditPendingStyleRef.current && !inspectMode && !savingInspect && !drawOverlayOpen
-    // Publication reads saved disk contents. Comment drafts and preview
-    // navigation do not change those bytes and must not block publication.
-    && source !== null && !versionModalOpen
-    && !_speakerNotesSaving && !publishingPublicFile;
-  const shareSourceInputKey = useMemo(() => JSON.stringify([
-    source, reloadKey, file.mtime, filesRefreshKey, manualEditDraft, speakerNotesDraft, workspaceActive,
-  ]), [source, reloadKey, file.mtime, filesRefreshKey, manualEditDraft, speakerNotesDraft, workspaceActive]);
-  const shareSourceGuard = useShareSourceGuard({ projectId, fileName: file.name,
-    context: workspaceContext ?? null, inputKey: shareSourceInputKey, settled: shareSourceSettled });
   const commentIdentityFrameReady = commentTargetsReadyKey === commentTargetsKey
     && (useUrlLoadPreview ? urlSelectionBridgeReady
       : commentPreviewReady?.frame === iframeRef.current && commentPreviewReady.generation === srcDocTransportGeneration);
@@ -13138,20 +11547,20 @@ function HtmlViewer({
     commentLocateRequestRef.current = null;
     if (!workspaceActive || !boardMode || !activePreviewCommentId) return;
     const comment = previewComments.find(item => item.id === activePreviewCommentId && item.filePath === file.name);
-    if (!comment || !ownerCommentNeedsLocation(comment, collab.enabled)) return;
+    if (!comment || !ownerCommentNeedsLocation(comment)) return;
     if (composerHoldsUnsentWorkRef.current) return;
     setActiveCommentTarget(null);
     setHoveredCommentTarget(null);
     if (commentTargetsReadyKey !== commentTargetsKey) return;
     const requestId = `comment-location-${++commentLocateSequenceRef.current}`;
-    const resolution = resolveOwnerCommentAnchor(comment, liveCommentTargets, collab.publishedVersion ?? undefined);
+    const resolution = resolveOwnerCommentAnchor(comment, liveCommentTargets);
     commentLocateRequestRef.current = { requestId, commentId: comment.id, previewKey: commentTargetsKey, selector: comment.selector,
       targetId: resolution.state !== 'lost' ? resolution.snapshot?.elementId ?? null : null, scrolled: false,
       reportRevision: commentTargetReportRevisionRef.current };
     iframeRef.current?.contentWindow?.postMessage({ type: 'od:comment-active-target',
       elementId: comment.elementId, selector: comment.selector, locate: true, requestId }, '*');
     return () => { commentLocateRequestRef.current = null; };
-  }, [workspaceActive, boardMode, collab.enabled, activePreviewCommentId, commentLocationIntent, previewComments, file.name, commentTargetsKey, commentTargetsReadyKey]);
+  }, [workspaceActive, boardMode, activePreviewCommentId, commentLocationIntent, previewComments, file.name, commentTargetsKey, commentTargetsReadyKey]);
 
   useEffect(() => {
     if (!workspaceActive || !boardMode || !activeCommentTarget || activeCommentTarget.selectionKind === 'pod') return;
@@ -13932,7 +12341,7 @@ function HtmlViewer({
         versionSource: 'manual',
         versionLabel: label,
         ...(parentVersionId ? { parentVersionId } : {}),
-      }, workspaceContext);
+      });
       if (!saved.ok) {
         const status = 'status' in saved ? saved.status : undefined;
         const code = 'code' in saved ? saved.code : undefined;
@@ -14024,7 +12433,6 @@ function HtmlViewer({
     const persisted = await fetchProjectFileText(projectId, file.name, {
       cache: 'no-store',
       cacheBustKey: Date.now(),
-      workspaceContext,
     });
     if (persisted == null || persisted === expectedSource) return true;
     setSource(persisted);
@@ -14080,7 +12488,7 @@ function HtmlViewer({
         versionSource: 'manual',
         versionLabel: `Undo ${latest.label}`,
         ...(parentVersionId ? { parentVersionId } : {}),
-      }, workspaceContext);
+      });
       if (!saved.ok) {
         setManualEditError(describeManualEditSaveFailure('Could not save the undo result', saved));
         finish('failed', 'save_failed');
@@ -14144,7 +12552,7 @@ function HtmlViewer({
         versionSource: 'manual',
         versionLabel: `Redo ${latest.label}`,
         ...(parentVersionId ? { parentVersionId } : {}),
-      }, workspaceContext);
+      });
       if (!saved.ok) {
         setManualEditError(describeManualEditSaveFailure('Could not save the redo result', saved));
         finish('failed', 'save_failed');
@@ -14301,7 +12709,7 @@ function HtmlViewer({
     try {
       const saved = await writeProjectTextFile(projectId, file.name, nextSource, {
         artifactManifest: file.artifactManifest,
-      }, workspaceContext);
+      });
       if (!saved) throw new Error('speaker_notes_save_failed');
       setSource(nextSource);
       sourceRef.current = nextSource;
@@ -14456,7 +12864,7 @@ function HtmlViewer({
       const saved = await writeProjectTextFileDetailed(projectId, file.name, next, {
         versionSource: 'manual',
         versionLabel: t('fileViewer.edit'),
-      }, workspaceContext);
+      });
       if (!saved.ok) {
         throw new Error(saved.message || `Save failed (${saved.status ?? ''})`);
       }
@@ -15050,7 +13458,6 @@ function HtmlViewer({
         deployProviderId,
         cloudflarePagesSelection,
         deployProviderId === CLOUDFLARE_PAGES_PROVIDER_ID ? deployTarget : undefined,
-        workspaceContext,
         deployRequestId,
       );
       setDeploymentsByProvider((current) => ({
@@ -15101,7 +13508,7 @@ function HtmlViewer({
     setDeployError(null);
     setDeployPhase('preparing-link');
     try {
-      const next = await checkDeploymentLink(projectId, current.id, workspaceContext);
+      const next = await checkDeploymentLink(projectId, current.id);
       setDeploymentsByProvider((items) => ({
         ...items,
         [next.providerId]: next,
@@ -15194,13 +13601,7 @@ function HtmlViewer({
       setManualEditSrcDocActive(false);
       manualEditPersistedDocumentRef.current = null;
     }
-    if (sourceAuthorizationScopeKey) {
-      invalidateHtmlSourceSnapshotFile(
-        sourceAuthorizationScopeKey,
-        projectId,
-        file.name,
-      );
-    }
+    invalidateHtmlSourceSnapshotFile(LOCAL_SOURCE_SCOPE, projectId, file.name);
     void capturePreviewScrollPosition();
     imageExportSnapshotDataUrlRef.current = null;
     setInlinedSource(null);
@@ -15278,8 +13679,6 @@ function HtmlViewer({
   }
 
   function selectMode(nextMode: 'preview' | 'source') {
-    // Read-only viewer of a team-shared project can preview but not inspect source.
-    if (viewerOnly && nextMode === 'source') return;
     if (nextMode === 'source') setDrawOverlayOpen(false);
     setMode(nextMode);
   }
@@ -15330,7 +13729,6 @@ function HtmlViewer({
   }
 
   function activateDrawTool() {
-    if (viewerOnly) return; // read-only viewer: mark (annotate) is an edit action
     fireArtifactToolbarClick('mark');
     const next = !drawOverlayOpen;
     if (!next) {
@@ -15435,7 +13833,7 @@ function HtmlViewer({
   }
 
   function activateManualEditTool() {
-    if (viewerOnly || (!manualEditMode && !manualEditEntryAllowed)) return;
+    if ((!manualEditMode && !manualEditEntryAllowed)) return;
     fireArtifactToolbarClick('edit');
     void capturePreviewScrollPosition();
     if (!manualEditMode) {
@@ -15681,28 +14079,8 @@ function HtmlViewer({
     isDeckArtifact ||
     artifactKind === 'html' ||
     rendererId === 'html';
-  // "raw" = the artifact is share/download-eligible IGNORING viewerOnly, so the
-  // unified chrome action still renders (disabled) for read-only members instead
-  // of vanishing. `canShare`/`canDownload` keep the `&& !viewerOnly` gate that
-  // guards the actual export/publish handlers.
-  // Preview memory policy does not determine publication eligibility. The share
-  // plan and POST validate the original file, never the routing-only preview.
-  const rawCanShare = isShareableArtifact;
-  const shareGuideAppUserId = useShareGuideAppUserId();
-  const projectShareHistoryState = useProjectShareHistoryState(projectId, workspaceContext, JSON.stringify([file.name, publishedFileSlug, publishedFileUrl]));
-  const projectShareHistory = projectShareHistoryState.history;
-  const afterExportGuide = useAfterExportShareGuide({
-    scopeKey: JSON.stringify([projectId, file.name, workspaceAccountScopedCacheKey(workspaceContext)]),
-    appUserId: shareGuideAppUserId,
-    // The URL only invalidates the read; it never establishes binding history.
-    hasEverShared: projectShareHistory?.hasEverShared ?? null,
-    historyLoading: projectShareHistoryState.status === 'loading',
-    historyError: projectShareHistoryState.status === 'error',
-    enabled: workspaceActive && !viewerOnly && rawCanShare && !streaming,
-  });
-  const rawCanDownload = source !== null && (isShareableArtifact || isMarkdownArtifact);
-  const canShare = rawCanShare && !viewerOnly;
-  const canDownload = rawCanDownload && !viewerOnly;
+  const canShare = isShareableArtifact;
+  const canDownload = source !== null && (isShareableArtifact || isMarkdownArtifact);
   const canExportHtml = canShare && source !== null;
   // PPTX export is slide-based, so show it only for explicit decks plus
   // structured deck runtimes. Do not key this off plain `.slide`: ordinary
@@ -15717,24 +14095,8 @@ function HtmlViewer({
   // not upgraded. Only an explicit `false` hides it.
   const showPptxExport = canExportHtml && deckExportSignal && slideRendererAvailable !== false;
   const canPptx = showPptxExport && !streaming;
-  const showMarkdownExport = source !== null && isMarkdownArtifact && !viewerOnly;
+  const showMarkdownExport = source !== null && isMarkdownArtifact;
   const showImageExport = canExportHtml;
-  // Read-only viewer of a team-shared project: comment-only copy for the
-  // disabled edit/export controls and the comment composer's send-to-chat path.
-  const viewerOnlyDisabledTitle = t('fileViewer.readonlySharedNoExport');
-
-  // If viewerOnly flips on while an edit surface / export menu is open, close it
-  // so the read-only viewer never lands in an editing mode it can't act on.
-  useEffect(() => {
-    if (!viewerOnly) return;
-    setDrawOverlayOpen(false);
-    setInspectMode(false);
-    setVersionModalOpen(false);
-    if (mode === 'source') setMode('preview');
-    if (manualEditMode) {
-      void exitManualEditModeAfterFlush();
-    }
-  }, [viewerOnly, mode, manualEditMode]);
 
   const deckExportSignalForContext = useCallback((context?: HtmlVersionExportContext | null): boolean => {
     if (!context?.versionId) return deckExportSignal;
@@ -15750,7 +14112,6 @@ function HtmlViewer({
         projectId,
         fileName: file.name,
         title: pdfTitle,
-        workspaceContext,
         // Broader deck signal than the viewer's nav so runtime-managed decks
         // (<deck-stage>) paginate per slide; the vector fallback below uses
         // the SAME signal, so an artifact exports identically with or without
@@ -15771,7 +14132,6 @@ function HtmlViewer({
       filePath: file.name,
       projectId,
       title: pdfTitle,
-      workspaceContext,
       ...(context?.versionId ? { versionId: context.versionId } : {}),
     });
   }
@@ -15786,7 +14146,6 @@ function HtmlViewer({
       filePath: file.name,
       fallbackHtml: context?.content ?? source ?? '',
       fallbackTitle: context?.title ?? exportTitle,
-      workspaceContext,
       ...(context?.versionId ? { versionId: context.versionId } : {}),
     }), context);
   }
@@ -15796,7 +14155,6 @@ function HtmlViewer({
       projectId,
       filePath: file.name,
       fallbackTitle: context?.title ?? exportTitle,
-      workspaceContext,
       ...(context?.versionId ? { versionId: context.versionId } : {}),
     }), context);
   }
@@ -15926,7 +14284,7 @@ function HtmlViewer({
     setMenuAnchorId(null);
     setMenuOrigin('toolbar');
     setDeployMenuOpen((v) => {
-      const nextTab = tab === 'share' && !rawCanShare ? 'export' : tab;
+      const nextTab = tab === 'share' && !canShare ? 'export' : tab;
       setUnifiedActionTab(nextTab);
       /*
        * 「再点一次 = 关掉」只在**同一条路、同一个页签**上成立。
@@ -15988,7 +14346,6 @@ function HtmlViewer({
           projectId,
           fileName: file.name,
           deck: imageDeckSignal,
-          workspaceContext,
           ...(plan.index != null ? { index: plan.index } : {}),
           ...(exportViewport?.width != null ? { width: exportViewport.width } : {}),
           ...(exportViewport?.height != null ? { height: exportViewport.height } : {}),
@@ -16193,7 +14550,6 @@ function HtmlViewer({
         filePath: file.name,
         fallbackHtml: source ?? '',
         fallbackTitle: exportTitle,
-        workspaceContext,
       }));
       return;
     }
@@ -16202,7 +14558,6 @@ function HtmlViewer({
         projectId,
         filePath: file.name,
         fallbackTitle: exportTitle,
-        workspaceContext,
       }));
       return;
     }
@@ -16217,7 +14572,6 @@ function HtmlViewer({
           projectId,
           fileName: file.name,
           title: exportTitle,
-          workspaceContext,
           // Broader deck signal than the viewer's nav so runtime-managed decks
           // (<deck-stage>) paginate per slide; the vector fallback below uses
           // the SAME signal, so an artifact exports identically with or without
@@ -16239,7 +14593,6 @@ function HtmlViewer({
         filePath: file.name,
         projectId,
         title: exportTitle,
-        workspaceContext,
       });
     });
   };
@@ -16295,7 +14648,6 @@ function HtmlViewer({
     // re-render removes the button.
     if (imageExportInFlightRef.current) return;
     imageExportInFlightRef.current = true;
-    const completeShareGuide = afterExportGuide.beginExport();
     // Unify with the PPTX/PDF flow: close the modal and surface progress through
     // the same portaled, viewport-centered export toast instead of an in-modal
     // spinner + a separate (non-portaled, off-center) saved toast.
@@ -16353,7 +14705,6 @@ function HtmlViewer({
         fireImageExportResult('cancelled');
         return;
       }
-      if (saved === 'desktop' || target.method === 'picker') completeShareGuide('success');
       fireImageExportResult('success');
       setExportToast({
         message:
@@ -16407,17 +14758,9 @@ function HtmlViewer({
       ),
     [creationSortedSideComments],
   );
-  // A member id is a trusted current identity only when the workspace context
-  // supplies one. Never let two absent ids compare equal and accidentally
-  // classify an unattributed external comment as the viewer's own.
-  const viewerMemberId = workspaceContext?.workspaceMemberId?.trim() || null;
-  const unreadSideComments = useMemo(() => visibleSideComments.filter((comment) => (
-    !(viewerMemberId && comment.authorMemberId === viewerMemberId)
-    && !(shareGuideAppUserId && comment.authorAppUserId === shareGuideAppUserId)
-  )), [viewerMemberId, shareGuideAppUserId, visibleSideComments]);
   const latestVisibleSideCommentCreatedAt = useMemo(
-    () => unreadSideComments.reduce((latest, comment) => Math.max(latest, comment.createdAt), 0),
-    [unreadSideComments],
+    () => visibleSideComments.reduce((latest, comment) => Math.max(latest, comment.createdAt), 0),
+    [visibleSideComments],
   );
   const mergeReadState = useCallback((scopeKey: string, state: ProjectCommentReadState) => {
     if (commentReadScopeRef.current !== scopeKey || state.projectId !== projectId) return;
@@ -16433,14 +14776,12 @@ function HtmlViewer({
     commentReadScopeRef.current = scopeKey;
     setCommentReadState(null);
     let cancelled = false;
-    void fetch(`/api/projects/${encodeURIComponent(projectId)}/comments/read`, {
-      headers: workspaceContext ? workspaceProjectHeaders(workspaceContext) : undefined,
-    }).then(async (response) => {
+    void fetch(`/api/projects/${encodeURIComponent(projectId)}/comments/read`).then(async (response) => {
       if (!response.ok || cancelled) return;
       mergeReadState(scopeKey, await response.json() as ProjectCommentReadState);
     }).catch(() => undefined);
     return () => { cancelled = true; };
-  }, [commentReadScopeKey, mergeReadState, projectId, workspaceContext]);
+  }, [commentReadScopeKey, mergeReadState, projectId]);
   useEffect(() => {
     if (!commentPanelOpen || commentSidePanelCollapsed) return;
     const scopeKey = commentReadScopeKey;
@@ -16450,19 +14791,17 @@ function HtmlViewer({
     // a future clock or failed PUT must not hide comments.
     void fetch(`/api/projects/${encodeURIComponent(projectId)}/comments/read`, {
       method: 'PUT',
-      headers: { 'content-type': 'application/json', ...(workspaceContext ? workspaceProjectHeaders(workspaceContext) : {}) },
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ readAt: Date.now() }),
     }).then(async (response) => {
       if (!response.ok || cancelled) return;
       mergeReadState(scopeKey, await response.json() as ProjectCommentReadState);
     }).catch(() => undefined);
     return () => { cancelled = true; };
-  }, [commentPanelOpen, commentReadScopeKey, commentSidePanelCollapsed, latestVisibleSideCommentCreatedAt, mergeReadState, projectId, workspaceContext]);
-  // Trusted current member/app-account identities are filtered above. Never
-  // fabricate an authorKey from names, colors, or either identity namespace.
+  }, [commentPanelOpen, commentReadScopeKey, commentSidePanelCollapsed, latestVisibleSideCommentCreatedAt, mergeReadState, projectId]);
   const hasUnreadSideComments = hasUnreadComments({
     readState: commentReadState,
-    comments: unreadSideComments.map((comment) => ({
+    comments: visibleSideComments.map((comment) => ({
       createdAt: comment.createdAt,
       author: { authorKey: comment.authorKey },
     })),
@@ -16562,11 +14901,8 @@ function HtmlViewer({
     DEPLOY_PROVIDER_OPTIONS.map((option) => deploymentsByProvider[option.id])
       .map((item) => publicShareUrlForDeployment(item))
       .find(Boolean) ?? '';
-  // A link is a link: the published-file URL unlocks social sharing exactly
-  // like a ready deployment does, so a blocked/protected deployment never
-  // gates sharing when a clean publish link exists.
   const socialShareBlockedDeployment =
-    shareableDeploymentUrl || publishedFileUrl
+    shareableDeploymentUrl
       ? null
       : deployedEntries.find((item) => deployResultState(item.status) === 'protected' && !publicShareUrlForDeployment(item)) ??
         deployedEntries.find((item) => !publicShareUrlForDeployment(item)) ??
@@ -16575,7 +14911,7 @@ function HtmlViewer({
     ? deployResultState(socialShareBlockedDeployment.status)
     : null;
   const socialShareDisplayUrl =
-    shareableDeploymentUrl || publishedFileUrl || socialShareBlockedDeployment?.url?.trim() || activeDeployedUrl;
+    shareableDeploymentUrl || socialShareBlockedDeployment?.url?.trim() || activeDeployedUrl;
   const socialShareUnavailableMessage =
     socialShareBlockedState === 'protected'
       ? t('fileViewer.deployLinkProtected')
@@ -16792,7 +15128,7 @@ function HtmlViewer({
         : { top: 12, right: 12, width: 320 }}
       onFloatingPositionChange={selectedManualEditTarget ? setManualEditPanelPosition : undefined}
       onPickImage={async (pickedFile) => {
-        const result = await uploadProjectFiles(projectId, [pickedFile], undefined, workspaceContext);
+        const result = await uploadProjectFiles(projectId, [pickedFile], undefined);
         const uploaded = result.uploaded[0];
         if (!uploaded?.path) {
           setManualEditError(result.error ?? t('manualEdit.uploadImageFailed'));
@@ -16832,37 +15168,8 @@ function HtmlViewer({
     : null;
   const activeComposerAttachments =
     activeComposerComment?.attachments ?? activeCommentExistingAttachments;
-  // Team-collab permission model for a comment's action buttons (庆雨,
-  // 2026-07-09). `myMemberId` is the viewer's presence identity — the same
-  // `workspaceMemberId` the B lane stamps on `authorMemberId`; null off-team.
-  // `iAmProjectOwner` is the collab-resolved project owner (the single writer),
-  // failing closed until the status poll confirms it. A comment with no author
-  // (a brand-new one in the create flow, or any off-team / legacy row) is the
-  // current user's to act on, so it reads as "mine". Only the author may EDIT
-  // their own note; the author OR the project owner may delete it or send it to
-  // the agent. The B lane enforces the same rules server-side.
-  const myMemberId = collab.member?.memberId ?? null;
-  const commentAuthority: CommentAuthorityContext = {
-    viewerMemberId: myMemberId,
-    collabEnabled: collab.enabled,
-    isProjectOwner: collab.isOwner,
-  };
-  const canSendCommentToAgent = (comment: PreviewComment | null | undefined): boolean =>
-    canSendCommentToAgentPure(comment, commentAuthority);
-  const canEditActiveComment = canEditComment(activeComposerComment, commentAuthority);
-  const canDeleteActiveComment = canDeleteComment(activeComposerComment, commentAuthority);
-  const canSendActiveComment = canSendCommentToAgentPure(activeComposerComment, commentAuthority);
-  // The viewer's own author identity for the comment cards. Derived from the
-  // workspace context this component ALREADY reads (see `workspaceContext`
-  // above) — no extra request. Deliberately NOT `collab.member`, which is null
-  // on a personal workspace and on an unshared project, i.e. exactly the cases
-  // where a comment lost its avatar and name.
-  const commentAuthorSelf = useMemo(
-    () => currentUserDirectoryEntry(
-      projectResourceReadBlocked ? null : workspaceContext,
-    ),
-    [workspaceContext, projectResourceReadBlocked],
-  );
+  // Comments left on a share page by someone else are historic rows; they stay read-only.
+  const canEditActiveComment = activeComposerComment?.authorKind !== 'user';
   const commentComposerPortalMetrics = (() => {
     if (!commentComposerHost || !commentPreviewCanvasNode) return null;
     const hostRect = commentComposerHost.getBoundingClientRect();
@@ -16887,8 +15194,6 @@ function HtmlViewer({
       target={activeCommentTarget}
       existing={activeComposerComment}
       canEditComment={canEditActiveComment}
-      canDeleteComment={canDeleteActiveComment}
-      canSendToAgent={canSendActiveComment}
       draft={commentDraft}
       notes={queuedBoardNotes}
       discardPending={composerDiscardPending && composerHoldsUnsentWork}
@@ -16915,7 +15220,7 @@ function HtmlViewer({
       images={boardImagePreviews}
       existingImages={
         activeComposerAttachments.map((attachment) => ({
-          url: projectRawUrl(projectId, attachment.path, workspaceContext),
+          url: projectRawUrl(projectId, attachment.path),
           name: attachment.name,
         }))
       }
@@ -16950,9 +15255,7 @@ function HtmlViewer({
       } : undefined}
       sending={sendingBoardBatch}
       queueOnSend={commentQueueOnSend}
-      sendDisabled={commentSendDisabled || viewerOnly}
-      sendDisabledReason={viewerOnly ? viewerOnlyDisabledTitle : undefined}
-      allowSendToChat={!viewerOnly}
+      sendDisabled={commentSendDisabled}
       t={t}
       scale={overlayPreviewScale}
       offset={
@@ -17007,7 +15310,6 @@ function HtmlViewer({
     <CommentSideDock
       comments={visibleSideComments}
       projectId={projectId}
-      filePath={file.path || file.name}
       deckSlideCount={effectiveDeck ? slideState?.count : undefined}
       selectedIds={selectedSideCommentIds}
       activeCommentId={activeSideCommentId}
@@ -17034,7 +15336,6 @@ function HtmlViewer({
         setSelectedSideCommentIds(
           new Set(
             visibleSideComments
-              .filter((comment) => canSendCommentToAgent(comment))
               .map((comment) => comment.id),
           ),
         )
@@ -17065,7 +15366,7 @@ function HtmlViewer({
           ...(typeof comment.slideIndex === 'number' ? { slideIndex: comment.slideIndex } : {}),
         };
         requestComposerRetarget(() => {
-          const needsLocation = ownerCommentNeedsLocation(comment, collab.enabled);
+          const needsLocation = ownerCommentNeedsLocation(comment);
           if (needsLocation) setCommentLocationIntent(intent => intent + 1);
           setActiveCommentTarget(needsLocation ? null : snapshot);
           setHoveredCommentTarget(needsLocation ? null : snapshot);
@@ -17084,7 +15385,6 @@ function HtmlViewer({
         const selected = visibleSideComments.filter(
           (comment) => (
             selectedSideCommentIds.has(comment.id)
-            && canSendCommentToAgent(comment)
           ),
         );
         if (selected.length === 0) return;
@@ -17109,13 +15409,9 @@ function HtmlViewer({
         }
       }}
       onCreateComment={savePanelComment}
-      canSendComment={canSendCommentToAgent}
-      currentUser={commentAuthorSelf}
       sending={sendingBoardBatch}
       queueOnSend={commentQueueOnSend}
-      sendDisabled={commentSendDisabled || viewerOnly}
-      sendDisabledReason={viewerOnly ? viewerOnlyDisabledTitle : undefined}
-      allowSendToChat={!viewerOnly}
+      sendDisabled={commentSendDisabled}
       renderCreateForm={!commentPortalHost}
       t={t}
       composer={null}
@@ -17184,7 +15480,7 @@ function HtmlViewer({
   ) : null;
 
   return (
-    <div ref={viewerRootRef} className={`viewer html-viewer${inTabPresent ? ' is-tab-present' : ''}${viewerOnly ? ' html-viewer--viewer-only' : ''}`}>
+    <div ref={viewerRootRef} className={`viewer html-viewer${inTabPresent ? ' is-tab-present' : ''}`}>
       <div className="viewer-toolbar" style={workspaceActive ? undefined : { visibility: 'hidden' }}>
         <div className="viewer-toolbar-left">
           {showDeckThumbnailRail ? (
@@ -17235,8 +15531,7 @@ function HtmlViewer({
                 className={`viewer-tab ${mode === id ? 'active' : ''}`}
                 aria-label={label}
                 aria-selected={mode === id}
-                disabled={viewerOnly && id === 'source'}
-                title={viewerOnly && id === 'source' ? viewerOnlyDisabledTitle : label}
+                title={label}
                 onClick={() => {
                   fireArtifactToolbarClick(id);
                   selectMode(id);
@@ -17305,11 +15600,10 @@ function HtmlViewer({
                   type="button"
                   className="viewer-action viewer-action-icon od-tooltip"
                   data-testid="edit-screenshot-to-chat-button"
-                  data-tooltip={viewerOnly ? viewerOnlyDisabledTitle : t('fileViewer.editScreenshotToChat')}
+                  data-tooltip={t('fileViewer.editScreenshotToChat')}
                   data-tooltip-placement="bottom"
-                  title={viewerOnly ? viewerOnlyDisabledTitle : t('fileViewer.editScreenshotToChat')}
+                  title={t('fileViewer.editScreenshotToChat')}
                   aria-label={t('fileViewer.editScreenshotToChat')}
-                  disabled={viewerOnly}
                   onClick={() => void handleScreenshotToChat()}
                 >
                   <RemixIcon name="camera-line" size={15} />
@@ -17334,10 +15628,9 @@ function HtmlViewer({
                 className={`viewer-action viewer-action-icon od-tooltip${drawOverlayOpen ? ' active' : ''}`}
                 type="button"
                 data-testid="draw-overlay-toggle"
-                data-tooltip={viewerOnly ? viewerOnlyDisabledTitle : t('fileViewer.mark')}
+                data-tooltip={t('fileViewer.mark')}
                 data-tooltip-placement="bottom"
-                disabled={viewerOnly}
-                title={viewerOnly ? viewerOnlyDisabledTitle : t('fileViewer.mark')}
+                title={t('fileViewer.mark')}
                 aria-label={t('fileViewer.mark')}
                 aria-pressed={drawOverlayOpen}
                 onClick={activateDrawTool}
@@ -17349,10 +15642,10 @@ function HtmlViewer({
                 className={`viewer-action viewer-action-icon od-tooltip${manualEditMode ? ' active' : ''}`}
                 type="button"
                 data-testid="manual-edit-mode-toggle"
-                data-tooltip={viewerOnly ? viewerOnlyDisabledTitle : t('fileViewer.edit')}
+                data-tooltip={t('fileViewer.edit')}
                 data-tooltip-placement="bottom"
-                disabled={viewerOnly || (!manualEditMode && !manualEditEntryAllowed)}
-                title={viewerOnly ? viewerOnlyDisabledTitle : t('fileViewer.edit')}
+                disabled={(!manualEditMode && !manualEditEntryAllowed)}
+                title={t('fileViewer.edit')}
                 aria-label={t('fileViewer.edit')}
                 aria-pressed={manualEditMode}
                 onClick={activateManualEditTool}
@@ -17536,7 +15829,7 @@ function HtmlViewer({
                       type="button"
                       className={`viewer-toolbar-more-item${manualEditMode ? ' active' : ''}`}
                       role="menuitem"
-                      disabled={viewerOnly || (!manualEditMode && !manualEditEntryAllowed)}
+                      disabled={(!manualEditMode && !manualEditEntryAllowed)}
                       onClick={() => {
                         activateManualEditTool();
                         setToolbarMoreOpen(false);
@@ -17640,25 +15933,17 @@ function HtmlViewer({
               ) : null}
             </div>
           ) : null}
-          {versioningAvailable && (rawCanShare || rawCanDownload) ? (
+          {versioningAvailable && (canShare || canDownload) ? (
             <button
               type="button"
               data-od-version-entry="true"
               className={`chrome-action chrome-action-secondary chrome-action-icon od-tooltip${versionModalOpen ? ' is-active' : ''}`}
-              // Same disabled contract as the Share button directly below:
-              // `viewerOnly` + `viewerOnlyDisabledTitle`. A readonly shared
-              // project has no history to show a member in the first place —
-              // `.file-versions` is excluded from member mirrors, so the
-              // owner's real history never arrives — so an openable entry only
-              // ever led to an empty panel. This supersedes recvq56vFjQKfT,
-              // which had un-gated the entry on the reasoning that browsing
-              // history is a read action.
-              disabled={source === null || viewerOnly}
+              disabled={source === null}
               aria-label={t('fileViewer.versions.entry')}
               aria-expanded={Boolean(versionModalOpen)}
-              data-tooltip={viewerOnly ? viewerOnlyDisabledTitle : t('fileViewer.versions.entryFull')}
+              data-tooltip={t('fileViewer.versions.entryFull')}
               data-tooltip-placement="bottom"
-              title={viewerOnly ? viewerOnlyDisabledTitle : t('fileViewer.versions.entryFull')}
+              title={t('fileViewer.versions.entryFull')}
               onClick={() => {
                 // The version history is a floating panel now, not a modal, so
                 // the toolbar icon is a toggle: a second click dismisses it.
@@ -17685,7 +15970,7 @@ function HtmlViewer({
                     switching between them keeps the menu anchored in place.
                     Export keeps the leading slot; Owner C0 gives Share the
                     dark primary treatment and Export the quiet secondary one. */}
-                {rawCanDownload ? (
+                {canDownload ? (
                   <button
                     type="button"
                     className={
@@ -17695,8 +15980,6 @@ function HtmlViewer({
                     aria-haspopup="menu"
                     aria-expanded={deployMenuOpen && unifiedActionTab === 'export'}
                     aria-label={t('fileViewer.unifiedExportTab')}
-                    disabled={viewerOnly}
-                    title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                     onClick={openDownloadMenu}
                   >
                     <RemixIcon name="download-line" size={15} />
@@ -17710,47 +15993,15 @@ function HtmlViewer({
                     aria-expanded={deployMenuOpen && unifiedActionTab === 'share'}
                     data-artifact-anchor={toolbarMenuAnchorId}
                     aria-label={shareMenuLabel}
-                    disabled={viewerOnly || !rawCanShare}
-                    title={viewerOnly ? viewerOnlyDisabledTitle : !rawCanShare || streaming ? shareUnavailableHint : undefined}
+                    disabled={!canShare}
+                    title={!canShare || streaming ? shareUnavailableHint : undefined}
                     onClick={openShareMenu}
                   >
                     {/* Owner C0: share the artifact card's forward-arrow glyph. */}
                     <RemixIcon name="share-forward-line" size={15} />
                     <span>{shareMenuLabel}</span>
                   </button>
-                  {afterExportGuide.noticeId !== null ? (
-                    <AfterExportShareGuide
-                      key={afterExportGuide.noticeId}
-                      labels={{
-                        title: t('fileViewer.shareGuide.title'),
-                        description: t('fileViewer.shareGuide.description'),
-                        openShare: t('fileViewer.shareGuide.tryShare'),
-                        neverShow: t('fileViewer.shareGuide.neverShowAgain'),
-                        close: t('fileViewer.shareGuide.close'),
-                        saveFailed: t('fileViewer.shareGuide.preferenceSaveFailed'),
-                      }}
-                      onObserve={event => observeAnalytics(() => {
-                        const identity = {
-                          page_name: 'artifact' as const,
-                          area: 'share_guide' as const,
-                          project_id: projectId,
-                          project_kind: projectKind,
-                          artifact_id: anonymizeArtifactId({ projectId, fileName: file.name }),
-                        };
-                        if (event === 'view') trackShareGuideSurfaceView(analytics.track, identity);
-                        else trackShareGuideClick(analytics.track, { ...identity, element: event });
-                      })}
-                      onDismiss={afterExportGuide.dismiss}
-                      onNeverShow={afterExportGuide.neverShow}
-                      onOpenShare={() => {
-                        setMenuAnchorId(null);
-                        setMenuOrigin('toolbar');
-                        setUnifiedActionTab('share');
-                        setDeployMenuOpen(true);
-                      }}
-                    />
-                  ) : null}
-                {deployMenuOpen && (rawCanShare || rawCanDownload) ? (
+                {deployMenuOpen && (canShare || canDownload) ? (
                   /*
                     * **同一块菜单,只是可能换个地方开。**
                     *
@@ -17786,91 +16037,44 @@ function HtmlViewer({
                         : undefined
                     }
                   >
-                    {unifiedActionTab === 'share' && rawCanShare ? (
+                    {unifiedActionTab === 'share' && canShare ? (
                       <>
                       <SharePanelHeader
                         title={t('fileViewer.unifiedShareTab')}
                         closeLabel={t('common.close')}
                         onClose={closeDeployMenu}
-                      >
-                        <ShareMoreMenu label={t('fileViewer.moreSharingOptions')} items={DEPLOY_PROVIDER_OPTIONS.map(option => ({
-                          id: option.id,
-                          label: deployActionLabelFor(option.id),
-                          icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-                            {option.id === CLOUDFLARE_PAGES_PROVIDER_ID
-                              ? <><rect x="4" y="3" width="16" height="18" rx="1.5" /><path d="M4 8h16M8 12h8M8 16h5" /></>
-                              : <path d="M7 18H6a4 4 0 0 1-.6-8A7 7 0 0 1 19 9a4.5 4.5 0 0 1-1 9h-1M12 21V11m-3 3 3-3 3 3" />}
-                          </svg>,
-                          disabled: streaming || viewerOnly,
-                          title: viewerOnly ? viewerOnlyDisabledTitle : streaming ? t('fileViewer.shareAfterGenerationComplete') : undefined,
-                          onSelect: () => { void openDeployModal(option.id); },
-                        }))} />
-                      </SharePanelHeader>
-
-                      <ShareTab
-                        sharePlanState={sharePlanState}
-                        publicationStatus={fileShareStatus === 'active' || fileShareStatus === 'stopped' ? fileShareStatus : (projectShareHistory?.publications.find(publication => publication.sourceFilePath === file.name)?.status ?? null)}
-                        publicationFreshness={fileShareFreshness}
-                        updateCurrentFilePublic={updateCurrentFilePublic}
-                        canResumeUpdateAfterLogin={Boolean(retainedShareWasOutdatedRef.current && retainedShareAuthorizationScopeKeyRef.current && fileShareStatus === 'active' && publishedFileUrl)}
-                        onSignInSuccess={() => {
-                          const request = { projectId, filePath: file.name, expiresAt: Date.now() + 120_000 };
-                          // App owns this across ProjectView remounts. Only an
-                          // embedded viewer needs the local fallback; keeping
-                          // both would resurrect intent after App cancels it.
-                          if (onShareLoginReturnChange) onShareLoginReturnChange(request);
-                          else shareLoginReturnRef.current = request;
-                        }}
-                        onUpdateLoginSuccess={() => {
-                          const priorScope = retainedShareAuthorizationScopeKeyRef.current;
-                          if (!priorScope || !retainedShareWasOutdatedRef.current || !publishedFileSlug
-                            || !publishedFileUrl || fileShareStatus !== 'active') return;
-                          pendingShareUpdateAfterLoginRef.current = { projectId, fileName: file.name,
-                            slug: publishedFileSlug, authorizationScopeKey: priorScope, expiresAt: Date.now() + 120_000 };
-                        }}
-                        projectId={projectId}
-                        filePath={file.name}
-                        menuOrigin={menuOrigin}
-                        workspaceContext={workspaceContext}
-                        t={t}
-                        shareAccess={shareAccess}
-                        shareAccessMenuOpen={shareAccessMenuOpen}
-                        shareAccessBusy={shareAccessBusy}
-                        viewerOnly={viewerOnly}
-                        setShareAccessMenuOpen={setShareAccessMenuOpen}
-                        setWorkspaceShareAccess={setWorkspaceShareAccess}
-                        canPublishPublic={canPublishPublic}
-                        filePublished={filePublished}
-                        publishedLinkUnavailable={publishedLinkUnavailable}
-                        publishedFileUrl={publishedFileUrl}
-                        copyPublishedFileLink={copyPublishedFileLink}
-                        publishLinkFeedback={publishLinkFeedback}
-                        publishingPublicFile={publishingPublicFile}
-                        publishProgress={publishProgress}
-                        unpublishCurrentFilePublic={unpublishCurrentFilePublic}
-                        viewerOnlyDisabledTitle={viewerOnlyDisabledTitle}
-                        publishCurrentFilePublic={publishCurrentFilePublic}
-                        publishFailureKey={publishFailureKey}
-                        publishConflict={publishFailureKey === 'fileViewer.publishFileEntryIndexConflict' ? publishConflict : null}
-                        streaming={streaming}
-                        sharePageUrl={sharePageUrl}
-                        canCopyShareLink={canCopyShareLink}
-                        shareUnavailableHint={shareUnavailableHint}
-                        copyShareLink={copyShareLink}
-                        copyShareLinkLabel={copyShareLinkLabel}
-                        canOpenSharePage={canOpenSharePage}
-                        shareLinkStatusHint={shareLinkStatusHint}
                       />
+                        <ShareTab
+                          menuOrigin={menuOrigin}
+                          t={t}
+                          deployActions={DEPLOY_PROVIDER_OPTIONS.map(option => ({
+                            id: option.id,
+                            label: deployActionLabelFor(option.id),
+                            icon: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+                              {option.id === CLOUDFLARE_PAGES_PROVIDER_ID
+                                ? <><rect x="4" y="3" width="16" height="18" rx="1.5" /><path d="M4 8h16M8 12h8M8 16h5" /></>
+                                : <path d="M7 18H6a4 4 0 0 1-.6-8A7 7 0 0 1 19 9a4.5 4.5 0 0 1-1 9h-1M12 21V11m-3 3 3-3 3 3" />}
+                            </svg>,
+                            disabled: streaming,
+                            title: streaming ? t('fileViewer.shareAfterGenerationComplete') : undefined,
+                            onSelect: () => { void openDeployModal(option.id); },
+                          }))}
+                          sharePageUrl={sharePageUrl}
+                          canCopyShareLink={canCopyShareLink}
+                          shareUnavailableHint={shareUnavailableHint}
+                          copyShareLink={copyShareLink}
+                          copyShareLinkLabel={copyShareLinkLabel}
+                          canOpenSharePage={canOpenSharePage}
+                          shareLinkStatusHint={shareLinkStatusHint}
+                        />
                       </>
                     ) : null}
-                    {unifiedActionTab === 'export' && rawCanDownload ? (
+                    {unifiedActionTab === 'export' && canDownload ? (
                       <div className="chrome-unified-panel">
                   <button
                     type="button"
                     className="share-menu-item"
                     role="menuitem"
-                    disabled={viewerOnly}
-                    title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                     onClick={() => runExportFormat('pdf')}
                   >
                     <span className="share-menu-icon"><RemixIcon name="file-line" size={15} /></span>
@@ -17916,8 +16120,6 @@ function HtmlViewer({
                     type="button"
                     className="share-menu-item"
                     role="menuitem"
-                    disabled={viewerOnly}
-                    title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                     onClick={() => runExportFormat('zip')}
                   >
                     <span className="share-menu-icon"><RemixIcon name="file-zip-line" size={15} /></span>
@@ -17927,8 +16129,6 @@ function HtmlViewer({
                     type="button"
                     className="share-menu-item"
                     role="menuitem"
-                    disabled={viewerOnly}
-                    title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                     onClick={() => runExportFormat('html')}
                   >
                     <span className="share-menu-icon"><RemixIcon name="file-code-line" size={15} /></span>
@@ -17953,7 +16153,7 @@ function HtmlViewer({
                   </AnchoredMenuShell>
                 ) : null}
               </div>
-              {viewerOnly || !(rawCanShare || rawCanDownload) ? null : (
+              {!(canShare || canDownload) ? null : (
                 <HandoffButton
                   projectId={projectId}
                   projectKind={projectKind}
@@ -17962,8 +16162,6 @@ function HtmlViewer({
                   agents={agents}
                   artifactId={artifactId}
                   artifactKind={handoffArtifactKind}
-                  metricsConsent={metricsConsent}
-                  installationId={installationId}
                 />
               )}
             </div>
@@ -18255,26 +16453,13 @@ function HtmlViewer({
                       ) : null}
                     </div>
                   </PreviewDrawOverlay>
-                  {previewAssetWarning ? (
-                    <div className="preview-asset-warning" role="alert" data-testid="preview-asset-warning">
-                      <strong>{t('fileViewer.previewAssetBlockedTitle')}</strong>
-                      <span>
-                        {t('fileViewer.previewAssetBlockedDetail', { filePath: previewAssetWarning.filePath })}
-                      </span>
-                    </div>
-                  ) : null}
                 </div>
               </div>
               {boardMode ? (
                 <CommentPreviewOverlays
                   comments={commentCreateMode ? creationSortedSideComments : []}
-                  currentUser={commentAuthorSelf}
-                  provisionalPinNumber={nextProvisionalPinNumber}
+                              provisionalPinNumber={nextProvisionalPinNumber}
                   t={t}
-                  driftLadder={collab.enabled}
-                  currentVersion={collab.publishedVersion ?? undefined}
-                  targetsReady={commentTargetsReadyKey === commentTargetsKey}
-                  {...(collab.onLostAnchors ? { onLostAnchors: collab.onLostAnchors } : {})}
                   liveTargets={liveCommentTargets}
                   hoveredTarget={hoveredCommentTarget}
                   hoveredPodMemberId={hoveredPodMemberId}
@@ -18293,7 +16478,7 @@ function HtmlViewer({
                       setCommentSidePanelCollapsed(false);
                       setCommentCreateMode(true);
                       setBoardMode(true);
-                      const needsLocation = ownerCommentNeedsLocation(comment, collab.enabled);
+                      const needsLocation = ownerCommentNeedsLocation(comment);
                       if (needsLocation) setCommentLocationIntent(intent => intent + 1);
                       setActiveCommentTarget(needsLocation ? null : snapshot);
                       setHoveredCommentTarget(needsLocation ? null : snapshot);
@@ -18303,16 +16488,6 @@ function HtmlViewer({
                       setActiveCommentExistingAttachments(comment.attachments ?? []);
                     });
                   }}
-                />
-              ) : null}
-              {workspaceActive && updateToast ? (
-                <ShareFeedbackToast
-                  message={t(updateToast === 'success' ? 'fileViewer.shareUpdateSuccess' : updateToast === 'failure' ? 'fileViewer.shareUpdateFailed' : 'fileViewer.shareUpdateUncertain')}
-                  tone={updateToast === 'success' ? 'success' : 'error'}
-                  ttlMs={updateToast === 'success' ? 2200 : 0}
-                  actionLabel={updateToast === 'failure' ? t('fileViewer.shareUpdateRetry') : undefined}
-                  onAction={updateToast === 'failure' ? () => { void updateCurrentFilePublic(); } : undefined}
-                  onDismiss={() => setUpdateToast(null)}
                 />
               ) : null}
               {/* Portaled to <body> so the screenshot/export toast escapes the
@@ -18577,10 +16752,6 @@ function HtmlViewer({
         </div>,
         document.body,
       ) : null}
-      {/* No `!viewerOnly` here: the modal already fails closed on the one
-          write action it hosts — `restoreDisabled` includes `viewerOnly` —
-          so re-blocking the whole panel only stopped a read-only viewer from
-          BROWSING versions (recvq56vFjQKfT). */}
       {workspaceActive && versionModalOpen && versioningAvailable && typeof document !== 'undefined' ? (
         <FileVersionManagerModal
           projectId={projectId}
@@ -18596,7 +16767,6 @@ function HtmlViewer({
           onExportToastDismiss={() => setExportToast(null)}
           onClose={() => setVersionModalOpen(false)}
           onRestored={handleVersionRestored}
-          viewerOnly={viewerOnly}
         />
       ) : null}
       {workspaceActive && pptxExportModalOpen && typeof document !== 'undefined' ? createPortal(
@@ -18675,7 +16845,6 @@ function HtmlViewer({
                       title: exportTitle,
                       deck: true,
                       editable,
-                      workspaceContext,
                     });
                     if (!res.ok) {
                       // `unavailable` covers two very different situations and
@@ -19205,17 +17374,6 @@ function HtmlViewer({
           onDismiss={() => setDeployActionToast(null)}
         />
       ) : null}
-      {workspaceActive && shareAccessConfirm ? (
-        <MoveToTeamConfirmDialog
-          action={shareAccessConfirm === 'workspace' ? 'to-team' : 'to-personal'}
-          onCancel={() => setShareAccessConfirm(null)}
-          onConfirm={() => {
-            const next = shareAccessConfirm;
-            setShareAccessConfirm(null);
-            if (next) void commitWorkspaceShareAccess(next);
-          }}
-        />
-      ) : null}
       {workspaceActive && versionRestoredToast && typeof document !== 'undefined' ? createPortal(
         <TopStackedToast
           key={versionRestoredToast.id}
@@ -19225,14 +17383,6 @@ function HtmlViewer({
           onDismiss={() => setVersionRestoredToast(null)}
         />,
         document.body,
-      ) : null}
-      {workspaceActive && shareGuideToast ? (
-        <ShareFeedbackToast
-          message={shareGuideToast.message}
-          tone={shareGuideToast.tone}
-          ttlMs={2200}
-          onDismiss={() => setShareGuideToast(null)}
-        />
       ) : null}
     </div>
   );
@@ -19287,10 +17437,9 @@ async function inlineRelativeAssets(
   projectId: string,
   fileName: string,
   projectFilePaths: ReadonlySet<string> | null = null,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<string> {
   const toRawUrl = (projectPath: string) =>
-    projectRawUrl(projectId, projectPath, workspaceContext);
+    projectRawUrl(projectId, projectPath);
   // Root-relative project asset refs (confirmed against the real file list)
   // become owner-relative first, so the stylesheet/script inlining below and
   // the srcDoc <base href> rebasing treat them like any other relative ref.
@@ -19305,7 +17454,7 @@ async function inlineRelativeAssets(
     const href = readHtmlAttr(tag, 'href');
     if (!rel || !/\bstylesheet\b/i.test(rel) || !href) continue;
     replacements.push(
-      fetchProjectRelativeText(projectId, fileName, href, workspaceContext).then((asset) =>
+      fetchProjectRelativeText(projectId, fileName, href).then((asset) =>
         asset == null
           ? null
           : {
@@ -19324,7 +17473,7 @@ async function inlineRelativeAssets(
     const src = readHtmlAttr(tag, 'src');
     if (!src) continue;
     replacements.push(
-      fetchProjectRelativeText(projectId, fileName, src, workspaceContext).then((asset) => {
+      fetchProjectRelativeText(projectId, fileName, src).then((asset) => {
         if (asset == null) return null;
         const js = projectFilePaths
           ? rewriteInlinedScriptAssetRefs(asset.text, asset.filePath, projectFilePaths, toRawUrl)
@@ -19349,26 +17498,18 @@ async function inlineRelativeAssets(
     (next, { from, to }) => next.replace(from, () => to),
     normalized,
   );
-  return workspaceContext?.workspaceType === 'team' && projectFilePaths
-    ? rewriteProjectAssetRefsToRawUrls(inlined, fileName, projectFilePaths, toRawUrl)
-    : inlined;
+  return inlined;
 }
 
 async function fetchProjectRelativeText(
   projectId: string,
   ownerFileName: string,
   assetRef: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): Promise<{ filePath: string; text: string } | null> {
   const filePath = resolveProjectRelativePath(ownerFileName, assetRef);
   if (!filePath) return null;
   try {
-    const resp = await fetch(
-      projectRawUrl(projectId, filePath, workspaceContext),
-      workspaceContext
-        ? { headers: workspaceProjectHeaders(workspaceContext) }
-        : undefined,
-    );
+    const resp = await fetch(projectRawUrl(projectId, filePath));
     if (!resp.ok) return null;
     return { filePath, text: await resp.text() };
   } catch {
@@ -19412,9 +17553,8 @@ function ImageViewer({
   file: ProjectFile;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const url = appendResourceQuery(
-    projectFileUrl(projectId, file.name, workspaceContext),
+    projectFileUrl(projectId, file.name),
     `v=${Math.round(file.mtime)}`,
   );
   return (
@@ -19430,14 +17570,14 @@ function ImageViewer({
         <div className="viewer-toolbar-actions">
           <a
             className="ghost-link"
-            href={projectFileUrl(projectId, file.name, workspaceContext)}
+            href={projectFileUrl(projectId, file.name)}
             download={file.name}
           >
             {t('fileViewer.download')}
           </a>
           <a
             className="ghost-link"
-            href={projectFileUrl(projectId, file.name, workspaceContext)}
+            href={projectFileUrl(projectId, file.name)}
             target="_blank"
             rel="noreferrer noopener"
           >
@@ -19460,7 +17600,6 @@ function SketchViewer({
   file: ProjectFile;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   return (
     <div className="viewer image-viewer sketch-viewer">
       <div className="viewer-toolbar">
@@ -19476,7 +17615,6 @@ function SketchViewer({
           projectId={projectId}
           file={file}
           className="viewer-sketch-preview"
-          workspaceContext={workspaceContext}
         />
       </div>
     </div>
@@ -19491,9 +17629,8 @@ function VideoViewer({
   file: ProjectFile;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const url = appendResourceQuery(
-    projectFileUrl(projectId, file.name, workspaceContext),
+    projectFileUrl(projectId, file.name),
     `v=${Math.round(file.mtime)}`,
   );
   return (
@@ -19521,9 +17658,8 @@ function AudioViewer({
   file: ProjectFile;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const url = appendResourceQuery(
-    projectFileUrl(projectId, file.name, workspaceContext),
+    projectFileUrl(projectId, file.name),
     `v=${Math.round(file.mtime)}`,
   );
   return (
@@ -19563,7 +17699,6 @@ export function SvgViewer({
   initialSource,
 }: SvgViewerProps) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const [mode, setMode] = useState<SvgViewerMode>(initialMode);
   const [source, setSource] = useState<string | null>(initialSource ?? null);
   const [loadingSource, setLoadingSource] = useState(false);
@@ -19571,7 +17706,7 @@ export function SvgViewer({
   useExperienceError(sourceError, 'file_source_load', projectId);
   const [reloadKey, setReloadKey] = useState(0);
   const url = appendResourceQuery(
-    projectFileUrl(projectId, file.name, workspaceContext),
+    projectFileUrl(projectId, file.name),
     `v=${Math.round(file.mtime)}&r=${reloadKey}`,
   );
 
@@ -19584,7 +17719,6 @@ export function SvgViewer({
     void fetchProjectFileText(projectId, file.name, {
       cache: 'no-store',
       cacheBustKey: `${Math.round(file.mtime)}-${reloadKey}`,
-      workspaceContext,
     }).then((next) => {
       if (cancelled) return;
       if (next === null) {
@@ -19605,7 +17739,6 @@ export function SvgViewer({
     initialSource,
     mode,
     reloadKey,
-    workspaceContext,
   ]);
 
   return (
@@ -19647,14 +17780,14 @@ export function SvgViewer({
           </button>
           <a
             className="ghost-link"
-            href={projectFileUrl(projectId, file.name, workspaceContext)}
+            href={projectFileUrl(projectId, file.name)}
             download={file.name}
           >
             {t('fileViewer.download')}
           </a>
           <a
             className="ghost-link"
-            href={projectFileUrl(projectId, file.name, workspaceContext)}
+            href={projectFileUrl(projectId, file.name)}
             target="_blank"
             rel="noreferrer noopener"
           >
@@ -19693,20 +17826,19 @@ function TextViewer({
   file: ProjectFile;
 }) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const [text, setText] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     setText(null);
     let cancelled = false;
-    void fetchProjectFileText(projectId, file.name, { workspaceContext }).then((t) => {
+    void fetchProjectFileText(projectId, file.name).then((t) => {
       if (!cancelled) setText(t ?? '');
     });
     return () => {
       cancelled = true;
     };
-  }, [projectId, file.name, file.mtime, reloadKey, workspaceContext]);
+  }, [projectId, file.name, file.mtime, reloadKey]);
 
   async function copy() {
     if (text == null) return;
@@ -19913,22 +18045,19 @@ function MarkdownViewer({
   file,
   onFileSaved,
   onFileWritten,
-  viewerOnly = false,
 }: {
   projectId: string;
   file: ProjectFile;
   onFileSaved?: () => Promise<void> | void;
   onFileWritten?: (file: ProjectFile) => void;
-  viewerOnly?: boolean;
 }) {
   const { t, locale } = useI18n();
-  const { workspaceContext } = useProjectCollabContext();
   const [text, setText] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
   const downloadMenuRef = useRef<HTMLDivElement | null>(null);
   useDismissOnOutsideInteraction(downloadMenuOpen, downloadMenuRef, () => setDownloadMenuOpen(false));
-  const [mode, setMode] = useState<MarkdownViewerMode>(viewerOnly ? 'preview' : 'split');
+  const [mode, setMode] = useState<MarkdownViewerMode>('split');
   const [saveState, setSaveState] = useState<MarkdownSaveState>('idle');
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [highlightedHtml, setHighlightedHtml] = useState<{ source: string; html: string; themeRevision: number } | null>(null);
@@ -19946,7 +18075,7 @@ function MarkdownViewer({
   const programmaticScrollRef = useRef<{ pane: MarkdownScrollPane; top: number } | null>(null);
   const activeMarkdownScrollPaneRef = useRef<MarkdownScrollPane>('editor');
   const editorBlockOffsetsRef = useRef<{ width: number; offsets: number[] } | null>(null);
-  const previousModeRef = useRef<MarkdownViewerMode>(viewerOnly ? 'preview' : 'split');
+  const previousModeRef = useRef<MarkdownViewerMode>('split');
   const saveInFlightRef = useRef(false);
   const pendingSaveAfterFlightRef = useRef<MarkdownSaveOptions | null>(null);
   const textRef = useRef('');
@@ -19957,13 +18086,6 @@ function MarkdownViewer({
   const isStreaming = status === 'streaming';
   const isError = status === 'error';
   const exportTitle = file.name.replace(/\.mdx?$/i, '') || file.name;
-  const viewerOnlyDisabledTitle = t('fileViewer.readonlySharedNoExport');
-
-  useEffect(() => {
-    if (!viewerOnly) return;
-    setMode('preview');
-    setDownloadMenuOpen(false);
-  }, [viewerOnly]);
 
   useEffect(() => {
     const sameLoadedFile = loadedFileKeyRef.current === markdownFileKey;
@@ -19981,7 +18103,7 @@ function MarkdownViewer({
       copyBlockTimerRef.current = null;
     }
     let cancelled = false;
-    void fetchProjectFileText(projectId, file.name, { workspaceContext }).then((next) => {
+    void fetchProjectFileText(projectId, file.name).then((next) => {
       if (cancelled) return;
       if (
         loadedFileKeyRef.current === markdownFileKey &&
@@ -20039,7 +18161,6 @@ function MarkdownViewer({
 
   const saveMarkdownText = useCallback(
     (value: string, options: MarkdownSaveOptions = {}) => {
-      if (viewerOnly) return;
       const run = async (nextValue: string, saveOptions: MarkdownSaveOptions): Promise<void> => {
         if (lastSavedTextRef.current === nextValue) {
           const showSaving = saveOptions.showSaving !== false;
@@ -20059,7 +18180,7 @@ function MarkdownViewer({
         const showSaving = saveOptions.showSaving !== false;
         if (showSaving) setSaveState('saving');
         try {
-          const saved = await writeProjectTextFile(projectId, file.name, nextValue, undefined, workspaceContext);
+          const saved = await writeProjectTextFile(projectId, file.name, nextValue, undefined);
           if (!saved) throw new Error('write failed');
           // A successful write remains a write when autosave deliberately
           // avoids refreshing the file list. No-op saves emit no receipt.
@@ -20093,11 +18214,10 @@ function MarkdownViewer({
       };
       void run(value, options);
     },
-    [file.name, onFileSaved, onFileWritten, projectId, viewerOnly],
+    [file.name, onFileSaved, onFileWritten, projectId],
   );
 
   const flushPendingMarkdownSave = useCallback(() => {
-    if (viewerOnly) return;
     if (saveTimerRef.current) {
       window.clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
@@ -20106,7 +18226,7 @@ function MarkdownViewer({
     if (lastSavedTextRef.current !== null && latest !== lastSavedTextRef.current) {
       saveMarkdownText(latest, { refreshFiles: false, showSaving: false });
     }
-  }, [saveMarkdownText, viewerOnly]);
+  }, [saveMarkdownText]);
 
   useEffect(() => {
     return () => {
@@ -20117,7 +18237,6 @@ function MarkdownViewer({
   useEffect(() => {
     if (text === null) return undefined;
     textRef.current = text;
-    if (viewerOnly) return undefined;
     if (text === lastSavedTextRef.current) return undefined;
     setSaveState((current) => current === 'saved' ? 'idle' : current);
     if (saveTimerRef.current) {
@@ -20133,7 +18252,7 @@ function MarkdownViewer({
         saveTimerRef.current = null;
       }
     };
-  }, [saveMarkdownText, text, viewerOnly]);
+  }, [saveMarkdownText, text]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -20159,7 +18278,6 @@ function MarkdownViewer({
 
   const insertTextAtSelection = useCallback((insert: string) => {
     setText((current) => {
-      if (viewerOnly) return current;
       if (current === null) return current;
       const editor = editorRef.current;
       if (!editor) return `${current}${insert}`;
@@ -20173,15 +18291,14 @@ function MarkdownViewer({
       });
       return next;
     });
-  }, [viewerOnly]);
+  }, []);
 
   const insertImageFiles = useCallback(
     async (files: File[]): Promise<boolean> => {
-      if (viewerOnly) return false;
       const images = files.filter((item) => isMarkdownImageFile(item));
       if (images.length === 0) return false;
       const targetDir = markdownDirectory(file.name);
-      const result = await uploadProjectFiles(projectId, images, targetDir, workspaceContext);
+      const result = await uploadProjectFiles(projectId, images, targetDir);
       if (result.uploaded.length > 0) {
         await onFileSaved?.();
         const snippet = result.uploaded
@@ -20195,11 +18312,10 @@ function MarkdownViewer({
       }
       return true;
     },
-    [file.name, insertTextAtSelection, onFileSaved, projectId, viewerOnly],
+    [file.name, insertTextAtSelection, onFileSaved, projectId],
   );
 
   function handleEditorPaste(event: ReactClipboardEvent<HTMLTextAreaElement>) {
-    if (viewerOnly) return;
     const files = Array.from(event.clipboardData.files ?? []);
     if (!files.some(isMarkdownImageFile)) return;
     event.preventDefault();
@@ -20207,7 +18323,6 @@ function MarkdownViewer({
   }
 
   function handleEditorDrop(event: ReactDragEvent<HTMLTextAreaElement>) {
-    if (viewerOnly) return;
     const files = Array.from(event.dataTransfer.files ?? []);
     if (!files.some(isMarkdownImageFile)) return;
     event.preventDefault();
@@ -20249,10 +18364,8 @@ function MarkdownViewer({
     return rewriteMarkdownImageSources(
       decorateMarkdownCodeBlocks(renderPartial(text)),
       projectId,
-      file.name,
-      workspaceContext,
-    );
-  }, [file.name, projectId, text, workspaceContext]);
+      file.name);
+  }, [file.name, projectId, text]);
   const html = highlightedHtml?.source === baseHtml && highlightedHtml.themeRevision === highlightThemeRevision
     ? highlightedHtml.html
     : baseHtml;
@@ -20468,8 +18581,6 @@ function MarkdownViewer({
                 role="tab"
                 aria-selected={mode === item}
                 className={`viewer-tab ${mode === item ? 'active' : ''}`}
-                disabled={viewerOnly && item !== 'preview'}
-                title={viewerOnly && item !== 'preview' ? viewerOnlyDisabledTitle : undefined}
                 onClick={() => setMode(item)}
               >
                 {item === 'edit'
@@ -20482,11 +18593,7 @@ function MarkdownViewer({
           </div>
         </div>
         <div className="viewer-toolbar-actions">
-          {viewerOnly ? (
-            <span className="viewer-meta markdown-autosave markdown-autosave-idle">
-              {viewerOnlyDisabledTitle}
-            </span>
-          ) : autoSaveStatus === 'error' ? (
+          {autoSaveStatus === 'error' ? (
             <button
               type="button"
               className="viewer-action markdown-autosave markdown-autosave-error"
@@ -20526,8 +18633,6 @@ function MarkdownViewer({
                 className="viewer-action"
                 aria-haspopup="menu"
                 aria-expanded={downloadMenuOpen}
-                disabled={viewerOnly}
-                title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                 onClick={() => setDownloadMenuOpen((v) => !v)}
               >
                 <Icon name="download" size={13} />
@@ -20539,10 +18644,7 @@ function MarkdownViewer({
                     type="button"
                     className="share-menu-item"
                     role="menuitem"
-                    disabled={viewerOnly}
-                    title={viewerOnly ? viewerOnlyDisabledTitle : undefined}
                     onClick={() => {
-                      if (viewerOnly) return;
                       setDownloadMenuOpen(false);
                       exportAsMd(text, exportTitle);
                     }}

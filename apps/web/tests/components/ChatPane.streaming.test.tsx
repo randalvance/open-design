@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { forwardRef, useImperativeHandle } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -719,9 +719,9 @@ describe('ChatPane streaming state', () => {
     expect(text.closest('.msg.user')).not.toBeNull();
   });
 
-  it('offers Cloud switching on BYOK error states without the former Local CLI action', () => {
+  it('offers Retry on BYOK error states without the former Local CLI action', () => {
     const onSwitchToLocalCli = vi.fn();
-    const onSwitchToAmrAndRetry = vi.fn();
+    const onRetry = vi.fn();
     const messages: ChatMessage[] = [
       {
         id: 'user-1',
@@ -759,19 +759,18 @@ describe('ChatPane streaming state', () => {
         activeConversationId="conv-1"
         onSelectConversation={vi.fn()}
         onDeleteConversation={vi.fn()}
+        onRetry={onRetry}
         showByokRecoveryAction
         onSwitchToLocalCli={onSwitchToLocalCli}
-        onSwitchToAmrAndRetry={onSwitchToAmrAndRetry}
         projectMetadata={projectMetadata}
       />,
     );
 
-    const action = screen.getByRole('button', { name: 'chat.amrCard.switchCta' });
+    const action = screen.getByRole('button', { name: 'promptTemplates.retry' });
     fireEvent.click(action);
 
-    expect(onSwitchToAmrAndRetry).toHaveBeenCalledExactlyOnceWith(messages[1]);
+    expect(onRetry).toHaveBeenCalledExactlyOnceWith(messages[1], 'manual_retry');
     expect(screen.queryByRole('button', { name: 'Use Local CLI' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'promptTemplates.retry' })).toBeNull();
     expect(onSwitchToLocalCli).not.toHaveBeenCalled();
   });
 

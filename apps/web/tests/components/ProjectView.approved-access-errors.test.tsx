@@ -6,7 +6,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { forwardRef, type ComponentProps, type ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import { ProjectView } from '../../src/components/ProjectView';
 import type { ChatComposer } from '../../src/components/ChatComposer';
 import { I18nProvider } from '../../src/i18n';
@@ -22,55 +21,10 @@ const authority = vi.hoisted(() => ({
   materializationPending: false,
   writerAuthority: 'allowed' as 'allowed' | 'denied' | 'pending',
 }));
-const workspace = vi.hoisted(() => ({
-  workspaceId: 'access-copy-workspace', workspaceMemberId: 'access-copy-member',
-  workspaceType: 'team' as const, role: 'member' as const,
-  memberStatus: 'active' as const, lifecycleState: 'active' as const,
-  billingState: 'active' as const, planId: null,
-  providerMode: 'platform_credits' as const,
-  seatSummary: { seatLimit: 2, usedSeats: 2, availableSeats: 0, isSeatFull: true },
-  permissions: {
-    canManageMembers: false, canManageBilling: false, canInviteMembers: false,
-    canManageAutoRecharge: false, canShareProjects: true, canWriteSyncedFiles: true,
-    canViewWorkspaceSettings: true, canManageSharedResources: false,
-  },
-} satisfies WorkspaceCollabContext));
 
 vi.mock('../../src/analytics/provider', () => ({ useAnalytics: () => ({ track: vi.fn() }) }));
 vi.mock('../../src/router', () => ({ navigate: vi.fn() }));
 vi.mock('../../src/providers/anthropic', () => ({ streamMessage: vi.fn() }));
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>()),
-  useWorkspaceContext: () => ({ context: workspace, loading: false }),
-  lastResolvedTeamProjects: () => [],
-  lastResolvedWorkspaceContext: () => workspace,
-  useWorkspaceBilling: () => null,
-}));
-vi.mock('../../src/collab/useProjectWorkspaceScope', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useProjectWorkspaceScope')>()),
-  useProjectWorkspaceScope: () => ({
-    loading: false,
-    scope: {
-      kind: 'team', projectId: 'access-copy-project', workspaceId: workspace.workspaceId,
-      visibility: 'team', context: workspace,
-    },
-  }),
-}));
-vi.mock('../../src/collab/useProjectCollab', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useProjectCollab')>()),
-  // These are the existing hook's three settled/pending projections, not new
-  // production permissions. ProjectView must keep denied and pending distinct.
-  useProjectCollab: () => ({
-    enabled: false, member: null, present: [], publishedVersion: null,
-    syncState: authority.writerAuthority === 'pending' ? null : 'synced',
-    ...authority,
-    isOwner: authority.writerAuthority === 'allowed',
-    isSharedNonOwner: authority.writerAuthority === 'denied',
-    ownerDisplayName: null, ownerRole: null, downloadPending: false,
-    reportChange: vi.fn(), requestPublish: vi.fn(), refreshPresence: vi.fn(),
-    checkStatusNow: vi.fn(), applyContentTransferState: vi.fn(),
-  }),
-}));
 vi.mock('../../src/providers/daemon', () => ({
   GENERIC_DAEMON_DISCONNECT_CODE: 'GENERIC_DAEMON_DISCONNECT',
   GENERIC_DAEMON_DISCONNECT_MESSAGE: 'daemon stream disconnected before run completed',
@@ -79,11 +33,7 @@ vi.mock('../../src/providers/daemon', () => ({
   listProjectRuns: vi.fn().mockResolvedValue([]),
   publishDaemonRunFinishedEvent: vi.fn(), reattachDaemonRun: vi.fn(),
   streamViaDaemon: (...args: unknown[]) => streamViaDaemon(...args),
-  fetchAmrWalletSnapshot: vi.fn().mockResolvedValue(null),
-  formatVelaBalanceUsd: (value: string | null) => `$${value ?? '0'}`,
-  fetchVelaLoginStatus: vi.fn().mockResolvedValue({ loggedIn: true }),
-  startVelaLogin: vi.fn(), cancelVelaLogin: vi.fn(),
-  canUpgradeVelaPlan: vi.fn().mockReturnValue(false), launchAntigravityOauth: vi.fn(),
+  launchAntigravityOauth: vi.fn(),
 }));
 vi.mock('../../src/providers/project-events', () => ({ useProjectFileEvents: vi.fn() }));
 vi.mock('../../src/runtime/brands', async (importOriginal) => ({
@@ -177,8 +127,7 @@ async function tick(ms = 0) {
   await act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 }
 function sendButton() { return screen.getByTestId('access-copy-send') as HTMLButtonElement; }
-// This retained failure belongs to Claude: G16 uses the Cloud handoff action.
-function recoveryButton() { return screen.getByTestId('chat-error-switch-to-cloud') as HTMLButtonElement; }
+function recoveryButton() { return screen.getByTestId('chat-error-retry') as HTMLButtonElement; }
 function expectCard(title: string, body: string) {
   const card = screen.getByTestId('chat-run-error-card');
   expect(within(card).getByText(title, { exact: true })).toBeTruthy();
@@ -220,20 +169,6 @@ afterEach(() => {
 });
 
 describe('approved access copy on the real ProjectView and ChatPane', () => {
-  it('confirmed read-only replaces the blocked recovery card title/body without enabling run actions', async () => {
-    authority.viewerOnly = true; authority.writerAuthority = 'denied';
-    render(view()); await tick();
-    expectCard(READ_ONLY_TITLE, READ_ONLY_BODY);
-    expect(screen.queryByText('你在这个项目里是只读身份，无法发起新任务。')).toBeNull();
-    expect(recoveryButton().disabled).toBe(true);
-    fireEvent.click(recoveryButton());
-    expect(streamViaDaemon).not.toHaveBeenCalled();
-    expect(onOpenSettings).not.toHaveBeenCalled();
-    expect(onAgentChange).not.toHaveBeenCalled();
-    expect(sendButton().disabled).toBe(true);
-    expect(screen.getByText('Build the QA page')).toBeTruthy();
-    expect(failedHistory[1]?.events?.[0]).toMatchObject({ detail: 'QA_PROVIDER_CRASH' });
-  });
 
   it('a writable project retains its original failure recovery rather than claiming read-only access', async () => {
     render(view()); await tick();
@@ -244,33 +179,7 @@ describe('approved access copy on the real ProjectView and ChatPane', () => {
     expect(sendButton().disabled).toBe(false);
   });
 
-  it.each(['unknown-authority', 'first-materialization'] as const)(
-    '%s keeps the run gate closed without a false confirmed-read-only statement', async (scenario) => {
-      authority.writerAuthority = 'pending';
-      authority.viewerOnly = scenario === 'unknown-authority';
-      authority.materializationPending = scenario === 'first-materialization';
-      render(view()); await tick();
-      expect(sendButton().disabled).toBe(true);
-      expect(recoveryButton().disabled).toBe(true);
-      expect(screen.queryByText(READ_ONLY_TITLE)).toBeNull();
-      expect(screen.queryByText(READ_ONLY_BODY)).toBeNull();
-      expect(screen.queryByText('你在这个项目里是只读身份，无法发起新任务。')).toBeNull();
-      expect(streamViaDaemon).not.toHaveBeenCalled();
-    },
-  );
 
-  it('confirmed read-only becoming writable restores existing recovery without mutating failed history', async () => {
-    authority.viewerOnly = true; authority.writerAuthority = 'denied';
-    const original = structuredClone(failedHistory);
-    const mounted = render(view()); await tick();
-    expect(recoveryButton().disabled).toBe(true);
-    authority.viewerOnly = false; authority.writerAuthority = 'allowed';
-    mounted.rerender(view()); await tick();
-    expect(recoveryButton().disabled).toBe(false);
-    expect(sendButton().disabled).toBe(false);
-    expect(screen.queryByText(READ_ONLY_TITLE)).toBeNull();
-    expect(failedHistory).toEqual(original);
-  });
 });
 
 describe('approved transcript load failure, including first open with no history', () => {

@@ -40,9 +40,6 @@ import {
   resolveDaemonPrewarmTargets,
   resolveWebPrewarmTargets,
 } from "./prewarm.js";
-import { reportDaemonExit } from "./startup-telemetry.js";
-import { resolvePackagedShareViewerEnv } from "./share-viewer.js";
-import { workspaceTeamTransportEnv } from "./workspace-team.js";
 
 const require = createRequire(import.meta.url);
 const PACKAGED_CHILD_ENV_ALLOWLIST = [
@@ -120,7 +117,6 @@ type ManagedSidecarChild = {
   logHandle: FileHandle;
   logPath: string;
   stamp: SidecarStamp;
-  daemonExitObserver?: ReturnType<typeof observeDaemonExit>;
 };
 
 type PackagedDaemonManagedPathEnv = {
@@ -132,7 +128,7 @@ type PackagedDaemonManagedPathEnv = {
    * must outlive a namespace-scoped data-dir reset) outside the
    * `<namespace>/data/` subtree.
    *
-   * Required so PostHog person identity survives a reinstall of the same
+   * Required so the installation id survives a reinstall of the same
    * channel even when the baked namespace token changes or per-namespace
    * data is cleared. See `apps/daemon/src/installation.ts`.
    */
@@ -240,9 +236,9 @@ const DAEMON_STATUS_TIMEOUT_MS = 35_000;
 // Windows first launches routinely blow past the 35s POSIX budget: Defender
 // real-time scanning of the freshly-written packaged binaries inflates the
 // daemon cold start (native better-sqlite3 load + first SQLite open/migrate +
-// status-pipe bind) well past 35s. PostHog on the packaged_runtime_failed
-// status-timeout bucket showed ~90% of affected devices DID open the app on a
-// later launch — the daemon was merely slow, not dead — so a wider win32 budget
+// status-pipe bind) well past 35s. Field data on status-timeout failures
+// showed ~90% of affected devices DID open the app on a later launch — the
+// daemon was merely slow, not dead — so a wider win32 budget
 // lets that first launch succeed instead of failing to a recovery screen and
 // forcing a manual relaunch.
 const WIN32_STATUS_TIMEOUT_MS = 90_000;
@@ -625,7 +621,6 @@ function createPackagedDaemonManagedPathEnv(
 export type PackagedDaemonSpawnEnvOptions = {
   launchContext?: { app_session_id: string; launch_attempt_id: string } | undefined;
   appVersion: string | null;
-  amrProfile?: string | null;
   daemonCliEntry: string | null;
   desktopHandoffEnv?: NodeJS.ProcessEnv;
   mcpBootstrapArgs?: readonly string[];
@@ -642,21 +637,6 @@ export type PackagedDaemonSpawnEnvOptions = {
    */
   requireDesktopAuth: boolean;
   legacyDataDir?: string | null;
-  telemetryRelayUrl?: string | null;
-  posthogKey?: string | null;
-  posthogHost?: string | null;
-  /**
-   * Vela web console origin baked into the bundle at packaging time. Half of
-   * the workspace-team gate — see {@link workspaceTeamTransportEnv}.
-   */
-  velaWebUrl?: string | null;
-  velaWebUrls?: Record<string, string>;
-  /**
-   * Launch environment whose explicit `OD_SHARE_VIEWER_URL(S)` debug override
-   * is forwarded (there is no channel default: AMR reports the share address).
-   * The child env allowlist would otherwise drop them.
-   */
-  shareViewerLaunchEnv?: NodeJS.ProcessEnv;
 };
 
 /**
@@ -689,14 +669,6 @@ export function buildPackagedDaemonSpawnEnv(
     ...(options.nodeCommand == null || options.nodeCommand.length === 0
       ? {}
       : { OD_NODE_BIN: options.nodeCommand }),
-    ...(options.amrProfile == null || options.amrProfile.length === 0
-      ? {}
-      : { OPEN_DESIGN_AMR_PROFILE: options.amrProfile }),
-    ...workspaceTeamTransportEnv(options.amrProfile, options.velaWebUrl),
-    ...(options.velaWebUrls == null || Object.keys(options.velaWebUrls).length === 0
-      ? {}
-      : { OD_VELA_WEB_URLS: JSON.stringify(options.velaWebUrls) }),
-    ...resolvePackagedShareViewerEnv(options.shareViewerLaunchEnv ?? {}),
     ...(options.appVersion == null ? {} : { OD_APP_VERSION: options.appVersion }),
     ...(options.mcpBootstrapCommand == null
       || options.mcpBootstrapCommand.length === 0
@@ -706,9 +678,6 @@ export function buildPackagedDaemonSpawnEnv(
       ? {}
       : { OD_MCP_BOOTSTRAP_ARGS: JSON.stringify(options.mcpBootstrapArgs) }),
     ...pickPackagedDesktopHandoffEnv(options.desktopHandoffEnv ?? {}),
-    ...(options.telemetryRelayUrl == null || options.telemetryRelayUrl.length === 0
-      ? {}
-      : { OPEN_DESIGN_TELEMETRY_RELAY_URL: options.telemetryRelayUrl }),
     // OD_LEGACY_DATA_DIR is the one-shot recovery handle for users
     // upgrading from 0.3.x .od/ layouts. The daemon's startup
     // migrator (legacy-data-migrator.ts) reads it; the env-allowlist
@@ -718,17 +687,6 @@ export function buildPackagedDaemonSpawnEnv(
     ...(options.legacyDataDir == null || options.legacyDataDir.length === 0
       ? {}
       : { OD_LEGACY_DATA_DIR: options.legacyDataDir }),
-    // PostHog analytics ingest key, baked into the bundle at packaging time
-    // by tools/pack. Daemon reads this as POSTHOG_KEY at startup. Absent
-    // for fork builds without the CI secret — the daemon's analytics
-    // module no-ops cleanly in that case, and /api/analytics/config
-    // returns enabled=false regardless of user consent.
-    ...(options.posthogKey == null || options.posthogKey.length === 0
-      ? {}
-      : { POSTHOG_KEY: options.posthogKey }),
-    ...(options.posthogHost == null || options.posthogHost.length === 0
-      ? {}
-      : { POSTHOG_HOST: options.posthogHost }),
   };
 }
 
@@ -823,42 +781,7 @@ export function createPackagedSidecarSpawnOptions(input: {
   };
 }
 
-/** Attach before readiness; intentional shutdown is marked before requesting stop. */
-export function observeDaemonExit(
-  child: { exitCode: number | null; signalCode: NodeJS.Signals | null;
-    once(event: 'exit', listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown },
-  report: (exit: { exit_code: number | null; signal: NodeJS.Signals | null; intentional: boolean; occurred_at: string; reason: 'killed' | 'crash' | 'clean-exit' | 'unknown' }) => Promise<void>,
-) {
-  let ready = false;
-  let intentional = false;
-  let exited = child.exitCode !== null || child.signalCode !== null;
-  let delivery = Promise.resolve();
-  child.once('exit', (code, signal) => {
-    if (exited) return;
-    exited = true;
-    if (!ready) return;
-    // The observed child is the sidecar supervisor; it re-raises a target's
-    // unforwarded terminating signal (see supervisorExitDisposition), so only a
-    // real signal counts as killed. A numeric exit such as 137 stays a crash.
-    const targetSignal = signal;
-    const reason = intentional ? 'clean-exit' : targetSignal ? 'killed' : code === 0 ? 'clean-exit' : code !== null ? 'crash' : 'unknown';
-    const exit = { exit_code: code, signal: targetSignal, intentional, occurred_at: new Date().toISOString(), reason } as const;
-    // Invoke synchronously so the reporter can persist before yielding to network I/O.
-    try { delivery = report(exit).catch(() => undefined); } catch {}
-  });
-  return {
-    markReady(): boolean {
-      if (exited || child.exitCode !== null || child.signalCode !== null) return false;
-      ready = true;
-      return true;
-    },
-    beginShutdown(): void { intentional = true; },
-    flush(): Promise<void> { return delivery; },
-  };
-}
-
 export async function closeManagedChild(child: ManagedSidecarChild, observe?: (event: UpdateLifecycleObservation) => Promise<void>): Promise<void> {
-  child.daemonExitObserver?.beginShutdown();
   const startedAt = Date.now();
   const appendLifecycleLog = async (message: string): Promise<void> => appendSidecarLifecycleLog(child.logPath, message);
   try {
@@ -906,18 +829,12 @@ export async function startPackagedSidecars(
   options: {
     launchContext?: { app_session_id: string; launch_attempt_id: string } | undefined;
     appVersion: string | null;
-    amrProfile: string | null;
     daemonCliEntry: string | null;
     daemonSidecarEntry: string | null;
     electronNodeCommand: string | null;
     nodeCommand: string | null;
     mcpBootstrapCommand: string | null;
     mcpBootstrapArgs: readonly string[];
-    telemetryRelayUrl: string | null;
-    posthogKey: string | null;
-    posthogHost: string | null;
-    velaWebUrl: string | null;
-    velaWebUrls?: Record<string, string>;
     /**
      * PR #974 round-5 (lefarcen P2): caller asserts whether a desktop
      * runtime is being started in this packaged process group. The
@@ -992,7 +909,6 @@ export async function startPackagedSidecars(
       env: { OD_DAEMON_PROCESS_INSTANCE_ID: processInstanceId, ...buildPackagedDaemonSpawnEnv(paths, {
         launchContext: options.launchContext,
         appVersion: options.appVersion,
-        amrProfile: options.amrProfile,
         daemonCliEntry: options.daemonCliEntry,
         desktopHandoffEnv: process.env,
         legacyDataDir: process.env.OD_LEGACY_DATA_DIR ?? null,
@@ -1000,29 +916,12 @@ export async function startPackagedSidecars(
         mcpBootstrapCommand: options.mcpBootstrapCommand,
         nodeCommand: options.nodeCommand,
         requireDesktopAuth: options.requireDesktopAuth,
-        telemetryRelayUrl: options.telemetryRelayUrl,
-        posthogKey: options.posthogKey,
-        posthogHost: options.posthogHost,
-        velaWebUrl: options.velaWebUrl,
-        velaWebUrls: options.velaWebUrls,
-        shareViewerLaunchEnv: process.env,
       }) },
       electronNodeCommand: options.electronNodeCommand,
       nodeCommand: options.nodeCommand,
       paths,
       runtime,
     });
-    daemon.daemonExitObserver = observeDaemonExit(daemon.child, (exit) => reportDaemonExit({
-      dataRoot: paths.dataRoot, installationRoot: paths.installationRoot, namespace: runtime.namespace,
-      posthogKey: options.posthogKey, posthogHost: options.posthogHost, logPath: daemon.logPath,
-      observation: { process_instance_id: processInstanceId,
-        app_session_id: options.launchContext?.app_session_id ?? null,
-        launch_attempt_id: options.launchContext?.launch_attempt_id ?? null,
-        app_version: options.appVersion, occurred_at: exit.occurred_at,
-        exit_code: exit.exit_code, signal: exit.signal,
-        reason: exit.reason,
-        delivered: false },
-    }));
     children.push(daemon);
     // The web prewarm overlaps the daemon's boot wait: its read set (web
     // sidecar dist, .next/server chunks, Next framework code) is disjoint
@@ -1053,7 +952,6 @@ export async function startPackagedSidecars(
       { child: daemon.child, logPath: logPathFor(paths, APP_KEYS.DAEMON) },
     );
     if (daemonStatus.url == null) throw new Error("daemon did not report a URL");
-    daemon.daemonExitObserver.markReady();
     options.onPhase?.("daemon-ready");
 
     // The web payload must be in the page cache before the web sidecar
@@ -1116,7 +1014,6 @@ export async function startPackagedSidecars(
       web: webStatus,
       currentWebUrl: supervisor.currentUrl,
       async close(observe) {
-        daemon.daemonExitObserver?.beginShutdown();
         shutdownObserver = observe;
         const closeErrors: unknown[] = [];
         await supervisor.close().catch((error: unknown) => {
@@ -1135,7 +1032,6 @@ export async function startPackagedSidecars(
       },
     };
   } catch (error) {
-    for (const child of children) child.daemonExitObserver?.beginShutdown();
     await webSupervisor?.close().catch(() => undefined);
     for (const child of [...children].reverse()) {
       await closeManagedChild(child).catch(() => undefined);

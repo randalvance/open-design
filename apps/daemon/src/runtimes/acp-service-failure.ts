@@ -34,13 +34,13 @@
  * - **It does not read stdout/stderr.** Unlike the json-event-stream path,
  *   which folds `agentStdoutTail` / `agentStderrTail` into its match text, this
  *   sees only what the agent put in its own JSON-RPC error frame. An ACP
- *   runtime's stderr is its private logging — vela alone prints request URLs,
- *   provider names and retry chatter — and matching a class out of that would
+ *   runtime's stderr is its private logging — request URLs, provider names and
+ *   retry chatter — and matching a class out of that would
  *   let an unrelated log line decide the user's remedy. The frame is the
  *   agent's deliberate report; the tail is not.
  * - **It does not outrank a specific code.** Anything the ACP layer already
- *   named — `AMR_MODEL_UNAVAILABLE`, `ROLE_MARKER_HALLUCINATION`, a promoted
- *   AMR account failure, `AGENT_CLI_SESSION_REFUSED` — is returned by identity.
+ *   named — `ROLE_MARKER_HALLUCINATION`, `AGENT_CLI_SESSION_REFUSED` — is
+ *   returned by identity.
  *
  * ## Composition with `withAcpHandshakeFailureGuidance`
  *

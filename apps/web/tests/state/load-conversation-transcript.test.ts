@@ -37,7 +37,7 @@ describe('transcript recovery from actual HTTP responses', () => {
     const controller = new AbortController();
     // Attach rejection handling immediately so the expected pre-fix failure is
     // an assertion failure, never an unhandled promise rejection.
-    const result = loadConversationTranscript('project-1', 'conversation-1', null, controller.signal)
+    const result = loadConversationTranscript('project-1', 'conversation-1', controller.signal)
       .then(value => ({ messages: value }), error => ({ error }));
     try {
       await vi.advanceTimersByTimeAsync(0);
@@ -62,7 +62,7 @@ describe('transcript recovery from actual HTTP responses', () => {
       .mockResolvedValueOnce(Response.json({ messages }));
     vi.stubGlobal('fetch', fetchMock);
     const controller = new AbortController();
-    const result = loadConversationTranscript('project-1', 'conversation-1', null, controller.signal)
+    const result = loadConversationTranscript('project-1', 'conversation-1', controller.signal)
       .then(value => ({ messages: value }), error => ({ error }));
     try {
       await vi.advanceTimersByTimeAsync(500);
@@ -86,7 +86,7 @@ describe('transcript recovery from actual HTTP responses', () => {
       .mockResolvedValueOnce(Response.json({ messages }));
     vi.stubGlobal('fetch', fetchMock);
     const controller = new AbortController();
-    const result = loadConversationTranscript('project-1', 'conversation-1', null, controller.signal)
+    const result = loadConversationTranscript('project-1', 'conversation-1', controller.signal)
       .then(value => ({ messages: value }), error => ({ error }));
     try {
       await vi.advanceTimersByTimeAsync(15_000);

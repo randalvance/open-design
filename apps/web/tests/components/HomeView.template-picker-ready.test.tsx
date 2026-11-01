@@ -23,11 +23,6 @@ vi.mock('../../src/components/home-hero/PlaceholderCarousel', () => ({
   PlaceholderCarousel: () => null,
 }));
 
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>()),
-  useWorkspaceContext: () => ({ context: null, loading: false, failure: 'unsupported' as const }),
-}));
-
 import { HomeView } from '../../src/components/HomeView';
 
 const PROTOTYPE_PLUGIN = {

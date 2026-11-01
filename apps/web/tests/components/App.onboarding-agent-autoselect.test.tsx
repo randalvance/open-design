@@ -14,7 +14,6 @@ import {
   fetchPromptTemplates,
   fetchSkills,
 } from '../../src/providers/registry';
-import { fetchAmrModels } from '../../src/providers/daemon';
 import { listProjects, listTemplates } from '../../src/state/projects';
 
 vi.mock('../../src/router', () => ({
@@ -66,16 +65,6 @@ vi.mock('../../src/providers/registry', async () => {
   };
 });
 
-vi.mock('../../src/providers/daemon', async () => {
-  const actual = await vi.importActual<typeof import('../../src/providers/daemon')>(
-    '../../src/providers/daemon',
-  );
-  return {
-    ...actual,
-    fetchAmrModels: vi.fn(),
-  };
-});
-
 vi.mock('../../src/state/projects', async () => {
   const actual = await vi.importActual<typeof import('../../src/state/projects')>(
     '../../src/state/projects',
@@ -116,7 +105,6 @@ const mockedFetchAppVersionInfo = vi.mocked(fetchAppVersionInfo);
 const mockedFetchDesignSystems = vi.mocked(fetchDesignSystems);
 const mockedFetchPromptTemplates = vi.mocked(fetchPromptTemplates);
 const mockedFetchSkills = vi.mocked(fetchSkills);
-const mockedFetchAmrModels = vi.mocked(fetchAmrModels);
 const mockedListProjects = vi.mocked(listProjects);
 const mockedListTemplates = vi.mocked(listTemplates);
 const mockedLoadConfig = vi.mocked(loadConfig);
@@ -136,7 +124,7 @@ function firstRunConfig(): AppConfig {
     skillId: null,
     designSystemId: null,
     // First run: the user has NOT finished onboarding yet. Onboarding owns
-    // the agent pick (AMR is the recommended default).
+    // the agent pick.
     onboardingCompleted: false,
     mediaProviders: {},
     composio: {},
@@ -145,9 +133,8 @@ function firstRunConfig(): AppConfig {
   };
 }
 
-// Only Claude is detected on the first agent probe. AMR (vela) detection is
-// asynchronous and can lag behind the initial bootstrap — this is the window
-// in which the App-level fallback is tempted to snap the agent to Claude.
+// Only Claude is detected: the App-level fallback is tempted to snap the
+// agent to it.
 const claudeOnly = [
   {
     id: 'claude',
@@ -169,11 +156,6 @@ describe('App first-run agent auto-select', () => {
     mockedFetchAppVersionInfo.mockResolvedValue(null);
     mockedListProjects.mockResolvedValue([]);
     mockedListTemplates.mockResolvedValue([]);
-    mockedFetchAmrModels.mockResolvedValue({
-      source: 'preset',
-      refreshing: false,
-      models: [{ id: 'amr-model', label: 'AMR Model' }],
-    });
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }),
@@ -216,19 +198,17 @@ describe('App first-run agent auto-select', () => {
 
     render(<App />);
 
-    // Once the daemon config + the (Claude-only, AMR-still-detecting) agent
-    // list have both landed, the App-level auto-select effect is eligible to
-    // run. During first-run onboarding it must stay its hand — the onboarding
-    // flow owns the first agent pick (AMR is the recommended default) — so the
-    // agent slot stays empty rather than snapping to Claude and racing the
-    // onboarding's own AMR selection.
+    // Once the daemon config + the agent list have both landed, the App-level
+    // auto-select effect is eligible to run. During first-run onboarding it
+    // must stay its hand — the onboarding flow owns the first agent pick — so
+    // the agent slot stays empty rather than snapping to Claude.
     await waitFor(() => {
       expect(screen.getByTestId('onboarding-completed').textContent).toBe('false');
     });
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(screen.getByTestId('agent-id').textContent).toBe('none');
-    // And it must not have persisted a Claude default to the daemon, which is
-    // what later clobbers the user's AMR pick on the next launch.
+    // And it must not have persisted a Claude default to the daemon, which
+    // would later clobber the user's own pick on the next launch.
     const wroteClaude = mockedSync.mock.calls.some(
       ([cfg]) => (cfg as AppConfig | undefined)?.agentId === 'claude',
     );
@@ -249,5 +229,62 @@ describe('App first-run agent auto-select', () => {
     await waitFor(() => {
       expect(screen.getByTestId('agent-id').textContent).toBe('claude');
     });
+  });
+
+  it('falls back to the first available CLI when local and daemon config both saved the retired amr agent', async () => {
+    const { loadConfig: realLoadConfig } = await vi.importActual<typeof import('../../src/state/config')>(
+      '../../src/state/config',
+    );
+    const { syncConfigToDaemon, saveConfig } = await import('../../src/state/config');
+    window.localStorage.setItem('open-design:config', JSON.stringify({
+      ...firstRunConfig(),
+      onboardingCompleted: true,
+      agentId: 'amr',
+      agentModels: { amr: { model: 'amr-model' } },
+      agentCliEnv: { amr: { TOKEN: 'stale' } },
+    }));
+    mockedLoadConfig.mockImplementation(realLoadConfig);
+    mockedFetchDaemonConfig.mockResolvedValue({
+      onboardingCompleted: true,
+      agentId: 'amr',
+      agentModels: { amr: { model: 'amr-model' } },
+      agentCliEnv: { amr: { TOKEN: 'stale' } },
+    });
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('agent-id').textContent).toBe('claude');
+    });
+    for (const mock of [vi.mocked(syncConfigToDaemon), vi.mocked(saveConfig)]) {
+      for (const [saved] of mock.mock.calls) {
+        const written = saved as AppConfig | undefined;
+        expect(written?.agentId).not.toBe('amr');
+        expect(written?.agentModels?.amr).toBeUndefined();
+        expect(written?.agentCliEnv?.amr).toBeUndefined();
+      }
+    }
+    window.localStorage.removeItem('open-design:config');
+  });
+
+  it('keeps a saved amr config on the normal empty state, without crashing, when no CLI is available', async () => {
+    const { loadConfig: realLoadConfig } = await vi.importActual<typeof import('../../src/state/config')>(
+      '../../src/state/config',
+    );
+    window.localStorage.setItem('open-design:config', JSON.stringify({
+      ...firstRunConfig(),
+      onboardingCompleted: true,
+      agentId: 'amr',
+    }));
+    mockedLoadConfig.mockImplementation(realLoadConfig);
+    mockedFetchDaemonConfig.mockResolvedValue({ onboardingCompleted: true, agentId: 'amr' });
+    mockedFetchAgentsStream.mockResolvedValue([]);
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('agent-id').textContent).toBe('none');
+    });
+    window.localStorage.removeItem('open-design:config');
   });
 });

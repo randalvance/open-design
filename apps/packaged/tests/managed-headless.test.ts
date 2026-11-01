@@ -69,11 +69,11 @@ describe("watchUserDesktopIntent", () => {
 
   it("pairs the events in either order", () => {
     const { advance, app, onIntent } = setup();
-    app.emit("open-url", {}, "opendesign://workspace/open");
+    app.emit("activate", {}, false);
     expect(onIntent).not.toHaveBeenCalled();
     advance(40);
     app.emit("did-become-active");
-    expect(onIntent).toHaveBeenCalledWith("open-url");
+    expect(onIntent).toHaveBeenCalledWith("activate");
     expect(onIntent).toHaveBeenCalledTimes(1);
   });
 
@@ -123,7 +123,7 @@ describe("createDeferredDesktopController", () => {
 
   it("restores once on SHOW and forwards the same SHOW to the restored desktop", async () => {
     const { controller, handle, options } = setup();
-    const input = { deeplinkUrl: "opendesign://workspace/open" };
+    const input = {};
     // Two launchers racing: both are answered, but the desktop starts once.
     await expect(Promise.all([
       controller.invoke(SIDECAR_MESSAGES.SHOW, input),

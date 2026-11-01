@@ -171,8 +171,8 @@ export function inferRpcErrorRetryable(message: string, data: unknown): boolean 
   if (/\b(upstream_error|stream idle timeout|no data received within configured window|temporarily unavailable|overloaded|gateway timeout|service unavailable)\b/i.test(text)) {
     return true;
   }
-  // opencode states its own retryability as a machine-readable field, and vela
-  // hands us the whole `session.error` envelope carrying it — but as a JSON
+  // opencode states its own retryability as a machine-readable field, and an
+  // ACP bridge can hand us the whole `session.error` envelope carrying it — but as a JSON
   // STRING inside the message, not as ACP `error.data`, so neither
   // `rpcErrorRetryable` above nor the classifier's `latestRetryable` (which
   // reads `error.data.isRetryable`) could ever see it.

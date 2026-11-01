@@ -3,8 +3,7 @@
 //
 // Why this exists: many workspace surfaces independently fetch the same read
 // endpoint on mount/navigation — the project grid, the recents strip, the
-// design-files panel, and every separately-mounted `useWorkspaceContext`
-// consumer. Returning to the home view fired ~118 concurrent requests, of which
+// design-files panel. Returning to the home view fired ~118 concurrent requests, of which
 // the same 8 projects' `/files` appeared 4-6× each and every project's
 // `/live-artifacts` twice. With the browser's ~6-connections-per-host cap the
 // tail of that burst sat in the connection queue for seconds — measured as
@@ -72,67 +71,13 @@ export function coalescedGet<T>(
 /**
  * Drop one key's in-flight/settled entry so the next call goes to the network.
  *
- * For callers that KNOW the cached answer is void — an identity change, not a
- * routine revalidation. Coalescing assumes sub-second staleness is invisible,
- * which stops being true the moment the user signs in: the read that just
- * settled describes the previous identity, and sharing it would answer the
- * post-sign-in refresh with the signed-out result it was fired to replace.
+ * For callers that KNOW the cached answer is void, not a routine revalidation.
  *
  * Evicting an IN-FLIGHT entry is deliberate too — that request may have been
  * issued before the change and cannot see it.
  */
 export function evictCoalescedGet(key: string): void {
   entries.delete(key);
-}
-
-// Last time `forceCoalescedGet` actually evicted+refetched a given key, keyed
-// the same way as `entries`. See `forceCoalescedGet` for why this exists.
-const forcedAt = new Map<string, number>();
-
-// A broadcast identity-change event (sign-in success) is heard by every
-// mounted consumer of a hook in the SAME synchronous `dispatchEvent` pass —
-// e.g. `useWorkspaceContext()` is called from a dozen components that can all
-// be mounted at once, and AmrLoginPill alone can mount twice (the Settings
-// agent-card instance and the cloud sign-in callout instance both listen and
-// both react). Two calls to `forceCoalescedGet` for the same key inside this
-// window are the same burst, not two independent identity changes; the
-// second must join the first's fetch rather than evict it. Measured in a
-// real browser (not jsdom) the two reactions land within single-digit ms of
-// each other, but 250ms leaves generous headroom for a loaded machine
-// without meaningfully delaying a genuinely later, separate identity change
-// (still an order of magnitude under `DEFAULT_TTL_MS`).
-const FORCE_BURST_MS = 250;
-
-/**
- * Like `coalescedGet`, but the caller is announcing the cached answer for
- * `key` is void (an identity change) and must be replaced by a fresh read —
- * the forced counterpart of `evictCoalescedGet` + `coalescedGet`.
- *
- * Calling `evictCoalescedGet` then `coalescedGet` directly at every call site
- * that reacts to one broadcast event is unsafe: because those call sites fire
- * synchronously back-to-back within the same event-dispatch pass, each one's
- * eviction destroys the in-flight entry the PREVIOUS call site just started,
- * so N mounted consumers produce N real network requests instead of one
- * shared request for the whole burst — the exact thundering-herd shape
- * `coalescedGet` exists to prevent for ordinary concurrent calls.
- *
- * `forceCoalescedGet` only evicts once per `key` per `FORCE_BURST_MS`; every
- * other forced call for that key inside the window joins the fetch the first
- * call already kicked off. A force call outside the window (a genuinely
- * later, separate identity change) still gets a full evict + fresh fetch.
- */
-export function forceCoalescedGet<T>(
-  key: string,
-  run: () => Promise<T>,
-  ttlMs: number = DEFAULT_TTL_MS,
-): Promise<T> {
-  const now = nowMs();
-  const last = forcedAt.get(key);
-  if (last === undefined || now - last >= FORCE_BURST_MS) {
-    forcedAt.set(key, now);
-    evictCoalescedGet(key);
-  }
-  return coalescedGet(key, run, ttlMs);
 }
 
 /**
@@ -142,5 +87,4 @@ export function forceCoalescedGet<T>(
  */
 export function resetCoalescedGet(): void {
   entries.clear();
-  forcedAt.clear();
 }

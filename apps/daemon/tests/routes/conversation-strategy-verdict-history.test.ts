@@ -142,7 +142,6 @@ async function readHistory(
   dataDir: string,
   options: {
     beforeRead?: (origin: string) => Promise<void>;
-    authorizeProjectRequest?: RegisterProjectConversationRoutesDeps['authorizeProjectRequest'];
   } = {},
 ): Promise<ChatMessage[]> {
   const app = express();
@@ -163,9 +162,6 @@ async function readHistory(
     appConfig: { readAppConfig: async () => ({}) },
     agents: { getAgentDef: () => null },
     design: { runs: {} },
-    // Most fixtures are unbound local projects. Scope cases explicitly inject
-    // a project-authority boundary; neither claims live Workspace coverage.
-    authorizeProjectRequest: options.authorizeProjectRequest,
   } as unknown as RegisterProjectConversationRoutesDeps);
   const server = app.listen(0, '127.0.0.1');
   try {
@@ -240,7 +236,7 @@ describe('persisted strategy verdict in conversation history', () => {
 
   it.each([
     { label: 'another conversation in the same project', foreignProjectId: PROJECT_ID },
-    { label: 'a project the caller cannot read', foreignProjectId: 'foreign-history-project' },
+    { label: 'another project', foreignProjectId: 'foreign-history-project' },
   ])('does not disclose task metadata through a caller-written runId from $label', async ({ foreignProjectId }) => {
     const foreignConversationId = 'foreign-history-conversation';
     const foreignTaskId = 'foreign-history-task';
@@ -267,23 +263,8 @@ describe('persisted strategy verdict in conversation history', () => {
       projectId: foreignProjectId, conversationId: foreignConversationId,
       outcome: 'blocked', blockedContext: { visibleText: foreignText },
     });
-    const authorizeProjectRequest: NonNullable<
-      RegisterProjectConversationRoutesDeps['authorizeProjectRequest']
-    > = async (_req, res, projectId) => {
-      if (projectId === PROJECT_ID) return true;
-      res.status(403).json({ error: { code: 'FORBIDDEN', message: 'Fixture project denied.' } });
-      return false;
-    };
     const warm = await readHistory(db, dataDir, {
-      authorizeProjectRequest,
       beforeRead: async (origin) => {
-        if (foreignProjectId !== PROJECT_ID) {
-          const denied = await fetch(
-            `${origin}/api/projects/${foreignProjectId}/conversations/${foreignConversationId}/messages`,
-          );
-          expect(denied.status).toBe(403);
-          await denied.json();
-        }
         // Exercise the actual new-message write path. There is no stored row
         // for the daemon-backed merge guard to preserve, so the supplied runId
         // is currently accepted. Do not seed the forged message directly in DB.
@@ -310,7 +291,7 @@ describe('persisted strategy verdict in conversation history', () => {
     });
     closeDatabase();
     db = openDatabase(dataDir, { dataDir });
-    const cold = await readHistory(db, dataDir, { authorizeProjectRequest });
+    const cold = await readHistory(db, dataDir);
     for (const [messages, blocked] of [[warm, true], [cold, false]] as const) {
       expect(messages).toHaveLength(2);
       // Preserve the intended same-project, same-conversation restoration.

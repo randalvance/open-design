@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@/playwright/suite';
 import { T } from '@/timeouts';
-import { AMR_PERSONAL_WORKSPACE_CONTEXT, mockAmrPersonalWorkspace } from '@/playwright/amr';
 
 // Owner C0: the two toolbar actions, not artifact-card actions or menu rows.
 // The original interactive board specifies 30/7 here; its captured legacy
@@ -18,15 +17,6 @@ for (const theme of ['light', 'dark', 'system-light', 'system-dark'] as const) {
       config.theme = selectedTheme.startsWith('system-') ? 'system' : selectedTheme;
       localStorage.setItem('open-design:config', JSON.stringify(config));
     }, theme);
-    await mockAmrPersonalWorkspace(page);
-    await page.route('**/api/projects/*/workspace-scope', async route => {
-      const projectId = new URL(route.request().url()).pathname.match(/\/projects\/([^/]+)/)?.[1];
-      await route.fulfill({ json: { scope: {
-        kind: 'personal', projectId,
-        workspaceId: AMR_PERSONAL_WORKSPACE_CONTEXT.workspaceId,
-        visibility: 'personal', context: AMR_PERSONAL_WORKSPACE_CONTEXT,
-      } } });
-    });
     const projectId = `toolbar-3580-${randomUUID()}`;
     const created = await page.request.post('/api/projects', { data: {
       id: projectId, name: 'Owner toolbar regression', skillId: null, designSystemId: null,
@@ -66,7 +56,7 @@ for (const theme of ['light', 'dark', 'system-light', 'system-dark'] as const) {
       await testInfo.attach(`${theme}-${state}-styles`, {
         body: JSON.stringify({ theme, state, viewport: page.viewportSize(),
           actualTheme: await page.locator('html').getAttribute('data-theme'),
-          boundary: 'Real local web/daemon and HTTP-created project; mocked personal workspace identity, no real account or Vela publication.', computed }, null, 2),
+          boundary: 'Real local web/daemon and HTTP-created project.', computed }, null, 2),
         contentType: 'application/json',
       });
       await testInfo.attach(`${theme}-${state}`, {

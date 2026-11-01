@@ -207,7 +207,7 @@ async function runWatcher(options: {
 }
 
 const TESTS_FAMILY_GREEN: JobStub[] = [
-  done("P0 Functional E2E / UI P0 (project-collab)", "success"),
+  done("P0 Functional E2E / UI P0 (project-runtime)", "success"),
   done("Daemon tests (1/4)", "success"),
   done("Verify build (typecheck + tests)", "success"),
 ];

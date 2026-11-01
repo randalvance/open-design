@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChatPane } from '../../src/components/ChatPane';
 import { trackRunFailedToastSurfaceView } from '../../src/analytics/events';
 import type { RunFailureDetail } from '@open-design/contracts';
-import type { AppConfig, ChatMessage, Conversation } from '../../src/types';
+import type { ChatMessage, Conversation } from '../../src/types';
 
 const translate = (key: string, vars?: Record<string, string | number>) => {
   const localized: Record<string, string> = {
@@ -189,40 +189,9 @@ describe('ChatPane session switcher', () => {
 
   // 上一条的另一半:余额那条失败**故意**不再报这个 surface_view。
   // 写出来是为了让这次口径变化有据可查 —— 埋点少了一条不能只在数据看板上发现。
-  it('no longer reports a run_failed_toast for the balance failure — the card is gone', async () => {
-    render(
-      <ChatPane
-        messages={[
-          failedAssistantMessage({
-            id: 'msg-amr-balance',
-            runId: 'run-amr-balance',
-            code: 'AMR_INSUFFICIENT_BALANCE',
-            agentId: 'amr',
-          }),
-        ]}
-        streaming={false}
-        error={null}
-        projectId="project-1"
-        projectKindForTracking="prototype"
-        projectFiles={[]}
-        onEnsureProject={async () => 'project-1'}
-        onSend={vi.fn()}
-        onStop={vi.fn()}
-        onRetry={vi.fn()}
-        conversations={[conversation({ id: 'conv-1', title: 'Current' })]}
-        activeConversationId="conv-1"
-        onSelectConversation={vi.fn()}
-        onDeleteConversation={vi.fn()}
-      />,
-    );
 
-    await waitFor(() => expect(screen.getByTestId('chat-log')).toBeTruthy());
-    expect(trackRunFailedToastSurfaceView).not.toHaveBeenCalled();
-  });
-
-  // G16 removes the recharge action from error cards. Preserve the Cloud
-  // failure and verify that its only recovery action retries that same turn.
-  it('keeps fixed Cloud actions when workspace credits are exhausted', () => {
+  // Historic runs keep rendering: the only recovery action retries that same turn.
+  it('keeps the fixed actions on a historic amr run whose credits ran out', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
     const onRetry = vi.fn();
     render(
@@ -247,7 +216,6 @@ describe('ChatPane session switcher', () => {
         activeConversationId="conv-1"
         onSelectConversation={vi.fn()}
         onDeleteConversation={vi.fn()}
-        config={{ agentCliEnv: { amr: { OPEN_DESIGN_AMR_PROFILE: 'test' } } } as unknown as AppConfig}
       />,
     );
 
@@ -261,45 +229,6 @@ describe('ChatPane session switcher', () => {
     openSpy.mockRestore();
   });
 
-  it('keeps the profile-scoped plan URL on the separate zero-balance UpgradeCard', () => {
-    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
-    render(
-      <ChatPane
-        messages={[]}
-        amrBalanceCardUsd={0}
-        streaming={false}
-        error={null}
-        projectId="project-1"
-        projectFiles={[]}
-        onEnsureProject={async () => 'project-1'}
-        onSend={vi.fn()}
-        onStop={vi.fn()}
-        onRetry={vi.fn()}
-        conversations={[conversation({ id: 'conv-1', title: 'Current' })]}
-        activeConversationId="conv-1"
-        onSelectConversation={vi.fn()}
-        onDeleteConversation={vi.fn()}
-        config={{ agentCliEnv: { amr: { OPEN_DESIGN_AMR_PROFILE: 'test' } } } as unknown as AppConfig}
-      />,
-    );
-
-    expect(screen.queryByTestId('chat-run-error-card')).toBeNull();
-    fireEvent.click(within(screen.getByTestId('chat-upgrade-card')).getByRole('button', { name: 'settings.amrUpgrade' }));
-
-    const [plansUrl, target, features] = openSpy.mock.calls[0] ?? [];
-    expect(target).toBe('_blank');
-    expect(features).toBe('noopener,noreferrer');
-    // The rendered profile is `test`, and T54 (2026-09-06) made the plans link
-    // honor it: this used to assert the PRODUCTION Pricing URL, which is how a
-    // non-prod build sent people to production checkout.
-    const parsedPlansUrl = new URL(String(plansUrl));
-    expect(`${parsedPlansUrl.origin}${parsedPlansUrl.pathname}`).toBe(
-      'https://open-design.powerformer.net/cloud/dashboard',
-    );
-    expect(parsedPlansUrl.searchParams.get('billing')).toBe('plan');
-    expect(parsedPlansUrl.searchParams.get('od_entry_source')).toBe('chat_upgrade_card');
-    openSpy.mockRestore();
-  });
 });
 
 function renderChatPane(props: {

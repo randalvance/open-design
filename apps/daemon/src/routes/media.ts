@@ -1,8 +1,4 @@
 import fs from 'node:fs';
-import { parseStockSearchRequest, type StockSearchRequest } from '@open-design/contracts';
-import { resolveProjectWritePath, validateProjectPath } from '../projects.js';
-import { stockSearch, StockSearchServiceError, StockSearchInputError } from '../media/stock-search.js';
-import { createStockRecorder } from '../media/stock-telemetry.js';
 import type { Express } from 'express';
 import type {
   HyperFramesScaffoldRequest,
@@ -15,15 +11,9 @@ import type {
 import type { AnalyticsContext } from '../analytics.js';
 import { defaultMediaExecutionPolicy, mediaPolicyDenial } from '../media/policy.js';
 import { formatMediaTaskDiagnostic } from '../media/diagnostics.js';
-import { findMediaModel, type MediaModel } from '../media/models.js';
-import { fetchVelaVideoModels } from '../media/vela.js';
-import type { CloudVideoModelsResponse } from '@open-design/contracts';
+import { findMediaModel } from '../media/models.js';
 import type { ImageGenerationRequestSummary } from '../media/image-generation-retry.js';
 import type { RouteDeps } from '../server-context.js';
-import type {
-  AuthorizeProjectRequest,
-  AuthorizeProjectToolRequest,
-} from '../collab/project-request-authority.js';
 import { proxyDispatcherRequestInit } from '../connectionTest.js';
 import {
   aihubmixCatalogUrl,
@@ -37,7 +27,6 @@ import { captureChatArtifactSnapshotFromBytes } from '../chat-artifacts/capture.
 import { resolveChatArtifactQuota } from '../chat-artifacts/quota.js';
 import {
   HYPERFRAMES_SCAFFOLD_TOOL_ENDPOINT,
-  STOCK_SEARCH_TOOL_ENDPOINT,
   MEDIA_TASK_WAIT_TOOL_ENDPOINT,
   type ToolTokenGrant,
 } from '../tool-tokens.js';
@@ -45,7 +34,6 @@ import { associateLateRunProducedFile } from '../runtimes/run-produced-files.js'
 import { scaffoldHyperFramesComposition } from '../media/hyperframes-scaffold.js';
 import { assignMediaTaskBatches } from '../media/task-batches.js';
 import { mediaTaskErrorFromFailure } from '../media/task-error.js';
-import { normalizePersistedAutomationWorkspaceScope } from '../automations/workspace-scope.js';
 
 const LONG_MEDIA_PROXY_TIMEOUT_MS = 10 * 60 * 1000;
 const MEDIA_FILE_MTIME_TOLERANCE_MS = 1;
@@ -182,8 +170,6 @@ const AIHUBMIX_CATALOG_TTL_MS = 5 * 60 * 1000;
 const aihubmixCatalogCache = new Map<string, { at: number; models: Array<{ id: string; label: string }> }>();
 
 export interface RegisterMediaRoutesDeps extends RouteDeps<'db' | 'design' | 'http' | 'paths' | 'ids' | 'auth' | 'media' | 'appConfig' | 'orbit' | 'nativeDialogs' | 'projectStore' | 'projectFiles' | 'conversations' | 'research'> {
-  authorizeProjectRequest: AuthorizeProjectRequest;
-  authorizeProjectToolRequest: AuthorizeProjectToolRequest;
 }
 
 export type LegacyMediaRouteGrantDecision =
@@ -248,7 +234,7 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
       : null;
   const { orbitService } = ctx.orbit;
   const { openBrowser, openNativeFolderDialog } = ctx.nativeDialogs;
-  const { getWorkspaceProjectByProjectId, getProject } = ctx.projectStore;
+  const { getProject } = ctx.projectStore;
   const { listFiles, resolveProjectDir, resolveProjectFilePath } = ctx.projectFiles;
   const { insertConversation, upsertMessage } = ctx.conversations;
   const { searchResearch, ResearchError } = ctx.research;
@@ -437,12 +423,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
       });
       task.status = 'running';
       persistMediaTask(task);
-      // Media billing follows the project's Workspace binding, not its sharing
-      // visibility. A private project inside a team Workspace must still spend
-      // that Workspace's balance; `findTeamWorkspaceIdForProject` deliberately
-      // answers the narrower collaboration question and excludes it.
-      const workspaceId =
-        getWorkspaceProjectByProjectId(db, projectId)?.workspaceId?.trim() || undefined;
       generateMedia({
         projectRoot: PROJECT_ROOT,
         projectsRoot: PROJECTS_DIR,
@@ -452,8 +432,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
         prompt: req.body?.prompt,
         output: req.body?.output,
         aspect: req.body?.aspect,
-        quality: typeof req.body?.quality === 'string' ? req.body.quality : undefined,
-        resolution: typeof req.body?.resolution === 'string' ? req.body.resolution : undefined,
         length:
           typeof req.body?.length === 'number' ? req.body.length : undefined,
         duration:
@@ -470,7 +448,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
         compositionDir: req.body?.compositionDir,
         image: req.body?.image,
         images: Array.isArray(req.body?.images) ? req.body.images : undefined,
-        workspaceId,
         // Strong capture path (spec §5.1.1): freeze the provider's own bytes
         // the moment they land, so a later turn overwriting the same output
         // name can never rewrite this message's history. Bound to THIS run and
@@ -684,27 +661,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
     }
   };
   app.get('/api/media/models', async (req, res) => {
-    if (req.query.cloud === 'true') {
-      if (!isLocalSameOrigin(req, getResolvedPort())) return res.status(403).json({ error: 'cross-origin request rejected' });
-      const grant = optionalToolGrantFromRequest(req, { operation: 'media:generate' });
-      const projectId = grant?.projectId ?? (typeof req.query.projectId === 'string' ? req.query.projectId : '');
-      if (!projectId) return sendApiError(res, 400, 'BAD_REQUEST', 'projectId is required for the scoped cloud catalogue');
-      if (grant) {
-        if (!await ctx.authorizeProjectToolRequest(res, projectId, { mode: 'read' })) return;
-      } else if (!await ctx.authorizeProjectRequest(req, res, projectId, { mode: 'read' })) return;
-      try {
-        const workspaceId = getWorkspaceProjectByProjectId(db, projectId)?.workspaceId?.trim() || undefined;
-        const available = await fetchVelaVideoModels(workspaceId);
-        const catalogue: CloudVideoModelsResponse = {
-          video: VIDEO_MODELS.filter((model: MediaModel) => model.provider === 'vela'
-            && available.includes(model.id.replace(/^vela\//, ''))),
-          source: 'account_workspace_catalogue',
-        };
-        return res.json(catalogue);
-      } catch {
-        return sendApiError(res, 503, 'MEDIA_CATALOG_UNAVAILABLE', 'Cloud video availability could not be verified; do not infer availability from the static catalogue.');
-      }
-    }
     res.json({
       providers: MEDIA_PROVIDERS,
       image: IMAGE_MODELS,
@@ -842,36 +798,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
       return res.status(403).json({ error: 'cross-origin request rejected' });
     }
     try {
-      const currentConfig = await readAppConfig(RUNTIME_DATA_DIR);
-      if (
-        req.body?.orbit
-        && typeof req.body.orbit === 'object'
-        && Object.hasOwn(req.body.orbit, 'workspaceScope')
-        && JSON.stringify(req.body.orbit) !== JSON.stringify(currentConfig.orbit)
-      ) {
-        const scope = normalizePersistedAutomationWorkspaceScope(
-          req.body.orbit.workspaceScope,
-        );
-        if (req.body.orbit.workspaceScope !== null && !scope) {
-          return res.status(400).json({
-            error: 'Orbit Workspace scope must contain workspaceId and workspaceMemberId',
-            code: 'WORKSPACE_CONTEXT_INCOMPLETE',
-          });
-        }
-        if (scope) {
-          const claimedWorkspaceId = String(req.get('x-od-workspace-id') ?? '').trim();
-          const claimedMemberId = String(req.get('x-od-workspace-member-id') ?? '').trim();
-          if (
-            claimedWorkspaceId !== scope.workspaceId
-            || claimedMemberId !== scope.workspaceMemberId
-          ) {
-            return res.status(400).json({
-              error: 'Orbit Workspace scope must match the explicit request identity',
-              code: 'WORKSPACE_CONTEXT_INCOMPLETE',
-            });
-          }
-        }
-      }
       const config = await writeAppConfig(RUNTIME_DATA_DIR, req.body);
       orbitService.configure(config.orbit);
       onAppConfigWritten?.(config);
@@ -886,9 +812,7 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
           error: { code: err.code, message: String(err.message) },
         });
       }
-      const status = err?.code === 'WORKSPACE_ACCESS_DENIED'
-          ? 403
-          : 500;
+      const status = 500;
       res
         .status(status)
         .json({
@@ -972,9 +896,7 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
       const locale = typeof req.body?.locale === 'string' ? req.body.locale : null;
       res.json(await orbitService.start('manual', { locale }));
     } catch (err: any) {
-      const status = err?.code === 'WORKSPACE_ACCESS_DENIED'
-          ? 403
-          : 500;
+      const status = 500;
       res
         .status(status)
         .json({
@@ -1024,70 +946,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
     }
   });
 
-  const handleStockSearch = async (req: any, res: any, projectId: string, grant: ToolTokenGrant | null) => {
-    const project = getProject(db, projectId);
-    if (!project) return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
-    let request: StockSearchRequest;
-    try {
-      request = parseStockSearchRequest(req.body);
-      request.outDir = validateProjectPath(request.outDir ?? 'assets/stock');
-      await resolveProjectWritePath(PROJECTS_DIR, projectId, request.outDir, project.metadata);
-    } catch (err: any) {
-      return sendApiError(res, 400, 'INVALID_STOCK_REQUEST', err.message);
-    }
-    const run = grant?.runId ? design.runs.get(grant.runId) : null;
-    const analytics = await mediaAnalyticsContext(req, grant);
-    const recorder = await createStockRecorder({ slotCount: request.slots.length, env: {
-      ...process.env,
-      OD_DATA_DIR: RUNTIME_DATA_DIR,
-      OD_PROJECT_ID: projectId,
-      OD_STOCK_RUN_ID: grant?.runId ?? '',
-      OD_STOCK_SESSION_ID: run?.conversationId ?? '',
-      OD_STOCK_ANALYTICS_DEVICE_ID: analytics?.deviceId ?? '',
-      OD_STOCK_ANALYTICS_SESSION_ID: analytics?.sessionId ?? '',
-      OD_STOCK_ANALYTICS_CLIENT_TYPE: analytics?.clientType ?? '',
-      OD_STOCK_ANALYTICS_LOCALE: analytics?.locale ?? '',
-    } });
-    try {
-      const workspaceId = getWorkspaceProjectByProjectId(db, projectId)?.workspaceId?.trim();
-      const report = await stockSearch({
-        ...request,
-        cwd: resolveProjectDir(PROJECTS_DIR, projectId, project.metadata),
-        ...(workspaceId ? { workspaceId } : {}),
-        resolveOutputPath: (relative) => resolveProjectWritePath(PROJECTS_DIR, projectId, relative, project.metadata),
-        onAttempt: (event) => { recorder.record(event); },
-      });
-      const collectionStatus = await recorder.finish(report);
-      res.json({ ...report, telemetry: { callId: recorder.callId, collectionStatus } });
-    } catch (err: any) {
-      await recorder.finish({ providers: [], slots: request.slots.map((slot) => ({ ...slot, status: 'error' })) });
-      if (err instanceof StockSearchServiceError) return sendApiError(res, 503, 'STOCK_SEARCH_UNAVAILABLE', err.message);
-      if (err instanceof StockSearchInputError || err.code === 'EPATHESCAPE') return sendApiError(res, 400, 'INVALID_STOCK_REQUEST', err.message);
-      return sendApiError(res, 500, 'STOCK_SEARCH_FAILED', 'stock search could not complete');
-    }
-  };
-
-  app.post(STOCK_SEARCH_TOOL_ENDPOINT, async (req, res) => {
-    const grant = authorizeToolRequest(req, res, 'media:stock-search', { endpoint: STOCK_SEARCH_TOOL_ENDPOINT });
-    if (!grant) return;
-    if (!await ctx.authorizeProjectToolRequest(res, grant.projectId, { mode: 'write', capability: 'writeFiles' })) return;
-    await handleStockSearch(req, res, grant.projectId, grant);
-  });
-
-  // Existing UI/project clients use the same execution path. Bearer callers
-  // cannot downgrade to browser authority or select a different project.
-  app.post('/api/projects/:id/media/stock-search', async (req, res) => {
-    if (!isLocalSameOrigin(req, getResolvedPort())) return sendApiError(res, 403, 'FORBIDDEN', 'cross-origin request rejected');
-    const bearer = /^Bearer(?:\s|$)/i.test(req.get('authorization')?.trim() ?? '');
-    const grant = bearer ? authorizeToolRequest(req, res, 'media:stock-search', { endpoint: STOCK_SEARCH_TOOL_ENDPOINT }) : null;
-    if (bearer && !grant) return;
-    if (grant && grant.projectId !== req.params.id) return sendApiError(res, 403, 'FORBIDDEN', 'projectId is derived from the tool token');
-    if (grant) {
-      if (!await ctx.authorizeProjectToolRequest(res, grant.projectId, { mode: 'write', capability: 'writeFiles' })) return;
-    } else if (!await ctx.authorizeProjectRequest(req, res, req.params.id, { mode: 'write', capability: 'writeFiles' })) return;
-    await handleStockSearch(req, res, req.params.id, grant);
-  });
-
   app.post('/api/projects/:id/media/hyperframes/scaffold', async (req, res) => {
     if (!isLocalSameOrigin(req, getResolvedPort())) {
       return res.status(403).json({
@@ -1099,12 +957,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await ctx.authorizeProjectRequest(
-        req,
-        res,
-        project.id,
-        { mode: 'write', capability: 'writeFiles' },
-      )) return;
       await handleHyperFramesScaffold(req, res, project.id);
     } catch (err: any) {
       const status = typeof err?.status === 'number' ? err.status : 400;
@@ -1121,11 +973,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
     });
     if (!grant) return;
     try {
-      if (!await ctx.authorizeProjectToolRequest(
-        res,
-        grant.projectId,
-        { mode: 'write', capability: 'writeFiles' },
-      )) return;
       await handleHyperFramesScaffold(req, res, grant.projectId);
     } catch (err: any) {
       const status = typeof err?.status === 'number' ? err.status : 400;
@@ -1149,12 +996,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await ctx.authorizeProjectRequest(
-        req,
-        res,
-        project.id,
-        { mode: 'write', capability: 'writeFiles' },
-      )) return;
       const grant = optionalToolGrantFromRequest(req, { operation: 'media:generate' });
       const grantDecision = resolveLegacyMediaRouteGrant({
         grant,
@@ -1185,11 +1026,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
     const grant = authorizeToolRequest(req, res, 'media:generate');
     if (!grant) return;
     try {
-      if (!await ctx.authorizeProjectToolRequest(
-        res,
-        grant.projectId,
-        { mode: 'write', capability: 'writeFiles' },
-      )) return;
       await handleGenerate(req, res, { projectId: grant.projectId, grant });
     } catch (err: any) {
       const status = typeof err?.status === 'number' ? err.status : 400;
@@ -1269,17 +1105,9 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
         )
       : null;
     if (usesToolTokenLane && !toolGrant) return;
-    if (
-      toolGrant
-      && !await ctx.authorizeProjectToolRequest(
-        res,
-        toolGrant.projectId,
-        { mode: 'read' },
-      )
-    ) return;
 
     // Token callers must prove their grant targets the persisted local project
-    // before task lookup; cloud availability is irrelevant to this local wait.
+    // before task lookup.
     const taskId = req.params.id;
     const task = getLiveMediaTask(taskId);
     if (!task) return res.status(404).json({ error: 'task not found' });
@@ -1292,13 +1120,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
           'media task belongs to a different project',
         );
       }
-    } else if (!await ctx.authorizeProjectRequest(
-      req,
-      res,
-      task.projectId,
-      { mode: 'read' },
-    )) {
-      return;
     }
 
     const since = Number.isFinite(req.body?.since) ? Number(req.body.since) : 0;
@@ -1343,7 +1164,6 @@ export function registerMediaRoutes(app: Express, ctx: RegisterMediaRoutesDeps) 
     if (!project) {
       return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
     }
-    if (!await ctx.authorizeProjectRequest(req, res, projectId, { mode: 'read' })) return;
     const includeDone =
       req.query.includeDone === '1' || req.query.includeDone === 'true';
     const taskRows = listMediaTasksByProject(db, projectId, {

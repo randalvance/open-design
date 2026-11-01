@@ -5,7 +5,7 @@ import { forwardRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatPane } from '../../src/components/ChatPane';
-import type { AppConfig, ChatMessage } from '../../src/types';
+import type { ChatMessage } from '../../src/types';
 
 // Red spec for the ACP handshake-refusal card (issue behind PR #7303).
 //
@@ -92,7 +92,7 @@ function refusedMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   } as ChatMessage;
 }
 
-function renderChat(message: ChatMessage, onSwitchToAmrAndRetry = vi.fn()) {
+function renderChat(message: ChatMessage, onRetry = vi.fn()) {
   return render(
     <ChatPane
       messages={[message]}
@@ -103,15 +103,13 @@ function renderChat(message: ChatMessage, onSwitchToAmrAndRetry = vi.fn()) {
       onEnsureProject={async () => 'project-1'}
       onSend={vi.fn()}
       onStop={vi.fn()}
-      onRetry={vi.fn()}
-      onSwitchToAmrAndRetry={onSwitchToAmrAndRetry}
+      onRetry={onRetry}
       conversations={[
         { projectId: 'project-1', id: 'conv-1', title: 'Current', createdAt: 1, updatedAt: 1 },
       ]}
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'kimi', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }
@@ -167,14 +165,13 @@ describe('ChatPane — ACP CLI session refusal card', () => {
     expect(container.querySelector('.run-error__diagnostic')).toBeNull();
   });
 
-  it('offers Cloud switching for the refused CLI run, without a second Retry action', () => {
+  it('offers Retry for the refused CLI run', () => {
     const message = refusedMessage();
-    const onSwitchToAmrAndRetry = vi.fn();
-    renderChat(message, onSwitchToAmrAndRetry);
+    const onRetry = vi.fn();
+    renderChat(message, onRetry);
 
-    fireEvent.click(screen.getByRole('button', { name: 'chat.amrCard.switchCta' }));
-    expect(onSwitchToAmrAndRetry).toHaveBeenCalledExactlyOnceWith(message);
-    expect(screen.queryByRole('button', { name: 'promptTemplates.retry' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'promptTemplates.retry' }));
+    expect(onRetry).toHaveBeenCalledExactlyOnceWith(message, 'manual_retry');
   });
 
   // The daemon may ship extra structured facts on the same event (it already

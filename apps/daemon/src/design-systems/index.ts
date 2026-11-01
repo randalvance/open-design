@@ -25,13 +25,6 @@ import {
 import { parseFrontmatter } from './frontmatter.js';
 import type { FrontmatterObject, FrontmatterValue } from './frontmatter.js';
 import { extractSwiftColors } from './swift-colors.js';
-import { workspaceTeamDesignSystemBindingResourceId } from './workspace-team-binding.js';
-import {
-  ensureWorkspaceResource,
-  getWorkspaceResourceByResourceId,
-  updateWorkspaceResource,
-} from '../db.js';
-import { teamResourceWorkspaceRoot } from '../collab/team-resource-materialization.js';
 
 type SqliteDb = Database.Database;
 
@@ -338,7 +331,6 @@ export async function listDesignSystems(
       if (!stats.isFile()) continue;
       const raw = await readFile(designPath, 'utf8');
       const metadata = await readUserMetadata(root, entry.name);
-      if (!designSystemVisibleFromWorkspace(metadata.workspaceId, options.workspaceId)) continue;
       const { data: frontmatter, body } = parseFrontmatter(raw);
       const titleMatch = /^#\s+(.+?)\s*$/m.exec(body);
       const markdownTitle =
@@ -392,49 +384,6 @@ export async function listDesignSystems(
   return out;
 }
 
-/**
- * Whether a design system claimed by `owner` should be listed while `scope` is
- * the active workspace.
- *
- * `scope === undefined` (the `workspaceId` option key OMITTED, not merely
- * empty) means the caller asked for the truly unscoped catalog — id
- * resolution, install/import lookups, and (critically) `createUserDesignSystem`/
- * `updateUserDesignSystem`/`linkUserDesignSystemProject` re-reading the system
- * they just wrote by id — which must never hide anything, or writing a system
- * claimed by a workspace would make `listDesignSystems(...).find(...)` fail to
- * find what was just written (a real regression this fix must not introduce).
- *
- * `scope` present but empty (`null`/`''`) is a DIFFERENT case: a caller that
- * DID ask to be scoped — `GET /api/design-systems` with no verified vela
- * session — but has no workspace identity to offer. Spec 04 §10: that must
- * hide a CLAIMED system, not show it, or "no scope" quietly becomes "trust
- * everything". With a positive scope, no `owner` means QUARANTINED: absence of
- * an ownership witness must not authorize a cross-workspace read. With an
- * explicitly empty scope, ownerless local resources remain usable while all
- * claimed workspace resources stay hidden.
- */
-function designSystemVisibleFromWorkspace(
-  owner: string | undefined,
-  scope: string | null | undefined,
-): boolean {
-  if (scope === undefined) return true;
-  const scopeId = scope?.trim();
-  const ownerId = owner?.trim();
-  if (!scopeId) return !ownerId;
-  if (!ownerId) return false;
-  return ownerId === scopeId;
-}
-
-async function designSystemDirectoryVisibleFromWorkspace(
-  root: string,
-  dirId: string,
-  scope: string | null | undefined,
-): Promise<boolean> {
-  if (scope === undefined) return true;
-  const metadata = await readUserMetadata(root, dirId);
-  return designSystemVisibleFromWorkspace(metadata.workspaceId, scope);
-}
-
 function stringField(data: FrontmatterObject, key: string): string {
   const v: FrontmatterValue | undefined = data[key];
   return typeof v === 'string' ? v.trim() : '';
@@ -480,9 +429,6 @@ export async function readDesignSystem(
 ): Promise<string | null> {
   const dirId = stripPrefixAndValidateId(id, options.idPrefix);
   if (!dirId) return null;
-  if (!(await designSystemDirectoryVisibleFromWorkspace(root, dirId, options.workspaceId))) {
-    return null;
-  }
   const brandRoot = path.join(root, dirId);
   const manifest = await readProjectManifest(brandRoot, dirId);
   const file = path.join(brandRoot, manifest?.files.design ?? 'DESIGN.md');
@@ -500,9 +446,6 @@ export async function readDesignSystemPackageInfo(
 ): Promise<DesignSystemPackageInfo | null> {
   const dirId = stripPrefixAndValidateId(id, options.idPrefix);
   if (!dirId) return null;
-  if (!(await designSystemDirectoryVisibleFromWorkspace(root, dirId, options.workspaceId))) {
-    return null;
-  }
   const brandRoot = path.join(root, dirId);
   const manifest = await readProjectManifest(brandRoot, dirId);
   if (manifest === null) return null;
@@ -668,9 +611,6 @@ export async function readDesignSystemStaticFile(
   const dirId = stripPrefixAndValidateId(id, options.idPrefix);
   const cleanPath = sanitizeRelativeFilePath(relativePath);
   if (!dirId || !cleanPath) return null;
-  if (!(await designSystemDirectoryVisibleFromWorkspace(root, dirId, options.workspaceId))) {
-    return null;
-  }
 
   const brandRoot = path.join(root, dirId);
   const manifest = await readProjectManifest(brandRoot, dirId);
@@ -1434,24 +1374,6 @@ export function workspaceRenameDesignSystemId(project: {
 // recreates the silent revert this write-through exists to prevent.
 export type WorkspaceRenamePropagation = 'not-applicable' | 'propagated' | 'failed';
 
-/**
- * A Team design-system workspace project edits the workspace-scoped
- * materialization, never a same-id Personal canonical entry. The persisted
- * project binding is the scope authority; shell/current Workspace state is
- * deliberately irrelevant.
- */
-export function resolveWorkspaceProjectDesignSystemRoot(
-  canonicalRoot: string,
-  binding: { workspaceId?: unknown; visibility?: unknown } | null | undefined,
-): string {
-  const workspaceId = typeof binding?.workspaceId === 'string'
-    ? binding.workspaceId.trim()
-    : '';
-  return binding?.visibility === 'team' && workspaceId
-    ? teamResourceWorkspaceRoot(canonicalRoot, workspaceId)
-    : canonicalRoot;
-}
-
 export async function propagateWorkspaceProjectRename(
   root: string,
   project: { designSystemId?: string | null; metadata?: unknown },
@@ -1610,135 +1532,6 @@ export async function deleteUserDesignSystem(root: string, id: string): Promise<
   } catch {
     return false;
   }
-}
-
-/**
- * Whether `id` was materialized locally from a teammate's team share, rather
- * than authored by the current caller. Mirrors the `teamSynced` flag
- * `markTeamSynced` (server.ts `syncSharedTeamDesignSystem`) writes once a
- * shared design system is pulled onto disk — false/absent for anything the
- * caller authored themselves, including a system the caller has *shared* to
- * the team (the sharer's own copy never gets this flag). Routes that mutate
- * a `user:` design system (edit / publish toggle / delete) must treat a
- * `true` result as "not necessarily mine" and check the caller's team-share
- * management permission before proceeding (see `canManageSharedResource` in
- * `collab/team-resource-share.ts`) — recvqb6mfyqXLD.
- */
-export async function isTeamSyncedUserDesignSystem(root: string, id: string): Promise<boolean> {
-  const dirId = stripPrefixAndValidateId(id, 'user:');
-  if (!dirId) return false;
-  const meta = await readUserMetadata(root, dirId);
-  return meta.teamSynced === true;
-}
-
-/**
- * One-time startup backfill (spec 9.2): design systems predate the generic
- * `workspace_resources` envelope table entirely — `createWorkspaceOwnedDesignSystem`
- * and `markTeamSynced` (server.ts) only started double-writing into it today,
- * so every system claimed BEFORE that shipped has a `workspaceId` in its
- * `metadata.json` but no corresponding row in the table. Left alone, that
- * system stays permanently invisible to anything that reads the generic table
- * (mirrors what `collapseWorkspaceProjectHomes` heals for project, applied to
- * a filesystem-backed resource instead of a DB-only one). Older systems that
- * lack `workspaceId` may be recovered only when their `projectId` maps to
- * exactly one persisted project binding. The current/active workspace is never
- * consulted; an absent or ambiguous binding leaves the resource quarantined.
- *
- * Idempotent by construction: a directory whose exact Personal or
- * Workspace-qualified Team binding already exists is skipped, so re-running
- * this on every daemon start costs one readdir plus a lookup per system and
- * never writes a duplicate. Legacy raw Team rows are retained; the qualified
- * binding is added alongside them so no historical data is deleted.
- *
- * `visibility` mirrors the claim `markTeamSynced` writes going forward —
- * `teamSynced: true` backfills as `'team'`, everything else as `'personal'`.
- * For a project-inferred claim, metadata.json is updated with that durable
- * workspace witness before the envelope row is created. Other metadata is
- * preserved. Unresolvable ownerless resources are never deleted or rewritten.
- */
-export async function backfillDesignSystemWorkspaceResources(
-  db: SqliteDb,
-  root: string,
-): Promise<number> {
-  let entries = [];
-  try {
-    entries = await readdir(root, { withFileTypes: true });
-  } catch {
-    return 0;
-  }
-  let backfilled = 0;
-  for (const entry of entries) {
-    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-    const dirId = entry.name;
-    const id = `user:${dirId}`;
-    const metadata = await readUserMetadata(root, dirId);
-    let workspaceId = metadata.workspaceId;
-    let createdByWorkspaceMemberId: string | undefined;
-    let inferredWorkspaceId: string | undefined;
-    if (metadata.projectId) {
-      const bindings = db.prepare(
-        `SELECT workspace_id AS workspaceId,
-                created_by_workspace_member_id AS createdByWorkspaceMemberId
-           FROM workspace_projects
-          WHERE project_id = ?
-          LIMIT 2`,
-      ).all(metadata.projectId) as Array<{
-        workspaceId?: string;
-        createdByWorkspaceMemberId?: string | null;
-      }>;
-      if (bindings.length === 1) {
-        inferredWorkspaceId = cleanWorkspaceIdForMetadata(bindings[0]?.workspaceId) ?? undefined;
-        if (!workspaceId) workspaceId = inferredWorkspaceId ?? undefined;
-        if (inferredWorkspaceId === workspaceId) {
-          createdByWorkspaceMemberId = bindings[0]?.createdByWorkspaceMemberId?.trim() || undefined;
-        }
-      }
-    }
-    const bindingResourceId = metadata.teamSynced === true && workspaceId
-      ? workspaceTeamDesignSystemBindingResourceId(workspaceId, id)
-      : id;
-    const existing = getWorkspaceResourceByResourceId(
-      db,
-      'design_system',
-      bindingResourceId,
-    );
-    if (existing) {
-      const bindingMatchesInference = inferredWorkspaceId === existing.workspaceId;
-      if (!metadata.workspaceId && bindingMatchesInference) {
-        await writeUserDesignSystemWorkspaceClaim(root, dirId, existing.workspaceId);
-      }
-      if (
-        existing.visibility !== 'team'
-        && !existing.createdByWorkspaceMemberId
-        && bindingMatchesInference
-        && createdByWorkspaceMemberId
-      ) {
-        updateWorkspaceResource(db, 'design_system', existing.workspaceId, bindingResourceId, {
-          createdByWorkspaceMemberId,
-          updatedByWorkspaceMemberId: createdByWorkspaceMemberId,
-          updatedAt: existing.updatedAt,
-        });
-        backfilled += 1;
-      }
-      continue;
-    }
-    if (!workspaceId) continue;
-    if (!metadata.workspaceId && inferredWorkspaceId === workspaceId) {
-      await writeUserDesignSystemWorkspaceClaim(root, dirId, workspaceId);
-    }
-    ensureWorkspaceResource(db, 'design_system', workspaceId, bindingResourceId, {
-      visibility: metadata.teamSynced === true ? 'team' : 'personal',
-      resourceState: 'active',
-      ...(createdByWorkspaceMemberId
-        ? {
-            createdByWorkspaceMemberId,
-            updatedByWorkspaceMemberId: createdByWorkspaceMemberId,
-          }
-        : {}),
-    });
-    backfilled += 1;
-  }
-  return backfilled;
 }
 
 export async function listUserDesignSystemFiles(
@@ -2420,10 +2213,9 @@ export type DesignSystemAssetSyncResult = {
 /**
  * Copies real asset bytes into a user design system's canonical `assets/`
  * directory — the fix for the logo/asset desync (spec 04 §9.3,
- * recvqb1t4FrckM): canonical is the only directory `team-resource-share`
- * packages and downloads read from, but agent-produced assets only ever
+ * recvqb1t4FrckM): canonical is the only directory downloads read from, but agent-produced assets only ever
  * landed in the workspace-project editing mirror, so a regenerated logo
- * never reached what got shared or downloaded.
+ * never reached what got downloaded.
  *
  * Every write here is caller-supplied bytes, never generator output, so it
  * must survive the next `writeGeneratedDesignSystemFiles` call rather than

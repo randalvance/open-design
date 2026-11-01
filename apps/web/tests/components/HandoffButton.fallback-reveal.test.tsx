@@ -51,7 +51,7 @@ describe('HandoffButton zero-editors fallback', () => {
     const fallback = (await screen.findByText('Finder')).closest('button') as HTMLButtonElement;
     fireEvent.click(fallback);
 
-    await waitFor(() => expect(openProjectInEditor).toHaveBeenCalledWith('p1', 'finder', null));
+    await waitFor(() => expect(openProjectInEditor).toHaveBeenCalledWith('p1', 'finder'));
   });
 
   it('surfaces a daemon spawn failure inline so the fallback is not a silent no-op', async () => {
@@ -113,8 +113,6 @@ describe('HandoffButton zero-editors fallback', () => {
           projectName="Landing"
           projectDir="/tmp/open-design/Landing"
           agents={agents}
-          metricsConsent
-          installationId="od-install-abc"
         />
       </I18nProvider>,
     );
@@ -124,13 +122,6 @@ describe('HandoffButton zero-editors fallback', () => {
     // The "OpenDesign Cloud website" link was removed from the CLI tab
     // (acceptance #101); the CLI agent cards remain the surface here.
     expect(screen.queryByRole('link', { name: /打开 OpenDesign Cloud 官网/ })).toBeNull();
-    expect(screen.getByTestId('handoff-cli-item-amr').textContent).toContain('OpenDesign');
-    expect(screen.getByTestId('handoff-cli-item-amr').textContent).not.toContain('未安装');
-    expect(
-      screen.getByTestId('handoff-cli-item-amr').compareDocumentPosition(
-        screen.getByTestId('handoff-cli-item-codex'),
-      ) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: 'Vue.js' }));
     fireEvent.click(await screen.findByTestId('handoff-cli-item-claude'));
 

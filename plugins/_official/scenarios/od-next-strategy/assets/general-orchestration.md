@@ -221,14 +221,11 @@ complete, still-valid body is already in context. Read it through the supplied
 Open Design CLI wrapper; on POSIX shells:
 
 ```sh
-"$OD_NODE_BIN" "$OD_BIN" skill show od-next-media-inputs --json --workspace "$OD_WORKSPACE_ID" --workspace-member "$OD_WORKSPACE_MEMBER_ID"
+"$OD_NODE_BIN" "$OD_BIN" skill show od-next-media-inputs --json
 ```
 
-Use the host-documented wrapper syntax on other shells and pass the same
-run-pinned Workspace/member pair. Both values are empty for unbound local
-runs. Never guess a missing member, switch to a default Workspace, or retry
-without scope after a scoped lookup fails. Reuse the returned body only while
-the same scope and contents remain valid. This reads the current visible
+Use the host-documented wrapper syntax on other shells. Reuse the returned
+body only while its contents remain valid. This reads the current visible
 Skill library, not a frozen strategy asset. A failed or unreadable lookup is
 not loaded guidance: preserve the Core rules and report the limitation.
 Tasks without media work do not load this Skill. The Skill governs

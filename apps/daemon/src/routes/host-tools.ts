@@ -25,11 +25,9 @@ import type {
   OpenProjectInEditorResponse,
 } from '@open-design/contracts';
 import type { RouteDeps } from '../server-context.js';
-import type { AuthorizeProjectRequest } from '../collab/project-request-authority.js';
 
 export interface RegisterHostToolsRoutesDeps
   extends RouteDeps<'db' | 'http' | 'paths' | 'projectStore' | 'projectFiles'> {
-  authorizeProjectRequest: AuthorizeProjectRequest;
 }
 
 export type RealPlatform = 'darwin' | 'win32' | 'linux';
@@ -347,7 +345,6 @@ export function registerHostToolsRoutes(app: Express, ctx: RegisterHostToolsRout
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await ctx.authorizeProjectRequest(req, res, project.id, { mode: 'read' })) return;
       const resolvedDir = projectHostOpenDir(
         PROJECTS_DIR,
         project,

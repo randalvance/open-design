@@ -22,7 +22,6 @@ import { copyToClipboard } from '../lib/copy-to-clipboard';
 import { Icon } from './Icon';
 import { EditorIcon } from './EditorIcon';
 import { AgentIcon } from './AgentIcon';
-import { useProjectCollabContext } from '../collab/collab-context';
 
 const PREFERRED_EDITOR_KEY = 'open-design:preferred-editor';
 const PREFERRED_FRAMEWORK_KEY = 'open-design:handoff-framework';
@@ -57,7 +56,6 @@ interface CliTarget {
 }
 
 const CLI_ORDER = [
-  'amr',
   'claude',
   'codex',
   'opencode',
@@ -82,7 +80,6 @@ const CLI_ORDER = [
 ];
 
 const FALLBACK_CLI_TARGETS: CliTarget[] = [
-  { id: 'amr', name: 'OpenDesign', bin: 'vela', available: false },
   { id: 'claude', name: 'Claude Code', bin: 'claude', available: false },
   { id: 'codex', name: 'Codex CLI', bin: 'codex', available: false },
   { id: 'opencode', name: 'OpenCode', bin: 'opencode-cli', available: false },
@@ -116,11 +113,6 @@ interface Props {
   // Undefined when no artifact tab is active.
   artifactId?: string;
   artifactKind?: TrackingArtifactKind;
-  // Retained on the props contract for the callers that still pass them
-  // (FileViewer / ProjectView). No longer read here since the OpenDesign
-  // Cloud website link was removed from the CLI tab (acceptance #101).
-  metricsConsent?: boolean;
-  installationId?: string | null;
   embedded?: boolean;
   // Optional fallback "always open in OS file manager" — falls back to the
   // existing shell.openPath bridge in case the daemon catalogue is empty
@@ -164,10 +156,6 @@ function writePreferredFramework(id: string): void {
   }
 }
 
-function cliDisplayName(agent: Pick<CliTarget, 'id' | 'name'>): string {
-  return agent.id === 'amr' ? 'OpenDesign' : agent.name;
-}
-
 function mergeCliTargets(agents: AgentInfo[] | undefined): CliTarget[] {
   const byId = new Map<string, CliTarget>();
   for (const target of FALLBACK_CLI_TARGETS) {
@@ -176,7 +164,7 @@ function mergeCliTargets(agents: AgentInfo[] | undefined): CliTarget[] {
   for (const agent of agents ?? []) {
     byId.set(agent.id, {
       id: agent.id,
-      name: cliDisplayName(agent),
+      name: agent.name,
       bin: agent.bin,
       available: agent.available,
       version: agent.version,
@@ -188,7 +176,7 @@ function mergeCliTargets(agents: AgentInfo[] | undefined): CliTarget[] {
     const ao = ai === -1 ? Number.MAX_SAFE_INTEGER : ai;
     const bo = bi === -1 ? Number.MAX_SAFE_INTEGER : bi;
     if (ao !== bo) return ao - bo;
-    return cliDisplayName(a).localeCompare(cliDisplayName(b));
+    return a.name.localeCompare(b.name);
   });
 }
 
@@ -313,7 +301,7 @@ ${projectDir}
 \`\`\`
 
 ${labels.target}: ${frameworkPrompt}
-${labels.cli}: ${cliDisplayName(cli)}${cli.bin ? ` (${cli.bin})` : ''}
+${labels.cli}: ${cli.name}${cli.bin ? ` (${cli.bin})` : ''}
 
 ${labels.stepsLead}
 1. ${labels.readFiles}
@@ -345,7 +333,6 @@ export function HandoffButton({
 }: Props) {
   const t = useT();
   const analytics = useAnalytics();
-  const { workspaceContext } = useProjectCollabContext();
   // One-liner so every hand-off interaction emits the same
   // `ui_click` / `area=handoff` shape; callers pass only what varies. The
   // active-artifact context is attached to every event so handoff slices line
@@ -462,7 +449,7 @@ export function HandoffButton({
     setBusy(editor.id);
     writePreferred(editor.id);
     try {
-      await openProjectInEditor(projectId, editor.id, workspaceContext);
+      await openProjectInEditor(projectId, editor.id);
       setOpen(false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -497,7 +484,7 @@ export function HandoffButton({
     }
     setError(null);
     setCopyBusy(cli.id);
-    const cliName = cliDisplayName(cli);
+    const cliName = cli.name;
     const frameworkPrompt = frameworkPromptLabel(selectedFramework.id, t);
     const prompt = buildCliHandoffPrompt({
       cli,
@@ -615,7 +602,7 @@ export function HandoffButton({
             });
             setError(null);
             setBusy(fallbackId);
-            void openProjectInEditor(projectId, fallbackId, workspaceContext)
+            void openProjectInEditor(projectId, fallbackId)
               .catch((err) => {
                 setError(err instanceof Error ? err.message : String(err));
                 onRequestRevealInFinder?.();
@@ -861,7 +848,7 @@ export function HandoffButton({
                           data-testid={`handoff-cli-item-${cli.id}`}
                           onClick={() => void copyCliPrompt(cli)}
                           disabled={copyBusy === cli.id}
-                          title={t('handoff.copyPromptForTarget', { target: cliDisplayName(cli) })}
+                          title={t('handoff.copyPromptForTarget', { target: cli.name })}
                         >
                           {copyBusy === cli.id ? (
                             <Icon name="spinner" size={24} />
@@ -869,7 +856,7 @@ export function HandoffButton({
                             <AgentIcon id={cli.id} size={24} />
                           )}
                           <span className="handoff-target-copy">
-                            <span className="handoff-target-label">{cliDisplayName(cli)}</span>
+                            <span className="handoff-target-label">{cli.name}</span>
                             <span className="handoff-target-meta">
                               {copied ? t('handoff.copied') : t('handoff.copyPrompt')}
                             </span>
@@ -899,14 +886,14 @@ export function HandoffButton({
                         data-testid={`handoff-cli-item-${cli.id}`}
                         onClick={() => void copyCliPrompt(cli)}
                         disabled={copyBusy === cli.id}
-                        title={t('handoff.copyPromptForTarget', { target: cliDisplayName(cli) })}
+                        title={t('handoff.copyPromptForTarget', { target: cli.name })}
                       >
                         {copyBusy === cli.id ? (
                           <Icon name="spinner" size={24} />
                         ) : (
                           <AgentIcon id={cli.id} size={24} />
                         )}
-                        <span className="handoff-target-label">{cliDisplayName(cli)}</span>
+                        <span className="handoff-target-label">{cli.name}</span>
                       </button>
                     );
                   })}

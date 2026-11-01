@@ -19,63 +19,6 @@ type ReplayFixture = {
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 const sourceScopes = ['apps/daemon', 'packages/contracts', 'pnpm-lock.yaml'];
 
-/** Explicit manual canary only: never accepts user datasets or inherited account identity. */
-export function resolveSyntaxTelemetryCanary(input: {
-  enabled: boolean; mode: string; externalInputs: boolean; profile: string;
-  isolatedRoot: string; repeat?: string | undefined; token?: string | undefined; relayUrl?: string | undefined;
-}) {
-  if (!input.enabled) return null;
-  if (input.mode !== 'replay' || input.externalInputs || input.profile !== 'test'
-    || (input.repeat !== undefined && input.repeat !== '1')) {
-    throw new Error('Telemetry canary requires replay, test profile, one repeat and built-in synthetic fixtures only');
-  }
-  if (input.relayUrl !== 'https://telemetry-test.open-design.ai/api/langfuse') {
-    throw new Error('Telemetry canary requires explicit OPEN_DESIGN_TELEMETRY_RELAY_URL pointing to the official test relay');
-  }
-  if (!input.token || !/^[a-z0-9]{8}$/.test(input.token)) throw new Error('Missing isolated canary token');
-  const html = (script: string) => `<!doctype html><script>${script}</script>`;
-  const fixtures: ReplayFixture[] = [
-    { id: 'synthetic-clean', source: html('const items = [1, 2];'), expected: html('const items = [1, 2];'), action: 'allow', status: 'pass', attempts: 0 },
-    { id: 'synthetic-repaired', source: html('const items = [1, 2;'), expected: html('const items = [1, 2];'), action: 'allow', status: 'pass', attempts: 1, appliedRepairRules: ['insert_missing_closing_delimiter'] },
-    { id: 'synthetic-warning', source: html('const value = ;'), expected: html('const value = ;'), action: 'warn', status: 'repairable', attempts: 0, finalizationReason: 'no_safe_fix', refusal: 'unsupported_syntax_error' },
-  ];
-  return {
-    fixtures,
-    prefs: { metrics: true, content: true, artifactManifest: false },
-    env: {
-      // Do not disable Vela priority. With an empty AMR home and no keys the
-      // real resolver naturally selects the anonymous test relay.
-      AMR_HOME: path.join(input.isolatedRoot, 'amr'),
-      OD_INSTALLATION_DIR: '', OD_LEGACY_DATA_DIR: '',
-      VELA_CONTROL_KEY: '', VELA_RUNTIME_KEY: '',
-      LANGFUSE_PUBLIC_KEY: '', LANGFUSE_SECRET_KEY: '',
-      POSTHOG_KEY: '', NEXT_PUBLIC_POSTHOG_KEY: '',
-      OPEN_DESIGN_TELEMETRY_RELAY_URL: input.relayUrl,
-      OPEN_DESIGN_OBJECT_RELAY_URL: '',
-      OD_TELEMETRY_ENV: `synthetic-test-${input.token}`,
-    },
-  };
-}
-
-/** A Run terminal is not an exporter receipt; consent skips are not accepted writes. */
-export function syntaxTelemetryDeliveryOutcome(state: Json): 'pending' | 'failed' | 'accepted' {
-  const delivery = state.telemetryDelivery;
-  if (delivery?.status === 'failed' || delivery?.status === 'not_expected') return 'failed';
-  if (!delivery || !Number.isFinite(delivery.finalizedAt)) return 'pending';
-  return delivery.status === 'accepted' && Number.isInteger(delivery.attemptCount)
-    && delivery.attemptCount > 0 ? 'accepted' : 'failed';
-}
-
-/** Mirror the real client's final-message PUT without inventing content or metrics. */
-export function syntaxTelemetryFinalizationMessage(messages: Json[], run: Json): Json {
-  const message = messages.find(entry => entry.id === run.assistantMessageId && entry.runId === run.id);
-  if (!message || message.role !== 'assistant' || message.runStatus !== run.status
-    || !['succeeded', 'failed', 'canceled'].includes(run.status)) {
-    throw new Error('Missing matching durable terminal assistant message; telemetry was not finalized');
-  }
-  return { ...message, telemetryFinalized: true };
-}
-
 /** git diff excludes new files: record their scoped paths and bytes alongside the tracked diff. */
 export async function captureUntrackedSourceIdentity(workspace: string) {
   const { stdout } = await promisify(execFile)('git', ['ls-files', '--others', '--exclude-standard', '-z', '--', ...sourceScopes], { cwd: workspace });
@@ -171,125 +114,35 @@ export function replayCaseVerdict(fixture: ReplayFixture, run: Json, content: st
   };
 }
 
-/** Recover completed records even if node-job exits before writing result.json. Never invent failed cases. */
-export async function collectRealEvidence(output: string, expectedIds: string[]) {
-  const evidenceErrors: string[] = [];
-  const entries = new Map<string, Json>();
-  const started = new Set<string>();
-  const finishedEvents = new Set<string>();
-  const duplicateFinishedCaseIds: string[] = [];
-  let hasResult = false;
-  let hasEvents = false;
-  try {
-    const result = JSON.parse(await readFile(path.join(output, 'result.json'), 'utf8')) as Json;
-    if (!Array.isArray(result.cases)) throw new Error('missing cases array');
-    hasResult = true;
-    for (const entry of result.cases) {
-      if (typeof entry.evalId !== 'string') { evidenceErrors.push('result case missing evalId'); continue; }
-      if (entries.has(entry.evalId)) evidenceErrors.push(`duplicate result case ${entry.evalId}`);
-      entries.set(entry.evalId, entry);
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') evidenceErrors.push(`result.json: ${String(error)}`);
-  }
-  try {
-    const lines = (await readFile(path.join(output, 'events.jsonl'), 'utf8')).split('\n');
-    hasEvents = true;
-    for (const [index, line] of lines.entries()) {
-      if (!line.trim()) continue;
-      let event: Json;
-      try { event = JSON.parse(line) as Json; } catch { evidenceErrors.push(`events.jsonl: invalid JSON at line ${index + 1}`); continue; }
-      if (event.type === 'case_started' && typeof event.evalId === 'string') started.add(event.evalId);
-      if (event.type !== 'case_finished') continue;
-      if (typeof event.evalId !== 'string') { evidenceErrors.push(`case_finished missing evalId at line ${index + 1}`); continue; }
-      if (finishedEvents.has(event.evalId)) duplicateFinishedCaseIds.push(event.evalId);
-      finishedEvents.add(event.evalId);
-      if (!entries.has(event.evalId)) entries.set(event.evalId, event);
-    }
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') evidenceErrors.push(`events.jsonl: ${String(error)}`);
-  }
-  const cases = [...entries.values()].map(entry => {
-    const syntax = entry.metrics?.deliverableSyntax ?? {};
-    const outcome = hostTerminalOutcome(syntax.terminalRunStatus, syntax);
-    const deliveredWithWarning = entry.status === 'succeeded' && outcome.deliveredWithWarning
-      && syntax.deliveredWithSyntaxWarningCount === 1 && syntax.recoveredDeliveryCount === 0
-      && syntax.blockedBrokenDeliveryCount === 0;
-    const repairVerified = entry.status === 'succeeded' && outcome.repairVerified && syntax.recoveredDeliveryCount === 1;
-    const deliveredWithoutRepair = outcome.summaryComplete && syntax.terminalRunStatus === 'succeeded'
-      && syntax.status === 'pass' && syntax.finalization.action === 'allow'
-      && syntax.finalization.initialStatus === 'pass' && syntax.finalization.stagedPatchCount === 0
-      && syntax.finalization.committedPatchCount === 0 && syntax.recoveredDeliveryCount === 0;
-    return { ...entry, deliveredWithWarning, repairVerified,
-    passed: entry.status === 'succeeded' && entry.metrics?.strategyRoute === 'od-next'
-      && entry.metrics?.agent === 'open-design:amr' && entry.metrics?.model === 'deepseek-v4-flash'
-      && (deliveredWithWarning || repairVerified || deliveredWithoutRepair),
-    };
-  });
-  const missingCaseIds = expectedIds.filter(id => !entries.has(id));
-  const unexpectedCaseIds = [...entries.keys()].filter(id => !expectedIds.includes(id));
-  return { cases, collection: {
-    source: hasResult ? hasEvents ? 'result+events' : 'result' : hasEvents ? 'events' : 'missing',
-    expectedCaseCount: expectedIds.length, finishedCaseCount: entries.size,
-    startedCaseIds: [...started], missingCaseIds, unexpectedCaseIds, duplicateFinishedCaseIds, evidenceErrors,
-    unfinishedCaseIds: missingCaseIds.filter(id => started.has(id)),
-    notStartedCaseIds: missingCaseIds.filter(id => !started.has(id)),
-    complete: expectedIds.length > 0 && missingCaseIds.length === 0 && unexpectedCaseIds.length === 0
-      && duplicateFinishedCaseIds.length === 0 && evidenceErrors.length === 0,
-  } };
-}
-
 export async function runSyntaxAcceptance(args = process.argv.slice(2)) {
 const exec = promisify(execFile);
 const workspace = e2eWorkspaceRoot();
 const { values } = parseArgs({ args, options: {
-  mode: { type: 'string' }, dataset: { type: 'string' }, sha256: { type: 'string' },
-  runner: { type: 'string' }, vela: { type: 'string' }, profile: { type: 'string', default: 'test' },
-  'runner-version': { type: 'string', default: '0.9.24' },
-  'expected-rows': { type: 'string', default: '24' }, repeat: { type: 'string' },
-  'fixture-manifest': { type: 'string' }, 'timeout-ms': { type: 'string', default: String(3 * 60 * 60 * 1000) },
-  'upload-telemetry': { type: 'boolean', default: false },
+  mode: { type: 'string' }, repeat: { type: 'string' },
+  'fixture-manifest': { type: 'string' },
 } });
-if (values.mode !== 'real' && values.mode !== 'replay') {
-  throw new Error('Choose --mode replay or --mode real (real also requires --dataset --sha256 --runner --vela).');
-}
+if (values.mode !== 'replay') throw new Error('Choose --mode replay.');
 const mode = values.mode;
 const root = await mkdtemp(path.join(os.tmpdir(), 'od-syntax-acceptance-'));
 await chmod(root, 0o700);
-const canary = resolveSyntaxTelemetryCanary({
-  enabled: values['upload-telemetry'] === true, mode, profile: values.profile!,
-  externalInputs: Boolean(values.dataset || values['fixture-manifest'] || values.runner || values.vela || values.sha256),
-  repeat: values.repeat, isolatedRoot: root, token: randomUUID().slice(0, 8),
-  relayUrl: process.env.OPEN_DESIGN_TELEMETRY_RELAY_URL,
-});
-if (canary) await mkdir(canary.env.AMR_HOME, { mode: 0o700 });
-const telemetryPrefs = canary?.prefs ?? { metrics: false, content: false, artifactManifest: false };
 const runtime = createToolsDevSuite({
   root, namespace: `syntax-${randomUUID().slice(0, 8)}`, ownerPid: process.pid,
   toolsDevRoot: path.join(root, 'runtime'), dataDir: path.join(root, 'data'),
   codexHomeDir: path.join(root, 'codex'),
 }, {
-  // Repository dotenv files must not override this harness's isolated identity,
-  // data root or consent configuration (including in the default offline lane).
+  // Repository dotenv files must not override this harness's isolated data root.
   runJson: (workspace, suite, args, env, options) =>
     runToolsDevJson(workspace, suite, [...args, '--no-env-file'], env, options),
 });
 const env: Record<string, string | undefined> = {
   OD_INSTALLATION_DIR: '', OD_LEGACY_DATA_DIR: '',
-  OD_NEXT_STRATEGY_ROLLOUT: mode === 'real' ? 'active' : 'off',
+  OD_NEXT_STRATEGY_ROLLOUT: 'off',
   OD_DELIVERABLE_SYNTAX_FINALIZER: '1',
-  OPEN_DESIGN_AMR_PROFILE: values.profile, VELA_PROFILE: values.profile,
-  ...(values.vela ? { VELA_BIN: path.resolve(values.vela) } : {}),
-  ...canary?.env,
 };
 const report: Json = {
   mode, status: 'RUNNING', startedAt: new Date().toISOString(), root,
-  boundary: mode === 'real' ? 'real AMR / OD Next generation' : 'fake CLI / real deployed daemon terminal chain; NOT AMR acceptance',
+  boundary: 'fake CLI / real deployed daemon terminal chain; NOT real-model acceptance',
   cases: [],
-  ...(canary ? { telemetry: {
-    uploadEnabled: true, destination: 'official-test-relay', environment: canary.env.OD_TELEMETRY_ENV,
-    syntheticOnly: true, readbackVerified: false,
-  } } : {}),
 };
 async function save(name: string, data: unknown) {
   await writeFile(path.join(root, name), JSON.stringify(data, null, 2) + '\n', { mode: 0o600 });
@@ -321,7 +174,7 @@ async function request(url: string, method = 'GET', body?: unknown): Promise<Jso
   return await response.json() as Json;
 }
 async function sourceIdentity() {
-  const git = async (...args: string[]) => (await exec('git', args, { cwd: workspace })).stdout.trim();
+  const git = async (...args: string[]) => (await exec('git', args, { cwd: workspace, maxBuffer: 256 * 1024 * 1024 })).stdout.trim();
   return {
     branch: await git('branch', '--show-current'), commit: await git('rev-parse', 'HEAD'),
     diffSha256: hash(await git('diff', 'HEAD', '--', ...sourceScopes)),
@@ -343,18 +196,15 @@ const fixtures = [
   { id: 'oversize', script: ' '.repeat(2 * 1024 * 1024), action: 'warn', status: 'incomplete', attempts: 0 },
 ] as const;
 let activeFixtures: ReplayFixture[] = fixtures.map(fixture => ({ ...fixture, source: `<!doctype html><script>${fixture.script}</script>` }));
-if (canary) activeFixtures = canary.fixtures;
-let expectedIds: string[] = [];
-const output = path.join(root, 'evaluation');
 
 async function replay() {
-  const repeat = Number(values.repeat ?? (canary ? '1' : '3'));
+  const repeat = Number(values.repeat ?? '3');
   if (!Number.isInteger(repeat) || repeat < 1 || repeat > 10) throw new Error('--repeat must be 1..10');
   for (let round = 1; round <= repeat; round++) {
     for (const fixture of activeFixtures) {
       const id = `${fixture.id}-${round}`;
       const source = fixture.source;
-      // The fake CLI supplies fixed output; it does not pretend to be an AMR model.
+      // The fake CLI supplies fixed output; it does not pretend to be a real model.
       const bin = path.join(root, `fixture-${id}.cjs`);
       await writeFile(bin, `#!/usr/bin/env node
 const fs = require('node:fs');
@@ -371,7 +221,7 @@ emit({ type:'result',subtype:'success',is_error:false,session_id:'${id}',stop_re
 `, { mode: 0o700 });
       await request(runtime.url.api('/api/app-config'), 'PUT', {
         agentId: 'claude', agentCliEnv: { claude: { CLAUDE_BIN: bin } },
-        telemetry: telemetryPrefs, privacyDecisionAt: Date.now(),
+        privacyDecisionAt: Date.now(),
       });
       const projectId = `acceptance_${randomUUID()}`;
       const project = await request(runtime.url.api('/api/projects'), 'POST', {
@@ -390,38 +240,6 @@ emit({ type:'result',subtype:'success',is_error:false,session_id:'${id}',stop_re
         if (Date.now() - start > 60_000) throw new Error(`${id}: Run ${started.runId} timeout`);
         await new Promise(resolve => setTimeout(resolve, 100));
       } while (true);
-      let telemetry: Json | undefined;
-      if (canary) {
-        // Successful Runs report after final message persistence, not at child
-        // process exit. Save the actual daemon-owned message through the same
-        // route as the client; the real bridge derives all telemetry itself.
-        const messagesPath = `/api/projects/${projectId}/conversations/${project.conversationId}/messages`;
-        const messages = await request(runtime.url.api(messagesPath));
-        const message = syntaxTelemetryFinalizationMessage(messages.messages ?? [], run);
-        const saved = await request(runtime.url.api(`${messagesPath}/${message.id}`), 'PUT', message);
-        syntaxTelemetryFinalizationMessage(saved.message ? [saved.message] : [], run);
-        // The exporter is detached from the HTTP Run response. Its durable
-        // checkpoint has no HTTP projection; observe only this isolated Run's
-        // state file, with a bounded wait rather than a fixed post-run sleep.
-        const deliveryStartedAt = Date.now();
-        const statePath = path.join(runtime.dataDir, 'runs', started.runId, 'state.json');
-        while (true) {
-          let state: Json = {};
-          try { state = JSON.parse(await readFile(statePath, 'utf8')); }
-          catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error; }
-          const outcome = syntaxTelemetryDeliveryOutcome(state);
-          if (outcome !== 'pending') {
-            const delivery = state.telemetryDelivery;
-            telemetry = { status: outcome, attemptCount: delivery.attemptCount, finalizedAt: delivery.finalizedAt,
-              ...(delivery.dropReason ? { dropReason: delivery.dropReason } : {}),
-              waitDurationMs: Date.now() - deliveryStartedAt, traceIdCandidate: run.id };
-            await save(`${id}-delivery.json`, telemetry);
-            break;
-          }
-          if (Date.now() - deliveryStartedAt >= 60_000) throw new Error(`${id}: telemetry delivery checkpoint timeout`);
-          await new Promise(resolve => setTimeout(resolve, 200));
-        }
-      }
       await save(`${id}-run.json`, run);
       const response = await fetch(runtime.url.api(`/api/projects/${projectId}/raw/index.html`), { signal: AbortSignal.timeout(10_000) });
       if (!response.ok) throw new Error(`${id}: cannot read artifact`);
@@ -431,15 +249,14 @@ emit({ type:'result',subtype:'success',is_error:false,session_id:'${id}',stop_re
       const validation = run.deliverableSyntaxValidation ?? {};
       if (fixture.expected !== undefined) await writeFile(path.join(root, `${id}-expected.html`), fixture.expected, { mode: 0o600 });
       const verdict = replayCaseVerdict(fixture, run, content);
-      const passed = verdict.passed && (!canary || telemetry?.status === 'accepted');
+      const passed = verdict.passed;
       report.cases.push({
         id, ...verdict, passed,
-        runId: run.id, projectId, status: run.status, validation, ...(telemetry ? { telemetry } : {}),
+        runId: run.id, projectId, status: run.status, validation,
         elapsedMs: Date.now() - start,
       });
       await save('report.json', report);
       console.log(`[replay] ${id}: ${passed ? 'PASS' : 'FAIL'} (${run.status})`);
-      if (canary && telemetry?.status !== 'accepted') throw new Error(`${id}: exporter did not accept telemetry; no further canary Runs started`);
     }
   }
 }
@@ -448,38 +265,11 @@ try {
   report.sourceBefore = await sourceIdentity();
   await save('report.json', report);
   console.log(`Local evidence: ${root}`);
-  let dataset: Buffer | undefined;
-  const timeoutMs = Number(values['timeout-ms']);
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1) throw new Error('--timeout-ms must be a positive integer (node-job total budget, not per-case)');
-  report.evaluationTimeoutMs = timeoutMs;
   if (values['fixture-manifest']) {
-    if (mode !== 'replay') throw new Error('--fixture-manifest only applies to replay');
     const manifestPath = path.resolve(values['fixture-manifest']);
     activeFixtures = await loadReplayFixtures(manifestPath);
     report.fixtures = { manifestPath, manifestSha256: hash(await readFile(manifestPath)),
       entries: activeFixtures.map(fixture => ({ id: fixture.id, beforeSha256: hash(fixture.source), expectedSha256: hash(fixture.expected!), action: fixture.action })) };
-  }
-  if (mode === 'real') {
-    if (values.profile !== 'test') throw new Error('Real local syntax acceptance requires --profile test; no production wallet fallback');
-    if (!values.dataset || !values.sha256 || !values.runner || !values.vela) throw new Error('Missing real-lane arguments');
-    dataset = await readFile(path.resolve(values.dataset));
-    const rows = dataset.toString('utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
-    if (hash(dataset) !== values.sha256.replace(/^sha256:/, '')) throw new Error('Dataset hash mismatch');
-    if (rows.length !== Number(values['expected-rows'])) throw new Error('Dataset row count mismatch');
-    expectedIds = rows.map(row => row.eval_id);
-    if (expectedIds.some(id => typeof id !== 'string' || !id) || new Set(expectedIds).size !== rows.length) throw new Error('Dataset eval_id must be unique and nonempty');
-    report.dataset = { sha256: hash(dataset), rows: rows.length };
-    report.runner = { path: path.resolve(values.runner), sha256: hash(await readFile(path.resolve(values.runner))) };
-    report.runner.version = (await exec(process.execPath, [path.resolve(values.runner), '--version'], { timeout: 30_000 })).stdout.trim();
-    if (report.runner.version.replace(/^(?:od-evals\s+)?v?/, '') !== values['runner-version']) {
-      throw new Error(`RUNNER_VERSION_MISMATCH: expected ${values['runner-version']}, got ${report.runner.version}`);
-    }
-    report.profile = values.profile;
-    report.vela = { path: path.resolve(values.vela), version: (await exec(path.resolve(values.vela), ['--version'])).stdout.trim() };
-    try {
-      // Never log whoami's personal data or credentials and never silently change profile/model.
-      await exec(path.resolve(values.vela), ['whoami'], { env: { ...process.env, ...env }, timeout: 30_000 });
-    } catch { throw new Error(`AMR_AUTH_BLOCKED: Vela profile ${values.profile} is not authenticated/reachable`); }
   }
   console.log('Building current worktree and dependencies (no --skip-build).');
   await command('pnpm', ['--filter', '@open-design/daemon...', '--workspace-concurrency=4', 'build'], 'build.log', 600_000);
@@ -492,48 +282,15 @@ try {
   report.runtime = await runtime.startWeb(env);
   report.runtimeCheck = await runtime.check(env);
   await request(runtime.url.api('/api/app-config'), 'PUT', {
-    agentId: mode === 'real' ? 'amr' : 'claude',
-    telemetry: telemetryPrefs, privacyDecisionAt: Date.now(),
-    ...(mode === 'real' ? { agentCliEnv: { amr: {
-      VELA_BIN: path.resolve(values.vela!), VELA_PROFILE: values.profile, OPEN_DESIGN_AMR_PROFILE: values.profile,
-    } } } : {}),
+    agentId: 'claude', privacyDecisionAt: Date.now(),
   });
-  if (mode === 'replay') {
-    await replay();
-  } else {
-    const login = await request(runtime.url.api('/api/integrations/vela/status'));
-    report.daemonAuth = { loggedIn: login.loggedIn, profile: login.profile, sessionState: login.sessionState };
-    if (login.loggedIn !== true || login.profile !== values.profile) throw new Error('DAEMON_AMR_AUTH_MISMATCH');
-    await writeFile(path.join(root, 'dataset.jsonl'), dataset!, { mode: 0o600 });
-    await save('arm.json', {
-      id: 'local-syntax-acceptance', cli: 'amr', model: 'deepseek-v4-flash',
-      strategyRoute: 'od-next', keepDiscovery: true, autoAnswerForms: false,
-      env: { kind: 'daemon', url: runtime.daemonUrl },
-    });
-    await mkdir(output);
-    await command(process.execPath, [path.resolve(values.runner!), 'node-job',
-      '--dataset', path.join(root, 'dataset.jsonl'), '--arm-file', path.join(root, 'arm.json'),
-      '--out-dir', output, '--concurrency', '2'], 'evaluation.log', timeoutMs);
-    const evidence = await collectRealEvidence(output, expectedIds);
-    report.cases = evidence.cases;
-    report.collection = evidence.collection;
-    if (!evidence.collection.complete) throw new Error('Incomplete evaluation evidence; see collection for unfinished/missing cases');
-  }
+  await replay();
   report.status = report.cases.length > 0 && report.cases.every((entry: Json) => entry.passed) ? 'PASS' : 'FAIL';
-  report.note = mode === 'real' ? 'Generation/terminal acceptance only; visual quality is not scored.' : 'Replay PASS is not real AMR / OD Next acceptance.';
-  if (canary) report.note += ' Canary PASS proves local execution and exporter acceptance only; exact remote Trace readback is still required. elapsedMs includes telemetry wait; checker metrics do not.';
+  report.note = 'Replay PASS is not real-model acceptance.';
 } catch (error) {
   report.status = 'BLOCKED';
   report.error = error instanceof Error ? error.message : String(error);
 } finally {
-  if (mode === 'real' && expectedIds.length > 0) {
-    try {
-      const evidence = await collectRealEvidence(output, expectedIds);
-      report.cases = evidence.cases;
-      report.collection = evidence.collection;
-      if (!evidence.collection.complete) report.status = 'BLOCKED';
-    } catch (error) { report.collectionError = String(error); report.status = 'BLOCKED'; }
-  }
   try {
     report.sourceAfter = await sourceIdentity();
     report.sourceStable = JSON.stringify(report.sourceBefore) === JSON.stringify(report.sourceAfter);

@@ -217,7 +217,6 @@ export async function waitForLauncherAfterQuit(
 export async function inspectExistingDesktopForLauncher(
   stamp: SidecarStamp,
   options: {
-    deeplinkUrl?: string | null;
     incomingVersion?: string | null;
     logger?: LauncherAfterQuitLogger;
     paths: PackagedNamespacePaths;
@@ -309,7 +308,7 @@ export async function inspectExistingDesktopForLauncher(
       await invoke(
         inspectedStamp,
         SIDECAR_MESSAGES.SHOW,
-        options.deeplinkUrl == null ? {} : { deeplinkUrl: options.deeplinkUrl },
+        {},
         { timeoutMs: 800 },
       );
       await writeLauncherAfterQuitLog(options.paths, `inspect-found-existing namespace=${namespace} action=restore reason=restorable-headless`);
@@ -351,7 +350,7 @@ export async function inspectExistingDesktopForLauncher(
     await invoke(
       inspectedStamp,
       SIDECAR_MESSAGES.SHOW,
-      options.deeplinkUrl == null ? {} : { deeplinkUrl: options.deeplinkUrl },
+      {},
       { timeoutMs: 800 },
     );
     await writeLauncherAfterQuitLog(options.paths, `inspect-found-existing namespace=${namespace} focus=accepted`);

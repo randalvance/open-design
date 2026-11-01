@@ -14,7 +14,6 @@ vi.mock('../../src/router', () => ({ navigate: vi.fn(), registerNavigationGuard:
 vi.mock('../../src/providers/anthropic', () => ({ streamMessage: vi.fn() }));
 vi.mock('../../src/providers/daemon', () => ({
   fetchChatRunStatus: vi.fn(),
-  fetchAmrWalletSnapshot: vi.fn().mockResolvedValue(null),
   listActiveChatRuns: vi.fn().mockResolvedValue([]),
   listProjectRuns: vi.fn().mockResolvedValue([]),
   publishDaemonRunFinishedEvent: vi.fn(),
@@ -145,7 +144,6 @@ function mountProject(runConfig: AppConfig = config) {
     initialProjectDetail={{ project, resolvedDir: '/workspace/owner-test' }}
     routeFileName={null}
     config={runConfig}
-    workspaceContextOverride={null}
     agents={[{ id: 'byok-opencode', name: 'BYOK OpenCode', bin: 'opencode', available: true, models: [] }]}
     skills={[]}
     designTemplates={[]}

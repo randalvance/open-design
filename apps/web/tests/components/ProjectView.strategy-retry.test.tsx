@@ -7,8 +7,7 @@ import type { DaemonStreamOptions } from '../../src/providers/daemon';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectView } from '../../src/components/ProjectView';
-import type { ProjectWorkspaceScopeState } from '../../src/collab/useProjectWorkspaceScope';
-import type { ChatRunStatusResponse, WorkspaceCollabContext } from '@open-design/contracts';
+import type { ChatRunStatusResponse } from '@open-design/contracts';
 import type {
   AgentInfo,
   AppConfig,
@@ -33,54 +32,7 @@ const checkAmrBalanceGate = vi.fn();
 const fetchBrands = vi.fn();
 
 
-const workspaceScopeMocks = vi.hoisted(() => {
-  const personalContext = (): WorkspaceCollabContext => ({
-    workspaceId: 'workspace-personal',
-    workspaceMemberId: 'member-personal',
-    workspaceType: 'personal',
-    role: 'owner',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: null,
-    providerMode: 'platform_credits',
-    seatSummary: {
-      seatLimit: 1,
-      usedSeats: 1,
-      availableSeats: 0,
-      isSeatFull: true,
-    },
-    permissions: {
-      canManageMembers: true,
-      canManageBilling: true,
-      canInviteMembers: true,
-      canManageAutoRecharge: true,
-      canShareProjects: true,
-      canWriteSyncedFiles: true,
-      canViewWorkspaceSettings: true,
-      canManageSharedResources: true,
-    },
-  } as WorkspaceCollabContext);
-  return {
-    personalContext,
-    ambientContext: null as WorkspaceCollabContext | null,
-    projectScope: {
-      loading: false,
-      scope: {
-        kind: 'personal' as const,
-        projectId: 'project-1',
-        workspaceId: 'workspace-personal',
-        visibility: 'personal' as const,
-        context: personalContext(),
-      },
-    } as ProjectWorkspaceScopeState,
-  };
-});
 
-const projectCollabMocks = vi.hoisted(() => ({
-  viewerOnly: false,
-  writerAuthority: 'allowed' as 'allowed' | 'denied' | 'pending',
-}));
 
 vi.mock('../../src/analytics/provider', () => ({
   useAnalytics: () => ({ track: vi.fn(), newRequestId: () => 'retry-click-request' }),
@@ -95,45 +47,8 @@ vi.mock('../../src/router', () => ({ navigate: vi.fn() }));
 
 vi.mock('../../src/providers/anthropic', () => ({ streamMessage: vi.fn() }));
 
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>()),
-  useWorkspaceContext: () => ({
-    context: workspaceScopeMocks.ambientContext,
-    loading: false,
-  }),
-  lastResolvedTeamProjects: () => [],
-  lastResolvedWorkspaceContext: () => workspaceScopeMocks.ambientContext,
-  workspaceIdentityCanBillAmr: (state: { context: unknown; loading: boolean }) =>
-    state.context !== null || state.loading,
-  useWorkspaceBilling: () => null,
-}));
 
-vi.mock('../../src/collab/useProjectWorkspaceScope', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useProjectWorkspaceScope')>()),
-  useProjectWorkspaceScope: () => workspaceScopeMocks.projectScope,
-}));
 
-vi.mock('../../src/collab/useProjectCollab', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useProjectCollab')>()),
-  useProjectCollab: () => ({
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: 'local_only',
-    viewerOnly: projectCollabMocks.viewerOnly,
-    isOwner: true,
-    writerAuthority: projectCollabMocks.writerAuthority,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: vi.fn(),
-    requestPublish: vi.fn(),
-    refreshPresence: vi.fn(),
-    checkStatusNow: vi.fn(),
-    applyContentTransferState: vi.fn(),
-  }),
-}));
 
 vi.mock('../../src/providers/daemon', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/providers/daemon')>()),
@@ -146,12 +61,6 @@ vi.mock('../../src/providers/daemon', async (importOriginal) => ({
   reattachDaemonRun: vi.fn(),
   streamViaDaemon: (...args: unknown[]) => streamViaDaemon(...args),
   // 拦截档的弹窗是真的渲染出来的,它要的 provider 得给全。
-  fetchAmrWalletSnapshot: vi.fn().mockResolvedValue(null),
-  formatVelaBalanceUsd: (value: string | null) => `$${value ?? '0'}`,
-  fetchVelaLoginStatus: vi.fn().mockResolvedValue({ loggedIn: true }),
-  startVelaLogin: vi.fn(),
-  cancelVelaLogin: vi.fn(),
-  canUpgradeVelaPlan: vi.fn().mockReturnValue(false),
   launchAntigravityOauth: vi.fn(),
 }));
 
@@ -159,10 +68,6 @@ vi.mock('../../src/providers/project-events', () => ({
   useProjectFileEvents: vi.fn(),
 }));
 
-vi.mock('../../src/runtime/amr-balance-gate', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/runtime/amr-balance-gate')>()),
-  checkAmrBalanceGate: (...args: unknown[]) => checkAmrBalanceGate(...args),
-}));
 
 vi.mock('../../src/runtime/brands', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/runtime/brands')>()),
@@ -341,9 +246,6 @@ beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
   conversationMessages = structuredClone([originalUser, requestAssistant, productionAssistant]);
-  workspaceScopeMocks.ambientContext = workspaceScopeMocks.personalContext();
-  projectCollabMocks.viewerOnly = false;
-  projectCollabMocks.writerAuthority = 'allowed';
   listConversations.mockResolvedValue([conversation]);
   createConversation.mockResolvedValue(conversation);
   listMessages.mockImplementation(async () => conversationMessages);
@@ -382,8 +284,7 @@ async function clickRetry() {
     row.role === 'assistant' && row.runStatus === 'succeeded' && row.strategyTaskExecutionId,
   )) {
     await waitFor(() => expect(fetchChatRunStatus).toHaveBeenCalledWith(
-      predecessor.runId, expect.any(Object),
-    ));
+      predecessor.runId));
     // Drain the resolved status probe before clicking; a transient render with
     // the intended fixture is not sufficient if hydration later downgrades it.
     await act(async () => {});

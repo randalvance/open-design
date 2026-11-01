@@ -27,7 +27,6 @@ EXPECTED_CLASSES = {
     "js_hot",
     "ui_hot",
     "ui_p0",
-    "ui_p0_heavy",
     "visual_hot",
 }
 

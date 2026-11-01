@@ -26,8 +26,6 @@ const OPEN_DESIGN_HOST_GLOBAL: typeof import('@open-design/host').OPEN_DESIGN_HO
 const OPEN_DESIGN_HOST_VERSION: typeof import('@open-design/host').OPEN_DESIGN_HOST_VERSION = 2;
 const UPDATER_STATUS_EVENT = 'od:update:status-changed';
 const UPDATER_OPEN_DIALOG_EVENT = 'od:update:open-dialog';
-const APP_CONFIG_CHANGED_IPC_CHANNEL = 'od:app-config-changed';
-const APP_CONFIG_CHANGED_EVENT = 'open-design:app-config-changed';
 const PREVIEW_NAVIGATION_FAILURE_IPC_CHANNEL = 'od:preview-navigation-failed';
 
 // Mirror of the argv prefix used by main's `applyOsLocaleSwitch` and
@@ -342,10 +340,6 @@ const updater = {
 };
 
 const osLocale = readOsLocaleFromArgv();
-
-ipcRenderer.on(APP_CONFIG_CHANGED_IPC_CHANNEL, () => {
-  window.dispatchEvent(new CustomEvent(APP_CONFIG_CHANGED_EVENT));
-});
 
 const hostBridge = {
   version: OPEN_DESIGN_HOST_VERSION,

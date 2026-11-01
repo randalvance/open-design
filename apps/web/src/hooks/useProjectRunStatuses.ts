@@ -1,21 +1,8 @@
 /**
  * The ONE live project-run-status feed every glyph surface reads.
  *
- * Exists because `Project.status` is unreadable in a workspace-scoped session:
- * only the unscoped `GET /api/projects` attaches it, and that endpoint lists
- * unbound projects only — none, once every project belongs to a workspace. So
- * the status has to be derived from the runs feed instead.
- *
- * Asks per project id rather than for the whole catalogue: the unscoped
- * `GET /api/runs` answers 400 `PROJECT_SCOPE_REQUIRED` as soon as one run
- * belongs to a workspace-bound project. See `listRunsForProject`.
- *
- * The feed is identity-agnostic on purpose (OPEND-3140): a surface without a
- * cloud identity subscribes with a null context, the read goes out without
- * Workspace headers, and the daemon's headerless branch answers for an
- * unbound local project. The local shell's 最近项目 rows therefore get the
- * same statuses, the same ✓-spending and the same hover preview as the
- * cloud shell's — one store, one display mapping, no local-only copy.
+ * The status is derived from the runs feed, asked per project id rather than
+ * for the whole catalogue. See `listRunsForProject`.
  *
  * Why a module-level store rather than per-hook state (OPEND-2795 /
  * OPEND-2762): the rail's 最近项目 rows and the workspace tab switcher each
@@ -28,8 +15,8 @@
  * first render (and revalidates), and the one display mapping —
  * `displayStatusForSummary`, ✓-spending included — applies everywhere.
  */
-import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
-import type { ProjectDisplayStatus, WorkspaceCollabContext } from '@open-design/contracts';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import type { ProjectDisplayStatus } from '@open-design/contracts';
 import { listRunsForProject, RUNS_CHANGED_EVENT } from '../providers/daemon';
 import {
   displayStatusForSummary,
@@ -52,13 +39,10 @@ const EMPTY_STATUSES: ReadonlyMap<string, ProjectDisplayStatus> = new Map();
 
 export interface UseProjectRunStatusesOptions {
   enabled?: boolean;
-  workspaceContext?: WorkspaceCollabContext | null;
 }
 
 interface Subscription {
   ids: readonly string[];
-  /** Read at request time: the context object is rebuilt on unrelated renders. */
-  contextRef: { readonly current: WorkspaceCollabContext | null };
 }
 
 // ---------------------------------------------------------------------------
@@ -110,9 +94,9 @@ function sameSummary(a: ProjectRunSummary | null | undefined, b: ProjectRunSumma
     && a.latestTerminalUpdatedAt === b.latestTerminalUpdatedAt;
 }
 
-async function readProject(projectId: string, context: WorkspaceCollabContext | null): Promise<void> {
+async function readProject(projectId: string): Promise<void> {
   const startedIn = generation;
-  const result = await listRunsForProject(projectId, context);
+  const result = await listRunsForProject(projectId);
   if (startedIn !== generation) return;
   // An unreadable project yields null; keeping whatever was known leaves the
   // row as it was rather than asserting a status nobody verified.
@@ -145,22 +129,15 @@ export function releaseProjectRunStatusReads(projectId: string): void {
 }
 
 /** Ask about each id not already being asked about. Answers land as they come. */
-function refresh(ids: Iterable<string>, contextFor: (projectId: string) => WorkspaceCollabContext | null): void {
+function refresh(ids: Iterable<string>): void {
   for (const projectId of ids) {
     if (unpersistedProjectIds.has(projectId)) continue;
     if (inFlight.has(projectId)) continue;
     inFlight.add(projectId);
-    void readProject(projectId, contextFor(projectId)).finally(() => {
+    void readProject(projectId).finally(() => {
       inFlight.delete(projectId);
     });
   }
-}
-
-function contextForSubscribed(projectId: string): WorkspaceCollabContext | null {
-  for (const subscription of subscriptions) {
-    if (subscription.ids.includes(projectId)) return subscription.contextRef.current;
-  }
-  return null;
 }
 
 /** Every subscribed surface's ids together, each once. */
@@ -169,7 +146,7 @@ function refreshAll(): void {
   for (const subscription of subscriptions) {
     for (const projectId of subscription.ids) union.add(projectId);
   }
-  refresh(union, contextForSubscribed);
+  refresh(union);
 }
 
 function startFeed(): void {
@@ -197,7 +174,7 @@ function addSubscription(subscription: Subscription): void {
   // Always revalidate on subscribe — a surface that comes back shows its last
   // known answer at once and catches up on whatever moved meanwhile — but
   // never blank: the cache is only ever replaced, not cleared.
-  refresh(subscription.ids, () => subscription.contextRef.current);
+  refresh(subscription.ids);
   startFeed();
 }
 
@@ -256,13 +233,11 @@ export function useProjectRunSummaries(
   // One subscription per id set, so the effect must not re-run just because
   // the caller rebuilt the array. Sorted + joined is the identity that matters.
   const idsKey = useMemo(() => [...projectIds].sort().join(' '), [projectIds]);
-  const contextRef = useRef<WorkspaceCollabContext | null>(options?.workspaceContext ?? null);
-  contextRef.current = options?.workspaceContext ?? null;
   const storeVersion = useSyncExternalStore(subscribeToStore, getVersion, getVersion);
 
   useEffect(() => {
     if (!enabled || !idsKey) return undefined;
-    const subscription: Subscription = { ids: idsKey.split(' '), contextRef };
+    const subscription: Subscription = { ids: idsKey.split(' ') };
     addSubscription(subscription);
     return () => removeSubscription(subscription);
   }, [idsKey, enabled]);

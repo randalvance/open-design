@@ -52,7 +52,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { resolveRunFailureUi } from '../../src/runtime/amr-guidance';
+import { resolveRunFailureUi } from '../../src/runtime/run-guidance';
 import { LOCALES, type Dict, type Locale } from '../../src/i18n/types';
 
 const CODE = 'od_next_clarification_repeated';
@@ -90,7 +90,6 @@ describe('智能体又问一次那一轮的报错卡', () => {
     // 主按钮位归 Cloud CTA(OPEND-2772,非 Cloud 的卡一律有),但〔重试〕**没被删** ——
     // 它退到次级,仍然是这一档自己的答案。
     expect(ui.primaryAction).toBe('retry');
-    expect(ui.cloudSwitchCta).toBe(true);
     expect(ui.secondaryRetry).toBe(false);
     expect(ui.suppressCard).not.toBe(true);
   });

@@ -24,7 +24,7 @@ import { z } from 'zod';
  * can be walked back to the thing that produced it.
  *
  * This is the difference between "P95 first paint regressed" and "P95 first
- * paint regressed on 0.21.1, for the vela agent, and here are the run ids".
+ * paint regressed on 0.21.1, for this agent, and here are the run ids".
  * `run_id` is the highest-value key in the set: it is simultaneously the
  * PostHog join key, the Langfuse trace id, and the handle a diagnostics
  * bundle can be matched on.

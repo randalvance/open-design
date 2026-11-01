@@ -152,8 +152,7 @@ export interface AgentInfo {
    * When `false`, the Settings model picker hides the "Custom (fill below)"
    * option and the free-text input. Use this for agents whose CLI doesn't
    * accept a model id (e.g. Antigravity `agy` has no `--model` flag yet —
-   * upstream issue #35) or rejects free-form ids (AMR validates against the
-   * live Vela catalog). Undefined === allow, matching the historical UX.
+   * upstream issue #35). Undefined === allow, matching the historical UX.
    */
   supportsCustomModel?: boolean;
   /**
@@ -187,16 +186,6 @@ export function agentSupportsMidTurnSteering(
 
 export interface AgentsResponse {
   agents: AgentInfo[];
-}
-
-export type AmrModelsSource = 'preset' | 'remote';
-
-export interface AmrModelsResponse {
-  source: AmrModelsSource;
-  models: AgentModelOption[];
-  refreshing: boolean;
-  stale?: boolean;
-  remoteError?: string;
 }
 
 export type SkillSource = 'built-in' | 'user';

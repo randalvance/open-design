@@ -6,23 +6,14 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { registerBrandRoutes, type BrandRoutesDeps } from '../src/brand-routes.js';
-import { createCreatedProjectWorkspaceResolver } from '../src/collab/created-project-workspace.js';
 import {
   closeDatabase,
-  deleteWorkspaceResourceByResourceId,
-  ensureWorkspaceResource,
-  getWorkspaceResource,
-  getWorkspaceProjectByProjectId,
   insertConversation,
   insertProject,
   listMessages,
   openDatabase,
   upsertMessage,
 } from '../src/db.js';
-import {
-  createWorkspaceOwnedDesignSystem,
-  deleteWorkspaceOwnedDesignSystem,
-} from '../src/design-systems/workspace-owned-create.js';
 import {
   deleteUserDesignSystem,
   listDesignSystems,
@@ -73,69 +64,6 @@ describe('brand routes', () => {
     expect(response.body).toContain('<svg');
   });
 
-  it('authorizes a brand-directory logo through its design-system scope only', async () => {
-    writeBrandFixture('brand-scoped-logo', {
-      designSystemId: 'user:brand-scoped-logo',
-      projectId: 'project-scoped-logo',
-      logoPrimary: 'logos/header.svg',
-      logoBody: '<svg xmlns="http://www.w3.org/2000/svg"/>',
-    });
-    const authorizeDesignSystemRead = vi.fn(async (req, res, id, allowNavigationQuery) => {
-      expect(req.query).toMatchObject({
-        workspaceId: 'ws-logo',
-        workspaceMemberId: 'member-logo',
-      });
-      expect(id).toBe('user:brand-scoped-logo');
-      expect(allowNavigationQuery).toBe(true);
-      res.status(403).json({ error: 'WORKSPACE_DESIGN_SYSTEM_PERMISSION_DENIED' });
-      return false;
-    });
-    const authorizeProjectRequest = vi.fn();
-    const server = await startBrandServer({
-      authorizeDesignSystemRead,
-      authorizeProjectRequest,
-    });
-    try {
-      const response = await server.requestJson(
-        '/api/brands/brand-scoped-logo/logo?workspaceId=ws-logo&workspaceMemberId=member-logo',
-      );
-      expect(response.status).toBe(403);
-      expect(authorizeDesignSystemRead).toHaveBeenCalledTimes(1);
-      expect(authorizeProjectRequest).not.toHaveBeenCalled();
-    } finally {
-      await server.close();
-    }
-  });
-
-  it('uses the backing project gate when a brand logo has no bound design-system envelope', async () => {
-    writeBrandFixture('brand-project-owned-logo', {
-      designSystemId: 'user:legacy-unbound-brand',
-      projectId: 'project-bound-brand',
-      logoPrimary: 'logos/header.svg',
-      logoBody: '<svg xmlns="http://www.w3.org/2000/svg"/>',
-    });
-    const authorizeDesignSystemRead = vi.fn();
-    const authorizeProjectRequest = vi.fn(async (_req, res, projectId, options) => {
-      expect(projectId).toBe('project-bound-brand');
-      expect(options).toEqual({ mode: 'read', allowNavigationQuery: true });
-      res.status(403).json({ error: 'WORKSPACE_PROJECT_PERMISSION_DENIED' });
-      return false;
-    });
-    const server = await startBrandServer({
-      authorizeDesignSystemRead,
-      isDesignSystemWorkspaceBound: () => false,
-      authorizeProjectRequest,
-    });
-    try {
-      const response = await server.requestJson('/api/brands/brand-project-owned-logo/logo');
-      expect(response.status).toBe(403);
-      expect(authorizeProjectRequest).toHaveBeenCalledTimes(1);
-      expect(authorizeDesignSystemRead).not.toHaveBeenCalled();
-    } finally {
-      await server.close();
-    }
-  });
-
   it('keeps logo 404 responses as JSON when no logo can be resolved', async () => {
     writeBrandFixture('brand-missing', { logoPrimary: 'logos/missing.svg' });
 
@@ -172,51 +100,6 @@ describe('brand routes', () => {
     expect(response.status).toBe(200);
     expect(response.contentType).toContain('image/svg+xml');
     expect(response.body).toContain('<circle');
-  });
-
-  it('authorizes a backing-project logo through that project scope only', async () => {
-    writeBrandFixture('brand-project-scoped', {
-      designSystemId: 'user:brand-project-scoped',
-      projectId: 'project-brand-scoped',
-      logoPrimary: 'logos/header.svg',
-    });
-    const logoDir = path.join(projectsRoot, 'project-brand-scoped', 'logos');
-    mkdirSync(logoDir, { recursive: true });
-    writeFileSync(path.join(logoDir, 'header.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
-    insertProject(db, {
-      id: 'project-brand-scoped',
-      name: 'Scoped Brand Project',
-      skillId: null,
-      designSystemId: null,
-      createdAt: 1,
-      updatedAt: 1,
-      metadata: { kind: 'brand', brandId: 'brand-project-scoped' },
-    });
-    const authorizeDesignSystemRead = vi.fn();
-    const authorizeProjectRequest = vi.fn(async (req, res, projectId, options) => {
-      expect(req.query).toMatchObject({
-        workspaceId: 'ws-project-logo',
-        workspaceMemberId: 'member-project-logo',
-      });
-      expect(projectId).toBe('project-brand-scoped');
-      expect(options).toEqual({ mode: 'read', allowNavigationQuery: true });
-      res.status(403).json({ error: 'WORKSPACE_PROJECT_PERMISSION_DENIED' });
-      return false;
-    });
-    const server = await startBrandServer({
-      authorizeDesignSystemRead,
-      authorizeProjectRequest,
-    });
-    try {
-      const response = await server.requestJson(
-        '/api/brands/brand-project-scoped/logo?workspaceId=ws-project-logo&workspaceMemberId=member-project-logo',
-      );
-      expect(response.status).toBe(403);
-      expect(authorizeProjectRequest).toHaveBeenCalledTimes(1);
-      expect(authorizeDesignSystemRead).not.toHaveBeenCalled();
-    } finally {
-      await server.close();
-    }
   });
 
   it('reconciles extracting brands to failed when the backing project run failed', async () => {
@@ -664,19 +547,7 @@ describe('brand routes', () => {
     }
   });
 
-  it('binds a freshly extracted brand project into the caller\'s ACTIVE team workspace', async () => {
-    // Red-spec for the gap `d7f3546d8`'s commit message already named but did
-    // not close: `startBrandExtraction` (brands/index.ts) inserts its backing
-    // project row directly and never calls `ensureWorkspaceProject`. Before
-    // this fix, that left the project with NO `workspace_projects` row even
-    // when the request that created it plainly named a team workspace member —
-    // and POST /api/runs + POST /api/chat's workspace mutation gate
-    // (`enforceWorkspaceResourceMutation`) unconditionally denies a run against
-    // ANY unbound project once the caller's client sends workspace headers at
-    // all (`row === null` short-circuits `canMutate` to false regardless of
-    // who created it). A team member's own just-created design system could
-    // never get its first agent turn to run, so the agent could never write
-    // the `assets/logo.svg` spec 04 §9.3's sync depends on.
+  it('does not write a workspace binding row for a brand extraction', async () => {
     const server = await startBrandServer({
       logoFallback: NO_LOGO_FALLBACK,
       imageryFallback: NO_IMAGERY_FALLBACK,
@@ -684,157 +555,12 @@ describe('brand routes', () => {
     try {
       const started = await server.requestJson('/api/brands', {
         method: 'POST',
-        body: { url: 'https://example.com', description: 'Aurora Grove is a minimal interior-design studio.' },
-        headers: {
-          'x-od-workspace-id': 'ws-team-1',
-          'x-od-workspace-member-id': 'member-owner',
-          'x-od-workspace-type': 'team',
-          'x-od-workspace-role': 'member',
-          'x-od-workspace-member-status': 'active',
-        },
+        body: { url: 'https://example.com', description: 'Local brand.' },
       });
       expect(started.status).toBe(200);
-
-      const binding = getWorkspaceProjectByProjectId(db, started.body.projectId);
-      expect(binding).toMatchObject({
-        workspaceId: 'ws-team-1',
-        visibility: 'personal',
-        resourceState: 'active',
-        createdByWorkspaceMemberId: 'member-owner',
-      });
-    } finally {
-      await server.close();
-    }
-  });
-
-  it('binds the draft design system during the same scoped brand-creation request', async () => {
-    const createScopedDesignSystem = vi.fn(async (
-      root: string,
-      input: Parameters<typeof createWorkspaceOwnedDesignSystem>[1],
-      context: Parameters<typeof createWorkspaceOwnedDesignSystem>[2],
-    ) => createWorkspaceOwnedDesignSystem(root, input, context, {
-      ensureWorkspaceResource: (resourceType, workspaceId, resourceId, envelope) =>
-        ensureWorkspaceResource(db, resourceType, workspaceId, resourceId, envelope),
-    }));
-    const scopedDeps = {
-      createWorkspaceOwnedDesignSystem: createScopedDesignSystem,
-      deleteWorkspaceOwnedDesignSystem: (root: string, designSystemId: string) =>
-        deleteWorkspaceOwnedDesignSystem(root, designSystemId, {
-          deleteUserDesignSystem,
-          deleteWorkspaceResourceByResourceId: (resourceType, resourceId) =>
-            deleteWorkspaceResourceByResourceId(db, resourceType, resourceId),
-        }),
-      logoFallback: NO_LOGO_FALLBACK,
-      imageryFallback: NO_IMAGERY_FALLBACK,
-    } as Partial<BrandRoutesDeps> & {
-      createWorkspaceOwnedDesignSystem: typeof createScopedDesignSystem;
-    };
-    const server = await startBrandServer(scopedDeps);
-    try {
-      const started = await server.requestJson('/api/brands', {
-        method: 'POST',
-        body: { url: 'https://catalog.example.com' },
-        headers: {
-          'x-od-workspace-id': 'ws-team-catalog',
-          'x-od-workspace-member-id': 'member-catalog-owner',
-          'x-od-workspace-type': 'team',
-          'x-od-workspace-role': 'owner',
-          'x-od-workspace-member-status': 'active',
-        },
-      });
-
-      expect(started.status).toBe(200);
-      expect(createScopedDesignSystem).toHaveBeenCalledTimes(1);
-      expect(getWorkspaceResource(
-        db,
-        'design_system',
-        'ws-team-catalog',
-        started.body.designSystemId,
-      )).toMatchObject({
-        workspaceId: 'ws-team-catalog',
-        resourceId: started.body.designSystemId,
-        visibility: 'personal',
-        createdByWorkspaceMemberId: 'member-catalog-owner',
-      });
-      const sameWorkspaceCatalog = await listDesignSystems(userDesignSystemsRoot, {
-        idPrefix: 'user:',
-        source: 'user',
-        isEditable: true,
-        defaultStatus: 'draft',
-        workspaceId: 'ws-team-catalog',
-      });
-      const otherWorkspaceCatalog = await listDesignSystems(userDesignSystemsRoot, {
-        idPrefix: 'user:',
-        source: 'user',
-        isEditable: true,
-        defaultStatus: 'draft',
-        workspaceId: 'ws-other-catalog',
-      });
-      expect(sameWorkspaceCatalog.map((system) => system.id)).toContain(started.body.designSystemId);
-      expect(otherWorkspaceCatalog.map((system) => system.id)).not.toContain(started.body.designSystemId);
-
-      const deleted = await server.requestJson(`/api/brands/${started.body.id}`, {
-        method: 'DELETE',
-      });
-      expect(deleted.status).toBe(200);
-      expect(getWorkspaceResource(
-        db,
-        'design_system',
-        'ws-team-catalog',
-        started.body.designSystemId,
-      )).toBeUndefined();
-    } finally {
-      await server.close();
-    }
-  });
-
-  it('keeps a scoped brand when canonical design-system deletion is denied', async () => {
-    writeBrandFixture('brand-delete-denied', {
-      designSystemId: 'user:brand-delete-denied',
-      projectId: 'project-delete-denied',
-      logoPrimary: 'logos/missing.svg',
-    });
-    const deleteDesignSystemForRequest = vi.fn(async (_req, res, designSystemId, options) => {
-      expect(designSystemId).toBe('user:brand-delete-denied');
-      expect(options?.beforeDelete).toEqual(expect.any(Function));
-      // Canonical authority denied the request, so it deliberately does not
-      // invoke the callback that aborts the active extraction.
-      res.status(403).json({ error: 'WORKSPACE_DESIGN_SYSTEM_PERMISSION_DENIED' });
-      return false;
-    });
-    const deleteWorkspaceOwnedDesignSystem = vi.fn(async () => true);
-    const server = await startBrandServer({
-      deleteDesignSystemForRequest,
-      deleteWorkspaceOwnedDesignSystem,
-    });
-    try {
-      const deleted = await server.requestJson('/api/brands/brand-delete-denied', {
-        method: 'DELETE',
-      });
-      expect(deleted.status).toBe(403);
-      expect(deleteDesignSystemForRequest).toHaveBeenCalledTimes(1);
-      expect(deleteWorkspaceOwnedDesignSystem).not.toHaveBeenCalled();
-      expect(() => readFileSync(
-        path.join(brandsRoot, 'brand-delete-denied', 'meta.json'),
-        'utf8',
-      )).not.toThrow();
-    } finally {
-      await server.close();
-    }
-  });
-
-  it('leaves a signed-out / single-player brand extraction unbound, exactly as before this fix', async () => {
-    const server = await startBrandServer({
-      logoFallback: NO_LOGO_FALLBACK,
-      imageryFallback: NO_IMAGERY_FALLBACK,
-    });
-    try {
-      const started = await server.requestJson('/api/brands', {
-        method: 'POST',
-        body: { url: 'https://example.com', description: 'Signed-out single-player brand.' },
-      });
-      expect(started.status).toBe(200);
-      expect(getWorkspaceProjectByProjectId(db, started.body.projectId)).toBeUndefined();
+      expect(
+        db.prepare('SELECT 1 FROM workspace_projects WHERE project_id = ?').get(started.body.projectId),
+      ).toBeUndefined();
     } finally {
       await server.close();
     }
@@ -1663,13 +1389,6 @@ describe('brand routes', () => {
       skillsRoot,
       dataDir,
       db,
-      // The same production seam `server.ts` builds. Constructed with no
-      // membership-directory fetcher, which is
-      // `authorizeCreatedProjectWorkspace`'s documented local/dev
-      // compatibility configuration — so a verified header identity still
-      // binds here, while the resolver's verify-then-degrade contract is
-      // covered directly in `tests/collab/created-project-workspace.test.ts`.
-      resolveCreatedProjectHome: createCreatedProjectWorkspaceResolver({}),
       ...extraDeps,
     });
     const server = http.createServer(app);

@@ -23,12 +23,12 @@
  *     导轨也确实有 2 个点;并且**逐个点过去**,每一次都要在正文里点亮一条真消息。
  *     第 2 条才是「死链」那一半:光对数字,把导轨改成「一条都不画」也叫相等。
  */
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { forwardRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatPane } from '../../../src/components/ChatPane';
-import type { AppConfig, ChatMessage } from '../../../src/types';
+import type { ChatMessage } from '../../../src/types';
 
 const translate = (key: string, vars?: Record<string, string | number>) =>
   (vars && Object.keys(vars).length > 0 ? `${key} ${Object.values(vars).join(' ')}` : key);
@@ -143,7 +143,6 @@ function renderChat(messages: ChatMessage[]) {
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }

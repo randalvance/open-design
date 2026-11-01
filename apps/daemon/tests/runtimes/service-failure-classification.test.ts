@@ -80,20 +80,8 @@ describe('classifyAgentServiceFailure', () => {
   // The code, not the sentence, decides: a self-identifying machine code
   // outranks a guess read off prose, which is the same precedence the daemon
   // already applies through `evidenceLevel: 'structured_code'`.
-  it('reads the gateway own provider-credential codes as a service outage, not the caller signed out', () => {
-    for (const text of [
-      'API request failed with status 500: upstream_provider_unauthenticated',
-      '[code=upstream_provider_unauthenticated] Upstream provider credentials are missing or invalid.',
-      '[code=upstream_provider_forbidden] Upstream provider rejected access for the configured credentials.',
-      'json-rpc id 4: opencode event stream: {"properties":{"error":{"data":{"message":"\\"[code=upstream_provider_unauthenticated] Upstream provider credentials are missing or invalid.\\""}}}}',
-    ]) {
-      expect(classifyAgentServiceFailure(text)).toBe('UPSTREAM_UNAVAILABLE');
-    }
-  });
-
-  // The reverse guard. The rule above keys on the gateway's compound code, so
-  // it must not swallow the caller's own 401 — including the one whose body is
-  // the bare `unauthenticated` code that the compound one ends with.
+  // The caller's own 401 reads as auth, including one whose body is the bare
+  // `unauthenticated` code.
   it('still reads the caller own credential failures as auth', () => {
     for (const text of [
       'API request failed with status 401: unauthenticated',

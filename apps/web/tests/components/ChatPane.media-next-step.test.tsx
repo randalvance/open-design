@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, expect, test, vi } from 'vitest';
 import { ChatPane } from '../../src/components/ChatPane';
 import { I18nProvider } from '../../src/i18n';
-import type { AppConfig, ChatMessage } from '../../src/types';
+import type { ChatMessage } from '../../src/types';
 
 afterEach(cleanup);
 
@@ -34,7 +34,6 @@ function renderChat(message: ChatMessage, onSend = vi.fn(), projectFiles: Parame
     conversations={[{ projectId: 'media-project', id: 'media-conversation', title: 'Casual Fashion Grid', createdAt: 1, updatedAt: 1 }]}
     activeConversationId="media-conversation"
     onSelectConversation={vi.fn()} onDeleteConversation={vi.fn()}
-    config={{ agentId: 'codex', agentCliEnv: {} } as unknown as AppConfig}
   /></I18nProvider>);
 }
 

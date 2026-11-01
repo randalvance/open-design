@@ -94,8 +94,8 @@ describe('resolveModelForAgent', () => {
     expect(resolveModelForAgent(def, 'default')).toBe('default');
   });
 
-  it('isolates remembered AMR live models by environment profile scope', () => {
-    const def = defWithId('amr', []);
+  it('isolates remembered live models by environment profile scope', () => {
+    const def = defWithId('scoped-model-test', []);
     rememberLiveModels(def.id, [
       { id: 'prod-model', label: 'prod-model' },
     ], 'prod');
@@ -115,7 +115,7 @@ describe('resolveModelForAgent', () => {
     expect(resolveModelForAgent(def, null, {}, 'test')).toBe('test-model');
   });
 
-  it('prefers remembered live models only when the fresh AMR catalog is empty', () => {
+  it('prefers remembered live models only when the fresh catalog is empty', () => {
     const remembered = [
       { id: 'deepseek-v3.2', label: 'deepseek-v3.2' },
       { id: 'glm-5.1', label: 'glm-5.1' },

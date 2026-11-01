@@ -123,7 +123,7 @@ export interface RunEventLike {
 // Join key the daemon-stream uses for tool_use → tool_result pairing.
 // Claude / Codex / ACP all stamp the same `id` onto the `tool_use`
 // event and reference it via `toolUseId` on the subsequent
-// `tool_result`; see `apps/daemon/src/langfuse-bridge.ts#collectToolCalls`
+// `tool_result`; the tool-call pairing rule
 // for the canonical implementation.
 export function readToolUseId(data: unknown): string | null {
   if (!data || typeof data !== 'object') return null;

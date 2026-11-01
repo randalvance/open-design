@@ -19,19 +19,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   closeDatabase,
-  countWorkspaceProjectRefs,
   deleteConversation,
   deleteProject as dbDeleteProject,
-  deleteWorkspaceProject,
   ensureProjectCommentAnchorConversation,
-  ensureWorkspaceProject,
   getConversation,
   getProject,
-  getWorkspaceProject,
-  getWorkspaceProjectByProjectId,
-  listWorkspaceProjects,
-  rebindWorkspaceProject,
-  updateWorkspaceProject,
   insertConversation,
   insertProject,
   listConversations,
@@ -134,18 +126,6 @@ async function mountProjectApp(
       removeProjectDir: vi.fn(async () => {}),
       stageProjectDirsForDelete: vi.fn(async () => {}),
       validateLinkedDirs: vi.fn(() => ({ dirs: [], error: null })),
-      // Real db-backed workspace-project lookups: the delete route's
-      // workspace mutation gate dereferences these, and a bare project with
-      // no workspace row must flow through the same legacy-allow path the
-      // production server takes.
-      ensureWorkspaceProject,
-      getWorkspaceProject,
-      getWorkspaceProjectByProjectId,
-      listWorkspaceProjects,
-      updateWorkspaceProject,
-      rebindWorkspaceProject,
-      deleteWorkspaceProject,
-      countWorkspaceProjectRefs,
     },
     projectFiles: {
       ensureProject: noop,

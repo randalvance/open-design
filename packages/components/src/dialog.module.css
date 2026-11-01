@@ -24,14 +24,9 @@
    *    的删除确认长在 `.new-project-modal-backdrop`(920)之内,在原来的 100 上
    *    它压在自己父模态的遮罩底下。通用原语的地板必须覆盖这些的并集,所以它
    *    不属于那五张 `.backdrop` 定义的「应用模态档 1000」。
-   *  · 1500 这个数取自**余额闸门的另一条腿**:`AmrBalanceDialog`(有账单权限)
-   *    和 `AmrOwnerTopUpDialog`(没有账单权限)是同一个闸门的两个分支,在
-   *    `EntryShell.tsx` / `ProjectView.tsx` 里是同一个三元表达式的两条腿。后者
-   *    已经落在 1500(`components/chat/AmrOwnerTopUpDialog.module.css`),前者
-   *    不带 `backdropClassName`,吃的就是这里。同一个闸门的两条腿不能差两档。
    *
    * 需要压过另一张模态的消费者仍然在自己的 `backdropClassName` 上往上走
-   * (`AmrArtifactUpgradeDialog` 1700 / `DeepSeekV4FlashCampaign` 1700 /
+   * (`DeepSeekV4FlashCampaign` 1700 /
    * `GoPlanSunsetDialog` 1800),那条升级通道不受影响。
    *
    * 守护:`apps/web/tests/styles/app-scrim-layer.test.ts`。

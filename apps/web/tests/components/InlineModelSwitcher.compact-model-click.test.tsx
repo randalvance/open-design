@@ -21,7 +21,6 @@ import { useRef, useState } from 'react';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mergeAgentModelChoice } from '../../src/App';
-import { DEEPSEEK_V4_FLASH_CAMPAIGN } from '../../src/campaigns/deepseek-v4-flash';
 import { InlineModelSwitcher } from '../../src/components/InlineModelSwitcher';
 import type { AgentInfo, AppConfig } from '../../src/types';
 
@@ -222,36 +221,6 @@ describe('compact home model list — a clicked model reaches the chip', () => {
       .not.toMatch(/deepseek-|claude-/);
   });
 
-  it('lists available models above the ones the plan does not include', () => {
-    // Same ordering the execution-settings picker already applies via
-    // `orderModelOptionsByAvailability`. The compact list was the one surface
-    // rendering the raw catalog order, so off-plan models could sit on top of
-    // the ones the caller can actually pick.
-    const interleaved: AgentInfo = {
-      ...amrAgent,
-      models: [
-        { id: 'claude-opus-4.8', label: 'claude-opus-4.8', enabled: false },
-        { id: 'deepseek-v4-flash', label: 'deepseek-v4-flash', enabled: true, default: true },
-        { id: 'claude-opus-4.6', label: 'claude-opus-4.6', enabled: false },
-        { id: 'deepseek-v4-pro', label: 'deepseek-v4-pro', enabled: true },
-      ],
-    };
-    render(<StatefulSwitcher agents={[interleaved]} />);
-    const popover = openSwitcher();
-    const rows = within(popover).getAllByRole('radio');
-    const ids = rows.map((row) =>
-      (row.getAttribute('data-testid') ?? '').replace(
-        'inline-model-switcher-compact-model-',
-        '',
-      ),
-    );
-
-    // Assert on ids, not label text: the rows no longer print the company
-    // token, so a text-based ordering check would pass on any order.
-    expect(ids.slice(0, 2)).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro']);
-    expect(ids.slice(2)).toEqual(['claude-opus-4.8', 'claude-opus-4.6']);
-    expect(rows[0]?.textContent).toContain(versionOf('deepseek-v4-flash'));
-  });
 
   it('exposes the full model name on hover for same-prefix long ids', () => {
     // Same-prefix OpenRouter variants are indistinguishable once the row is
@@ -280,19 +249,6 @@ describe('compact home model list — a clicked model reaches the chip', () => {
     }
   });
 
-  it('writes nothing at all when a refused model is clicked', () => {
-    // The refusal happens BEFORE the write, not after: without the gate the
-    // click lands a locked model in the config (which `saveConfig` persists and
-    // `syncConfigToDaemon` pushes to the daemon) and a second write reverts it.
-    // Two round-trips to store a value the user never gets.
-    const persisted = vi.fn();
-    render(<StatefulSwitcher agents={[amrAgent]} onPersist={persisted} />);
-    openSwitcher();
-    fireEvent.click(compactRow('claude-opus-4.6'));
-
-    expect(persisted).not.toHaveBeenCalled();
-    expect(chipText()).toContain(versionOf('deepseek-v4-flash'));
-  });
 
   it('re-selecting the already active model closes the list without changing the chip', () => {
     render(<StatefulSwitcher agents={[amrAgentAllEnabled]} />);
@@ -303,60 +259,8 @@ describe('compact home model list — a clicked model reaches the chip', () => {
     expect(screen.queryByTestId('inline-model-switcher-popover')).toBeNull();
   });
 
-  it('does not show unlimited labels during the campaign window', () => {
-    // Campaign visibility is decided by the real window alone: pin the clock
-    // inside the window instead of the removed ?campaign= review parameters.
-    mockNow(DEEPSEEK_V4_FLASH_CAMPAIGN.window.startAt);
-    render(<StatefulSwitcher agents={[amrAgentAllEnabled]} />);
 
-    expect(chipText()).toContain(versionOf('deepseek-v4-flash'));
-    expect(within(screen.getByTestId('inline-model-switcher-chip')).queryByText('Unlimited'))
-      .toBeNull();
 
-    const popover = openSwitcher();
-    expect(within(compactRow('deepseek-v4-pro')).queryByText('Unlimited')).toBeNull();
-    expect(within(compactRow('deepseek-v4-flash')).queryByText('Unlimited')).toBeNull();
-    expect(within(popover).queryByText('Unlimited')).toBeNull();
-  });
-
-  it('hides the campaign badge entirely outside the real window', () => {
-    // The half-open window: at endAtExclusive the campaign is over, and no
-    // URL parameter can bring the badge back.
-    mockNow(DEEPSEEK_V4_FLASH_CAMPAIGN.window.endAtExclusive);
-    render(<StatefulSwitcher agents={[amrAgentAllEnabled]} />);
-
-    expect(chipText()).toContain(versionOf('deepseek-v4-flash'));
-    expect(within(screen.getByTestId('inline-model-switcher-chip')).queryByText('Unlimited'))
-      .toBeNull();
-
-    const popover = openSwitcher();
-    expect(within(popover).queryByText('Unlimited')).toBeNull();
-  });
-
-  it('never applies the AMR campaign badge to a BYOK model', () => {
-    // BYOK deliberately retains the last local-agent model in `agentModels` so
-    // switching back to local execution restores it. That dormant AMR choice
-    // must not decorate the visible BYOK model: BYOK usage is charged by the
-    // user's own provider and is outside this hosted-model campaign.
-    mockNow(DEEPSEEK_V4_FLASH_CAMPAIGN.window.startAt);
-    render(
-      <StatefulSwitcher
-        agents={[amrAgentAllEnabled]}
-        initialConfig={{
-          mode: 'api',
-          model: 'grok-4.5',
-          agentId: 'amr',
-          agentModels: {
-            amr: { model: DEEPSEEK_V4_FLASH_CAMPAIGN.modelId },
-          },
-        }}
-      />,
-    );
-
-    const chip = screen.getByTestId('inline-model-switcher-chip');
-    expect(chip).toHaveTextContent('grok-4.5');
-    expect(within(chip).queryByText('Unlimited')).toBeNull();
-  });
 
   it('still closes on a click genuinely outside the switcher', () => {
     render(

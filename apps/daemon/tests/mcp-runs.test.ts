@@ -2,22 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildProjectRawFileUrl } from '@open-design/contracts';
 
 import { handleMcpToolCall, localMcpToolDefinitions } from '../src/mcp.js';
-import { _resetMcpWorkspaceContextCacheForTests } from '../src/mcp-workspace-context.js';
 
 const originalFetch = globalThis.fetch;
-
-// Non-vela directory: the bridge falls back to headerless behavior, which is
-// what this suite exercised before #6569.
-function withDirectory(
-  fn: (url: string, init?: RequestInit) => Promise<Response>,
-): (url: string, init?: RequestInit) => Promise<Response> {
-  return async (url: string, init?: RequestInit) => {
-    if (String(url).endsWith('/api/workspace/directory')) {
-      return new Response(JSON.stringify({ items: [], activeWorkspaceId: null }), { status: 200 });
-    }
-    return fn(url, init);
-  };
-}
 
 function firstText(result: { content: Array<{ text: string }> }): string {
   const item = result.content[0];
@@ -31,7 +17,6 @@ function firstText(result: { content: Array<{ text: string }> }): string {
 // itself — it asks the daemon to, and the daemon spawns its own agent.
 describe('public MCP discovery + generation tools', () => {
   afterEach(() => {
-    _resetMcpWorkspaceContextCacheForTests();
     vi.unstubAllGlobals();
     globalThis.fetch = originalFetch;
   });
@@ -41,7 +26,7 @@ describe('public MCP discovery + generation tools', () => {
       expect(url).toBe('http://127.0.0.1:17456/api/skills');
       return new Response(JSON.stringify({ skills: [{ id: 'deck', name: 'Deck' }] }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'list_skills', {});
     expect(JSON.parse(firstText(result))).toEqual({ skills: [{ id: 'deck', name: 'Deck' }] });
@@ -58,7 +43,7 @@ describe('public MCP discovery + generation tools', () => {
     const fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({ runId: 'must-not-run' }), { status: 200 }),
     );
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall(
       'http://127.0.0.1:17456',
@@ -84,7 +69,7 @@ describe('public MCP discovery + generation tools', () => {
       expect(init?.method).toBe('POST');
       return new Response(JSON.stringify({ runId: 'run-42', pluginId: 'pitch-deck' }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'start_run', {
       project: 'Demo',
@@ -122,7 +107,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       return new Response(JSON.stringify({ runId: 'run-7' }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'start_run', { prompt: 'iterate' });
 
@@ -148,7 +133,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       return new Response(JSON.stringify({ runId: 'run-55', skillId: 'brand-identity' }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'start_run', {
       project: 'Demo',
@@ -236,7 +221,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       return new Response(JSON.stringify({ runId: 'run-no-agent' }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'start_run', {
       prompt: 'make a banner',
@@ -261,7 +246,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       return new Response(JSON.stringify({ runId: 'unused' }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'start_run', {
       project: 'Demo',
@@ -283,7 +268,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       throw new Error(`unexpected url ${url}`);
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'get_run', { runId: 'run-42' });
     const parsed = JSON.parse(firstText(result));
@@ -298,58 +283,13 @@ describe('public MCP discovery + generation tools', () => {
       }
       return new Response(JSON.stringify({ id: 'run-99', status: 'running', projectId: 'project-1' }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'get_run', { runId: 'run-99' });
     const parsed = JSON.parse(firstText(result));
     expect(parsed.status).toBe('running');
     expect(parsed.previewUrl).toBeUndefined();
   });
-
-  it('get_run returns a recharge link and same-request resume instructions', async () => {
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url.endsWith('/api/mcp/install-info')) {
-        return new Response(JSON.stringify({ webBaseUrl: null }), { status: 200 });
-      }
-      return new Response(JSON.stringify({
-        id: 'run-wallet',
-        status: 'failed',
-        projectId: 'project-1',
-        clientRequestId: 'brief-42-cloud',
-        agentId: 'amr',
-        errorCode: 'AMR_INSUFFICIENT_BALANCE',
-        failureAction: 'recharge',
-      }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
-
-    const result = await handleMcpToolCall(
-      'http://127.0.0.1:17456',
-      'get_run',
-      { runId: 'run-wallet' },
-    );
-    const parsed = JSON.parse(firstText(result));
-    expect(parsed).toMatchObject({
-      status: 'failed',
-      failureAction: 'recharge',
-      rechargeUrl: 'https://open-design.ai/cloud/dashboard?source=open_design',
-    });
-    expect(parsed.hint).toContain('same requestId');
-    expect(parsed.hint).toContain('resume:true');
-  });
-
-  // When a run is mid-flight, the outer agent has no in-band signal
-  // that OD is making progress — which led real Codex clients to cancel
-  // after a few polls and substitute their own output. Surfacing
-  // eventsLogPath plus a hint to tail it gives Codex a way to see live
-  // progress in its own shell and trust the run.
-  // studioUrl deep-links to the OD studio page that shows BOTH the
-  // file preview and the chat history for a run. Built when the
-  // daemon advertises a webBaseUrl (via /api/mcp/install-info) and
-  // the run is bound to a project + conversation. This is the URL
-  // Codex hands back to the user — way better than the raw `/api/.../raw/`
-  // path because the chat panel shows what Codex asked and what the
-  // inner agent replied.
 
   it('get_run includes studioUrl on success when webBaseUrl + conversationId are available', async () => {
     const fetchMock = vi.fn(async (url: string) => {
@@ -372,7 +312,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       throw new Error('unexpected url ' + url);
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'get_run', { runId: 'run-42' });
     const parsed = JSON.parse(firstText(result));
@@ -402,7 +342,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       throw new Error('unexpected url ' + url);
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'get_run', { runId: 'run-42' });
     const parsed = JSON.parse(firstText(result));
@@ -448,7 +388,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       throw new Error(`unexpected url ${url}`);
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const first = await handleMcpToolCall(
       'http://127.0.0.1:17456',
@@ -489,7 +429,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       throw new Error('unexpected url ' + url);
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'get_run', { runId: 'run-42' });
     const parsed = JSON.parse(firstText(result));
@@ -513,7 +453,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       throw new Error('unexpected url ' + url);
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'start_run', {
       project: 'Demo',
@@ -541,7 +481,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       throw new Error('unexpected url ' + url);
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'get_project', { project: PROJECT_UUID });
     const parsed = JSON.parse(firstText(result));
@@ -557,7 +497,7 @@ describe('public MCP discovery + generation tools', () => {
       projectId: 'project-1',
       eventsLogPath: '/Users/x/.od/runs/run-99/events.jsonl',
     }), { status: 200 }));
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'get_run', { runId: 'run-99' });
     const parsed = JSON.parse(firstText(result));
@@ -579,7 +519,7 @@ describe('public MCP discovery + generation tools', () => {
       expect(init?.method).toBe('POST');
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'cancel_run', { runId: 'run-42' });
     expect(JSON.parse(firstText(result))).toEqual({ ok: true });
@@ -592,7 +532,7 @@ describe('public MCP discovery + generation tools', () => {
       const body = JSON.parse(String(init?.body));
       return new Response(JSON.stringify({ project: { id: body.id, name: body.name }, conversationId: 'c1' }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'create_project', {
       name: 'Demo Deck',
@@ -611,7 +551,7 @@ describe('public MCP discovery + generation tools', () => {
       const body = JSON.parse(String(init?.body));
       return new Response(JSON.stringify({ project: { id: body.id, name: body.name }, conversationId: 'c1' }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     await handleMcpToolCall('http://127.0.0.1:17456', 'create_project', { name: 'My Site', id: 'fixed-id' });
     const postBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
@@ -620,7 +560,7 @@ describe('public MCP discovery + generation tools', () => {
 
   it('create_project requires a name before posting', async () => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'create_project', {});
     expect(result).toMatchObject({ isError: true });
@@ -638,7 +578,7 @@ describe('public MCP discovery + generation tools', () => {
         { status: 200 },
       );
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'get_project', { project: PROJECT_UUID });
     const parsed = JSON.parse(firstText(result));
@@ -654,7 +594,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       return new Response(JSON.stringify({ project: { id: PROJECT_UUID, name: 'P1', metadata: {} } }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'get_project', { project: PROJECT_UUID });
     const parsed = JSON.parse(firstText(result));
@@ -679,7 +619,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       return new Response(JSON.stringify({ project: { id: PROJECT_UUID, name: 'P1', metadata: { skipDiscoveryBrief: true } } }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'get_project', { project: PROJECT_UUID });
     const parsed = JSON.parse(firstText(result));
@@ -698,7 +638,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       return new Response(JSON.stringify({ project: { id: PROJECT_UUID, metadata: {} } }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'get_project', { project: PROJECT_UUID });
     const parsed = JSON.parse(firstText(result));
@@ -717,7 +657,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       return new Response(JSON.stringify({ project: { id: PROJECT_UUID, metadata: {} } }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'get_project', { project: PROJECT_UUID });
     const parsed = JSON.parse(firstText(result));
@@ -759,7 +699,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       throw new Error(`unexpected url ${url}`);
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'get_run', { runId: 'run-42' });
     const parsed = JSON.parse(firstText(result));
@@ -785,7 +725,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       throw new Error(`unexpected url ${url}`);
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'get_run', { runId: 'run-42' });
     const parsed = JSON.parse(firstText(result));
@@ -806,7 +746,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       throw new Error(`unexpected url ${url}`);
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'get_run', { runId: 'run-42' });
     const parsed = JSON.parse(firstText(result));
@@ -834,7 +774,7 @@ describe('public MCP discovery + generation tools', () => {
       }
       throw new Error(`unexpected url ${url}`);
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'get_run', { runId: 'run-42' });
     const parsed = JSON.parse(firstText(result));
@@ -863,7 +803,7 @@ describe('public MCP discovery + generation tools', () => {
       const body = JSON.parse(String(init?.body));
       return new Response(JSON.stringify({ project: { id: body.id, name: body.name }, conversationId: 'c1' }), { status: 200 });
     });
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     await handleMcpToolCall('http://127.0.0.1:17456', 'create_project', { name: 'X' });
     const postBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
@@ -897,7 +837,7 @@ describe('public MCP discovery + generation tools', () => {
       }),
       { status: 200 },
     ));
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'list_plugins', {});
     const parsed = JSON.parse(firstText(result));
@@ -952,7 +892,7 @@ describe('public MCP discovery + generation tools', () => {
         },
       ],
     }), { status: 200 }));
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'list_agents', {});
     const parsed = JSON.parse(firstText(result));
@@ -979,7 +919,7 @@ describe('public MCP discovery + generation tools', () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       agents: [{ id: 'opencode', name: 'OpenCode', available: true, models: longModels }],
     }), { status: 200 }));
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'list_agents', {});
     const parsed = JSON.parse(firstText(result));
@@ -994,7 +934,7 @@ describe('public MCP discovery + generation tools', () => {
         { id: 'devin', name: 'Devin', available: false, installUrl: 'https://cli.devin.ai', models: [] },
       ],
     }), { status: 200 }));
-    vi.stubGlobal('fetch', withDirectory(fetchMock));
+    vi.stubGlobal('fetch', (fetchMock));
 
     const result = await handleMcpToolCall('http://127.0.0.1:17456', 'list_agents', { includeUnavailable: true });
     const parsed = JSON.parse(firstText(result));

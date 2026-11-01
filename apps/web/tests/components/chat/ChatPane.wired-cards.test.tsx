@@ -21,7 +21,7 @@ import { forwardRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatPane } from '../../../src/components/ChatPane';
-import type { AppConfig, ChatMessage } from '../../../src/types';
+import type { ChatMessage } from '../../../src/types';
 
 const translate = (key: string, vars?: Record<string, string | number>) => {
   if (vars && Object.keys(vars).length > 0) {
@@ -104,7 +104,6 @@ function renderChat(opts: {
       onSend={opts.onSend ?? vi.fn()}
       onStop={vi.fn()}
       onRetry={opts.onRetry ?? vi.fn()}
-      amrBalanceCardUsd={opts.amrBalanceCardUsd ?? null}
       onOpenSettings={opts.onOpenSettings as never}
       onSwitchModel={opts.onSwitchModel}
       conversations={[
@@ -113,7 +112,6 @@ function renderChat(opts: {
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }
@@ -243,36 +241,3 @@ describe('ChatPane — Cloud 模型不可用也遵守 G16 固定动作', () => {
   });
 });
 
-describe('ChatPane — 升级卡接在流水里', () => {
-  it('余额 > 0 但撑不住下一轮:暖橙档,卡出现在流水里', () => {
-    const { container } = renderChat({ amrBalanceCardUsd: 1.2 });
-
-    const card = screen.getByTestId('chat-upgrade-card');
-    expect(card).toBeTruthy();
-    expect(card.getAttribute('data-out')).toBe('false');
-    expect(card.textContent).toContain('$1.20');
-    // 流水里(chat-log 内),不是钉在输入框上方的那一类。
-    expect(container.querySelector('.chat-log')?.contains(card)).toBe(true);
-  });
-
-  it('余额 = 0:红档,文案换成「现在无法开始新任务」', () => {
-    renderChat({ amrBalanceCardUsd: 0 });
-
-    const card = screen.getByTestId('chat-upgrade-card');
-    expect(card.getAttribute('data-out')).toBe('true');
-    expect(card.textContent).toContain('chat.upgrade.whyOut');
-  });
-
-  it('没有余额提示时不渲染这张卡', () => {
-    renderChat({ amrBalanceCardUsd: null });
-    expect(screen.queryByTestId('chat-upgrade-card')).toBeNull();
-  });
-
-  // D4「不阻塞」:卡在流水里,发送不受影响。
-  it('卡出现时发送依然可用(D4 不阻塞)', () => {
-    renderChat({ amrBalanceCardUsd: 0 });
-    expect(screen.getByTestId('chat-upgrade-card')).toBeTruthy();
-    // 卡本身不是遮罩/弹窗,也不带任何 aria-modal。
-    expect(document.querySelector('[aria-modal="true"]')).toBeNull();
-  });
-});

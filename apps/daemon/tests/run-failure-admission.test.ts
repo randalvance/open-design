@@ -4,15 +4,13 @@ import { classifyRunFailure, type RunEventForFailureClassification } from '../sr
 // Minimized audit counterexamples: generic model/IDs, no user text or commands.
 // These are runtime inputs, not PH records augmented with LF-only errors.
 const windowError = '[code=model_limit_exceeded] model usage limit exceeded';
-const concurrencyError = '[code=tier_limit_exceeded] membership concurrency limit exceeded';
-const routeError = '[code=model_not_found] model "media-example" has no active routes for request kind "chat_completions"';
-const start = { event: 'start', data: { agentId: 'amr', model: 'media-example', streamFormat: 'acp-json-rpc' } };
+const start = { event: 'start', data: { agentId: 'hermes', model: 'media-example', streamFormat: 'acp-json-rpc' } };
 const prompt = { event: 'agent', data: { type: 'status', label: 'waiting_for_first_output' } };
 const text = { event: 'agent', data: { type: 'text_delta', delta: 'Example output' } };
 const tool = { event: 'agent', data: { type: 'status', label: 'tool_call', detail: 'read' } };
 function classify(message: string, events: RunEventForFailureClassification[] = [start, prompt], code = 'AGENT_EXECUTION_FAILED') {
   return classifyRunFailure({
-    result: 'failed', agentId: 'amr',
+    result: 'failed', agentId: 'hermes',
     status: { status: 'failed', errorCode: code, error: message },
     events,
   });
@@ -20,13 +18,13 @@ function classify(message: string, events: RunEventForFailureClassification[] = 
 
 describe('admission and attribution v3', () => {
   it('keeps an explicit current-attempt handshake policy refusal before execution', () => {
-    expect(classify(`json-rpc id 2: ${concurrencyError}`, [start])).toMatchObject({
-      failure_category: 'rate_limit', failure_detail: 'membership_concurrency_limit',
-      policy_reason: 'membership_concurrency_limit', admission_phase: 'before_execution',
+    expect(classify(`json-rpc id 2: ${windowError}`, [start])).toMatchObject({
+      failure_category: 'rate_limit', failure_detail: 'model_window_limit',
+      policy_reason: 'model_window_limit', admission_phase: 'before_execution',
       admission_status: 'rejected_policy', classifier_version: 'run-failure-v3',
     });
   });
-  it('keeps an AMR handshake policy error without an attempt boundary unknown', () => {
+  it('keeps an ACP handshake policy error without an attempt boundary unknown', () => {
     expect(classify(`json-rpc id 2: ${windowError}`, [])).toMatchObject({
       policy_reason: 'model_window_limit', admission_phase: 'unknown',
       admission_status: 'unknown', classifier_version: 'run-failure-v3',
@@ -85,7 +83,7 @@ describe('admission and attribution v3', () => {
   it('does not count replayed session history before the current prompt', () => {
     expect(classify(windowError, [start, text, tool, prompt])).toMatchObject({ admission_status: 'unknown' });
   });
-  it('does not count replayed session history for a non-AMR ACP runtime', () => {
+  it('does not count replayed session history for another ACP runtime', () => {
     const hermesStart = { event: 'start', data: {
       agentId: 'hermes', model: 'example-model', streamFormat: 'acp-json-rpc',
     } };
@@ -111,48 +109,6 @@ describe('admission and attribution v3', () => {
       { event: 'agent', data: { type: 'text_delta', delta: '' } },
       { event: 'agent', data: { type: 'usage', outputTokens: 100, requestRole: 'auxiliary' } },
     ])).toMatchObject({ admission_status: 'unknown' });
-  });
-  it('leaves no-route responsibility unresolved without capability proof', () => {
-    expect(classify(routeError, [start, prompt], 'AMR_MODEL_UNAVAILABLE')).toMatchObject({
-      failure_category: 'model_unavailable', failure_detail: 'model_not_found',
-      failure_mechanism: 'model_route_unavailable', failure_domain: 'cross_boundary',
-      repair_owner: 'shared_boundary', admission_status: 'unknown', policy_reason: 'none',
-    });
-  });
-  // Contrast fixture: the audit has no such in-band capability proof. It must
-  // stay unresolved above; a runtime supplying explicit evidence can close it.
-  const capabilityError = { event: 'error', data: { error: {
-    code: 'AMR_MODEL_UNAVAILABLE', message: routeError,
-    details: { model: 'media-example', requestKind: 'chat_completions', supportedRequestKinds: ['image_generations', 'image_edits'] },
-  } } };
-  it('attributes a verified selected-model operation mismatch to the product', () => {
-    expect(classify(routeError, [start, prompt, capabilityError], 'AMR_MODEL_UNAVAILABLE')).toMatchObject({
-      failure_detail: 'model_not_found', failure_mechanism: 'invalid_model_selection',
-      failure_domain: 'client_product', repair_owner: 'open_design', evidence_level: 'structured_error',
-    });
-  });
-  it('uses the confirmed ACP model after the initial session model', () => {
-    expect(classify(routeError, [start,
-      { event: 'agent', data: { type: 'status', label: 'model', model: 'session-default' } },
-      { event: 'agent', data: { type: 'status', label: 'model', model: 'media-example' } },
-      prompt, capabilityError,
-    ], 'AMR_MODEL_UNAVAILABLE')).toMatchObject({
-      failure_mechanism: 'invalid_model_selection', failure_domain: 'client_product',
-      repair_owner: 'open_design', evidence_level: 'structured_error',
-    });
-  });
-  it('requires current selection, matching operation and complete capability evidence', () => {
-    for (const details of [
-      { model: 'other-model', requestKind: 'chat_completions', supportedRequestKinds: ['image_generations'] },
-      { model: 'media-example', requestKind: 'image_generations', supportedRequestKinds: ['chat_completions'] },
-      { model: 'media-example', requestKind: 'chat_completions', supportedRequestKinds: [] },
-      { model: 'media-example', requestKind: 'chat_completions', supportedRequestKinds: ['chat_completions'] },
-    ]) {
-      expect(classify(routeError, [start, prompt, { event: 'error', data: { error: { ...capabilityError.data.error, details } } }], 'AMR_MODEL_UNAVAILABLE'))
-        .toMatchObject({ failure_domain: 'cross_boundary' });
-    }
-    expect(classify(routeError, [start, prompt, capabilityError, start, prompt], 'AMR_MODEL_UNAVAILABLE'))
-      .toMatchObject({ failure_domain: 'cross_boundary' });
   });
   it.each([
     ['RATE_LIMITED', 'HTTP 429: too many requests'],

@@ -3,10 +3,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  clearExceptionTrackingContext,
-  setExceptionTrackingContext,
-} from '../../src/analytics/error-tracking';
-import {
   __resetChatContextForTest,
   chatBreadcrumbTrail,
   chatMeasurementTrust,
@@ -17,6 +13,8 @@ import {
   markChatOpenIntent,
   openChatSurface,
 } from '../../src/observability/chat-health';
+import { reportedSafetyEvents, watchSafetyEvents } from '../helpers/safety-events';
+
 
 /**
  * The correlation layer is what turns "the number got worse" into "the
@@ -29,23 +27,11 @@ import {
  *   - and none of the above ever carries user content.
  */
 
-const fetchMock = vi.fn();
-const ORIGINAL_FETCH = globalThis.fetch;
 
 let clock = 0;
 
-function sentEvents(): Array<{ event: string; properties: Record<string, unknown> }> {
-  return fetchMock.mock.calls.map((call) => {
-    const init = call[1] as RequestInit;
-    return JSON.parse(init.body as string) as {
-      event: string;
-      properties: Record<string, unknown>;
-    };
-  });
-}
-
 function propsOf(name: string): Record<string, unknown> | undefined {
-  return sentEvents().find((e) => e.event === name)?.properties;
+  return reportedSafetyEvents().find((e) => e.event === name)?.properties;
 }
 
 function setHeap(usedBytes: number, limitBytes: number): void {
@@ -77,16 +63,7 @@ function buildChatLog(rows: number): HTMLElement {
 
 beforeEach(() => {
   clock = 0;
-  fetchMock.mockReset();
-  fetchMock.mockResolvedValue(new Response('', { status: 200 }));
-  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-  setExceptionTrackingContext({
-    apiKey: 'phc_test',
-    host: 'https://us.i.posthog.com',
-    distinctId: 'chat-context-test',
-    clientType: 'web',
-    osName: 'Mac OS X',
-  });
+  watchSafetyEvents();
   vi.useFakeTimers({ shouldAdvanceTime: false });
   vi.spyOn(performance, 'now').mockImplementation(() => clock);
   setVisibility('visible');
@@ -100,10 +77,7 @@ afterEach(() => {
   __resetChatContextForTest();
   vi.useRealTimers();
   vi.restoreAllMocks();
-  clearExceptionTrackingContext();
-  globalThis.fetch = ORIGINAL_FETCH;
   delete (performance as unknown as { memory?: unknown }).memory;
-  delete (globalThis as unknown as { posthog?: unknown }).posthog;
   document.body.innerHTML = '';
 });
 
@@ -148,29 +122,6 @@ describe('observability/chat-context — correlation', () => {
     expect(props && 'run_id' in props).toBe(false);
   });
 
-  it('picks up the PostHog replay session id when replay is recording', () => {
-    (globalThis as unknown as { posthog?: unknown }).posthog = {
-      get_session_id: () => 'replay-abc',
-    };
-    const log = buildChatLog(1);
-    const handle = openChatSurface({ element: log, messageCount: 1, virtualized: false });
-    handle.sample('interval');
-    expect(propsOf('client_chat_dom_growth')?.replay_session_id).toBe('replay-abc');
-  });
-
-  it('survives posthog-js being absent or throwing', () => {
-    (globalThis as unknown as { posthog?: unknown }).posthog = {
-      get_session_id: () => {
-        throw new Error('not recording');
-      },
-    };
-    const log = buildChatLog(1);
-    const handle = openChatSurface({ element: log, messageCount: 1, virtualized: false });
-    expect(() => handle.sample('interval')).not.toThrow();
-    const props = propsOf('client_chat_dom_growth');
-    expect(props).toBeDefined();
-    expect(props && 'replay_session_id' in props).toBe(false);
-  });
 });
 
 describe('observability/chat-context — breadcrumbs on bad outcomes', () => {

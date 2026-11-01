@@ -95,7 +95,7 @@ async function scenario(platform: "darwin" | "win32", channel: "stable" | "prere
     "./headless-runtime.js": { parsePackagedHeadlessRequest: () => ({ headless: false }), runPackagedMcpActionAgainstExistingDaemon: async () => false },
     "./paths.js": { resolvePackagedNamespacePaths: () => paths },
     "./launch.js": { createPackagedSecondInstanceHandoff: () => ({}) },
-    "./payload-desktop-launch.js": { findPackagedDeeplinkArg: () => null },
+    "./payload-desktop-launch.js": {},
     "./launcher-runtime.js": { resolvePackagedLauncherRuntime: async (_config: unknown, _paths: unknown, options: { delegated: unknown }) => {
       expect(alive).toBe(false);
       expect(options.delegated).toEqual({ generation: 8, version });

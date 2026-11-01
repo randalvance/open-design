@@ -4,10 +4,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  clearExceptionTrackingContext,
-  setExceptionTrackingContext,
-} from '../../src/analytics/error-tracking';
-import {
   __resetChatContextForTest,
   setChatCorrelation,
 } from '../../src/observability/chat-context';
@@ -20,6 +16,8 @@ import {
   reportChatProtocolAnomaly,
   reportChatRecovery,
 } from '../../src/observability/chat-protocol';
+import { reportedSafetyEvents, watchSafetyEvents } from '../helpers/safety-events';
+
 
 /**
  * Protocol anomalies and recovery outcomes are the two signals that
@@ -31,8 +29,6 @@ import {
  * the signal.
  */
 
-const fetchMock = vi.fn();
-const ORIGINAL_FETCH = globalThis.fetch;
 
 let eventCallbacks: Array<(list: { getEntries: () => unknown[] }) => void> = [];
 
@@ -59,32 +55,13 @@ function emitInteraction(name: string, duration: number, target: Element | null)
   }
 }
 
-function sent(): Array<{ event: string; properties: Record<string, unknown> }> {
-  return fetchMock.mock.calls.map((c) => {
-    const init = c[1] as RequestInit;
-    return JSON.parse(init.body as string) as {
-      event: string;
-      properties: Record<string, unknown>;
-    };
-  });
-}
-
 function allNamed(name: string): Array<Record<string, unknown>> {
-  return sent().filter((e) => e.event === name).map((e) => e.properties);
+  return reportedSafetyEvents().filter((e) => e.event === name).map((e) => e.properties);
 }
 
 beforeEach(() => {
   eventCallbacks = [];
-  fetchMock.mockReset();
-  fetchMock.mockResolvedValue(new Response('', { status: 200 }));
-  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-  setExceptionTrackingContext({
-    apiKey: 'phc_test',
-    host: 'https://us.i.posthog.com',
-    distinctId: 'chat-protocol-test',
-    clientType: 'web',
-    osName: 'Mac OS X',
-  });
+  watchSafetyEvents();
   (globalThis as unknown as { PerformanceObserver: unknown }).PerformanceObserver =
     FakePerformanceObserver;
   vi.useFakeTimers({ shouldAdvanceTime: false });
@@ -100,8 +77,6 @@ afterEach(() => {
   __resetChatInteractionForTest();
   vi.useRealTimers();
   vi.restoreAllMocks();
-  clearExceptionTrackingContext();
-  globalThis.fetch = ORIGINAL_FETCH;
   document.body.innerHTML = '';
 });
 

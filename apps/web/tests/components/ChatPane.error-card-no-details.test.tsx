@@ -17,7 +17,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { AssistantMessage } from '../../src/components/AssistantMessage';
 import { ChatPane } from '../../src/components/ChatPane';
-import type { AppConfig, ChatMessage } from '../../src/types';
+import type { ChatMessage } from '../../src/types';
 
 // 身份翻译:断言直接钉 key,既读得出「用的是哪条文案」,也让第 3 条对照
 // 变成「这个 key 还在被消费」的直接证据。
@@ -109,7 +109,6 @@ function renderChat(message: ChatMessage) {
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'claude', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }

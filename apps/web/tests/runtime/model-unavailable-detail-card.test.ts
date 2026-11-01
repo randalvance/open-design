@@ -3,7 +3,7 @@ import { zhCN } from '../../src/i18n/locales/zh-CN';
 import {
   daemonFailureVerdictFrom,
   resolveRunFailureUi,
-} from '../../src/runtime/amr-guidance';
+} from '../../src/runtime/run-guidance';
 
 /*
  * 用户实测(打包版 0.21.1-beta.7,2026-09-06 20:41,run 4c91590e):
@@ -230,7 +230,6 @@ describe('模型不可用:daemon 已经命名的病因,不该在界面上退回�
       expect(ui.primaryAction, `detail=${detail}`).toBe('switch-model');
       expect(ui.secondaryRetry, `detail=${detail}`).toBe(false);
       // 跑在 AMR 上的 run 不该被推销 AMR(`withoutCloudSelfPromotion` 的不变式)。
-      expect(ui.cloudSwitchCta, `detail=${detail}`).toBe(false);
     }
   });
 });

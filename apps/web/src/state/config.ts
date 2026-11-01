@@ -103,16 +103,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   orbit: DEFAULT_ORBIT,
   projectLocations: [],
   defaultProjectLocationId: 'default',
-  // Telemetry defaults to ON so fresh-install users emit onboarding /
-  // ui_click events from the first frame. The disclosure modal still
-  // appears after `onboardingCompleted` flips, and Settings → Privacy
-  // remains the one-click opt-out. Without these defaults the gate at
-  // `daemon/src/analytics.ts` (`if (telemetry?.metrics !== true) return`)
-  // dropped every event fired during onboarding because no consent
-  // existed yet — observed live on the prerelease.10 QA run, which left
-  // zero `page_view pn=onboarding` rows on PostHog despite the user
-  // completing the flow.
-  telemetry: { metrics: true, content: true },
+  // Telemetry has been removed; the field stays off for readers of the config.
+  telemetry: { metrics: false, content: false },
 };
 
 /** Well-known providers with pre-filled base URLs. */
@@ -509,6 +501,17 @@ export const KNOWN_PROVIDERS: KnownProvider[] = [
   },
 ];
 
+const RETIRED_AMR_AGENT_ID = 'amr';
+const RETIRED_MANAGED_MEDIA_PROVIDER_ID = 'vela';
+const RETIRED_AMR_STORED_KEYS = [
+  'mode',
+  'agentId',
+  'agentModels',
+  'agentCliEnv',
+  'agentCliEnvIntent',
+  'mediaProviders',
+] as const satisfies ReadonlyArray<keyof AppConfig>;
+
 export function defaultKnownProviderModel(
   provider: Pick<KnownProvider, 'preferredModels'> | null | undefined,
 ): string {
@@ -592,7 +595,11 @@ function normalizeOrbit(input: Partial<OrbitConfig> | undefined): OrbitConfig {
   const time = typeof input?.time === 'string' && isValidOrbitTime(input.time)
     ? input.time
     : DEFAULT_ORBIT.time;
-  return { ...DEFAULT_ORBIT, ...(input ?? {}), time };
+  // `workspaceScope` was the retired team binding; never carry it forward.
+  const { workspaceScope: _retiredWorkspaceScope, ...rest } = (input ?? {}) as Partial<OrbitConfig> & {
+    workspaceScope?: unknown;
+  };
+  return { ...DEFAULT_ORBIT, ...rest, time };
 }
 
 function isValidOrbitTime(time: string): boolean {
@@ -676,6 +683,33 @@ function migrateRetiredKnownProviderModel(
   if (!replacement || replacement === config.model) return false;
   config.model = replacement;
   return true;
+}
+
+/**
+ * Installs that used the retired OpenDesign model service (agent id `amr`) may
+ * still hold it in localStorage or the daemon's app config. Every load path
+ * passes through here so nothing downstream ever sees it: the agent selection
+ * clears (the shell then picks a working CLI or sends the user to configure
+ * one) and its per-agent model, env and credential entries are dropped.
+ */
+export function stripRetiredAmrConfig(config: AppConfig): AppConfig {
+  const next: AppConfig = { ...config };
+  if (next.mode !== 'daemon' && next.mode !== 'api') next.mode = DEFAULT_CONFIG.mode;
+  if (next.agentId === RETIRED_AMR_AGENT_ID) next.agentId = null;
+  next.agentModels = withoutKey(next.agentModels, RETIRED_AMR_AGENT_ID);
+  next.agentCliEnv = withoutKey(next.agentCliEnv, RETIRED_AMR_AGENT_ID);
+  next.agentCliEnvIntent = withoutKey(next.agentCliEnvIntent, RETIRED_AMR_AGENT_ID);
+  next.mediaProviders = withoutKey(next.mediaProviders, RETIRED_MANAGED_MEDIA_PROVIDER_ID);
+  return next;
+}
+
+function withoutKey<T extends Record<string, unknown>>(
+  record: T | undefined,
+  key: string,
+): T | undefined {
+  if (!record || !(key in record)) return record;
+  const { [key]: _removed, ...rest } = record;
+  return rest as T;
 }
 
 export function loadConfig(): AppConfig {
@@ -803,19 +837,22 @@ export function loadConfig(): AppConfig {
       merged.baseUrl = resolveFixedOriginBaseUrl(merged.apiProtocol, merged.baseUrl);
     }
 
-    if (migratedConfig || downgradedUnsupportedChatProtocol) {
+    const stripped = stripRetiredAmrConfig(merged);
+    const strippedRetiredAmr = RETIRED_AMR_STORED_KEYS.some((key) => stripped[key] !== merged[key]);
+
+    if (migratedConfig || downgradedUnsupportedChatProtocol || strippedRetiredAmr) {
       // Best-effort re-persist of the migrated / downgraded config. A localStorage
       // write failure here (quota exceeded, private-mode storage disabled) must not
       // fall through to the outer catch and discard the valid config we just
       // parsed — that would silently reset the user to defaults for the session.
       try {
-        saveConfig(merged);
+        saveConfig(stripped);
       } catch {
         // keep the parsed config even if it could not be written back
       }
     }
 
-    return merged;
+    return stripped;
   } catch {
     return {
       ...DEFAULT_CONFIG,
@@ -1091,7 +1128,7 @@ export function mergeDaemonConfig(
   daemonConfig: AppConfigPrefs | null,
 ): AppConfig {
   const next = { ...localConfig };
-  if (!daemonConfig) return next;
+  if (!daemonConfig) return stripRetiredAmrConfig(next);
 
   next.onboardingCompleted = ratchetOnboardingCompleted(
     localConfig.onboardingCompleted,
@@ -1126,9 +1163,8 @@ export function mergeDaemonConfig(
   if (daemonConfig.installationId !== undefined) {
     next.installationId = daemonConfig.installationId;
   }
-  if (daemonConfig.telemetry !== undefined) {
-    next.telemetry = { ...daemonConfig.telemetry };
-  }
+  // Always off, including for installs that saved it on before it was removed.
+  next.telemetry = { metrics: false, content: false };
   if (daemonConfig.privacyDecisionAt !== undefined) {
     next.privacyDecisionAt = daemonConfig.privacyDecisionAt;
   } else if (
@@ -1139,31 +1175,6 @@ export function mergeDaemonConfig(
     // existed. If the daemon already has an id or telemetry prefs, the user
     // has resolved the first-run prompt and should not see it again.
     next.privacyDecisionAt = Date.now();
-  }
-  // Default-on reporting. Unless the user has explicitly opted out
-  // (Settings → "Don't share", which persists telemetry.metrics === false
-  // together with installationId: null), an install reports with the
-  // product's default telemetry channels on and carries a stable
-  // installationId. This is the single source of the "Opted out" state:
-  // previously an upgraded or never-prompted install could sit with
-  // telemetry on but no id (the daemon ships a metrics+content default but
-  // never mints an id), which the Settings → Privacy field rendered as
-  // "Opted out" even though the user never declined. We mint the id and
-  // keep the default channels on so the displayed state matches the product
-  // default — the same metrics+content surface the first-run banner's
-  // "Share" choice enables (artifactManifest stays off, as it
-  // does there).
-  // This does NOT override an explicit opt-out: metrics === false short-
-  // circuits the whole block, and any channel the user already turned off
-  // is preserved via the nullish-coalesce.
-  const explicitlyOptedOut = next.telemetry?.metrics === false;
-  if (!explicitlyOptedOut && !next.installationId) {
-    next.installationId = randomUUID();
-    next.telemetry = {
-      metrics: true,
-      content: next.telemetry?.content ?? true,
-      artifactManifest: next.telemetry?.artifactManifest ?? false,
-    };
   }
   if (daemonConfig.allowSilentUpdates !== undefined) {
     next.allowSilentUpdates = daemonConfig.allowSilentUpdates;
@@ -1179,7 +1190,7 @@ export function mergeDaemonConfig(
   if (daemonConfig.defaultProjectLocationId !== undefined) {
     next.defaultProjectLocationId = daemonConfig.defaultProjectLocationId ?? 'default';
   }
-  return next;
+  return stripRetiredAmrConfig(next);
 }
 
 export function mergeDaemonMediaProviders(
@@ -1310,12 +1321,6 @@ export async function syncConfigToDaemon(
       method: 'PUT',
       headers: {
         'content-type': 'application/json',
-        ...(prefs.orbit?.workspaceScope
-          ? {
-              'x-od-workspace-id': prefs.orbit.workspaceScope.workspaceId,
-              'x-od-workspace-member-id': prefs.orbit.workspaceScope.workspaceMemberId,
-            }
-          : {}),
       },
       body: JSON.stringify(prefs),
     });

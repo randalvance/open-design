@@ -21,11 +21,6 @@ vi.mock('../../src/analytics/provider', async (importOriginal) => {
 });
 
 // Spread the real module — see the note in ExtensionsMarketplace.team-scope.test.tsx.
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>()),
-  useWorkspaceContext: () => ({ context: null, loading: false, refresh: vi.fn() }),
-  useWorkspaceBilling: () => null,
-}));
 
 vi.mock('../../src/state/projects', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/state/projects')>();

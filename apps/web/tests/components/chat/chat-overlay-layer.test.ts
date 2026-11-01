@@ -225,13 +225,12 @@ describe('先证明这把尺子能照出缺陷', () => {
     expect(globalZ('.staged-preview-modal')).not.toBeNull();
   });
 
-  it('目录扫到了东西,而且扫到的正是那两张真模态', () => {
+  it('目录扫到了东西,而且扫到的正是那张真模态', () => {
     // 空集合会让下面的 for 循环一条断言都不跑 —— 那是最坏的一种「全绿」
     expect(SCRIMS.length).toBeGreaterThan(0);
     expect(new Set(SCRIMS.map((r) => r.file))).toEqual(
       new Set([
         'components/chat/SupportDialog.module.css',
-        'components/chat/AmrOwnerTopUpDialog.module.css',
       ]),
     );
   });
@@ -319,19 +318,9 @@ describe('排除项是有意的', () => {
       why: '锚定菜单包裹盒:走 --z-menu 这条另一份层位契约,而且它 pointer-events: none、不画底',
     },
     {
-      file: 'components/chat/UpgradeCard.module.css',
-      selector: '.up::after',
-      why: '卡内装饰辉光:position: absolute 且 z-index: -1,压在卡片自己的底色之上、内容之下,根本不是浮层',
-    },
-    {
       file: 'components/chat/SupportDialog.module.css',
       selector: '.overlayInline',
       why: '就地形态:position: static,躺在文档流里给陈列页看的。抬它会盖住陈列页别的格子',
-    },
-    {
-      file: 'components/chat/AmrOwnerTopUpDialog.module.css',
-      selector: '.overlayInline',
-      why: '同上',
     },
   ];
 

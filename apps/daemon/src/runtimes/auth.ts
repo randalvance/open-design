@@ -1,6 +1,5 @@
 import { execAgentFile } from './invocation.js';
 import { readCodexProviderEnvKey } from '../codex-config-normalize.js';
-import { reportsPlatformProviderCredentialFault } from '../integrations/vela-errors.js';
 import type { RuntimeAgentDef, RuntimeEnv } from './types.js';
 
 export type AgentAuthProbeResult = {
@@ -280,7 +279,7 @@ export function classifyAgentAuthFailure(
 // other CLI agent (Claude Code, codex, …) used to collapse auth / quota /
 // upstream failures into the generic `AGENT_EXECUTION_FAILED`. This agent-
 // agnostic, text-based classifier recovers the specific class so the chat
-// shows an accurate reason — and so the hosted-AMR nudge can key off it.
+// shows an accurate reason.
 export type AgentServiceFailureCode =
   | 'AGENT_AUTH_REQUIRED'
   | 'RATE_LIMITED'
@@ -329,8 +328,8 @@ const AGENT_UPSTREAM_FAILURE_RE = new RegExp(
  * this is the strongest attribution available in the text. `mcp` / `connector`
  * / `plugin` are the daemon's own words for "a service the agent operates":
  * `run-failure-classification.ts` `isToolErrorText` already reads exactly this
- * vocabulary, and `mcp_auth_required` (bifrost `mcp/agent.go:333`) is vela's
- * self-identifying code for a per-user MCP OAuth. Reusing that vocabulary
+ * vocabulary, and `mcp_auth_required` is a self-identifying code for a per-user
+ * MCP OAuth. Reusing that vocabulary
  * rather than inventing one keeps a single answer to "what counts as a tool".
  */
 const TOOL_INVOCATION_MARKER =
@@ -354,8 +353,8 @@ const TOOL_INVOCATION_MARKER =
  * Two kinds of leading token are not names at all and are rejected by the
  * caller: severities (`Error:`, `warning:`, `fatal:`) name how bad the line is,
  * and status reason phrases (`Unauthorized:`) name what the server answered.
- * That rejection is load-bearing — vela's real model-service 401 arrives as
- * `Error: list Link models: API request failed with status 401: invalid_api_key`
+ * That rejection is load-bearing — a real model-service 401 can arrive as
+ * `Error: list models: API request failed with status 401: invalid_api_key`
  * (`acp-service-failure.test.ts` row A14).
  */
 const PROGRAM_DIAGNOSTIC_PREFIX = /^[ \t]*([A-Za-z][\w.+-]{0,31})(?::[ \t]|[ \t]ERR!)/;
@@ -391,12 +390,12 @@ const SEVERITY_LABELS = new Set([
  * Exported for that guard only.
  */
 export const OWN_AGENT_COMMAND_NAMES: ReadonlySet<string> = new Set([
-  'agy', 'aider', 'amp', 'amr', 'antigravity', 'atomcode', 'byok-opencode',
+  'agy', 'aider', 'amp', 'antigravity', 'atomcode', 'byok-opencode',
   'claude', 'codebuddy', 'codex', 'copilot', 'cursor-agent', 'deepseek',
   'deepseek-harness', 'devin', 'dsh', 'grok', 'grok-build', 'hermes', 'kilo',
   'kimi', 'kiro', 'kiro-cli', 'mimo', 'opencode', 'opencode-cli', 'pi',
-  'qoder', 'qodercli', 'qwen', 'reasonix', 'trae-cli', 'traecli', 'vela',
-  'vibe', 'vibe-acp',
+  'qoder', 'qodercli', 'qwen', 'reasonix', 'trae-cli', 'traecli', 'vibe',
+  'vibe-acp',
 ]);
 
 /**
@@ -405,9 +404,7 @@ export const OWN_AGENT_COMMAND_NAMES: ReadonlySet<string> = new Set([
  *
  * This is an attribution question, not a vocabulary question, and the
  * distinction is the whole point. `AGENT_AUTH_REQUIRED` means "sign in" — an
- * offer to fix a credential the daemon can reach (the agent's CLI login, or the
- * AMR Cloud session the web resolves it to,
- * `apps/web/src/runtime/amr-guidance.ts`). A run's failure text is not a clean
+ * offer to fix a credential the daemon can reach (the agent's CLI login). A run's failure text is not a clean
  * channel for that claim: `collectFailureText`
  * (`run-failure-classification.ts:177`) folds `stderr` events into the corpus
  * (:188), and the ACP bridge folds whatever the agent wrote into its JSON-RPC
@@ -419,15 +416,13 @@ export const OWN_AGENT_COMMAND_NAMES: ReadonlySet<string> = new Set([
  * The rule is: **when the report names the credential's holder, believe it; the
  * daemon may supply "the agent" only when the report names nobody.** A holder
  * is named in exactly two ways, and both are the text identifying its own
- * speaker rather than us guessing from prose — the same precedence
- * `reportsPlatformProviderCredentialFault` established for R-053, where a
- * self-identifying machine code outranked the sentence it travelled with.
+ * speaker rather than us guessing from prose.
  *
  * Line scope, not whole-text scope: an unrelated `npm ERR!` elsewhere in a long
  * stderr tail must not vouch for the agent's own 401 on another line. And the
  * program prefix must be the SPEAKER of the complaint, not the complaint — so
- * the auth vocabulary has to appear after it. That is what keeps vela's own
- * `auth_required: please reconnect AMR Cloud` from reading as a program named
+ * the auth vocabulary has to appear after it. That is what keeps a line like
+ * `auth_required: please reconnect` from reading as a program named
  * `auth_required`.
  *
  * Exported because the two classifiers that read the same corpus —
@@ -446,8 +441,8 @@ export function reportsToolPrincipalAuthFailure(text: string): boolean {
     // A severity (`Error:`) or a status reason phrase (`Unauthorized:`) is a
     // LABEL, not a name: it says how bad the line is, or what the server
     // answered, never who wrote it. Reading either as a speaker would drop a
-    // real model-service 401 — vela's arrives as `Error: list Link models: API
-    // request failed with status 401: invalid_api_key`.
+    // real model-service 401, e.g. `Error: list models: API request failed with
+    // status 401: invalid_api_key`.
     if (SEVERITY_LABELS.has(speaker)) continue;
     if (AGENT_AUTH_FAILURE_RE.test(speaker)) continue;
     // One of our own agent CLIs speaking as itself, not a tool inside it.
@@ -467,16 +462,6 @@ export function classifyAgentServiceFailure(
 ): AgentServiceFailureCode | null {
   const value = String(text || '');
   if (!value.trim()) return null;
-  // Claimed before auth because the code says whose credentials failed and the
-  // sentence beside it does not. vela's link gateway answers an upstream
-  // 401/403 with `upstream_provider_unauthenticated` /
-  // `upstream_provider_forbidden` on an HTTP 500, worded "Upstream provider
-  // credentials are missing or invalid." — which satisfies this file's
-  // `credentials (?:are )?missing` alternative and so reported the platform's
-  // own misconfiguration to the user as "Sign-in required" (catalogue R-053).
-  // A self-identifying machine code outranks a class read off prose; the same
-  // precedence the daemon records as `evidenceLevel: 'structured_code'`.
-  if (reportsPlatformProviderCredentialFault(value)) return 'UPSTREAM_UNAVAILABLE';
   // The auth class is a claim about THIS agent's credential — the web turns it
   // into a sign-in offer. A report that names a different holder (a tool the
   // agent ran) is answering a different question, so it does not reach the auth

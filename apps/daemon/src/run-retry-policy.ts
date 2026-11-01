@@ -107,7 +107,6 @@ export interface PostToolResumeRecoveryInput {
   sideEffects?: RunRetrySideEffectState;
   supportsNativeSessionContinue: boolean;
   hasNativeSession: boolean;
-  hasVerifiedAmrContinuation?: boolean;
 }
 
 export function decidePostToolResumeRecovery(
@@ -144,10 +143,7 @@ export function decidePostToolResumeRecovery(
     !input.supportsNativeSessionContinue ||
     !input.hasNativeSession ||
     !sideEffects.toolCallSeen ||
-    !(isPostToolTransientFailure || (
-      failure?.failure_detail === 'continuation_incomplete' &&
-      failure.failure_stage === 'post_tool_resume' && input.hasVerifiedAmrContinuation === true
-    ))
+    !isPostToolTransientFailure
   ) {
     return null;
   }

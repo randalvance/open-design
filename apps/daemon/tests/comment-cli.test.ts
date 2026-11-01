@@ -166,10 +166,8 @@ describe('od comment CLI', () => {
       '/api/projects/project-1/conversations/conversation-1/comments/c1',
     ]);
     for (const request of stub.requests) {
-      expect(request.headers).toMatchObject({
-        'x-od-workspace-id': 'ws-1',
-        'x-od-workspace-member-id': 'member-1',
-      });
+      expect(request.headers).not.toHaveProperty('x-od-workspace-id');
+      expect(request.headers).not.toHaveProperty('x-od-workspace-member-id');
     }
     expect(JSON.parse(stub.requests[1]!.body)).toEqual({ target, note: 'created' });
     expect(JSON.parse(stub.requests[2]!.body)).toEqual({ id: 'c1', target, note: 'updated' });

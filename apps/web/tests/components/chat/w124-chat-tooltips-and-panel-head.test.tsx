@@ -35,7 +35,7 @@ import { ImageRow } from '../../../src/components/chat/primitives/ImageRow';
 import { Reconnect } from '../../../src/components/chat/Reconnect';
 import { ChatPane } from '../../../src/components/ChatPane';
 import type { ImageRow as ImageRowData } from '../../../src/runtime/chat/contract';
-import type { AppConfig, ChatMessage } from '../../../src/types';
+import type { ChatMessage } from '../../../src/types';
 
 import { ar } from '../../../src/i18n/locales/ar';
 import { de } from '../../../src/i18n/locales/de';
@@ -194,7 +194,6 @@ function renderChat(opts: {
       onSend={vi.fn()}
       onStop={vi.fn()}
       onRetry={vi.fn()}
-      amrBalanceCardUsd={null}
       conversations={[
         { projectId: 'project-1', id: 'conv-1', title: 'Current', createdAt: 1, updatedAt: 1 },
       ]}
@@ -202,7 +201,6 @@ function renderChat(opts: {
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
       onNewConversation={opts.onNewConversation ?? vi.fn()}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }

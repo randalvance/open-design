@@ -9,8 +9,7 @@
 
 /** Where in the operation the failure happened. */
 export type ApiFailureStage =
-  // publish-public: `vela resource push`, `vela resource snapshot`, local
-  // publication record write, and `vela resource snapshot-redact` (unpublish).
+  // Retired publish path; literals stay readable on previously persisted details.
   | 'push'
   | 'snapshot'
   | 'persist'
@@ -21,7 +20,7 @@ export type ApiFailureStage =
 
 /** Why it failed, as far as the daemon can tell without guessing. */
 export type ApiFailureReason =
-  // Vela CLI outcomes (publish-public).
+  // CLI outcomes.
   | 'timeout'
   | 'aborted'
   | 'cli_missing'
@@ -49,9 +48,9 @@ export type ApiFailureReason =
 export interface ApiFailureDetail {
   stage: ApiFailureStage;
   reason: ApiFailureReason;
-  /** HTTP status returned by the upstream service (Vela API or deploy provider). */
+  /** HTTP status returned by the upstream service (deploy provider). */
   upstreamStatus?: number;
-  /** Error code returned by the upstream service, e.g. Vela `user_banned`. */
+  /** Error code returned by the upstream service. */
   upstreamCode?: string;
 }
 

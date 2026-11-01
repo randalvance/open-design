@@ -485,15 +485,6 @@ describe('本批 6 处的档位', () => {
     expect(dialogTsx).toContain("'modal-backdrop'");
   });
 
-  it('共享原语和余额闸门的另一条腿同档 —— 同一个闸门不许因为「你是谁」而分层', () => {
-    const sibling = ruleIn(
-      'apps/web/src/components/chat/AmrOwnerTopUpDialog.module.css',
-      '.overlay',
-    );
-    expect(sibling, 'AmrOwnerTopUpDialog 的 .overlay 没了 —— 这条档位理由已经过期').toBeTruthy();
-    const primitive = ruleIn('packages/components/src/dialog.module.css', '.backdrop');
-    expect(zIndexOf(primitive!.decls)).toBe(zIndexOf(sibling!.decls));
-  });
 });
 
 // ================================================================ 排除项

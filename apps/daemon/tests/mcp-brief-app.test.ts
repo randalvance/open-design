@@ -868,8 +868,8 @@ describe('local OpenDesign MCP brief app', () => {
       MCP_SERVER_INSTRUCTIONS,
     ].join('\n');
 
-    expect(userFacingCopy).toContain('OpenDesign Cloud');
-    expect(userFacingCopy).toContain('Local Codex');
+    expect(userFacingCopy).toContain('OpenDesign');
+    expect(userFacingCopy).not.toContain('OpenDesign Cloud');
     expect(userFacingCopy).not.toContain('Secure BYOK');
     expect(userFacingCopy).not.toMatch(/\b(?:Vela|AMR)\b/u);
     expect(userFacingCopy).not.toMatch(/agent\s*:\s*["']?[a-z]/iu);

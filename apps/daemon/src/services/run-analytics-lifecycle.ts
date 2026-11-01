@@ -42,18 +42,11 @@ import {
   getProject,
   updateProject,
 } from '../db.js';
-import { readVelaLoginStatus } from '../integrations/vela.js';
-import {
-  deriveLangfuseDeliveryState,
-  readTelemetrySinkConfig,
-} from '../langfuse-trace.js';
 import {
   agentProviderIdForRunAnalytics,
-  amrUserIdForRunAnalytics,
   hasExplicitRequestedModelForAnalytics,
   perRequestUsageForRun,
   runtimeTypeForRunAnalytics,
-  scanRunEventsForPerRequestUsageAnalytics,
   scanRunEventsForUsageAnalytics,
   summarizeRunTimingAnalytics,
   summarizeToolAnalytics,
@@ -410,22 +403,10 @@ export function createRunAnalyticsLifecycle(
         const detectedAgentsForAnalytics = await detectAgents(
           toJsonRecord((appCfgForAnalytics as { agentCliEnv?: unknown }).agentCliEnv),
         ).catch((): Array<{ id: string; available: boolean }> => []);
-        const velaStatusForAnalytics = (() => {
-          try {
-            const configuredAmrEnv = agentCliEnvForAgent(
-              (appCfgForAnalytics as { agentCliEnv?: AgentCliEnv }).agentCliEnv,
-              'amr',
-            );
-            return readVelaLoginStatus(process.env, configuredAmrEnv);
-          } catch {
-            return null;
-          }
-        })();
         const configureGlobals = deriveConfigureGlobals({
           mode: 'daemon',
           agentId: typeof reqBody.agentId === 'string' ? reqBody.agentId : null,
           agents: detectedAgentsForAnalytics,
-          amrAuthorized: velaStatusForAnalytics?.loggedIn === true,
         });
         const promptText =
           typeof reqBody.currentPrompt === 'string'
@@ -617,7 +598,6 @@ export function createRunAnalyticsLifecycle(
             derived: configureGlobals.runtime_type,
             hint: analyticsHints.runtimeType,
           }),
-          ...amrUserIdForRunAnalytics(velaStatusForAnalytics),
           project_id: requestProjectId,
           conversation_id:
             typeof reqBody.conversationId === 'string' ? reqBody.conversationId : null,
@@ -739,10 +719,6 @@ export function createRunAnalyticsLifecycle(
         design.runs.wait(run).then(async (status: TerminalRunStatus) => {
           const appCfgAtFinish = await readAppConfig(RUNTIME_DATA_DIR).catch(
             () => ({} as Record<string, unknown>),
-          );
-          const langfuseDeliveryForAnalytics = deriveLangfuseDeliveryState(
-            (appCfgAtFinish as { telemetry?: Record<string, unknown> }).telemetry ?? {},
-            readTelemetrySinkConfig(),
           );
           const result = runResultFromStatus(status.status);
           const errorCode = deriveRunErrorCode(status);
@@ -1132,7 +1108,9 @@ export function createRunAnalyticsLifecycle(
                 ? { last_progress_age_ms: Math.max(0, analyticsCapturedAt - run.lastAgentActivityAt) }
                 : {}),
               langfuse_trace_id: run.id,
-              ...langfuseDeliveryForAnalytics,
+              langfuse_expected: false,
+              langfuse_delivery_status: 'not_expected',
+              langfuse_drop_reason: 'telemetry_removed',
               ...(errorCode ? { error_code: errorCode } : {}),
               ...(failure ?? {}),
               ...(usageAnalytics.input_tokens !== undefined

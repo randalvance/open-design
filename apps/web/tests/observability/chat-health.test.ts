@@ -4,15 +4,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  clearExceptionTrackingContext,
-  setExceptionTrackingContext,
-} from '../../src/analytics/error-tracking';
-import {
   __resetChatHealthForTest,
   markChatOpenIntent,
   clearChatOpenIntent,
   openChatSurface,
 } from '../../src/observability/chat-health';
+import { clearReportedSafetyEvents, reportedSafetyEvents, watchSafetyEvents } from '../helpers/safety-events';
+
 
 /**
  * These specs pin the four things the chat-health monitor exists to
@@ -28,8 +26,6 @@ import {
  * wrong and should be deleted rather than widened.
  */
 
-const fetchMock = vi.fn();
-const ORIGINAL_FETCH = globalThis.fetch;
 
 // A controllable monotonic clock. We drive `performance.now()` directly
 // rather than leaning on fake timers so duration assertions are exact
@@ -82,18 +78,8 @@ function setHeap(usedBytes: number | null, limitBytes = 2_000_000_000): void {
   };
 }
 
-function sentEvents(): Array<{ event: string; properties: Record<string, unknown> }> {
-  return fetchMock.mock.calls.map((call) => {
-    const init = call[1] as RequestInit;
-    return JSON.parse(init.body as string) as {
-      event: string;
-      properties: Record<string, unknown>;
-    };
-  });
-}
-
 function eventsNamed(name: string): Array<Record<string, unknown>> {
-  return sentEvents()
+  return reportedSafetyEvents()
     .filter((e) => e.event === name)
     .map((e) => e.properties);
 }
@@ -118,16 +104,7 @@ function buildChatLog(rows: number): HTMLElement {
 beforeEach(() => {
   clock = 0;
   longTaskCallbacks = [];
-  fetchMock.mockReset();
-  fetchMock.mockResolvedValue(new Response('', { status: 200 }));
-  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-  setExceptionTrackingContext({
-    apiKey: 'phc_test',
-    host: 'https://us.i.posthog.com',
-    distinctId: 'chat-health-test',
-    clientType: 'web',
-    osName: 'Mac OS X',
-  });
+  watchSafetyEvents();
   (globalThis as unknown as { PerformanceObserver: unknown }).PerformanceObserver =
     FakePerformanceObserver;
   // Fake timers must be installed BEFORE the performance.now spy: sinon's
@@ -144,8 +121,6 @@ afterEach(() => {
   __resetChatHealthForTest();
   vi.useRealTimers();
   vi.restoreAllMocks();
-  clearExceptionTrackingContext();
-  globalThis.fetch = ORIGINAL_FETCH;
   setHeap(null);
   document.body.innerHTML = '';
 });
@@ -251,7 +226,7 @@ describe('observability/chat-health — DOM growth', () => {
     const log = buildChatLog(2);
     const handle = openChatSurface({ element: log, messageCount: 2, virtualized: false });
     handle.markFirstPaint({ renderedRowCount: 2 });
-    fetchMock.mockClear();
+    clearReportedSafetyEvents();
 
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
@@ -364,7 +339,7 @@ describe('observability/chat-health — stream health', () => {
     const handle = openChatSurface({ element: log, messageCount: 2, virtualized: false });
     handle.runStarted('run-x');
     handle.detach();
-    fetchMock.mockClear();
+    clearReportedSafetyEvents();
     emitLongTask(900);
     advanceClock(1000);
     expect(eventsNamed('client_chat_stream_health')).toHaveLength(0);
@@ -409,9 +384,7 @@ describe('observability/chat-health — provider-facing seam', () => {
 });
 
 
-it('reports chat health and keeps observing after product analytics opt-out', async () => {
-  const { applyConsent } = await import('../../src/analytics/client');
-  applyConsent(false);
+it('reports chat health and keeps observing through a run', () => {
   const handle = openChatSurface({ element: buildChatLog(1), messageCount: 1, virtualized: false });
   handle.markFirstPaint({ renderedRowCount: 1 });
   handle.sample('interval');
@@ -421,7 +394,6 @@ it('reports chat health and keeps observing after product analytics opt-out', as
   advanceClock(1_000);
   emitLongTask(600);
   expect(longTaskCallbacks).toHaveLength(1);
-  applyConsent(false);
   advanceClock(1_000);
   handle.runEnded('run-optout');
   expect(eventsNamed('client_chat_stream_health')).toHaveLength(1);

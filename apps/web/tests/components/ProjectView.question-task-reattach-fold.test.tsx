@@ -19,12 +19,10 @@ import type { DaemonReattachOptions } from '../../src/providers/daemon';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectView } from '../../src/components/ProjectView';
-import type { ProjectWorkspaceScopeState } from '../../src/collab/useProjectWorkspaceScope';
 import { StrategyTaskProjectionV2Schema } from '@open-design/contracts';
 import type {
   ChatRunStatusResponse,
   StrategyTaskProjectionV2,
-  WorkspaceCollabContext,
 } from '@open-design/contracts';
 import type {
   AgentInfo,
@@ -50,49 +48,6 @@ const createConversation = vi.fn();
 const checkAmrBalanceGate = vi.fn();
 const fetchBrands = vi.fn();
 
-const workspaceScopeMocks = vi.hoisted(() => {
-  const personalContext = (): WorkspaceCollabContext => ({
-    workspaceId: 'workspace-personal',
-    workspaceMemberId: 'member-personal',
-    workspaceType: 'personal',
-    role: 'owner',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: null,
-    providerMode: 'platform_credits',
-    seatSummary: {
-      seatLimit: 1,
-      usedSeats: 1,
-      availableSeats: 0,
-      isSeatFull: true,
-    },
-    permissions: {
-      canManageMembers: true,
-      canManageBilling: true,
-      canInviteMembers: true,
-      canManageAutoRecharge: true,
-      canShareProjects: true,
-      canWriteSyncedFiles: true,
-      canViewWorkspaceSettings: true,
-      canManageSharedResources: true,
-    },
-  } as WorkspaceCollabContext);
-  return {
-    personalContext,
-    ambientContext: null as WorkspaceCollabContext | null,
-    projectScope: {
-      loading: false,
-      scope: {
-        kind: 'personal' as const,
-        projectId: 'project-1',
-        workspaceId: 'workspace-personal',
-        visibility: 'personal' as const,
-        context: personalContext(),
-      },
-    } as ProjectWorkspaceScopeState,
-  };
-});
 
 vi.mock('../../src/analytics/provider', () => ({
   useAnalytics: () => ({ track: vi.fn(), newRequestId: () => 'reattach-request' }),
@@ -108,45 +63,8 @@ vi.mock('../../src/router', () => ({ navigate: vi.fn() }));
 
 vi.mock('../../src/providers/anthropic', () => ({ streamMessage: vi.fn() }));
 
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>()),
-  useWorkspaceContext: () => ({
-    context: workspaceScopeMocks.ambientContext,
-    loading: false,
-  }),
-  lastResolvedTeamProjects: () => [],
-  lastResolvedWorkspaceContext: () => workspaceScopeMocks.ambientContext,
-  workspaceIdentityCanBillAmr: (state: { context: unknown; loading: boolean }) =>
-    state.context !== null || state.loading,
-  useWorkspaceBilling: () => null,
-}));
 
-vi.mock('../../src/collab/useProjectWorkspaceScope', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useProjectWorkspaceScope')>()),
-  useProjectWorkspaceScope: () => workspaceScopeMocks.projectScope,
-}));
 
-vi.mock('../../src/collab/useProjectCollab', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useProjectCollab')>()),
-  useProjectCollab: () => ({
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: 'local_only',
-    viewerOnly: false,
-    isOwner: true,
-    writerAuthority: 'allowed',
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: vi.fn(),
-    requestPublish: vi.fn(),
-    refreshPresence: vi.fn(),
-    checkStatusNow: vi.fn(),
-    applyContentTransferState: vi.fn(),
-  }),
-}));
 
 vi.mock('../../src/providers/daemon', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/providers/daemon')>()),
@@ -158,12 +76,6 @@ vi.mock('../../src/providers/daemon', async (importOriginal) => ({
   publishDaemonRunFinishedEvent: vi.fn(),
   reattachDaemonRun: (...args: unknown[]) => reattachDaemonRun(...args),
   streamViaDaemon: (...args: unknown[]) => streamViaDaemon(...args),
-  fetchAmrWalletSnapshot: vi.fn().mockResolvedValue(null),
-  formatVelaBalanceUsd: (value: string | null) => `$${value ?? '0'}`,
-  fetchVelaLoginStatus: vi.fn().mockResolvedValue({ loggedIn: true }),
-  startVelaLogin: vi.fn(),
-  cancelVelaLogin: vi.fn(),
-  canUpgradeVelaPlan: vi.fn().mockReturnValue(false),
   launchAntigravityOauth: vi.fn(),
 }));
 
@@ -171,10 +83,6 @@ vi.mock('../../src/providers/project-events', () => ({
   useProjectFileEvents: vi.fn(),
 }));
 
-vi.mock('../../src/runtime/amr-balance-gate', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/runtime/amr-balance-gate')>()),
-  checkAmrBalanceGate: (...args: unknown[]) => checkAmrBalanceGate(...args),
-}));
 
 vi.mock('../../src/runtime/brands', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/runtime/brands')>()),
@@ -382,7 +290,6 @@ beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
   mappingMode = 'valid';
-  workspaceScopeMocks.ambientContext = workspaceScopeMocks.personalContext();
   listConversations.mockResolvedValue([conversation]);
   createConversation.mockResolvedValue(conversation);
   listMessages.mockImplementation(async () => structuredClone(hydratedMessages()));

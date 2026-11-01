@@ -62,8 +62,6 @@ const updateFixturePort = resolveOptionalFixturePort(process.env.OD_PACKAGED_E2E
 const updateFixtureMode = resolveUpdateFixtureMode(process.env.OD_PACKAGED_E2E_WIN_UPDATE_MODE);
 const releaseChannel = process.env.OD_PACKAGED_E2E_RELEASE_CHANNEL;
 const releaseVersion = process.env.OD_PACKAGED_E2E_RELEASE_VERSION;
-const packagedInviteDeeplink =
-  'opendesign://workspace/invite/continue?workspace_id=packaged-smoke-workspace&member_id=packaged-smoke-member&invite_id=packaged-smoke-invite&nonce=packaged-smoke-nonce';
 const updateScenario = resolvePackagedUpdateScenario({ releaseChannel, releaseVersion });
 const installIdentity = resolvePackagedWinInstallIdentity({ namespace, releaseVersion });
 
@@ -307,11 +305,11 @@ const packagedOnboardingExpression = `
   (() => {
     const onboardingShell = document.querySelector('.entry-shell--onboarding');
     const onboardingModal = document.querySelector('.entry-onboarding-modal');
-    // Identity is the first gate; runtime selection follows Cloud sign-in.
-    const cloudSignIn = document.querySelector('.onboarding-cloud__primary');
+    // The welcome landing is the first-run surface.
+    const welcomeLanding = document.querySelector('.onboarding-welcome__primary');
 
     return {
-      cloudSignInVisible: cloudSignIn instanceof HTMLElement,
+      welcomeLandingVisible: welcomeLanding instanceof HTMLElement,
       href: location.href,
       onboardingVisible: onboardingShell instanceof HTMLElement && onboardingModal instanceof HTMLElement,
       text: onboardingModal?.textContent?.trim().slice(0, 2000) ?? null,
@@ -544,7 +542,7 @@ type UpdaterClickEvalValue = {
 };
 
 type PackagedOnboardingEvalValue = {
-  cloudSignInVisible: boolean;
+  welcomeLandingVisible: boolean;
   href: string;
   onboardingVisible: boolean;
   text: string | null;
@@ -618,7 +616,6 @@ winDescribe('packaged windows runtime smoke', () => {
       expect(install.registryEntries.length).toBeGreaterThan(0);
       expect(JSON.stringify(install.registryEntries)).toContain(installIdentity.displayName);
       expect(JSON.stringify(install.registryEntries)).toContain(`Open Design-${installIdentity.namespaceToken}`);
-      await assertWindowsInviteProtocolRegistration(install.installDir);
       expect(install.installPayload.fileCount).toBeGreaterThan(0);
       expect(install.installPayload.totalBytes).toBeGreaterThan(0);
       expect(install.installPayload.topLevel.length).toBeGreaterThan(0);
@@ -635,12 +632,11 @@ winDescribe('packaged windows runtime smoke', () => {
         );
       }
 
-      // Phase 1 — the genuine first run. A packaged install nobody has signed
-      // into is real product behaviour, not a broken state: since
+      // Phase 1 — the genuine first run. A packaged install nobody has set up
+      // is real product behaviour, not a broken state: since
       // `shouldRouteToFirstRunOnboarding` keys purely on `onboardingCompleted`,
-      // the cloud sign-in landing is its correct terminal surface, and it is
-      // accepted only when it actually rendered its sign-in CTA and both runtime
-      // links. Core-only on purpose — every release workflow defaults there, and
+      // the welcome landing is its correct terminal surface, and it is accepted
+      // only when it actually rendered its primary setup action. Core-only on purpose — every release workflow defaults there, and
       // the full profile needs its controlled updater environment from first
       // launch, which a plain start before the fixture is wired would bypass.
       if (verifyCoreOnly) {
@@ -738,7 +734,7 @@ winDescribe('packaged windows runtime smoke', () => {
       else expect(value.health.version).toEqual(expect.any(String));
 
       // Establish the data-root postcondition before probing unrelated runtime
-      // capabilities. A healthy auth-first renderer may already be on
+      // capabilities. A healthy first-run renderer may already be on
       // od://app/onboarding, but it must still read the completed seed written
       // into this tools-pack namespace.
       if (!inspect.desktopIpcUnavailable) {
@@ -769,56 +765,13 @@ winDescribe('packaged windows runtime smoke', () => {
       assertLauncherPointer(inspect.launcher.active, updateScenario.expectedCurrentVersion, 0, 'initial active');
       assertLauncherPointer(inspect.launcher.lastSuccessful, updateScenario.expectedCurrentVersion, 0, 'initial lastSuccessful');
 
-      // Runtime registration must preserve the stable installed outer path;
-      // pointing at a versioned payload would break the scheme after cleanup.
-      await assertWindowsInviteProtocolRegistration(install.installDir);
-      const protocolHotPid = inspect.status?.pid ?? start.pid;
-      const protocolHotContinuationCount = await countInviteContinuationResults();
-      await invokeWindowsInviteDeeplink();
-      const [protocolHotInspect, protocolHotContinuation] = await measureSmokeStep(
-        timings,
-        'invite protocol hot delivery',
-        async () => Promise.all([
-          waitForHealthyDesktop(),
-          waitForInviteContinuationResult(protocolHotContinuationCount),
-        ]),
-      );
-      expect(protocolHotInspect.status?.pid).toBe(protocolHotPid);
-      expect(protocolHotContinuation.reason).not.toBe('daemon_unavailable');
-      expect(protocolHotContinuation.reason).not.toBe('unreachable');
-
-      if (verifyCoreOnly) {
-        const protocolStop = await measureSmokeStep(
-          timings,
-          'stop before invite protocol cold delivery',
-          async () => runToolsPackJson<WinStopResult>('stop'),
-        );
-        started = false;
-        expect(protocolStop.status).not.toBe('partial');
-        expect(protocolStop.remainingPids).toEqual([]);
-
-        await invokeWindowsInviteDeeplink();
-        started = true;
-        const protocolColdInspect = await measureSmokeStep(
-          timings,
-          'invite protocol cold delivery',
-          async () => waitForHealthyDesktop(),
-        );
-        expect(protocolColdInspect.status?.state).toBe('running');
-        expect(protocolColdInspect.status?.pid).not.toBe(protocolHotPid);
-        await assertWindowsInviteProtocolRegistration(install.installDir);
-      }
-
       if (!inspect.desktopIpcUnavailable) {
-        // Re-read rather than reusing the value from the seeded start: the core
-        // profile stopped the app above and relaunched it through the OS
-        // protocol handler, and that cold start carries none of this process's
-        // environment — so it is a different daemon, and only it can say what
-        // config the surface being asserted on is actually running under.
+        // Re-read rather than reusing the value from the seeded start: only the
+        // running daemon can say what config the surface being asserted on is
+        // actually running under.
         // Phase 2 — the completed user. The seed must have been confirmed before
-        // this point; the core auth-first profile may legitimately stop at the
-        // cloud sign-in landing, while the full updater profile still needs
-        // Home. Either way, a cold launch that lost the seed fails first.
+        // this point; the core profile may stop at the welcome landing, while the
+        // full updater profile still needs Home. Either way, a cold launch that lost the seed fails first.
         if (seededOnboardingCompleted !== true) {
           throw new Error('reached the completed-user app-shell check without a confirmed seeded onboarding state');
         }
@@ -1015,7 +968,7 @@ winDescribe('packaged windows runtime smoke', () => {
       expect(uninstall.residueObservation?.uninstallerExists).toBe(false);
       expect(uninstall.residueObservation?.startMenuShortcutExists).toBe(false);
       expect(uninstall.residueObservation?.userDesktopShortcutExists).toBe(false);
-      await assertWindowsInviteProtocolRemoved();
+      await assertWindowsLegacyProtocolRemoved();
       await report.saveSummary({
         appShell,
         onboarding: {
@@ -1343,11 +1296,11 @@ winDescribe('packaged windows runtime smoke', () => {
   }, 720_000);
 });
 
-winOnboardingDescribe('packaged windows onboarding AMR smoke', () => {
+winOnboardingDescribe('packaged windows onboarding smoke', () => {
   let installed = false;
   let started = false;
 
-  test('[P0] @electron-smoke starts a fresh packaged Windows app on the Cloud identity gate', async () => {
+  test('[P0] @electron-smoke starts a fresh packaged Windows app on the onboarding welcome landing', async () => {
     const report = await createPackagedSmokeReport('win');
     const timings: SmokeTiming[] = [];
     let install: WinInstallResult | null = null;
@@ -1374,7 +1327,7 @@ winOnboardingDescribe('packaged windows onboarding AMR smoke', () => {
       const inspect = await measureSmokeStep(timings, 'wait healthy inspect eval', async () => waitForHealthyDesktop());
       expect(inspect.status?.state).toBe('running');
       // A fresh install boots at `od://app/` and the SPA immediately redirects to the dedicated
-      // onboarding route (`od://app/onboarding`, since the #4513 cloud sign-in redesign). Whether
+      // onboarding route (`od://app/onboarding`, since the #4513 redesign). Whether
       // the desktop is reported healthy just before or just after that redirect is a race, so the
       // healthy URL/href may be either — match the prefix leniently exactly as the mac smoke and
       // the onboarding-landing assertion below do, instead of pinning the bare root (which flaked
@@ -1386,17 +1339,17 @@ winOnboardingDescribe('packaged windows onboarding AMR smoke', () => {
       expect(health.health.ok).toBe(true);
 
       const initial = await waitForPackagedOnboarding((snapshot) =>
-        snapshot.onboardingVisible && snapshot.cloudSignInVisible,
-        'fresh packaged Windows onboarding Cloud identity gate',
+        snapshot.onboardingVisible && snapshot.welcomeLandingVisible,
+        'fresh packaged Windows onboarding welcome landing',
       );
-      // Onboarding lives on a dedicated route since the #4513 cloud sign-in
+      // Onboarding lives on a dedicated route since the #4513
       // redesign, so the href is `od://app/onboarding` (packaged) — not the
       // bare app root. Match the prefix the same lenient way the mac smoke
       // does instead of pinning the exact root path. Before the user-data
       // reset fix the app booted to Home and never reached this line, which
       // is why the stale exact-match assertion went unnoticed.
       expect(initial.href).toMatch(/^(od:\/\/app\/|http:\/\/127\.0\.0\.1:\d+\/)/);
-      expect(initial.cloudSignInVisible).toBe(true);
+      expect(initial.welcomeLandingVisible).toBe(true);
 
       const onboardingScreenshotPath = join(toolsPackDir, 'screenshots', `${namespace}-onboarding.png`);
       await mkdir(dirname(onboardingScreenshotPath), { recursive: true });
@@ -2636,7 +2589,7 @@ function asHealthEvalValue(value: unknown): HealthEvalValue | null {
 
 function asPackagedOnboardingEvalValue(value: unknown): PackagedOnboardingEvalValue | null {
   if (!isRecord(value)) return null;
-  if (typeof value.cloudSignInVisible !== 'boolean') return null;
+  if (typeof value.welcomeLandingVisible !== 'boolean') return null;
   if (typeof value.href !== 'string') return null;
   if (typeof value.onboardingVisible !== 'boolean') return null;
   if (value.text != null && typeof value.text !== 'string') return null;
@@ -2669,82 +2622,7 @@ function expectWindowsDaemonUrl(value: string | null | undefined): void {
   expect(value).toEqual(expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/?$/));
 }
 
-async function assertWindowsInviteProtocolRegistration(installDir: string): Promise<void> {
-  const { stdout } = await execFileAsync('reg.exe', [
-    'query',
-    'HKCU\\Software\\Classes\\opendesign\\shell\\open\\command',
-    '/ve',
-  ]);
-  const normalized = stdout.toLowerCase();
-  expect(normalized).toContain(installDir.toLowerCase());
-  expect(normalized).toContain('%1');
-  expect(normalized).not.toContain('\\versions\\');
-}
-
-async function invokeWindowsInviteDeeplink(): Promise<void> {
-  const escaped = packagedInviteDeeplink.replaceAll("'", "''");
-  await execFileAsync('powershell.exe', [
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    `Start-Process -FilePath '${escaped}'`,
-  ]);
-}
-
-type InviteContinuationResult = {
-  ok: boolean;
-  reason?: string;
-  status?: number;
-};
-
-async function countInviteContinuationResults(): Promise<number> {
-  return (await readInviteContinuationResults()).length;
-}
-
-async function waitForInviteContinuationResult(
-  priorCount: number,
-  timeoutMs = 30_000,
-): Promise<InviteContinuationResult> {
-  const startedAt = Date.now();
-  let lastCount = priorCount;
-  while (Date.now() - startedAt < timeoutMs) {
-    const results = await readInviteContinuationResults();
-    lastCount = results.length;
-    if (results.length > priorCount) return results.at(-1)!;
-    await delay(250);
-  }
-  throw new Error(
-    `invite deeplink did not produce a continuation result within ${timeoutMs}ms (before=${priorCount}, after=${lastCount})`,
-  );
-}
-
-async function readInviteContinuationResults(): Promise<InviteContinuationResult[]> {
-  const logPath = join(runtimeNamespaceRoot, 'logs', 'desktop', 'latest.log');
-  const content = await readFile(logPath, 'utf8').catch(() => '');
-  const results: InviteContinuationResult[] = [];
-  for (const line of content.split(/\r?\n/u)) {
-    if (line.trim().length === 0) continue;
-    let entry: unknown;
-    try {
-      entry = JSON.parse(line) as unknown;
-    } catch {
-      continue;
-    }
-    if (!isRecord(entry) || entry.message !== 'console.info' || !isRecord(entry.meta)) continue;
-    const args = entry.meta.args;
-    if (!Array.isArray(args) || args[0] !== '[open-design desktop] invite deeplink continuation completed') continue;
-    const outcome = args[1];
-    if (!isRecord(outcome) || typeof outcome.ok !== 'boolean') continue;
-    results.push({
-      ok: outcome.ok,
-      ...(typeof outcome.reason === 'string' ? { reason: outcome.reason } : {}),
-      ...(typeof outcome.status === 'number' ? { status: outcome.status } : {}),
-    });
-  }
-  return results;
-}
-
-async function assertWindowsInviteProtocolRemoved(): Promise<void> {
+async function assertWindowsLegacyProtocolRemoved(): Promise<void> {
   await expect(
     execFileAsync('reg.exe', [
       'query',
@@ -2780,10 +2658,8 @@ async function seedPackagedOnboardingComplete(): Promise<void> {
   // the macOS smoke's seed, which already writes under runtimeNamespaceRoot.
   const configPath = join(runtimeNamespaceRoot, 'data', 'app-config.json');
   await mkdir(dirname(configPath), { recursive: true });
-  // Completion alone is insufficient when the daemon default selects the AMR
-  // cloud agent: a signed-out cloud identity correctly returns to Connect.
-  // Updater acceptance needs the ordinary signed-out Home shell, so pin the
-  // local agent that makes this fixture's postcondition complete.
+  // Updater acceptance needs the ordinary Home shell, so pin the local agent that
+  // makes this fixture's postcondition complete.
   await writeFile(
     configPath,
     `${JSON.stringify({ agentId: 'codex', onboardingCompleted: true }, null, 2)}\n`,
@@ -2827,8 +2703,8 @@ async function resetPackagedUpdaterNamespaceRoots(): Promise<void> {
 // `onboardingCompleted`, so `mergeDaemonConfig` keeps the localStorage value;
 // a leftover `onboardingCompleted: true` from an earlier run (e.g. the [P2]
 // smoke that ran first in this file) then boots the app straight to Home
-// instead of onboarding, and this test times out waiting for the cloud
-// sign-in landing. Clearing `user-data/` alongside `data/` gives the same
+// instead of onboarding, and this test times out waiting for the welcome
+// landing. Clearing `user-data/` alongside `data/` gives the same
 // true-first-run guarantee the mac smoke gets from removing the entire root.
 async function resetPackagedRuntimeDataRoot(): Promise<void> {
   // A missing root means the namespace has no runtime state yet — already a

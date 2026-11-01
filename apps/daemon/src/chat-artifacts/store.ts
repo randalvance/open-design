@@ -6,7 +6,7 @@
 // Running `migrateChatArtifacts` twice over the same file must be a no-op.
 
 import type Database from 'better-sqlite3';
-import { assertCommentFileNotPending, migrateCommentFileRetirements } from '../collab/comment-file-retirements.js';
+import { migrateCommentFileRetirements } from '../projects/comment-file-facts.js';
 import { randomUUID } from 'node:crypto';
 
 import type {
@@ -344,9 +344,6 @@ export function ensureWorkspaceArtifactForPath(
     )
     .get(input.projectId, input.path) as WorkspaceArtifactRow | undefined;
   if (existing) {
-    // A prepared managed deletion may have crossed a crash before its local
-    // completion marker. Never reuse that exact old comment/artifact UUID.
-    assertCommentFileNotPending(db, input.projectId, { sourceFileId: existing.id });
     db.prepare(
       `UPDATE workspace_artifacts
           SET kind = ?, mime = COALESCE(?, mime),

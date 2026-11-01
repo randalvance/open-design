@@ -9,9 +9,8 @@ import {
 
 import { bindMotionPreviewActivity, unbindMotionPreviewActivity } from '../../runtime/motion-preview-activity';
 import { useT } from '../../i18n';
-import { appendResourceQuery } from '../../collab/workspace-identity';
+import { appendResourceQuery } from '../../utils/resource-query';
 import { projectRawUrl } from '../../providers/registry';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import type { ProjectFile } from '../../types';
 import type { RunProgressStep } from '../../runtime/run-progress';
 import { RunStepFeed } from './RunStepFeed';
@@ -26,7 +25,6 @@ interface Props {
   filesRefreshKey: number;
   /** The running turn's tool calls, newest first. */
   steps: RunProgressStep[];
-  workspaceContext: WorkspaceCollabContext | null;
 }
 
 interface FocusRect {
@@ -81,7 +79,6 @@ export function DesignFilesBuildingState({
   file,
   filesRefreshKey,
   steps,
-  workspaceContext,
 }: Props) {
   const t = useT();
   const frameRef = useRef<HTMLIFrameElement | null>(null);
@@ -102,13 +99,13 @@ export function DesignFilesBuildingState({
   const src = useMemo(
     () =>
       appendResourceQuery(
-        projectRawUrl(projectId, file.name, workspaceContext),
+        projectRawUrl(projectId, file.name),
         // `v` is the established mtime bust; `fr` is the necessary second half —
         // an agent can rewrite the same file twice inside one filesystem mtime
         // tick, and the refresh key moves on every coalesced change batch.
         `v=${Math.round(file.mtime)}&fr=${filesRefreshKey}&odPreviewBridge=buildfocus`,
       ),
-    [projectId, file.name, file.mtime, filesRefreshKey, workspaceContext],
+    [projectId, file.name, file.mtime, filesRefreshKey],
   );
 
   const request = useCallback((text: string | null, section: string | null) => {

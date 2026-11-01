@@ -1,9 +1,3 @@
-import type {
-  TrackingAmrOpenCodeErrorPhase,
-  TrackingAmrOpenCodeLastEventType,
-  TrackingAmrOpenCodeLastToolKind,
-  TrackingAmrOpenCodeLastToolStatus,
-} from '@open-design/contracts/analytics';
 import { redactSecrets } from './redact.js';
 import { isHostSynthesizedAcpEmission } from './agent-protocol/acp/emission-provenance.js';
 
@@ -56,10 +50,6 @@ export interface RunDiagnosticsAnalytics {
   approval_requested: boolean;
   artifact_write_seen: boolean;
   live_artifact_seen: boolean;
-  amr_opencode_error_phase?: TrackingAmrOpenCodeErrorPhase;
-  amr_opencode_last_event_type?: TrackingAmrOpenCodeLastEventType;
-  amr_opencode_last_tool_status?: TrackingAmrOpenCodeLastToolStatus;
-  amr_opencode_last_tool_kind?: TrackingAmrOpenCodeLastToolKind;
   // True when this run transparently re-seeded after an upstream session resume
   // failed (expired/pruned): the dead handle was cleared and the turn was re-run
   // with a fresh session + full transcript, with no user-facing error. Lets us
@@ -76,16 +66,6 @@ export interface RunDiagnosticsAnalytics {
   prompt_context_window_tokens?: number;
   prompt_prior_session_usage_source?: 'agent_session' | 'unknown';
   prompt_prior_session_input_tokens?: number;
-  tool_execution_lifecycle_seen?: boolean;
-  tool_execution_lifecycle_count_bucket?: '1' | '2_5' | '6_20' | 'gt_20';
-  tool_execution_trigger?: 'exit' | 'abort' | 'deadline' | 'mixed' | 'unknown';
-  tool_execution_terminal?: 'running' | 'returned' | 'failed' | 'interrupted' | 'mixed' | 'unknown';
-  tool_terminal_source?: 'tool_result' | 'tool_error' | 'processor_cleanup' | 'mixed' | 'unknown';
-  tool_kill_outcome?: 'none' | 'requested' | 'sent' | 'failed';
-  tool_child_close_seen?: boolean;
-  tool_stdout_close_seen?: boolean;
-  tool_stderr_close_seen?: boolean;
-  tool_execution_evidence_incomplete?: boolean;
 }
 
 export interface RunToolProgress {
@@ -175,242 +155,6 @@ export function promptBudgetAnalyticsFromDiagnostic(
     ...(priorSessionInputTokens !== undefined
       ? { prompt_prior_session_input_tokens: priorSessionInputTokens }
       : {}),
-  };
-}
-
-function amrOpenCodeErrorPhase(value: unknown): TrackingAmrOpenCodeErrorPhase | undefined {
-  if (typeof value !== 'string' || !value.trim()) return undefined;
-  switch (value.trim()) {
-    case 'timeout':
-    case 'event_stream_start':
-    case 'event_stream':
-    case 'prompt_async':
-      return value.trim() as TrackingAmrOpenCodeErrorPhase;
-    default:
-      return 'other';
-  }
-}
-
-function amrOpenCodeLastEventType(value: unknown): TrackingAmrOpenCodeLastEventType | undefined {
-  if (typeof value !== 'string' || !value.trim()) return undefined;
-  switch (value.trim()) {
-    case 'tool_call':
-    case 'tool_call_update':
-    case 'agent_message_chunk':
-    case 'agent_thought_chunk':
-    case 'done':
-      return value.trim() as TrackingAmrOpenCodeLastEventType;
-    default:
-      return 'other';
-  }
-}
-
-function amrOpenCodeLastToolStatus(value: unknown): TrackingAmrOpenCodeLastToolStatus | undefined {
-  if (typeof value !== 'string' || !value.trim()) return undefined;
-  const status = value.trim().toLowerCase().replace(/[\s-]+/g, '_');
-  if (status === 'pending') return 'pending';
-  if (status === 'running' || status === 'in_progress') return 'in_progress';
-  if (status === 'completed' || status === 'complete' || status === 'success' || status === 'succeeded') {
-    return 'completed';
-  }
-  if (
-    status === 'failed' ||
-    status === 'failure' ||
-    status === 'error' ||
-    status === 'cancelled' ||
-    status === 'canceled'
-  ) {
-    return 'failed';
-  }
-  return 'other';
-}
-
-function amrOpenCodeLastToolKind(value: unknown): TrackingAmrOpenCodeLastToolKind | undefined {
-  if (typeof value !== 'string' || !value.trim()) return undefined;
-  const kind = value.trim().toLowerCase().replace(/[\s-]+/g, '_');
-  if (/^(?:read|view|cat)$/.test(kind)) return 'read';
-  if (/^(?:write|create|save)$/.test(kind)) return 'write';
-  if (/^(?:edit|patch|replace)$/.test(kind)) return 'edit';
-  if (/^(?:grep|glob|search|find)$/.test(kind)) return 'search';
-  if (/^(?:bash|shell|exec|execute|command)$/.test(kind)) return 'execute';
-  if (/^(?:fetch|webfetch|web_fetch|websearch|web_search|browser)$/.test(kind)) return 'fetch';
-  return 'other';
-}
-
-function amrOpenCodeDiagnosticsFromError(data: unknown): Partial<RunDiagnosticsAnalytics> | null {
-  const error = recordValue(recordValue(data)?.error);
-  const details = recordValue(error?.details);
-  if (
-    details?.kind !== 'opencode_prompt_error' ||
-    (details.runtime !== undefined && details.runtime !== 'opencode')
-  ) {
-    return null;
-  }
-  const errorPhase = amrOpenCodeErrorPhase(details.phase);
-  const lastEventType = amrOpenCodeLastEventType(details.lastEventType);
-  const lastToolStatus = amrOpenCodeLastToolStatus(details.lastToolStatus);
-  const lastToolKind = amrOpenCodeLastToolKind(details.lastToolKind);
-  return {
-    ...(errorPhase ? { amr_opencode_error_phase: errorPhase } : {}),
-    ...(lastEventType ? { amr_opencode_last_event_type: lastEventType } : {}),
-    ...(lastToolStatus ? { amr_opencode_last_tool_status: lastToolStatus } : {}),
-    ...(lastToolKind ? { amr_opencode_last_tool_kind: lastToolKind } : {}),
-  };
-}
-
-function lifecycleCountBucket(count: number): NonNullable<RunDiagnosticsAnalytics['tool_execution_lifecycle_count_bucket']> {
-  if (count <= 1) return '1';
-  if (count <= 5) return '2_5';
-  if (count <= 20) return '6_20';
-  return 'gt_20';
-}
-
-function collapseLifecycleEnum<T extends string>(values: Set<T>): T | 'mixed' | 'unknown' {
-  if (values.size === 0) return 'unknown';
-  if (values.size > 1) return 'mixed';
-  return values.values().next().value ?? 'unknown';
-}
-
-function toolExecutionLifecycleAnalytics(
-  events: RunEventForDiagnostics[],
-): Partial<RunDiagnosticsAnalytics> {
-  const toolCallIds = new Set<string>();
-  const triggers = new Set<'exit' | 'abort' | 'deadline'>();
-  const terminals = new Set<'running' | 'returned' | 'failed' | 'interrupted'>();
-  const terminalSources = new Set<'tool_result' | 'tool_error' | 'processor_cleanup'>();
-  let lifecycleCount = 0;
-  let killRequested = false;
-  let killSent = false;
-  let killFailed = false;
-  let childCloseSeen = false;
-  let stdoutCloseSeen = false;
-  let stderrCloseSeen = false;
-  let evidenceIncomplete = false;
-
-  // Terminal snapshots carry the most complete evidence. Bound work and
-  // memory to the latest 64 distinct diagnostics while preserving that tail.
-  for (const event of events.slice().reverse()) {
-    if (event.event !== 'agent') continue;
-    const data = recordValue(event.data);
-    if (
-      data?.type !== 'diagnostic' ||
-      data.name !== 'tool_execution_lifecycle' ||
-      data.schema !== 'vela.tool_execution_lifecycle' ||
-      data.version !== 1
-    ) {
-      continue;
-    }
-    const safeLifecycleEvents = Array.isArray(data.events)
-      ? data.events.slice(-64).flatMap((rawLifecycleEvent) => {
-          const lifecycleEvent = recordValue(rawLifecycleEvent);
-          const phase = lifecycleEvent?.phase;
-          if (
-            phase !== 'kill_requested' && phase !== 'kill_sent' &&
-            phase !== 'kill_failed' && phase !== 'stdout_close' &&
-            phase !== 'stderr_close' && phase !== 'close'
-          ) {
-            return [];
-          }
-          return [{
-            phase,
-            ...(typeof lifecycleEvent?.stdoutClosed === 'boolean'
-              ? { stdoutClosed: lifecycleEvent.stdoutClosed }
-              : {}),
-            ...(typeof lifecycleEvent?.stderrClosed === 'boolean'
-              ? { stderrClosed: lifecycleEvent.stderrClosed }
-              : {}),
-          }];
-        })
-      : [];
-    const rawToolTerminal = recordValue(data.toolTerminal);
-    const safeToolTerminal =
-      rawToolTerminal?.source === 'tool_result' ||
-      rawToolTerminal?.source === 'tool_error' ||
-      rawToolTerminal?.source === 'processor_cleanup'
-        ? {
-            source: rawToolTerminal.source,
-            ...(typeof rawToolTerminal.confirmed === 'boolean'
-              ? { confirmed: rawToolTerminal.confirmed }
-              : {}),
-          }
-        : null;
-    const toolCallIdHash = data.toolCallIdHash;
-    if (typeof toolCallIdHash !== 'string' || !/^acp_[a-f0-9]{24}$/.test(toolCallIdHash)) {
-      continue;
-    }
-    if (toolCallIds.has(toolCallIdHash)) continue;
-    toolCallIds.add(toolCallIdHash);
-    lifecycleCount += 1;
-
-    if (data.trigger === 'exit' || data.trigger === 'abort' || data.trigger === 'deadline') {
-      triggers.add(data.trigger);
-    }
-    if (
-      data.terminal === 'running' || data.terminal === 'returned' ||
-      data.terminal === 'failed' || data.terminal === 'interrupted'
-    ) {
-      terminals.add(data.terminal);
-    }
-    if (data.terminal === 'running') evidenceIncomplete = true;
-    if (typeof data.droppedEvents === 'number' && data.droppedEvents > 0) {
-      evidenceIncomplete = true;
-    }
-
-    const toolTerminal = safeToolTerminal;
-    if (
-      toolTerminal?.source === 'tool_result' ||
-      toolTerminal?.source === 'tool_error' ||
-      toolTerminal?.source === 'processor_cleanup'
-    ) {
-      terminalSources.add(toolTerminal.source);
-      if (toolTerminal.source === 'processor_cleanup' || toolTerminal.confirmed !== true) {
-        evidenceIncomplete = true;
-      }
-    } else {
-      evidenceIncomplete = true;
-    }
-
-    if (safeLifecycleEvents.length > 0) {
-      for (const lifecycleEvent of safeLifecycleEvents) {
-        const phase = lifecycleEvent?.phase;
-        if (phase === 'kill_requested') killRequested = true;
-        if (phase === 'kill_sent') killSent = true;
-        if (phase === 'kill_failed') killFailed = true;
-        if (phase === 'stdout_close') stdoutCloseSeen = true;
-        if (phase === 'stderr_close') stderrCloseSeen = true;
-        if (phase === 'close') {
-          childCloseSeen = true;
-          if (lifecycleEvent?.stdoutClosed === true) stdoutCloseSeen = true;
-          if (lifecycleEvent?.stderrClosed === true) stderrCloseSeen = true;
-          if (lifecycleEvent?.stdoutClosed !== true || lifecycleEvent?.stderrClosed !== true) {
-            evidenceIncomplete = true;
-          }
-        }
-      }
-    }
-    if (lifecycleCount >= 64) break;
-  }
-
-  if (lifecycleCount === 0) return {};
-  if (triggers.size > 0 && !childCloseSeen) evidenceIncomplete = true;
-  if (killRequested && !killSent && !killFailed) evidenceIncomplete = true;
-  return {
-    tool_execution_lifecycle_seen: true,
-    tool_execution_lifecycle_count_bucket: lifecycleCountBucket(lifecycleCount),
-    tool_execution_trigger: collapseLifecycleEnum(triggers),
-    tool_execution_terminal: collapseLifecycleEnum(terminals),
-    tool_terminal_source: collapseLifecycleEnum(terminalSources),
-    tool_kill_outcome: killFailed
-      ? 'failed'
-      : killSent
-        ? 'sent'
-        : killRequested
-          ? 'requested'
-          : 'none',
-    tool_child_close_seen: childCloseSeen,
-    tool_stdout_close_seen: stdoutCloseSeen,
-    tool_stderr_close_seen: stderrCloseSeen,
-    tool_execution_evidence_incomplete: evidenceIncomplete,
   };
 }
 
@@ -618,7 +362,6 @@ export function summarizeRunDiagnosticsForAnalytics(args: {
 }): RunDiagnosticsAnalytics {
   const events = args.events ?? [];
   const toolProgress = summarizeRunToolProgress(events);
-  const toolExecutionLifecycle = toolExecutionLifecycleAnalytics(events);
   let stderr = '';
   let stdout = '';
   let userVisibleOutputSeen = false;
@@ -627,7 +370,6 @@ export function summarizeRunDiagnosticsForAnalytics(args: {
   let liveArtifactSeen = args.liveArtifactSeen === true;
   let recordedCloseReason: RunCloseReason | null = null;
   let resumeAutoReseeded = false;
-  let amrOpenCodeDiagnostics: Partial<RunDiagnosticsAnalytics> = {};
   let promptBudgetDiagnostics: Partial<RunDiagnosticsAnalytics> =
     args.promptBudgetDiagnostics ?? {};
   for (const event of events) {
@@ -666,10 +408,6 @@ export function summarizeRunDiagnosticsForAnalytics(args: {
       (data.nativeSessionRecovery as Record<string, unknown>).state === 'auto_reseeded'
     ) {
       resumeAutoReseeded = true;
-    }
-    if (event.event === 'error') {
-      const structured = amrOpenCodeDiagnosticsFromError(event.data);
-      if (structured) amrOpenCodeDiagnostics = structured;
     }
     if (data.type === 'artifact') artifactWriteSeen = true;
     if (data.type === 'live_artifact' || event.event === 'live_artifact') {
@@ -733,8 +471,6 @@ export function summarizeRunDiagnosticsForAnalytics(args: {
     artifact_write_seen: artifactWriteSeen,
     live_artifact_seen: liveArtifactSeen,
     resume_auto_reseeded: resumeAutoReseeded,
-    ...amrOpenCodeDiagnostics,
     ...promptBudgetDiagnostics,
-    ...toolExecutionLifecycle,
   };
 }

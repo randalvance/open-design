@@ -36,7 +36,7 @@ import { ToolRow } from './primitives/ToolRow';
 import styles from './primitives/record.module.css';
 
 /**
- * 多久算「等太久」。60 秒来自 `error-ux-design.md:33`(10 分钟 / Cloud 30 分钟才报超时,
+ * 多久算「等太久」。60 秒来自 `error-ux-design.md:33`(10 分钟才报超时,
  * 这一句只是等待期间的回音,不改变任何超时判定)。
  *
  * **2026-08-27 起壳头不再读它** —— S12 的那句文案撤回了(裁决与理由见下面 `head` 里
@@ -273,7 +273,7 @@ export function ExecutionShell({
    *
    * ── 补的是哪个画面(真机,打包版 beta 2026-09-03)────────────────────
    *
-   * ACP 那一家(`vela` / `devin` / `hermes` / `kilo` / `kimi` / `kiro` / `vibe`)在首个
+   * ACP 那一家(`devin` / `hermes` / `kilo` / `kimi` / `kiro` / `vibe`)在首个
    * token 之前一条会落行的事件都不发,壳身子是**全空的**,屏幕上只剩壳头「进行中 1m 7s」。
    * 而 daemon 这一刻正逐字发着
    * `{"type":"status","label":"waiting_for_first_output","elapsedMs":27217}`
@@ -657,7 +657,7 @@ function ThoughtsRow({ texts, elapsedMs, tokens, muted, live, t, deferBody }: {
    * 所以「想完了却还在跳」这个坏画面在数据层就出不来,不必在这一层再加一条守卫。
    *
    * 判据:进行中仍然空白钉在 `first-thoughts-no-elapsed.test.tsx` 第一节,
-   * 想完之后要有数钉在 `amr-thinking-slot-blank.test.tsx`。
+   * 想完之后要有数钉在 thinking-slot 那组测试里。
    */
   const elapsed = muted && live ? '' : formatElapsed(elapsedMs);
   /**
@@ -878,7 +878,7 @@ function TodoRow({ segment, ctx }: { segment: TodoSegment; ctx: RenderCtx }): Re
    *
    * 这里曾经直接 `segment.items.map(renderItem)` —— **没有分组**。壳的顶层收得好好的,
    * 一旦本轮有清单,推理就落进当前那条 todo(`build-turn-blocks` 的 `sink()`),
-   * 于是一个字都收不起来。真实录制 `.od/runs/0161ef44`(agent=amr):
+   * 于是一个字都收不起来。真实录制 `.od/runs/0161ef44`:
    * 42,397 字推理里有 38,064 字铺在这条 in_progress 抽屉里 —— 就是用户截图那几屏。
    *
    * 「还在写的那一格」只可能在**进行中**那条 todo 的结尾。

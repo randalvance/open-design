@@ -22,11 +22,6 @@ import { describe, expect, it, vi } from 'vitest';
 
 // Same stubs as run-failure-classification.test.ts: these modules would claim
 // the text first, so stubbing them proves the new branch is what recognises it.
-vi.mock('../src/integrations/vela-errors.js', () => ({
-  classifyAmrAccountFailure: () => null,
-  reportsPlatformProviderCredentialFault: () => false,
-}));
-
 vi.mock('../src/runtimes/auth.js', () => ({
   classifyAgentServiceFailure: () => null,
   reportsToolPrincipalAuthFailure: () => false,

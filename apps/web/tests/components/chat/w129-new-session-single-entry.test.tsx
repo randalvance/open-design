@@ -45,7 +45,7 @@ import { forwardRef, type ReactElement } from 'react';
 
 import { I18nProvider } from '../../../src/i18n';
 import { ChatPane } from '../../../src/components/ChatPane';
-import type { AppConfig, ChatMessage } from '../../../src/types';
+import type { ChatMessage } from '../../../src/types';
 
 import { ar } from '../../../src/i18n/locales/ar';
 import { de } from '../../../src/i18n/locales/de';
@@ -113,7 +113,6 @@ function renderChat(opts: { onNewConversation?: (() => void) | null } = {}) {
       onSend={vi.fn()}
       onStop={vi.fn()}
       onRetry={vi.fn()}
-      amrBalanceCardUsd={null}
       conversations={[
         { projectId: 'project-1', id: 'conv-1', title: 'Current', createdAt: 1, updatedAt: 1 },
       ]}
@@ -121,7 +120,6 @@ function renderChat(opts: { onNewConversation?: (() => void) | null } = {}) {
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
       onNewConversation={onNewConversation}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }

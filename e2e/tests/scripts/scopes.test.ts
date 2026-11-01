@@ -68,7 +68,7 @@ describe("workflow scope planner", () => {
       expect(Object.entries(result.enabled).filter(([, enabled]) => enabled).map(([id]) => id).sort())
         .toEqual([
           "daemon_unit_1", "daemon_unit_2", "daemon_unit_3", "daemon_unit_4",
-          "ui_p0_entry_settings", "ui_p0_project_collab", "ui_p0_project_runtime",
+          "ui_p0_entry_settings", "ui_p0_project_runtime",
           "ui_p0_project_workspace", "ui_p0_project_workspace_editor", "ui_p0_workspace_restoration",
           "web_workspace_1", "web_workspace_2",
         ]);
@@ -239,11 +239,11 @@ describe("workflow scope planner", () => {
     expect(plan("full")).toMatchObject({ enabled: { windows_tools_pack_payload_tests: true } });
   });
 
-  test("preserves the four-domain runtime-definition shadow candidate", () => {
+  test("preserves the three-domain runtime-definition shadow candidate", () => {
     const candidate = plan("pr", ["apps/daemon/src/runtimes/defs/codex.ts"]);
     expect(candidate.trace.uiP0Shadow.mode).toBe("candidate");
     expect(candidate.trace.uiP0Shadow.matrix.map((entry) => entry.name)).toEqual([
-      "entry-settings", "project-workspace", "project-collab", "project-runtime",
+      "entry-settings", "project-workspace", "project-runtime",
     ]);
     expect(plan("pr", ["apps/daemon/src/server.ts"]).trace.uiP0Shadow.mode).toBe("full-fallback");
   });

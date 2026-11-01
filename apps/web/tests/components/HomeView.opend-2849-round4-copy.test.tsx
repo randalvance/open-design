@@ -16,17 +16,8 @@ vi.mock('../../src/components/home-hero/PlaceholderCarousel', () => ({
   PlaceholderCarousel: () => null,
 }));
 
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>();
-  return {
-    ...actual,
-    useWorkspaceContext: () => ({ context: null, loading: false, failure: 'unsupported' as const }),
-  };
-});
-
 import { HomeView } from '../../src/components/HomeView';
 import { I18nProvider } from '../../src/i18n';
-import { ProjectCreateError } from '../../src/state/projects';
 import { writeHomeGuideStage } from '../../src/components/home-hero/firstRunGuide';
 import { setHomeHeroPrompt } from '../helpers/home-hero-lexical';
 
@@ -64,13 +55,6 @@ async function submitAndReadAlert(onSubmit: (payload: unknown) => Promise<boolea
 }
 
 describe('首页发送失败文案(OPEND-2849 第四轮)', () => {
-  it('S03:建项目返回 AMR_AUTH_REQUIRED → 「Open Design 尚未登录」+ 正文', async () => {
-    const lines = await submitAndReadAlert(vi.fn().mockRejectedValue(
-      new ProjectCreateError('AMR sign-in is required.', 401, 'AMR_AUTH_REQUIRED', false, 'request-1'),
-    ));
-    expect(lines).toEqual(['Open Design 尚未登录', '请先登录，以便查看项目和继续对话。']);
-  });
-
   it('S28a:请求没到 daemon → 「本地连接已断开」+ 正文', async () => {
     const lines = await submitAndReadAlert(vi.fn().mockRejectedValue(new TypeError('fetch failed')));
     expect(lines).toEqual([

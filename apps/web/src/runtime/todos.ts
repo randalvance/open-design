@@ -219,7 +219,7 @@ export function latestTodoWriteInputForPinnedCard<
  * 转发给契约里那个**唯一**的判据 —— 这里不再自己写一份。
  *
  * 曾经全仓有三份、写法还不一致(两份精确 `===`、一份带 `/i` 的正则),
- * 于是 AMR 把名字 title-case 成 `Todowrite` 之后表现成「一半坏」:
+ * 于是上游把名字 title-case 成 `Todowrite` 之后表现成「一半坏」:
  * 客户端画得出清单,daemon 的 `endedWithUnfinishedWork` 却漏判。
  * 保留这个导出只是为了不改动全部调用点。
  */

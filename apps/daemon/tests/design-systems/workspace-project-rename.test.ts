@@ -6,10 +6,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 
 import {
   propagateWorkspaceProjectRename,
-  resolveWorkspaceProjectDesignSystemRoot,
   workspaceRenameDesignSystemId,
 } from '../../src/design-systems/index.js';
-import { teamResourceWorkspaceRoot } from '../../src/collab/team-resource-materialization.js';
 
 // Renaming a design-system workspace project used to revert silently:
 // ensureUserDesignSystemWorkspaceProject re-stamps the project name from
@@ -50,20 +48,6 @@ describe('workspaceRenameDesignSystemId', () => {
     expect(
       workspaceRenameDesignSystemId({ designSystemId: null, metadata: { importedFrom: 'design-system' } }),
     ).toBeNull();
-  });
-});
-
-describe('resolveWorkspaceProjectDesignSystemRoot', () => {
-  it('selects the exact Team root for a Team backing project instead of same-id Personal canonical', () => {
-    const canonicalRoot = '/runtime/design-systems';
-    expect(resolveWorkspaceProjectDesignSystemRoot(canonicalRoot, {
-      workspaceId: 'team-a',
-      visibility: 'team',
-    })).toBe(teamResourceWorkspaceRoot(canonicalRoot, 'team-a'));
-    expect(resolveWorkspaceProjectDesignSystemRoot(canonicalRoot, {
-      workspaceId: 'personal-a',
-      visibility: 'personal',
-    })).toBe(canonicalRoot);
   });
 });
 

@@ -3,10 +3,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  clearExceptionTrackingContext,
-  setExceptionTrackingContext,
-} from '../../src/analytics/error-tracking';
-import {
   __resetChatScrollFreezeForTest,
   chatScrollFreezeListenerCount,
   installChatScrollFreezeObserver,
@@ -23,12 +19,13 @@ import {
   FROZEN,
   LAYOUT_MAX,
   buildChatLog,
-  decodeSafetyEvents,
   scrolled,
   stubGeometry,
   wheelEvent,
   type GeometryHandle,
 } from '../helpers/chat-scroll-fixture';
+import { reportedSafetyEvents, watchSafetyEvents } from '../helpers/safety-events';
+
 
 /**
  * What these specs encode
@@ -58,8 +55,6 @@ import {
  * the handoff notes rather than being faked here.
  */
 
-const fetchMock = vi.fn();
-const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_RAF = globalThis.requestAnimationFrame;
 const ORIGINAL_CAF = globalThis.cancelAnimationFrame;
 
@@ -73,7 +68,7 @@ function advanceClock(ms: number): void {
 }
 
 function eventsNamed(name: string): Array<Record<string, unknown>> {
-  return decodeSafetyEvents(fetchMock)
+  return reportedSafetyEvents()
     .filter((e) => e.event === name)
     .map((e) => e.properties);
 }
@@ -109,16 +104,7 @@ function failTheObservation(log: HTMLElement): void {
 
 beforeEach(() => {
   clock = 0;
-  fetchMock.mockReset();
-  fetchMock.mockResolvedValue(new Response('', { status: 200 }));
-  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-  setExceptionTrackingContext({
-    apiKey: 'phc_test',
-    host: 'https://us.i.posthog.com',
-    distinctId: 'chat-scroll-takeover-test',
-    clientType: 'web',
-    osName: 'Mac OS X',
-  });
+  watchSafetyEvents();
   // A synchronous rAF makes both the probe and the takeover deterministic:
   // one wheel in, one applied frame out, nothing to await.
   rafSpy = vi.fn((cb: FrameRequestCallback) => {
@@ -143,9 +129,7 @@ afterEach(() => {
   __resetChatScrollFreezeForTest();
   vi.useRealTimers();
   vi.restoreAllMocks();
-  clearExceptionTrackingContext();
   globalThis.localStorage.clear();
-  globalThis.fetch = ORIGINAL_FETCH;
   globalThis.requestAnimationFrame = ORIGINAL_RAF;
   globalThis.cancelAnimationFrame = ORIGINAL_CAF;
   document.body.innerHTML = '';

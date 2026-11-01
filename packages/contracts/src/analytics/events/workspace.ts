@@ -75,28 +75,6 @@ export interface AccountMenuClickProps extends TrackingWorkspaceDimensions {
   is_free_active?: boolean;
 }
 
-export interface WorkspaceSwitcherClickProps extends TrackingWorkspaceDimensions {
-  page_name: TrackingWorkspacePage;
-  area: 'workspace_switcher';
-  element: 'workspace_option' | 'invite_teammates' | 'create_team';
-  target_workspace_type?: TrackingWorkspaceType;
-  is_current_workspace?: boolean;
-}
-
-export interface WorkspaceInviteClickProps extends TrackingWorkspaceDimensions {
-  page_name: 'home' | 'all_projects';
-  area: 'workspace_invite_dialog';
-  element:
-    | 'submit'
-    | 'add_recipient_row'
-    | 'remove_recipient_row'
-    | 'role_select'
-    | 'upgrade'
-    | 'close';
-  entry_from: 'workspace_switcher' | 'all_projects';
-  invite_count_bucket?: TrackingCountBucket;
-}
-
 export type TrackingProjectCollectionPage = 'home' | 'drafts' | 'all_projects';
 export type TrackingCountBucket = '0' | '1' | '2_5' | '6_10' | '11_plus';
 export type TrackingProjectRelation = 'self' | 'other' | 'unknown';
@@ -159,27 +137,6 @@ export interface WorkspaceSurfaceViewProps extends TrackingWorkspaceDimensions {
   entry_from?: 'workspace_switcher' | 'all_projects';
 }
 
-export interface WorkspaceSwitchResultProps extends TrackingWorkspaceDimensions {
-  page_name: TrackingWorkspacePage;
-  area: 'workspace_switcher';
-  result: 'success' | 'failed';
-  target_workspace_type?: TrackingWorkspaceType;
-  duration_ms: number;
-  error_code?: string;
-}
-
-export interface WorkspaceInviteResultProps extends TrackingWorkspaceDimensions {
-  page_name: 'home' | 'all_projects';
-  area: 'workspace_invite_dialog';
-  entry_from: 'workspace_switcher' | 'all_projects';
-  result: 'success' | 'partial_success' | 'failed';
-  requested_count: number;
-  succeeded_count: number;
-  failed_count: number;
-  duration_ms: number;
-  error_code?: string;
-}
-
 export interface WorkspaceProjectActionResultProps extends TrackingWorkspaceDimensions {
   page_name: TrackingProjectCollectionPage;
   area: 'project_collection';
@@ -195,16 +152,6 @@ export interface WorkspaceProjectActionResultProps extends TrackingWorkspaceDime
   requested_count: number;
   succeeded_count: number;
   failed_count: number;
-  duration_ms: number;
-  error_code?: string;
-}
-
-export interface WorkspaceSharedProjectOpenResultProps extends TrackingWorkspaceDimensions {
-  page_name: 'all_projects' | 'drafts' | 'home';
-  area: 'project_collection';
-  result: 'success' | 'failed';
-  project_relation: TrackingProjectRelation;
-  materialization: 'warm' | 'required' | 'unknown';
   duration_ms: number;
   error_code?: string;
 }

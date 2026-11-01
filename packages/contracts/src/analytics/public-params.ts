@@ -137,7 +137,7 @@ export interface AnalyticsConfigureGlobals {
   // is merely detected on PATH (common for our dev audience), so it overstates
   // "the user configured something". For "actively configured & succeeded",
   // count the success result events instead — `settings_cli_test_result`,
-  // `settings_byok_test_result`, `amr_auth_result` with `result: 'success'`.
+  // `settings_byok_test_result` with `result: 'success'`.
   cli_runnable: boolean;
   byok_runnable: boolean;
   amr_runnable: boolean;

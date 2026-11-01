@@ -1,34 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('../src/integrations/vela-errors.js', () => ({
-  classifyAmrAccountFailure(text: string) {
-    const value = String(text || '').toLowerCase();
-    // Mirror the real detector's signals exercised by these tests, including
-    // the Chinese vela pre-charge text (see integrations/vela-errors.test.ts).
-    if (
-      value.includes('insufficient balance') ||
-      value.includes('预扣费额度失败') ||
-      value.includes('余额不足') ||
-      value.includes('额度不足')
-    ) {
-      return { code: 'AMR_INSUFFICIENT_BALANCE' as const };
-    }
-    if (value.includes('authentication required') || value.includes('not authenticated') || value.includes('unauthorized')) {
-      return { code: 'AMR_AUTH_REQUIRED' as const };
-    }
-    if (value.includes('tier_model_not_entitled') || value.includes('tier_request_kind_not_entitled')) {
-      return { code: 'AMR_TIER_UPGRADE_REQUIRED' as const };
-    }
-    return null;
-  },
-  // vela's link gateway codes for "the PLATFORM's upstream credentials are
-  // broken" (catalogue R-053). Mirrored rather than stubbed to `false` so the
-  // branch this file's texts pass through is the same one production runs.
-  reportsPlatformProviderCredentialFault(text: string) {
-    return /upstream_provider_(?:unauthenticated|forbidden)/i.test(String(text || ''));
-  },
-}));
-
 // Only `classifyAgentServiceFailure` is stubbed — this suite wants a
 // deterministic service class per row. `reportsToolPrincipalAuthFailure` is
 // kept REAL via `importOriginal`: it answers a different question (whose
@@ -222,20 +193,6 @@ describe('classifyRunFailure', () => {
     ).toMatchObject({
       failure_category: 'user_cancel',
       failure_stage: 'tool_outstanding',
-    });
-  });
-
-  it('prefers structured model-unavailable codes over timeout-like free text', () => {
-    expect(
-      classify(
-        'AMR_MODEL_UNAVAILABLE',
-        'Model selection timed out while the provider reported the model was unavailable.',
-      ),
-    ).toMatchObject({
-      failure_category: 'model_unavailable',
-      failure_stage: 'model_select',
-      retryable: false,
-      user_action: 'switch_model',
     });
   });
 
@@ -532,29 +489,11 @@ describe('classifyRunFailure', () => {
     });
   });
 
-  it('maps AMR model catalog outages to provider routing failures', () => {
-    expect(
-      classify(
-        'AGENT_EXIT_130',
-        'json-rpc id 2: AMR model catalog is unavailable.',
-      ),
-    ).toMatchObject({
-      failure_category: 'upstream_unavailable',
-      failure_detail: 'provider_routing_error',
-      failure_stage: 'first_token_wait',
-      retryable: true,
-      user_action: 'retry',
-    });
-  });
-
-  it('maps AMR model catalog credential failures to auth instead of retryable routing', () => {
+  it('maps a model-list credential failure to auth instead of retryable routing', () => {
     expect(
       classify(
         'AGENT_EXECUTION_FAILED',
-        [
-          'json-rpc id 2: AMR model catalog is unavailable.',
-          'Error: list Link models: API request failed with status 401: invalid_api_key',
-        ].join('\n'),
+        'Error: list models: API request failed with status 401: invalid_api_key',
       ),
     ).toMatchObject({
       failure_category: 'auth',
@@ -565,9 +504,9 @@ describe('classifyRunFailure', () => {
     });
   });
 
-  it('maps AMR insufficient balance to recharge guidance', () => {
+  it('maps insufficient balance to recharge guidance', () => {
     expect(
-      classify('AMR_INSUFFICIENT_BALANCE', 'insufficient wallet balance'),
+      classify('AGENT_EXECUTION_FAILED', 'insufficient wallet balance'),
     ).toMatchObject({
       failure_category: 'insufficient_balance',
       failure_detail: 'amr_insufficient_balance',
@@ -583,14 +522,6 @@ describe('classifyRunFailure', () => {
       failure_stage: 'model_select',
       retryable: false,
       user_action: 'switch_model',
-    });
-  });
-
-  it('records a direct AMR insufficient-balance code as structured evidence', () => {
-    expect(classify('AMR_INSUFFICIENT_BALANCE')).toMatchObject({
-      failure_category: 'insufficient_balance',
-      failure_detail: 'amr_insufficient_balance',
-      evidence_level: 'structured_code',
     });
   });
 
@@ -1243,16 +1174,6 @@ describe('classifyRunFailure — signal and interrupt attribution', () => {
       user_action: 'retry',
     });
 
-    expect(
-      classify(null, 'json-rpc id 2: AMR model catalog is temporarily unavailable. Please retry.'),
-    ).toMatchObject({
-      failure_category: 'upstream_unavailable',
-      failure_detail: 'provider_routing_error',
-      failure_stage: 'first_token_wait',
-      retryable: true,
-      user_action: 'retry',
-    });
-
     expect(classify(null, 'Qoder run failed: stop_sequence')).toMatchObject({
       failure_category: 'process_exit',
       failure_detail: 'qoder_stop_sequence',
@@ -1689,29 +1610,6 @@ describe('execution_failed close-reason refinement', () => {
     });
   });
 
-  it('classifies an AMR membership concurrency limit before fatal close promotion', () => {
-    const message =
-      '[code=tier_limit_exceeded] membership concurrency limit exceeded: 3/2 resets 2026-08-25T10:42:00Z';
-    expect(
-      classifyForAgent('amr', 'AGENT_EXECUTION_FAILED', message, [
-        errorEvent('AGENT_EXECUTION_FAILED', message, true),
-        runtimeCloseEvent('fatal_rpc_error'),
-      ]),
-    ).toMatchObject({
-      failure_category: 'rate_limit',
-      failure_detail: 'membership_concurrency_limit',
-      failure_stage: 'session_init',
-      failure_mechanism: 'policy_rejection',
-      failure_domain: 'policy_admission',
-      evidence_level: 'structured_code',
-      repair_owner: 'policy_owner',
-      admission_status: 'unknown',
-      classifier_version: 'run-failure-v3',
-      retryable: false,
-      user_action: 'none',
-    });
-  });
-
   it('does not exclude an ordinary provider 429 as a pre-run policy rejection', () => {
     expect(classifyForAgent('amr', 'RATE_LIMITED', 'HTTP 429: too many requests')).toMatchObject({
       failure_category: 'rate_limit',
@@ -1893,7 +1791,21 @@ describe('execution_failed close-reason refinement', () => {
 // text, so the English-only detectors miss them. Real production texts were
 // sampled from Langfuse (#3408 P1). Each must land in its true product-view
 // category instead of the engineering-view opaque bucket.
-describe('classifyRunFailure — AMR/vela reclassification out of execution_failed', () => {
+describe('classifyRunFailure — stored runs from the retired hosted agent', () => {
+  it('classifies a historic record from its text, whatever code it stored', () => {
+    for (const code of ['AMR_INSUFFICIENT_BALANCE', 'AMR_TIER_UPGRADE_REQUIRED', 'AMR_AUTH_REQUIRED', 'AMR_MODEL_UNAVAILABLE']) {
+      expect(() => classifyForAgent('amr', code, 'the run failed')).not.toThrow();
+      expect(classifyForAgent('amr', code, 'the run failed')).toBeTruthy();
+    }
+    expect(classifyForAgent('amr', 'AMR_INSUFFICIENT_BALANCE', 'insufficient wallet balance')).toMatchObject({
+      failure_category: 'insufficient_balance',
+      user_action: 'recharge',
+      retryable: false,
+    });
+  });
+});
+
+describe('classifyRunFailure — reclassification out of execution_failed', () => {
   it('classifies a vela Chinese pre-charge (insufficient balance) failure as insufficient_balance', () => {
     const result = classify(
       'AGENT_EXECUTION_FAILED',
@@ -1902,37 +1814,6 @@ describe('classifyRunFailure — AMR/vela reclassification out of execution_fail
     expect(result?.failure_category).toBe('insufficient_balance');
     expect(result?.failure_detail).toBe('amr_insufficient_balance');
     expect(result?.user_action).toBe('recharge');
-  });
-
-  it('classifies structured AMR tier entitlement failures as upgrade-required analytics', () => {
-    const result = classify(
-      'AMR_TIER_UPGRADE_REQUIRED',
-      'AMR tier upgrade required',
-    );
-
-    expect(result).toMatchObject({
-      failure_category: 'entitlement_required',
-      failure_detail: 'amr_tier_upgrade_required',
-      failure_stage: 'session_init',
-      evidence_level: 'structured_code',
-      retryable: false,
-      user_action: 'upgrade',
-    });
-  });
-
-  it('classifies raw AMR tier entitlement texts as upgrade-required analytics', () => {
-    const result = classify(
-      'AGENT_EXECUTION_FAILED',
-      'HTTP 403 [code=tier_model_not_entitled] model access denied for current tier',
-    );
-
-    expect(result).toMatchObject({
-      failure_category: 'entitlement_required',
-      failure_detail: 'amr_tier_upgrade_required',
-      failure_stage: 'session_init',
-      retryable: false,
-      user_action: 'upgrade',
-    });
   });
 
   it('classifies a Chinese 429 rate-limit text as a retryable rate_limit_429', () => {
@@ -2023,7 +1904,7 @@ describe('classifyRunFailure — AMR/vela reclassification out of execution_fail
   it('still classifies a genuine quota-exhaustion message as hard_quota', () => {
     const result = classify(
       'RATE_LIMITED',
-      'You have exceeded your current quota. Please check your plan and billing details.',
+      'You have exceeded your current quota. Please check your plan.',
     );
     expect(result?.failure_category).toBe('rate_limit');
     expect(result?.failure_detail).toBe('hard_quota');
@@ -2055,9 +1936,9 @@ describe('classifyRunFailure — AMR/vela reclassification out of execution_fail
     const result = classifyForAgent(
       'byok-opencode',
       'RATE_LIMITED',
-      'You have exceeded your current quota. Please check your plan and billing details.',
+      'You have exceeded your current quota. Please check your plan.',
       [
-        errorEvent('RATE_LIMITED', 'You have exceeded your current quota. Please check your plan and billing details.', false),
+        errorEvent('RATE_LIMITED', 'You have exceeded your current quota. Please check your plan.', false),
         runtimeCloseEvent('empty_output'),
       ],
     );
@@ -2092,7 +1973,7 @@ describe('classifyRunFailure — AMR/vela reclassification out of execution_fail
     // No rpc_close_reason=empty_output — goes through the text-heuristic path.
     const result = classify(
       'RATE_LIMITED',
-      'API error: you have exceeded your current quota for this billing period.',
+      'API error: you have exceeded your current quota for this period.',
     );
     expect(result?.failure_category).toBe('rate_limit');
     expect(result?.failure_detail).toBe('hard_quota');

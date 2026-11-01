@@ -43,7 +43,7 @@ export function textUpdate(text: string): JsonObject {
 }
 
 export function completedTodoUpdates(): JsonObject[] {
-  // Vela's documented frame shape uses kind, not a fabricated name field.
+  // An ACP bridge's frame shape uses kind, not a fabricated name field.
   // These are synthetic protocol inputs, not proof of actual tool execution.
   return [
     { sessionUpdate: 'tool_call', toolCallId: TODO_ID, kind: 'todowrite', title: 'todowrite', status: 'pending', rawInput: TODO_INPUT },
@@ -52,7 +52,6 @@ export function completedTodoUpdates(): JsonObject[] {
 }
 
 export async function runMemoryAcpTurn(options: {
-  amr: boolean;
   prompt: string;
   updates: JsonObject[];
   outputTokens?: number;
@@ -108,9 +107,8 @@ export async function runMemoryAcpTurn(options: {
   const session = attachAcpSession({
     child: child as unknown as Parameters<typeof attachAcpSession>[0]['child'],
     prompt: options.prompt,
-    model: options.amr ? 'deepseek-v4-flash' : null,
+    model: null,
     mcpServers: [],
-    ...(options.amr ? { modelUnavailableErrorCode: 'AMR_MODEL_UNAVAILABLE' as const } : {}),
     send(event, payload, meta) {
       const body = object(payload);
       events.push({ event, payload: body, hostSynthesized: meta?.hostSynthesized === true });
@@ -175,7 +173,6 @@ export async function runMemoryAcpTurn(options: {
     const drive = async () => {
       reply(await takeRequest('initialize'), { protocolVersion: 1 });
       reply(await takeRequest('session/new'), { sessionId: 'd1-memory-session' });
-      if (options.amr) reply(await takeRequest('session/set_model'), {});
       const promptRequest = await takeRequest('session/prompt');
       for (const update of options.updates) {
         child.stdout.write(`${JSON.stringify({

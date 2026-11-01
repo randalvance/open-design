@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildWorkspacePermissions, buildWorkspaceSeatSummary, OD_NEXT_AGENT_DECLARED_BLOCK_REASON, type WorkspaceCollabContext } from '@open-design/contracts';
+import { OD_NEXT_AGENT_DECLARED_BLOCK_REASON } from '@open-design/contracts';import { buildWorkspacePermissions, buildWorkspaceSeatSummary, type WorkspaceCollabContext } from '../helpers/workspace-context';
 import { ProjectView } from '../../src/components/ProjectView';
 import { AssistantMessage } from '../../src/components/AssistantMessage';
 import { I18nProvider } from '../../src/i18n';
@@ -144,7 +144,7 @@ async function recover(kind: typeof strategy) {
       strategyTaskBlockedText: strategyTask().blockedContext.visibleText } : {}) }];
   render(<I18nProvider initial="en"><ProjectView project={project}
     initialProjectDetail={{ project, resolvedDir: '/workspace/verdict-fixture' }}
-    routeConversationId={`conv-${project.id}`} routeFileName={null} config={config} workspaceContextOverride={context}
+    routeConversationId={`conv-${project.id}`} routeFileName={null} config={config}
     agents={[{ id: 'opencode', name: 'OpenCode', bin: 'opencode', available: true, models: [] }]}
     skills={[]} designTemplates={[]} designSystems={[]} daemonLive onModeChange={vi.fn()} onAgentChange={vi.fn()}
     onAgentModelChange={vi.fn()} onRefreshAgents={vi.fn()} onOpenSettings={vi.fn()} onBack={vi.fn()}

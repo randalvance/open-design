@@ -10,7 +10,6 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 
-import { CollabProvider } from "../../src/collab/collab-context";
 import {
   DesignFilesPanel,
   type DesignFilesNavState,
@@ -22,7 +21,6 @@ import type {
   ProjectFolder,
 } from "../../src/types";
 import { VISUAL_STABILITY_STORAGE_KEY } from "../../src/utils/visualStability";
-import { workspaceContextFixture } from "../helpers/workspace-context";
 
 function folder(path: string): ProjectFolder {
   return {
@@ -199,48 +197,6 @@ describe("DesignFilesPanel sections", () => {
     expect(onUpload).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps empty-state actions visible but disables mutations for read-only shared viewers", () => {
-    const onNewSketch = vi.fn();
-    const onOpenBrowser = vi.fn();
-    const onCreateDesignSystem = vi.fn();
-    const onPaste = vi.fn();
-    const onUpload = vi.fn();
-
-    renderPanel([], {
-      viewerOnly: true,
-      onNewSketch,
-      onOpenBrowser,
-      onCreateDesignSystem,
-      onPaste,
-      onUpload,
-    });
-
-    const mutationButtons = [
-      screen.getByTestId("design-files-empty-new-sketch"),
-      screen.getByTestId("design-files-empty-new-document"),
-      screen.getByTestId("design-files-upload-trigger"),
-      screen.getByTestId("design-files-empty-create-design-system"),
-    ];
-    for (const button of mutationButtons) {
-      expect(button).toBeDisabled();
-      expect(button).toHaveAttribute(
-        "title",
-        "Shared project is read-only: you can comment, but cannot edit or export.",
-      );
-      fireEvent.click(button);
-    }
-
-    expect(onNewSketch).not.toHaveBeenCalled();
-    expect(onCreateDesignSystem).not.toHaveBeenCalled();
-    expect(onPaste).not.toHaveBeenCalled();
-    expect(onUpload).not.toHaveBeenCalled();
-
-    const openBrowser = screen.getByTestId("design-files-empty-open-browser");
-    expect(openBrowser).not.toBeDisabled();
-    fireEvent.click(openBrowser);
-    expect(onOpenBrowser).toHaveBeenCalledTimes(1);
-  });
-
   it("groups files into category tabs and shows one group at a time", () => {
     renderPanel([
       file({ name: "page.html", kind: "html", mime: "text/html" }),
@@ -351,99 +307,6 @@ describe("DesignFilesPanel selection", () => {
     );
     expect(onDeleteFiles).toHaveBeenCalledTimes(1);
     expect(onDeleteFiles).toHaveBeenCalledWith(["file-1.html", "file-2.png"]);
-  });
-
-  it("sends the project-pinned Workspace identity on batch archive download", async () => {
-    const workspaceContext = workspaceContextFixture({
-      workspaceId: "workspace-a",
-      workspaceMemberId: "member-a",
-    });
-    const fetchMock = vi.fn<typeof fetch>(async () =>
-      new Response("zip", {
-        status: 200,
-        headers: {
-          "content-type": "application/zip",
-          "content-disposition": 'attachment; filename="project.zip"',
-        },
-      }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    Object.defineProperty(URL, "createObjectURL", {
-      configurable: true,
-      value: vi.fn(() => "blob:test"),
-    });
-    Object.defineProperty(URL, "revokeObjectURL", {
-      configurable: true,
-      value: vi.fn(),
-    });
-    const files = [file({ name: "page.html", kind: "html" })];
-    const { container } = render(
-      <CollabProvider
-        value={{
-          workspaceContext,
-          workspaceContextLoading: false,
-          enabled: true,
-          member: null,
-          present: [],
-          publishedVersion: null,
-          syncState: null,
-          viewerOnly: false,
-          writerAuthority: 'allowed',
-          isOwner: true,
-          isEffectiveOwner: true,
-          isSharedNonOwner: false,
-          ownerDisplayName: null,
-          ownerRole: null,
-          downloadPending: false,
-          reportChange: vi.fn(),
-          requestPublish: vi.fn(),
-          refreshPresence: vi.fn(),
-          checkStatusNow: vi.fn(),
-        }}
-      >
-        <DesignFilesPanel
-          projectId="test-project"
-          projectKind="prototype"
-          files={files}
-          liveArtifacts={[]}
-          onRefreshFiles={vi.fn()}
-          onOpenFile={vi.fn()}
-          onOpenLiveArtifact={vi.fn()}
-          onRenameFile={vi.fn()}
-          onDeleteFile={vi.fn()}
-          onDeleteFiles={vi.fn()}
-          onUpload={vi.fn()}
-          onUploadFiles={vi.fn()}
-          onPaste={vi.fn()}
-          onNewSketch={vi.fn()}
-        />
-      </CollabProvider>,
-    );
-
-    fireEvent.click(
-      screen
-        .getByTestId("design-file-row-page.html")
-        .querySelector(".df-card-check")!,
-    );
-    fireEvent.click(
-      container.querySelector('[data-testid="design-files-batch-bar"] button')!,
-    );
-
-    await waitFor(() => {
-      expect(
-        fetchMock.mock.calls.some(([input]) =>
-          String(input).endsWith("/archive/batch"),
-        ),
-      ).toBe(true);
-    });
-    const archiveCall = fetchMock.mock.calls.find(([input]) =>
-      String(input).endsWith("/archive/batch"),
-    );
-    expect(archiveCall).toBeTruthy();
-    const [, init] = archiveCall!;
-    const headers = new Headers(init?.headers);
-    expect(headers.get("x-od-workspace-id")).toBe("workspace-a");
-    expect(headers.get("x-od-workspace-member-id")).toBe("member-a");
   });
 
   it("does not open files from card controls", () => {
@@ -560,14 +423,6 @@ describe("DesignFilesPanel selection", () => {
     expect(onOpenFile).not.toHaveBeenCalled();
   });
 
-  it("opens instead of renaming from the card name for read-only viewers", () => {
-    const files = generateFiles(1);
-    const { container, onOpenFile } = renderPanel(files, { viewerOnly: true });
-
-    fireEvent.click(container.querySelector(".df-card-name-btn")!);
-    expect(container.querySelector(".df-rename-input")).toBeNull();
-    expect(onOpenFile).toHaveBeenCalledWith("file-1.html");
-  });
 });
 
 describe("DesignFilesPanel page thumbnails", () => {
@@ -1018,117 +873,6 @@ describe("DesignFilesPanel persisted (empty) folders", () => {
       ...document.querySelectorAll(".df-dir-row .df-row-name"),
     ].map((e) => e.textContent);
     expect(nestedDirs).toContain("icons");
-  });
-});
-
-// A non-owner member's local mirror trailing the published head
-// (`downloadPending`, see useProjectCollab) can still have a complete older
-// materialization. Keep that useful content visible while the project-level
-// sync badge communicates that a newer version is arriving. Only the
-// no-local-content case should replace the empty state with a loading surface.
-describe("DesignFilesPanel pending sync (downloadPending)", () => {
-  afterEach(() => cleanup());
-
-  it("keeps an existing non-html file visible and openable while a newer version downloads", () => {
-    const { onOpenFile } = renderPanel(
-      [file({ name: "notes.txt", kind: "text", mime: "text/plain" })],
-      { downloadPending: true },
-    );
-
-    const row = screen.getByTestId("design-file-row-notes.txt");
-    expect(row.className).not.toContain("df-row-pending");
-    expect(row.querySelector(".df-row-name")?.textContent).toBe("notes.txt");
-    expect(row.querySelector(".skeleton-block")).toBeNull();
-
-    fireEvent.click(row.querySelector(".df-row-name-btn")!);
-    expect(onOpenFile).toHaveBeenCalledWith("notes.txt");
-  });
-
-  it("keeps an existing HTML page card visible and openable while a newer version downloads", () => {
-    const { onOpenFile } = renderPanel(
-      [file({ name: "page.html", kind: "html", mime: "text/html" })],
-      { downloadPending: true },
-    );
-
-    const card = screen.getByTestId("design-file-row-page.html");
-    expect(card.className).not.toContain("df-card-pending");
-    expect(card.textContent).toContain("page.html");
-    const openButton = card.querySelector<HTMLButtonElement>(".df-card-thumb");
-    expect(openButton).toBeTruthy();
-    fireEvent.click(openButton!);
-    expect(onOpenFile).toHaveBeenCalledWith("page.html");
-  });
-
-  it("keeps an existing image card visible and openable while a newer version downloads", () => {
-    const { onOpenFile } = renderPanel(
-      [file({ name: "photo.png", kind: "image", mime: "image/png" })],
-      { downloadPending: true },
-    );
-
-    const card = screen.getByTestId("design-file-row-photo.png");
-    expect(card.className).not.toContain("df-card-pending");
-    expect(card.className).toContain("df-card--image");
-    const openButton = card.querySelector<HTMLButtonElement>(".df-card-thumb");
-    expect(openButton).toBeTruthy();
-    fireEvent.click(openButton!);
-    expect(onOpenFile).toHaveBeenCalledWith("photo.png");
-  });
-
-  it("still reports the correct per-category file counts in the tab bar while pending", () => {
-    renderPanel(
-      [
-        file({ name: "a.txt", kind: "text", mime: "text/plain" }),
-        file({ name: "b.txt", kind: "text", mime: "text/plain" }),
-      ],
-      { downloadPending: true },
-    );
-    expect(tabLabels().join(" ")).toContain("2");
-  });
-
-  it("uses the syncing empty state only when no local content is available", () => {
-    renderPanel([], { downloadPending: true, viewerOnly: true });
-
-    expect(screen.getByTestId("design-files-syncing")).toBeTruthy();
-    expect(screen.queryByTestId("design-files-empty")).toBeNull();
-  });
-
-  it("replaces the retained materialization directly when the pull completes", () => {
-    const commonProps = {
-      projectId: "test-project",
-      projectKind: "prototype" as const,
-      liveArtifacts: [],
-      onRefreshFiles: vi.fn(),
-      onOpenFile: vi.fn(),
-      onOpenLiveArtifact: vi.fn(),
-      onRenameFile: vi.fn(),
-      onDeleteFile: vi.fn(),
-      onDeleteFiles: vi.fn(),
-      onUpload: vi.fn(),
-      onUploadFiles: vi.fn(),
-      onPaste: vi.fn(),
-      onNewSketch: vi.fn(),
-      viewerOnly: true,
-    };
-    const { rerender } = render(
-      <DesignFilesPanel
-        {...commonProps}
-        files={[file({ name: "version-one.txt", kind: "text", mime: "text/plain" })]}
-        downloadPending
-      />,
-    );
-    expect(screen.getByText("version-one.txt")).toBeTruthy();
-    expect(document.querySelector(".skeleton-block")).toBeNull();
-
-    rerender(
-      <DesignFilesPanel
-        {...commonProps}
-        files={[file({ name: "version-two.txt", kind: "text", mime: "text/plain" })]}
-        downloadPending={false}
-      />,
-    );
-    expect(screen.queryByText("version-one.txt")).toBeNull();
-    expect(screen.getByText("version-two.txt")).toBeTruthy();
-    expect(document.querySelector(".skeleton-block")).toBeNull();
   });
 });
 

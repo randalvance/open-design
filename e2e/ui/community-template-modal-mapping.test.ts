@@ -11,7 +11,7 @@
 
 import { expect, test } from '@/playwright/suite';
 import type { Page } from '@playwright/test';
-import { applyStandardMocks, routeSignedOutVelaStatus } from '@/playwright/mock-factory';
+import { applyStandardMocks } from '@/playwright/mock-factory';
 import { ensureRailOpen } from '@/playwright/rail';
 import { T } from '@/timeouts';
 
@@ -115,11 +115,6 @@ async function routeMappingFixtures(page: Page) {
 async function gotoCommunity(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByText('Loading OpenDesign…').waitFor({ state: 'hidden', timeout: T.long });
-  const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve OpenDesign' });
-  if (await privacyDialog.isVisible().catch(() => false)) {
-    await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
-    await expect(privacyDialog).toHaveCount(0);
-  }
   await ensureRailOpen(page);
   await page.getByTestId('entry-nav-community').click();
   await expect(page).toHaveURL(/\/community$/);
@@ -135,7 +130,6 @@ async function openDeckCommunityCard(page: Page) {
 
 test.beforeEach(async ({ page }) => {
   await applyStandardMocks(page);
-  await routeSignedOutVelaStatus(page);
   await routeMappingFixtures(page);
 });
 
@@ -161,7 +155,7 @@ test('[P1] community template card opens the full details modal (Use split + Sha
   await page.keyboard.press('Escape');
 });
 
-test('[P0] signed-out Local setup can use a Community template on Home', async ({ page }) => {
+test('[P0] Local setup can use a Community template on Home', async ({ page }) => {
   await gotoCommunity(page);
 
   // Use from the community card's full modal routes the plugin as the Home

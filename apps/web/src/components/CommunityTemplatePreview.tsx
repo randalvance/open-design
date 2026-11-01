@@ -14,7 +14,6 @@
 
 import type {
   InstalledPluginRecord,
-  WorkspaceCollabContext,
 } from '@open-design/contracts';
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -182,7 +181,6 @@ export function buildCommunityTemplates(
   plugins: InstalledPluginRecord[],
   locale: Locale,
   t: ReturnType<typeof useT>,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): TemplateDemo[] {
   const categoryOrder = buildCategoryCatalog(plugins).map((option) => option.slug);
   const subcategoryCatalog = buildSubcategoryCatalog(plugins);
@@ -232,8 +230,8 @@ export function buildCommunityTemplates(
       : '';
     // Gallery tiles prefer the pre-baked poster; the modal keeps the real
     // `od.preview` so opening a card shows the live page, not the baked frame.
-    const card = inferPluginPreview(record, { preferBaked: true, workspaceContext });
-    const detail = inferPluginPreview(record, { workspaceContext });
+    const card = inferPluginPreview(record, { preferBaked: true });
+    const detail = inferPluginPreview(record);
     // Carry the whole spec, not just its poster: a baked preview's `videoUrl`
     // and `loopHoldMs` are what let the tile play its short screen recording
     // instead of sitting on the first frame.

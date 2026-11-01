@@ -21,7 +21,7 @@ import { forwardRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatPane } from '../../src/components/ChatPane';
-import type { AppConfig, ChatMessage } from '../../src/types';
+import type { ChatMessage } from '../../src/types';
 
 const translate = (key: string, vars?: Record<string, string | number>) => {
   if (vars && Object.keys(vars).length > 0) {
@@ -103,7 +103,6 @@ function renderChat(props: { error: string | null; errorSourceAssistantId?: stri
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }
@@ -198,7 +197,6 @@ describe('命中映射表的失败仍然用它自己的文案', () => {
         activeConversationId="conv-1"
         onSelectConversation={vi.fn()}
         onDeleteConversation={vi.fn()}
-        config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
       />,
     );
     expect(descriptionOf(container)!.textContent).toContain(

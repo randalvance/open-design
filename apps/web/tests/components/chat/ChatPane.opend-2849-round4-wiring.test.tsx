@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatPane } from '../../../src/components/ChatPane';
 import type { ChatReconnectView } from '../../../src/runtime/chat/reconnect-state';
-import type { AppConfig, ChatMessage } from '../../../src/types';
+import type { ChatMessage } from '../../../src/types';
 
 const translate = (key: string) => key;
 
@@ -64,34 +64,11 @@ function renderChat(props: Partial<React.ComponentProps<typeof ChatPane>>) {
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
       {...props}
     />,
   );
 }
 
-describe('S15 · 那一轮的升级卡按谁在看说话', () => {
-  it.each([
-    ['owner', 'chat.upgrade.pausedTitle', 'chat.upgrade.pausedMessage'],
-    ['member', 'chat.upgrade.pausedTeamTitle', 'chat.upgrade.pausedTeamMessage'],
-  ] as const)('%s', (audience, titleKey, bodyKey) => {
-    renderChat({
-      messages: [finishedTurn],
-      amrBalanceCardUsd: 0,
-      amrBalanceCardAnchorMessageId: 'msg-turn',
-      amrBalanceAudience: audience,
-    });
-    const card = screen.getByTestId('chat-upgrade-card');
-    expect(card.textContent).toContain(titleKey);
-    expect(card.textContent).toContain(bodyKey);
-    expect(card.textContent).not.toContain('chat.upgrade.whyOut');
-  });
-
-  it('没有轮次可锚的尾部那张照旧说 whyOut', () => {
-    renderChat({ amrBalanceCardUsd: 0, amrBalanceAudience: 'member' });
-    expect(screen.getByTestId('chat-upgrade-card').textContent).toContain('chat.upgrade.whyOut');
-  });
-});
 
 describe('S09a · 限流重试的那一行', () => {
   const view = (retryCause?: 'rate_limit'): ChatReconnectView => ({

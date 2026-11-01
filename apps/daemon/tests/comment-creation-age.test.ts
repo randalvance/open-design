@@ -7,7 +7,6 @@ import {
   closeDatabase, getProjectPreviewComment, insertConversation, insertProject,
   mergeSyncedPreviewComment, openDatabase, reorderPreviewComment, updatePreviewCommentStatus,
 } from '../src/db.js';
-import { previewCommentToCloud } from '../src/collab/collab-cloud-service.js';
 
 let tempDir: string | undefined;
 afterEach(() => {
@@ -61,7 +60,6 @@ it.each([57 * 60_000, 2 * 3_600_000])(
       expect(read()).toEqual(persisted);
     }
     expect(Date.now() - read().createdAt).toBe(age + 3_600_000);
-    expect(previewCommentToCloud(read(), '').createdAt).toBe(remote.createdAt);
   },
 );
 

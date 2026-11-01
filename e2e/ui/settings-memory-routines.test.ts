@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@/playwright/suite';
 import { routeAgents, suppressWhatsNew } from '@/playwright/mock-factory';
-import { openSettingsDialog, settingsSurface } from '../lib/playwright/amr.js';
+import { openSettingsDialog, settingsSurface } from '../lib/playwright/app-shell.js';
 import type { Locator, Page } from '@playwright/test';
 
 const STORAGE_KEY = 'open-design:config';
@@ -99,10 +99,6 @@ async function gotoEntryHome(page: Page) {
   await suppressWhatsNew(page);
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
-  const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve OpenDesign' });
-  if (await privacyDialog.isVisible()) {
-    await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
-  }
   // #5517 moved the settings entry into the collapsed-by-default nav rail, so it
   // is not in the accessibility tree on load; the hero is the ready signal now.
   await expect(page.getByTestId('home-hero')).toBeVisible();

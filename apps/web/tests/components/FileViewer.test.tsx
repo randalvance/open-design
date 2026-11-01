@@ -103,92 +103,14 @@ import { emptyManualEditStyles } from '../../src/edit-mode/types';
 import { __resetPreviewIsolationCache } from '../../src/runtime/powered-preview';
 import { installPreviewIframeMessageObserver } from '../../src/observability/iframe-error';
 import { readExpandedIndexCss } from '../helpers/read-expanded-css';
-import { resetWorkspaceContextCache } from '../../src/collab/useWorkspaceContext';
-import {
-  CollabProvider,
-  type CollabContextValue,
-} from '../../src/collab/collab-context';
-import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
 
-/** A team workspace context — the only state that can address the resource hub,
- *  and therefore the only one where the public "Publish file" entry is offered. */
-function teamWorkspaceContext(): WorkspaceCollabContext {
-  return {
-    workspaceId: 'ws-1',
-    workspaceType: 'team',
-    teamId: 'team-1',
-    workspaceMemberId: 'wm-1',
-    role: 'member',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: null,
-    providerMode: 'platform_credits',
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 5, usedSeats: 1 }),
-    permissions: buildWorkspacePermissions({ role: 'member', lifecycleState: 'active' }),
-  };
-}
-
-function personalWorkspaceContext(): WorkspaceCollabContext {
-  return {
-    ...teamWorkspaceContext(),
-    workspaceId: 'personal-ws-1',
-    workspaceType: 'personal',
-    teamId: undefined,
-  };
-}
-
-/** Fetch stub that answers the workspace-context read with `context`, and every
- *  other route with the empty-deployments payload these viewer tests expect. */
-function stubFetchWithWorkspaceContext(context: WorkspaceCollabContext | null): void {
+/** Fetch stub that answers every route with the empty-deployments payload these
+ *  viewer tests expect. */
+function stubDeploymentsFetch(): void {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('/api/workspace/context')) {
-        return new Response(JSON.stringify({ context }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    }),
+    vi.fn(async () => new Response(JSON.stringify({ deployments: [] }), { status: 200 })),
   );
-}
-
-function renderWithProjectWorkspace(
-  ui: ReactElement,
-  workspaceContext: WorkspaceCollabContext | null,
-) {
-  const value = projectWorkspaceCollabValue(workspaceContext);
-  return render(<CollabProvider value={value}>{ui}</CollabProvider>);
-}
-
-function projectWorkspaceCollabValue(
-  workspaceContext: WorkspaceCollabContext | null,
-): CollabContextValue {
-  return {
-    workspaceContext,
-    workspaceContextLoading: false,
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'allowed',
-    isOwner: false,
-    isEffectiveOwner: false,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: () => {},
-    requestPublish: () => {},
-    refreshPresence: () => {},
-    checkStatusNow: () => {},
-  };
 }
 
 const TEST_SNAPSHOT_DATA_URL = 'data:image/png;base64,c25hcHNob3Q=';
@@ -196,10 +118,6 @@ const TEST_SNAPSHOT_DATA_URL = 'data:image/png;base64,c25hcHNob3Q=';
 afterEach(() => {
   cleanup();
   __resetPreviewIsolationCache();
-  // `useWorkspaceContext` caches the last resolved context at module scope so a
-  // remount does not flash the signed-out state. Left alone, a test that signs
-  // into a team would silently sign the NEXT test in too.
-  resetWorkspaceContextCache();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   analyticsTrackMock.mockReset();
@@ -671,146 +589,6 @@ describe('FileViewer preview scale', () => {
     );
   });
 
-  it('waits for exact Team authority before loading initial raw source', async () => {
-    const file = baseFile({
-      name: 'first-open.html',
-      path: 'first-open.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'html',
-        title: 'First open',
-        entry: 'first-open.html',
-        renderer: 'html',
-        exports: ['html'],
-      },
-    });
-    const rawReads: Array<{ init?: RequestInit; url: string }> = [];
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes('/raw/first-open.html')) {
-        rawReads.push({ init, url });
-        return new Response('<html><body>Materialized</body></html>', { status: 200 });
-      }
-      if (url.endsWith('/files')) {
-        return new Response(JSON.stringify({ files: [file] }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    }));
-
-    const pendingContext = {
-      ...projectWorkspaceCollabValue(null),
-      workspaceContextLoading: true,
-      projectResourceAuthority: 'pending' as const,
-    };
-    const { rerender } = render(
-      <CollabProvider value={pendingContext}>
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={file}
-        />
-      </CollabProvider>,
-    );
-
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(rawReads).toEqual([]);
-    expect(document.querySelector('.viewer-loading')).not.toBeNull();
-    expect(screen.queryByTestId('artifact-preview-frame')).toBeNull();
-
-    rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(teamWorkspaceContext()),
-        workspaceContextLoading: true,
-        projectResourceAuthority: 'workspace',
-      }}>
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={file}
-        />
-      </CollabProvider>,
-    );
-
-    await waitFor(() => {
-      expect(rawReads).toHaveLength(1);
-      expect(document.querySelector('.viewer-loading')).toBeNull();
-      expect(screen.getByTestId('artifact-preview-frame')).toBeTruthy();
-    });
-    expect(rawReads[0]?.url).not.toContain('workspaceId=');
-    expect(rawReads[0]?.url).not.toContain('workspaceMemberId=');
-    expect(rawReads[0]?.init?.headers).toMatchObject({
-      'x-od-workspace-id': 'ws-1',
-      'x-od-workspace-member-id': 'wm-1',
-    });
-  });
-
-  it('recovers the same preview mount when pending authority settles as local', async () => {
-    const file = baseFile({
-      name: 'local-first-open.html',
-      path: 'local-first-open.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'html',
-        title: 'Local first open',
-        entry: 'local-first-open.html',
-        renderer: 'html',
-        exports: ['html'],
-      },
-    });
-    const rawReads: Array<{ init?: RequestInit; url: string }> = [];
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes('/raw/local-first-open.html')) {
-        rawReads.push({ init, url });
-        return new Response('<html><body>Local materialized</body></html>', { status: 200 });
-      }
-      if (url.endsWith('/files')) {
-        return new Response(JSON.stringify({ files: [file] }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    }));
-
-    const { rerender } = render(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(teamWorkspaceContext()),
-        workspaceContextLoading: true,
-        projectResourceAuthority: 'pending',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-
-    expect(document.querySelector('.viewer-loading')).not.toBeNull();
-    expect(screen.queryByTestId('artifact-preview-frame')).toBeNull();
-    expect(rawReads).toEqual([]);
-
-    rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        workspaceContextLoading: false,
-        projectResourceAuthority: 'local',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-
-    await waitFor(() => {
-      expect(rawReads).toHaveLength(1);
-      expect(document.querySelector('.viewer-loading')).toBeNull();
-      expect(screen.getByTestId('artifact-preview-frame')).toBeTruthy();
-    });
-    expect(rawReads[0]?.url).not.toContain('workspaceId=');
-    expect(rawReads[0]?.url).not.toContain('workspaceMemberId=');
-    expect(rawReads[0]?.init?.headers).toBeUndefined();
-  });
-
   it('warms a newly retained inactive HTML viewer without forcing a GPU layer on activation', async () => {
     const file = baseFile({
       name: 'inactive-first-open.html',
@@ -841,12 +619,9 @@ describe('FileViewer preview scale', () => {
       file,
     };
     const { container, rerender } = render(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'local',
-      }}>
+      <>
         <FileViewer {...props} workspaceActive={false} />
-      </CollabProvider>,
+      </>,
     );
 
     const retainedFrame = await waitFor(() => {
@@ -864,12 +639,9 @@ describe('FileViewer preview scale', () => {
     expect(retainedFrame.dataset.odActive).toBe('true');
 
     rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'local',
-      }}>
+      <>
         <FileViewer {...props} workspaceActive />
-      </CollabProvider>,
+      </>,
     );
 
     expect(document.querySelector('iframe[data-testid="artifact-preview-frame"]')).toBe(retainedFrame);
@@ -878,108 +650,6 @@ describe('FileViewer preview scale', () => {
     expect(retainedFrame.style.transform).toBe('');
     expect(retainedFrame.style.willChange).toBe('');
     expect(rawReads).toHaveLength(1);
-  });
-
-  it('never downgrades denied project resources to local reads', async () => {
-    const file = baseFile({
-      name: 'authority.html',
-      path: 'authority.html',
-      mime: 'text/html',
-      kind: 'html',
-    });
-    const rawReads: Array<{ init?: RequestInit; url: string }> = [];
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url.includes('/raw/authority.html')) {
-        rawReads.push({ init, url });
-        return new Response('<html><body>Authorized</body></html>', { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    }));
-
-    const denied = render(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'denied',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(rawReads).toEqual([]);
-    expect(document.querySelector('.viewer-loading')).toBeNull();
-    expect(screen.getByText(/Preview unavailable/)).toBeTruthy();
-    denied.unmount();
-
-    const local = render(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'local',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    await waitFor(() => expect(rawReads).toHaveLength(1));
-    expect(rawReads[0]?.url).not.toContain('workspaceId=');
-    expect(new Headers(rawReads[0]?.init?.headers).get('x-od-workspace-id')).toBeNull();
-
-    local.rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'denied',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    await waitFor(() => expect(screen.getByText(/Preview unavailable/)).toBeTruthy());
-    expect(rawReads).toHaveLength(1);
-  });
-
-  it('gates non-HTML resource URLs for pending and denied projects', () => {
-    const file = baseFile({
-      name: 'private.png',
-      path: 'private.png',
-      mime: 'image/png',
-      kind: 'image',
-    });
-    const { rerender } = render(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        workspaceContextLoading: true,
-        projectResourceAuthority: 'pending',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    expect(document.querySelector('.viewer-loading')).not.toBeNull();
-    expect(screen.queryByRole('img')).toBeNull();
-
-    rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'denied',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    expect(document.querySelector('.viewer-loading')).toBeNull();
-    expect(screen.getByText(/Preview unavailable/)).toBeTruthy();
-    expect(screen.queryByRole('img')).toBeNull();
-
-    rerender(
-      <CollabProvider value={{
-        ...projectWorkspaceCollabValue(null),
-        projectResourceAuthority: 'local',
-      }}>
-        <FileViewer projectId="project-1" projectKind="prototype" file={file} />
-      </CollabProvider>,
-    );
-    expect(screen.getByRole('img').getAttribute('src')).toContain(
-      '/api/projects/project-1/raw/private.png',
-    );
   });
 
   it('keeps the preview viewport trigger flat by default', () => {
@@ -1601,10 +1271,7 @@ describe('FileViewer SVG artifacts', () => {
       );
     }
 
-    const view = renderWithProjectWorkspace(
-      <Shell version={file.mtime} />,
-      teamWorkspaceContext(),
-    );
+    const view = render(<Shell version={file.mtime} />);
     await waitFor(() => expect(sourceReads).toHaveLength(1));
 
     for (let round = 0; round < 10; round += 1) {
@@ -1616,25 +1283,8 @@ describe('FileViewer SVG artifacts', () => {
     });
     expect(sourceReads).toHaveLength(1);
 
-    view.rerender(
-      <CollabProvider value={projectWorkspaceCollabValue(teamWorkspaceContext())}>
-        <Shell version={file.mtime + 1} />
-      </CollabProvider>,
-    );
+    view.rerender(<Shell version={file.mtime + 1} />);
     await waitFor(() => expect(sourceReads).toHaveLength(2));
-
-    const nextWorkspaceContext = {
-      ...teamWorkspaceContext(),
-      workspaceId: 'ws-2',
-      workspaceMemberId: 'wm-2',
-      teamId: 'team-2',
-    };
-    view.rerender(
-      <CollabProvider value={projectWorkspaceCollabValue(nextWorkspaceContext)}>
-        <Shell version={file.mtime + 1} />
-      </CollabProvider>,
-    );
-    await waitFor(() => expect(sourceReads).toHaveLength(3));
   });
 
   it('promotes large HTML files to the srcDoc path when the routing preview shows sandbox-unsafe scripts', async () => {
@@ -2250,45 +1900,6 @@ describe('FileViewer SVG artifacts', () => {
     expect(markup).toContain('sandbox="allow-scripts allow-forms allow-downloads"');
   });
 
-  it('does not mint a second preview capability for Workspace URL-load HTML', () => {
-    const context = teamWorkspaceContext();
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => (
-      Response.json({ deployments: [] })
-    ));
-    vi.stubGlobal('fetch', fetchMock);
-
-    renderWithProjectWorkspace(
-      <FileViewer
-        projectId="project-1"
-        projectKind="prototype"
-        file={baseFile({
-          name: 'page.html',
-          path: 'page.html',
-          mime: 'text/html',
-          kind: 'html',
-          artifactManifest: {
-            version: 1,
-            kind: 'html',
-            title: 'Page',
-            entry: 'page.html',
-            renderer: 'html',
-            exports: ['html'],
-          },
-        })}
-        liveHtml="<html><body>URL loaded</body></html>"
-      />,
-      context,
-    );
-
-    expect(
-      (screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement)
-        .getAttribute('data-od-render-mode'),
-    ).toBe('url-load');
-    expect(fetchMock.mock.calls.some(([input]) => (
-      String(input).includes('/api/projects/project-1/preview-url')
-    ))).toBe(false);
-  });
-
   it('keeps browser-owned URL preview navigation server-authorized by project id', () => {
     const file = baseFile({
       name: 'team-page.html',
@@ -2306,14 +1917,14 @@ describe('FileViewer SVG artifacts', () => {
     });
 
     const markup = renderToStaticMarkup(
-      <CollabProvider value={projectWorkspaceCollabValue(teamWorkspaceContext())}>
+      <>
         <FileViewer
           projectId="project-1"
           projectKind="prototype"
           file={file}
           liveHtml="<html><body>team</body></html>"
         />
-      </CollabProvider>,
+      </>,
     );
 
     expect(markup).toContain('data-od-render-mode="url-load" data-od-active="true"');
@@ -5351,40 +4962,7 @@ describe('FileViewer SVG artifacts', () => {
     expect(frame.getAttribute('sandbox')).toBe('allow-scripts allow-forms allow-downloads');
   });
 
-  it('disables React component sharing controls for viewer-only shared projects', async () => {
-    const file = baseFile({
-      name: 'Card.jsx',
-      path: 'Card.jsx',
-      mime: 'text/jsx',
-      kind: 'code',
-      artifactManifest: {
-        version: 1,
-        kind: 'react-component',
-        title: 'Card',
-        entry: 'Card.jsx',
-        renderer: 'react-component',
-        exports: ['jsx', 'html', 'zip'],
-      },
-    });
-    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url === '/api/projects/project-1/raw/Card.jsx') {
-        return new Response('export default function Card() { return <button>Readonly</button>; }');
-      }
-      return new Response('', { status: 404 });
-    }));
-
-    render(<FileViewer projectId="project-1" projectKind="prototype" file={file} viewerOnly />);
-
-    const shareButton = await screen.findByRole('button', { name: 'Share' });
-    expect(shareButton).toBeDisabled();
-    expect(shareButton).toHaveAttribute(
-      'title',
-      'Shared project is read-only: you can comment, but cannot edit or export.',
-    );
-  });
-
-  it('keeps React-component sharing disabled across module reclassification', async () => {
+  it('offers no Share control for React components across module reclassification', async () => {
     const makeFile = (name: string, mtime = 1) => baseFile({
       name, path: name, mtime, mime: 'text/jsx', kind: 'code',
       artifactManifest: { version: 1, kind: 'react-component', title: name, entry: name, renderer: 'react-component', exports: ['jsx'] },
@@ -5406,9 +4984,8 @@ describe('FileViewer SVG artifacts', () => {
     }));
 
     const { rerender } = render(<FileViewer projectId="project-1" projectKind="prototype" file={makeFile('A.jsx')} />);
-    const share = await screen.findByRole('button', { name: /share/i });
-    await waitFor(() => expect(share).toBeDisabled());
-    expect(share.getAttribute('title')).toBeTruthy();
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).endsWith('/raw/A.jsx'))).toBe(true));
+    expect(screen.queryByRole('button', { name: /share/i })).toBeNull();
 
     referencingHtml = true;
     activeProjectId = 'project-2';
@@ -5419,12 +4996,11 @@ describe('FileViewer SVG artifacts', () => {
     await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).includes('/raw/backups.html'))).toBe(true));
     expect(screen.queryByRole('menu')).toBeNull();
     resolveHtml(new Response('<script type="text/babel" src="A.jsx"></script>'));
-    await waitFor(() => expect(screen.getByRole('button', { name: /share/i })).toBeDisabled());
+    await waitFor(() => expect(screen.queryByRole('button', { name: /share/i })).toBeNull());
     expect(screen.queryByRole('menu')).toBeNull();
-    expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).includes('publish-public'))).toBe(false);
   });
 
-  it.each(['Widget.jsx', 'Widget.tsx'])('keeps standalone %s HTML-only for sharing', async (name) => {
+  it.each(['Widget.jsx', 'Widget.tsx'])('offers no Share control for standalone %s', async (name) => {
     const file = baseFile({
       name, path: name, mime: 'text/plain', kind: 'code',
       artifactManifest: { version: 1, kind: 'react-component', title: 'Widget', entry: name, renderer: 'react-component', exports: ['jsx'] },
@@ -5439,12 +5015,9 @@ describe('FileViewer SVG artifacts', () => {
     }));
 
     render(<FileViewer projectId="project-1" projectKind="prototype" file={file} />);
-    const share = await screen.findByRole('button', { name: /share/i });
-    await waitFor(() => expect(share).toBeDisabled());
-    expect(share).toHaveAttribute('title', 'Only self-contained HTML files can be shared. Export this component as HTML first.');
-    fireEvent.click(share);
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).includes(`/raw/${name}`))).toBe(true));
+    expect(screen.queryByRole('button', { name: /share/i })).toBeNull();
     expect(screen.queryByRole('menu')).toBeNull();
-    expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).includes('publish-public'))).toBe(false);
   });
 
   it('points a .jsx module loaded by a sibling HTML to that entry, not the React error (issue #2744)', async () => {
@@ -5498,11 +5071,7 @@ describe('FileViewer SVG artifacts', () => {
       />,
     );
 
-    // Module status is unknown until the sibling HTML read finishes. Fail
-    // closed during that window, then resolve the fixture's real module link.
-    const shareButton = await screen.findByRole('button', { name: /share/i });
-    expect(shareButton).toBeDisabled();
-    expect(shareButton.getAttribute('title')).toBeTruthy();
+    await waitFor(() => expect(vi.mocked(fetch).mock.calls.some(([input]) => String(input).includes('/raw/backups.html'))).toBe(true));
     resolveHtmlSource(new Response('<script type="text/babel" src="icons.jsx"></script>'));
 
     // The module points at its HTML entry instead of rendering the React
@@ -5510,14 +5079,8 @@ describe('FileViewer SVG artifacts', () => {
     await screen.findByRole('button', { name: /backups\.html/ });
     expect(screen.queryByTestId('react-component-preview-frame')).toBeNull();
 
-    // Sharing a referenced module is unsupported: wait for classification, then
-    // verify the toolbar gives a reason and no public publish request occurred.
-    await waitFor(() => expect(shareButton).toBeDisabled());
-    expect(shareButton.getAttribute('title')).toBeTruthy();
-    fireEvent.click(shareButton);
-    expect(screen.queryByRole('menu')).toBeNull();
-    const fetchMock = vi.mocked(fetch);
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('publish-public'))).toBe(false);
+    // Sharing a referenced module is unsupported, so the toolbar offers no control.
+    expect(screen.queryByRole('button', { name: /share/i })).toBeNull();
 
     // The toolbar still offers a way to read the raw code: clicking the Code
     // tab swaps the pointer for the file's source. Issue #2744 follow-up.
@@ -5668,63 +5231,6 @@ describe('FileViewer SVG artifacts', () => {
 
     expect(screen.queryByTestId('speaker-notes-panel')).toBeNull();
     expect(screen.queryByTestId('deck-thumbnail-rail')).toBeNull();
-  });
-
-  it('keeps deck thumbnail resource URLs independent of shell Workspace changes', async () => {
-    const file = baseFile({
-      name: 'deck.html',
-      path: 'deck.html',
-      mime: 'text/html',
-      kind: 'html',
-      artifactManifest: {
-        version: 1,
-        kind: 'deck',
-        title: 'Deck',
-        entry: 'deck.html',
-        renderer: 'deck-html',
-        exports: ['html'],
-      },
-    });
-    const workspaceA = teamWorkspaceContext();
-    const workspaceB: WorkspaceCollabContext = {
-      ...workspaceA,
-      workspaceId: 'ws-2',
-      teamId: 'team-2',
-      workspaceMemberId: 'wm-2',
-    };
-    const viewer = (
-      <FileViewer
-        projectId="project-1"
-        projectKind="prototype"
-        file={file}
-        isDeck
-        liveHtml={'<html><body><section class="slide">one</section></body></html>'}
-      />
-    );
-    const { container, rerender } = render(
-      <CollabProvider value={projectWorkspaceCollabValue(workspaceA)}>
-        {viewer}
-      </CollabProvider>,
-    );
-
-    const thumbnail = container.querySelector('.deck-thumbnail-frame iframe') as HTMLIFrameElement | null;
-    expect(thumbnail).toBeTruthy();
-    expect(thumbnail!.srcdoc).not.toContain('workspaceId=');
-    expect(thumbnail!.srcdoc).not.toContain('workspaceMemberId=');
-    const originalSrcDoc = thumbnail!.srcdoc;
-
-    rerender(
-      <CollabProvider value={projectWorkspaceCollabValue(workspaceB)}>
-        {viewer}
-      </CollabProvider>,
-    );
-
-    await waitFor(() => {
-      const updated = container.querySelector('.deck-thumbnail-frame iframe') as HTMLIFrameElement | null;
-      expect(updated?.srcdoc).toBe(originalSrcDoc);
-      expect(updated?.srcdoc).not.toContain('workspaceId=');
-      expect(updated?.srcdoc).not.toContain('workspaceMemberId=');
-    });
   });
 
   it('shows speaker notes panel with existing real notes', () => {
@@ -6109,7 +5615,6 @@ describe('FileViewer SVG artifacts', () => {
 
     await openUnifiedShareTab();
 
-    fireEvent.click(screen.getByRole('button', { name: 'More sharing options' }));
     expect(screen.getByRole('menuitem', { name: /Deploy to Vercel/i })).toBeTruthy();
     fireEvent.click(screen.getByRole('menuitem', { name: /Deploy to Cloudflare Pages/i }));
 
@@ -6176,7 +5681,6 @@ describe('FileViewer SVG artifacts', () => {
 
     const openDeployModal = async () => {
       await openUnifiedShareTab();
-      fireEvent.click(await screen.findByRole('button', { name: 'More sharing options' }));
       fireEvent.click(await screen.findByRole('menuitem', { name: /Deploy to Vercel/i }));
       return screen.findByRole('dialog');
     };
@@ -6352,7 +5856,6 @@ describe('FileViewer SVG artifacts', () => {
     );
 
     await openUnifiedShareTab();
-    fireEvent.click(await screen.findByRole('button', { name: 'More sharing options' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: /Deploy to Cloudflare Pages/i }));
 
     const providerSelect = await screen.findByRole('combobox', { name: /Provider/i });
@@ -6415,7 +5918,6 @@ describe('FileViewer SVG artifacts', () => {
     );
 
     await openUnifiedShareTab();
-    fireEvent.click(await screen.findByRole('button', { name: 'More sharing options' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: /Deploy to Cloudflare Pages/i }));
 
     const providerSelect = await screen.findByRole('combobox', { name: /Provider/i });
@@ -6542,7 +6044,6 @@ describe('FileViewer SVG artifacts', () => {
     );
 
     await openUnifiedShareTab();
-    fireEvent.click(await screen.findByRole('button', { name: 'More sharing options' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: /Deploy to Cloudflare Pages/i }));
 
     const zoneSelect = await screen.findByRole('combobox', { name: /Domain/i });
@@ -6900,30 +6401,21 @@ describe('FileViewer SVG artifacts', () => {
         exports: ['html'],
       },
     });
-    const context = teamWorkspaceContext();
-    stubFetchWithWorkspaceContext(context);
+    stubDeploymentsFetch();
 
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={file}
+    render(<FileViewer projectId="project-1" projectKind="prototype" file={file}
         liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
+      />);
 
     fireEvent.click(screen.getByRole('button', { name: /share/i }));
 
     // Share panel: actions that produce a shareable link. No file formats and
     // no save/template authoring controls.
     expect(await screen.findByRole('menu')).toBeTruthy();
-    expect(screen.getByText('Visibility in workspace')).toBeTruthy();
-    expect(await screen.findByText('Generate and copy link')).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: /Generate and copy link/i })).toBeTruthy();
     expect(screen.queryByText('SHARE ON YOUR OWN HOSTING')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'More sharing options' }));
     expect(screen.getByRole('menuitem', { name: /Deploy to Vercel/i })).toBeTruthy();
     expect(screen.getByRole('menuitem', { name: /Deploy to Cloudflare Pages/i })).toBeTruthy();
-    // The "publish online first" guide row is gone — the publish button above
-    // IS that step now.
+    // The "publish online first" guide row is gone.
     expect(screen.queryByRole('menuitem', { name: /Publish online above to enable share/i })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: /Export as PDF/i })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: /Export as image/i })).toBeNull();
@@ -6970,8 +6462,7 @@ describe('FileViewer SVG artifacts', () => {
         exports: ['html'],
       },
     });
-    const context = teamWorkspaceContext();
-    stubFetchWithWorkspaceContext(context);
+    stubDeploymentsFetch();
     const anchorId = 'publish:turn-2:index.html';
     const anchor = document.createElement('button');
     anchor.setAttribute('data-artifact-anchor', anchorId);
@@ -6988,23 +6479,16 @@ describe('FileViewer SVG artifacts', () => {
     } as DOMRect);
     document.body.appendChild(anchor);
 
-    renderWithProjectWorkspace(
-      <FileViewer
+    render(<FileViewer
         projectId="project-1"
         projectKind="prototype"
         file={file}
         liveHtml="<html><body><h1>Hello</h1></body></html>"
         shareRequest={{ nonce: 1_730_000_249_000, anchorId }}
-      />,
-      context,
-    );
+      />);
 
-    expect(await screen.findByText('Generate and copy link')).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: /Generate and copy link/i })).toBeTruthy();
-    expect(screen.queryByText('Share project in workspace')).toBeNull();
-    expect(screen.getByText('Visibility in workspace')).toBeVisible();
+    expect(await screen.findByRole('menuitem', { name: /Deploy to Vercel/i })).toBeTruthy();
     expect(screen.queryByText('SHARE ON YOUR OWN HOSTING')).toBeNull();
-    expect(screen.queryByRole('menuitem', { name: /Deploy to Vercel/i })).toBeNull();
     expect(screen.queryByRole('menuitem', { name: /Save as template/i })).toBeNull();
   });
 
@@ -7037,346 +6521,14 @@ describe('FileViewer SVG artifacts', () => {
     });
   }
 
-  it('offers the public publish entry to a personal workspace', async () => {
-    const context: WorkspaceCollabContext = {
-      ...teamWorkspaceContext(),
-      workspaceType: 'personal',
-      teamId: undefined,
-    };
-    stubFetchWithWorkspaceContext(context);
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    // The single-file publish card — the thing the dogfood report said was
-    // missing — is back for a personal workspace.
-    expect(await screen.findByText('Generate and copy link')).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: /Generate and copy link/i })).toBeTruthy();
-    // "Share project in workspace" is TEAM project sharing, which a personal
-    // workspace has no team to receive — see the dedicated test below
-    // (recvq5bM78HWCE) for the card's own gating.
-    expect(screen.queryByText('Share project in workspace')).toBeNull();
-    expect(screen.queryByText('Visibility in workspace')).toBeNull();
-  });
-
-  // recvq56lzckGtE: publishing a file from a real team workspace 403'd against
-  // the daemon's `canShareProjectsForRequest` gate (daemon routes,
-  // collab-sync.ts), which reads `x-od-workspace-can-share-projects` etc. and
-  // falls back to a headerless context re-read (often false/denied) when those
-  // headers are missing. `publishProjectFilePublic`/`fetchProjectFilePublicPublication`/
-  // `unpublishProjectFilePublic` never attached `workspaceProjectHeaders`, unlike
-  // every other workspace-scoped mutation in state/projects.ts — so a team
-  // member's publish request always looked headerless to the daemon.
-  it('attaches the workspace identity headers to every publish-public request', async () => {
-    const context = teamWorkspaceContext();
-    const calls: Array<{ url: string; headers: Record<string, string> }> = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        if (url.includes('/api/workspace/context')) {
-          return new Response(JSON.stringify({ context }), { status: 200 });
-        }
-        if (url.includes('publish-public')) {
-          calls.push({ url, headers: (init?.headers as Record<string, string>) ?? {} });
-          return new Response(JSON.stringify({ url: 'https://pub.example/x', slug: 'x', fileName: 'index.html' }), {
-            status: 200,
-          });
-        }
-        return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-      }),
-    );
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Generate and copy link/i }));
-
-    await waitFor(() => expect(calls.some((call) => call.url.includes('publish-public'))).toBe(true));
-    const publishCall = calls.find((call) => call.url.includes('publish-public'));
-    expect(publishCall?.headers['x-od-workspace-id']).toBe(context.workspaceId);
-    expect(publishCall?.headers['x-od-workspace-member-id']).toBe(context.workspaceMemberId);
-    expect(publishCall?.headers['x-od-workspace-can-share-projects']).toBe(
-      String(context.permissions.canShareProjects),
-    );
-  });
-
-  it.each([
-    ['with a Viewer link', 'https://viewer.example.test/artifact/project-1/manual-revoke-slug'],
-    ['without a Viewer origin', null],
-  ] as const)('exposes Stop sharing when publication persistence and compensation both fail (%s)', async (_label, publicUrl) => {
-    const dispatch = vi.spyOn(window, 'dispatchEvent');
-    const context = teamWorkspaceContext();
-    const unpublishBodies: unknown[] = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        if (url.includes('/api/workspace/context')) {
-          return new Response(JSON.stringify({ context }), { status: 200 });
-        }
-        if (url.includes('publish-public')) {
-          const method = (init?.method ?? 'GET').toUpperCase();
-          if (method === 'GET') {
-            return new Response(JSON.stringify({ publication: null }), { status: 200 });
-          }
-          if (method === 'DELETE') {
-            unpublishBodies.push(JSON.parse(String(init?.body)));
-            return new Response(
-              JSON.stringify({ ok: true, slug: 'manual-revoke-slug', fileName: 'index.html' }),
-              { status: 200 },
-            );
-          }
-          return new Response(
-            JSON.stringify({
-              error: {
-                code: 'PUBLIC_FILE_MANUAL_REVOKE_REQUIRED',
-                message: 'The public share may remain accessible.',
-                data: {
-                  projectId: 'project-1',
-                  url: publicUrl,
-                  slug: 'manual-revoke-slug',
-                  fileName: 'index.html',
-                },
-              },
-            }),
-            { status: 502 },
-          );
-        }
-        return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-      }),
-    );
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Generate and copy link/i }));
-
-    expect(await screen.findByText(publicUrl ?? 'Published, but the share link is temporarily unavailable.')).toBeTruthy();
-    // A live publication never falls back to the Publish row, with or without a URL.
-    expect(screen.queryByRole('menuitem', { name: /Generate and copy link/i })).toBeNull();
-    const stopSwitch = screen.getByRole('switch', { name: /link access/i });
-    expect(stopSwitch).toHaveAttribute('aria-checked', 'true');
-    fireEvent.click(stopSwitch);
-
-    await waitFor(() => expect(unpublishBodies).toEqual([{ slug: 'manual-revoke-slug' }]));
-    await waitFor(() => expect(stopSwitch).toHaveAttribute('aria-checked', 'false'));
-    expect(stopSwitch).toBeEnabled();
-    expect(screen.getByText('The link is disabled.')).toBeVisible();
-    expect(screen.queryByRole('menuitem', { name: /Generate and copy link/i })).toBeNull();
-    const confirmedStops = dispatch.mock.calls.map(([event]) => event)
-      .filter((event) => event.type === 'od:project-share-history-changed')
-      .map((event) => (event as CustomEvent).detail)
-      .filter((detail) => detail?.confirmedStop);
-    expect(confirmedStops).toEqual([{
-      projectId: 'project-1',
-      confirmedStop: { sourceFilePath: 'index.html', accountScope: expect.any(String), generation: expect.any(Number) },
-    }]);
-  });
-
   // The current panel presents link access inline. Reading it must not publish.
   function publishHelpCase(fileFor: () => ProjectFile, label: string) {
-    it(`reads the publish help without publishing (${label})`, async () => {
-      const context = teamWorkspaceContext();
-      // Only the mutating POST counts — the viewer GETs the same path on mount
-      // to read the current publication state, which is not a publish.
-      const publishCalls: string[] = [];
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-          const url = typeof input === 'string' ? input : input.toString();
-          if (url.includes('/api/workspace/context')) {
-            return new Response(JSON.stringify({ context }), { status: 200 });
-          }
-          if (url.includes('publish-public')) {
-            if ((init?.method ?? 'GET').toUpperCase() === 'GET') {
-              return Response.json({ publication: null });
-            }
-            publishCalls.push(`${init?.method} ${url}`);
-            return new Response(
-              JSON.stringify({ url: 'https://pub.example/x', slug: 'x', fileName: 'index.html' }),
-              { status: 200 },
-            );
-          }
-          return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-        }),
-      );
-
-      renderWithProjectWorkspace(
-        <FileViewer projectId="project-1" projectKind="prototype" file={fileFor()}
-          liveHtml="<html><body><h1>Hello</h1></body></html>"
-        />,
-        context,
-      );
-
-      fireEvent.click(await screen.findByRole('button', { name: /share/i }));
-      expect(await screen.findByRole('menu')).toBeTruthy();
-
-      expect(await screen.findByText('Recipients can view the preview and existing comments — not the conversation or code.')).toBeVisible();
-
-      // No public link was created by a help-discovery gesture.
-      await waitFor(() => expect(screen.getByRole('menu')).toBeTruthy());
-      expect(publishCalls).toEqual([]);
-      // The publish row is still sitting there unactivated.
-      expect(screen.getByRole('menuitem', { name: label === 'HtmlViewer' ? /Generate and copy link/i : /Get a share link/i })).toBeTruthy();
-    });
   }
 
   publishHelpCase(publicPublishFile, 'HtmlViewer');
-  it('supports scope keyboard navigation in the HTML viewer without writing', async () => {
-    const context = teamWorkspaceContext();
-    stubFetchWithWorkspaceContext(context);
-    const file = publicPublishFile();
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={file}
-        liveHtml="<html><body>Scope keyboard</body></html>" />,
-      context,
-    );
-    fireEvent.click(await screen.findByRole('button', { name: /share/i }));
-    const menu = await screen.findByRole('menu');
-    const trigger = menu.querySelector<HTMLButtonElement>('.chrome-access-trigger')!;
-    expect(trigger).toBeEnabled();
-    trigger.focus();
-    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-    const options = await screen.findAllByRole('option');
-    expect(screen.getByRole('option', { selected: true })).toHaveFocus();
-    fireEvent.keyDown(document.activeElement!, { key: 'End' });
-    expect(options.at(-1)).toHaveFocus();
-    fireEvent.keyDown(document.activeElement!, { key: 'Home' });
-    expect(options[0]).toHaveFocus();
-    fireEvent.keyDown(document.activeElement!, { key: 'Escape' });
-    expect(screen.queryByRole('listbox')).toBeNull();
-    expect(trigger).toHaveFocus();
-    expect(menu).toBeInTheDocument();
-    expect(screen.queryByRole('alertdialog')).toBeNull();
-    const writes = vi.mocked(fetch).mock.calls.filter(([input, init]) =>
-      !String(input).endsWith('/share-plan')
-      && !['GET', 'HEAD'].includes((init?.method ?? 'GET').toUpperCase()));
-    expect(writes).toEqual([]);
-  });
-
-  // Scope help is persistent content in the HTML share panel. It remains
-  // team-gated; unlike provider tooltips it needs no focus or hover.
-  it('shows workspace-access help inline without a focus or hover prerequisite', async () => {
-    const context = teamWorkspaceContext();
-    stubFetchWithWorkspaceContext(context);
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(await screen.findByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-
-    const description = await screen.findByText('Only you can access this project. Choose workspace members to share it with the team.');
-    expect(description.tagName).toBe('P');
-    expect(description).toBeVisible();
-    expect(description.closest('[role="menuitem"]')).toBeNull();
-    expect(screen.queryByTestId('workspace-access-help')).toBeNull();
-  });
-
-  // recvq5bM78HWCE: the "在工作空间中分享项目" card rendered for a personal
-  // workspace with no gate at all, so clicking its access toggle called
-  // `moveWorkspaceProject({ visibility: 'team' })`, which the daemon's
-  // `teamShareRefusalFor` always refuses outside a team workspace — the click
-  // silently failed. The public single-file publish card right above it is
-  // unaffected (that one IS meant to work for a personal workspace).
-  it('hides the team-only workspace-share card for a personal workspace', async () => {
-    const context: WorkspaceCollabContext = {
-      ...teamWorkspaceContext(),
-      workspaceType: 'personal',
-      teamId: undefined,
-    };
-    stubFetchWithWorkspaceContext(context);
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    await screen.findByText('Generate and copy link');
-    expect(screen.queryByText('Share project in workspace')).toBeNull();
-    expect(screen.queryByText('Visibility in workspace')).toBeNull();
-  });
-
-  // recvqgif6Xa7Wb: product ruled the "no team to share with yet" bridge card
-  // (added for recvqae3pK5hyx/recvq6W8GX8NaH) out entirely — it was never a
-  // designed surface, just a stopgap to avoid a blank tab. A personal
-  // workspace that can already publish must show ONLY the publish card, with
-  // no team-CTA card and no create-team link underneath it.
-  it('does not show a create-team CTA for a personal workspace that can already publish', async () => {
-    const context: WorkspaceCollabContext = {
-      ...teamWorkspaceContext(),
-      workspaceType: 'personal',
-      teamId: undefined,
-      workspaceSettingsUrl: 'https://web.example.com/console/settings?workspaceId=ws-1',
-    };
-    stubFetchWithWorkspaceContext(context);
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    await screen.findByText('Generate and copy link');
-    expect(screen.queryByText('Nothing to share yet')).toBeNull();
-    expect(screen.queryByText('No team to share with yet')).toBeNull();
-    expect(screen.queryByRole('link', { name: /create team/i })).toBeNull();
-  });
-
-  // The team-workspace side of the same rule: the card must still render
-  // there — "separates deploy sharing actions from download actions" above
-  // already pins this, this test names the invariant directly.
-  it('offers the workspace-share card to a team workspace', async () => {
-    const context = teamWorkspaceContext();
-    stubFetchWithWorkspaceContext(context);
-
-    renderWithProjectWorkspace(
-      <FileViewer projectId="project-1" projectKind="prototype" file={publicPublishFile()}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-      />,
-      context,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /share/i }));
-    expect(await screen.findByRole('menu')).toBeTruthy();
-    expect(screen.getByText('Visibility in workspace')).toBeTruthy();
-  });
-
   it('hides the public publish entry when there is no workspace at all', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('/api/workspace/context')) {
-        return new Response(JSON.stringify({ context: null }), { status: 200 });
-      }
       return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -7410,35 +6562,6 @@ describe('FileViewer SVG artifacts', () => {
       typeof input === 'string' ? input : String(input),
     );
     expect(requested.some((url) => url.includes('publish-public'))).toBe(false);
-  });
-
-  // The version-history entry carries the same disabled contract as the Share
-  // button beside it in the same toolbar: `viewerOnly`, with
-  // `fileViewer.readonlySharedNoExport` as the reason.
-  //
-  // This supersedes recvq56vFjQKfT, which had un-gated the entry on the
-  // reasoning that browsing history is a pure read action. That reasoning does
-  // not survive what the entry actually leads to: `.file-versions` is excluded
-  // from member mirrors, so a readonly member's panel can never hold the
-  // owner's history — measured live, the owner's 4 versions rendered as 1
-  // synthetic entry the member's own read had just created (飞书 recvqAMSX4RXPm,
-  // daemon side fixed in 5f34ae655). An entry that can only ever open an empty
-  // panel is not a read affordance worth keeping.
-  it('disables the version-history entry for a viewer-only shared project, like Share', async () => {
-    const file = publicPublishFile(); // an .html file, so versioningAvailable is true
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ deployments: [] }), { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <FileViewer projectId="project-1" projectKind="prototype" file={file}
-        liveHtml="<html><body><h1>Hello</h1></body></html>"
-        viewerOnly
-      />,
-    );
-
-    const historyButton = await screen.findByRole('button', { name: 'Versions' });
-    expect(historyButton).toBeDisabled();
-    expect(historyButton).toHaveAttribute('title', 'Shared project is read-only: you can comment, but cannot edit or export.');
   });
 
   it('keeps plain .slide pages on page-mode export routing', async () => {
@@ -8121,16 +7244,12 @@ describe('FileViewer SVG artifacts', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     try {
-      const workspaceContext = teamWorkspaceContext();
-      renderWithProjectWorkspace(
-        <FileViewer
+      render(<FileViewer
           projectId="project-1"
           projectKind="prototype"
           file={file}
           liveHtml="<html><body><h1>Current</h1></body></html>"
-        />,
-        workspaceContext,
-      );
+        />);
 
       fireEvent.click(screen.getByRole('button', { name: 'Versions' }));
       const versionDialog = await screen.findByRole('dialog', { name: 'Versions' });
@@ -8150,13 +7269,6 @@ describe('FileViewer SVG artifacts', () => {
       expect(within(versionDialog).queryByRole('menuitem', { name: 'Export as standalone HTML' })).toBeNull();
       expect(capturedBlob).toBeNull();
       expect(fetchMock.mock.calls.some(([input]) => String(input) === '/api/projects/project-1/files/index.html/versions/v1')).toBe(true);
-      const versionRead = fetchMock.mock.calls.find(
-        ([input]) => String(input) === '/api/projects/project-1/files/index.html/versions/v1',
-      );
-      expect(new Headers(versionRead?.[1]?.headers).get('x-od-workspace-id'))
-        .toBe(workspaceContext.workspaceId);
-      expect(new Headers(versionRead?.[1]?.headers).get('x-od-workspace-member-id'))
-        .toBe(workspaceContext.workspaceMemberId);
       const exportCall = fetchMock.mock.calls.find(
         ([input]) => String(input) === '/api/projects/project-1/export/html',
       );
@@ -8681,7 +7793,7 @@ describe('FileViewer SVG artifacts', () => {
     expect(screen.getByRole('menu')).toBeTruthy();
   });
 
-  it('keeps deployment available from More sharing options before any link exists', async () => {
+  it('keeps deployment available from the Share panel before any link exists', async () => {
     const file = baseFile({
       name: 'index.html',
       path: 'index.html',
@@ -8722,12 +7834,11 @@ describe('FileViewer SVG artifacts', () => {
 
     await openUnifiedShareTab();
 
-    // A first deployment remains reachable through the current overflow entry.
-    fireEvent.click(await screen.findByRole('button', { name: 'More sharing options' }));
+    // A first deployment remains reachable from the panel.
     expect(await screen.findByRole('menuitem', { name: /Deploy to Vercel/i })).toBeTruthy();
   });
 
-  it('keeps deployment available from More sharing options for protected deployments', async () => {
+  it('keeps deployment available from the Share panel for protected deployments', async () => {
     const file = baseFile({
       name: 'index.html',
       path: 'index.html',
@@ -8784,7 +7895,6 @@ describe('FileViewer SVG artifacts', () => {
     await openUnifiedShareTab();
 
     // A protected deployment must not remove the existing deployment action.
-    fireEvent.click(await screen.findByRole('button', { name: 'More sharing options' }));
     expect(await screen.findByRole('menuitem', { name: /Deploy to Vercel/i })).toBeTruthy();
   });
 
@@ -9104,871 +8214,6 @@ describe('FileViewer tweaks toolbar', () => {
     expect((screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement).srcdoc).toBe(frame.srcdoc);
   });
 
-  it('uses a project-scoped preview base for runtime-created relative assets in srcDoc', async () => {
-    const context = teamWorkspaceContext();
-    const file = htmlPreviewFile({ name: 'brand.html', path: 'brand.html' });
-    const srcDocHtml = '<!doctype html><html><head></head><body><script>location.reload(); const img = document.createElement("img"); img.src = "logos/mark.png";</script></body></html>';
-    const urlLoadHtml = '<!doctype html><html><body>URL loaded</body></html>';
-    const renderViewer = (liveHtml: string) => (
-      <CollabProvider value={projectWorkspaceCollabValue(context)}>
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={file}
-          liveHtml={liveHtml}
-        />
-      </CollabProvider>
-    );
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('/api/projects/project-1/preview-url')) {
-        return new Response(JSON.stringify({
-          url: '/api/projects/project-1/preview/scope-1/brand.html',
-          file: 'brand.html',
-          csp: "default-src 'none'",
-          iframeSandbox: 'allow-scripts allow-forms',
-          opaqueOrigin: true,
-        }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const { rerender } = render(renderViewer(srcDocHtml));
-
-    const frame = await waitFor(() => {
-      const activeFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(activeFrame.getAttribute('data-od-render-mode')).toBe('srcdoc');
-      expect(activeFrame.srcdoc).toContain(
-        '<base href="http://localhost:3000/api/projects/project-1/preview/scope-1/" data-od-project-preview-base>',
-      );
-      return activeFrame;
-    });
-    expect(frame.srcdoc).toContain('img.src = "logos/mark.png"');
-    expect(frame.srcdoc).not.toContain('/api/projects/project-1/raw/?workspaceId=');
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/projects/project-1/preview-url?file=brand.html',
-      { cache: 'no-store' },
-    );
-
-    rerender(renderViewer(urlLoadHtml));
-    await waitFor(() => {
-      expect(
-        (screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement)
-          .getAttribute('data-od-render-mode'),
-      ).toBe('url-load');
-    });
-    await act(async () => {
-      rerender(renderViewer(srcDocHtml));
-      await Promise.resolve();
-    });
-    await waitFor(() => {
-      const activeFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(activeFrame.getAttribute('data-od-render-mode')).toBe('srcdoc');
-      expect(activeFrame.srcdoc).toContain(
-        '<base href="http://localhost:3000/api/projects/project-1/preview/scope-1/" data-od-project-preview-base>',
-      );
-    });
-    expect(fetchMock.mock.calls.filter(([input]) => (
-      String(input).includes('/api/projects/project-1/preview-url')
-    ))).toHaveLength(1);
-  });
-
-  it('recovers when an asynchronously scoped base replaces an already verified srcDoc navigation', async () => {
-    vi.useFakeTimers();
-    const context = teamWorkspaceContext();
-    const previewBaseResponse = deferredResponse();
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).includes('/api/projects/project-1/preview-url')) {
-        return previewBaseResponse.promise;
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    try {
-      renderWithProjectWorkspace(
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile({ name: 'brand.html', path: 'brand.html' })}
-          liveHtml={'<!doctype html><html><body><script>location.reload()</script></body></html>'}
-        />,
-        context,
-      );
-
-      const initialFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      const initialGeneration = initialFrame.srcdoc.match(
-        /data-od-srcdoc-transport-activation>[\s\S]*?var generation = "([^"]+)";/,
-      )?.[1];
-      expect(initialGeneration).toBeTruthy();
-
-      const postMessage = vi.spyOn(initialFrame.contentWindow!, 'postMessage');
-      fireEvent.load(initialFrame);
-      const initialProbe = postMessage.mock.calls.find(
-        ([message]) => (message as { type?: unknown }).type === 'od:srcdoc-transport-ready-probe',
-      )?.[0] as { probeId?: string } | undefined;
-      expect(initialProbe?.probeId).toBeTruthy();
-      act(() => {
-        window.dispatchEvent(new MessageEvent('message', {
-          source: initialFrame.contentWindow,
-          data: {
-            type: 'od:srcdoc-transport-activated',
-            generation: initialGeneration,
-            probeId: initialProbe!.probeId,
-            bodyComplete: true,
-          },
-        }));
-      });
-
-      await act(async () => {
-        previewBaseResponse.resolve(new Response(JSON.stringify({
-          url: '/api/projects/project-1/preview/scope-1/brand.html',
-          file: 'brand.html',
-          csp: "default-src 'none'",
-          iframeSandbox: 'allow-scripts allow-forms',
-          opaqueOrigin: true,
-        }), { status: 200 }));
-        await Promise.resolve();
-        await Promise.resolve();
-      });
-
-      const scopedFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(scopedFrame).toBe(initialFrame);
-      expect(scopedFrame.srcdoc).toContain(
-        '<base href="http://localhost:3000/api/projects/project-1/preview/scope-1/" data-od-project-preview-base>',
-      );
-      const scopedGeneration = scopedFrame.srcdoc.match(
-        /data-od-srcdoc-transport-activation>[\s\S]*?var generation = "([^"]+)";/,
-      )?.[1];
-      expect(scopedGeneration).toBeTruthy();
-      expect(scopedGeneration).not.toBe(initialGeneration);
-
-      act(() => {
-        // Model Electron's aborted second about:srcdoc navigation: the new
-        // document sends neither load nor activation, so recovery must not
-        // trust the verified witness from the pre-base document.
-        vi.runAllTimers();
-      });
-
-      const recoveredFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(recoveredFrame).not.toBe(scopedFrame);
-      expect(recoveredFrame.srcdoc).toContain('data-od-lazy-srcdoc-transport');
-    } finally {
-      previewBaseResponse.resolve(new Response('', { status: 404 }));
-      vi.useRealTimers();
-    }
-  });
-
-  it('cancels an in-flight srcDoc recovery probe when the viewer unmounts', () => {
-    vi.useFakeTimers();
-    try {
-      const { unmount } = render(
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile({ name: 'sandbox.html', path: 'sandbox.html' })}
-          liveHtml={'<!doctype html><html><body><script>location.reload()</script></body></html>'}
-        />,
-      );
-
-      const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      const postMessage = vi.spyOn(frame.contentWindow!, 'postMessage');
-      fireEvent.load(frame);
-      expect(postMessage.mock.calls.some(
-        ([message]) => (
-          (message as { type?: unknown }).type === 'od:srcdoc-transport-ready-probe'
-        ),
-      )).toBe(true);
-
-      safetyEventMock.mockClear();
-      unmount();
-      act(() => {
-        vi.runAllTimers();
-      });
-
-      expect(safetyEventMock).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('restarts srcDoc verification after a retained viewer rapidly reactivates', () => {
-    vi.useFakeTimers();
-    try {
-      const renderViewer = (workspaceActive: boolean) => (
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile({ name: 'sandbox.html', path: 'sandbox.html' })}
-          liveHtml={'<!doctype html><html><body><script>location.reload()</script></body></html>'}
-          workspaceActive={workspaceActive}
-        />
-      );
-      const { rerender } = render(renderViewer(true));
-      const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      const postMessage = vi.spyOn(frame.contentWindow!, 'postMessage');
-      fireEvent.load(frame);
-      const probes = () => postMessage.mock.calls
-        .map(([message]) => message as { type?: unknown; generation?: string; probeId?: string })
-        .filter((message) => message.type === 'od:srcdoc-transport-ready-probe');
-      expect(probes()).toHaveLength(1);
-
-      safetyEventMock.mockClear();
-      rerender(renderViewer(false));
-      rerender(renderViewer(true));
-      act(() => {
-        vi.advanceTimersByTime(1_500);
-      });
-
-      expect(screen.getByTestId('artifact-preview-frame')).toBe(frame);
-      expect(probes()).toHaveLength(2);
-      const reactivationProbe = probes()[1]!;
-      act(() => {
-        window.dispatchEvent(new MessageEvent('message', {
-          source: frame.contentWindow,
-          data: {
-            type: 'od:srcdoc-transport-activated',
-            generation: reactivationProbe.generation,
-            probeId: reactivationProbe.probeId,
-            bodyComplete: true,
-          },
-        }));
-        vi.runAllTimers();
-      });
-
-      expect(safetyEventMock).not.toHaveBeenCalled();
-      expect(screen.getByTestId('artifact-preview-frame')).toBe(frame);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('preserves a verified srcDoc witness across retained viewer reactivation', () => {
-    vi.useFakeTimers();
-    try {
-      const renderViewer = (workspaceActive: boolean) => (
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile({ name: 'sandbox.html', path: 'sandbox.html' })}
-          liveHtml={'<!doctype html><html><body><script>location.reload()</script></body></html>'}
-          workspaceActive={workspaceActive}
-        />
-      );
-      const { rerender } = render(renderViewer(true));
-      const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      const postMessage = vi.spyOn(frame.contentWindow!, 'postMessage');
-      fireEvent.load(frame);
-      const probes = () => postMessage.mock.calls
-        .map(([message]) => message as { type?: unknown; generation?: string; probeId?: string })
-        .filter((message) => message.type === 'od:srcdoc-transport-ready-probe');
-      const initialProbe = probes()[0]!;
-      expect(initialProbe.probeId).toBeTruthy();
-
-      act(() => {
-        window.dispatchEvent(new MessageEvent('message', {
-          source: frame.contentWindow,
-          data: {
-            type: 'od:srcdoc-transport-activated',
-            generation: initialProbe.generation,
-            probeId: initialProbe.probeId,
-            bodyComplete: true,
-          },
-        }));
-      });
-
-      safetyEventMock.mockClear();
-      rerender(renderViewer(false));
-      rerender(renderViewer(true));
-      act(() => {
-        vi.advanceTimersByTime(1_500);
-      });
-
-      expect(screen.getByTestId('artifact-preview-frame')).toBe(frame);
-      expect(probes()).toHaveLength(1);
-
-      act(() => {
-        vi.advanceTimersByTime(1_500);
-      });
-
-      expect(screen.getByTestId('artifact-preview-frame')).toBe(frame);
-      expect(safetyEventMock).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('allows one fresh recovery when an unverified generation is reactivated', () => {
-    // jsdom lays out 0x0; preview diagnostics now require a visible frame.
-    vi.spyOn(HTMLIFrameElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 600));
-    vi.useFakeTimers();
-    try {
-      const renderViewer = (workspaceActive: boolean) => (
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile({ name: 'sandbox.html', path: 'sandbox.html' })}
-          liveHtml={'<!doctype html><html><body><script>location.reload()</script></body></html>'}
-          workspaceActive={workspaceActive}
-        />
-      );
-      const { rerender } = render(renderViewer(true));
-      const initialFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      fireEvent.load(initialFrame);
-
-      act(() => {
-        vi.advanceTimersByTime(1_500);
-      });
-
-      const recoveredFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(recoveredFrame).not.toBe(initialFrame);
-      expect(safetyEventMock).toHaveBeenCalledTimes(1);
-
-      rerender(renderViewer(false));
-      rerender(renderViewer(true));
-      const reactivatedFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(reactivatedFrame).not.toBe(recoveredFrame);
-      expect(safetyEventMock).toHaveBeenCalledTimes(2);
-      const postMessage = vi.spyOn(reactivatedFrame.contentWindow!, 'postMessage');
-      act(() => {
-        vi.advanceTimersByTime(1_500);
-      });
-
-      expect(postMessage.mock.calls.filter(
-        ([message]) => (
-          (message as { type?: unknown }).type === 'od:srcdoc-transport-ready-probe'
-        ),
-      )).toHaveLength(1);
-
-      act(() => {
-        vi.advanceTimersByTime(1_500);
-      });
-      expect(screen.getByTestId('artifact-preview-frame')).toBe(reactivatedFrame);
-      expect(safetyEventMock).toHaveBeenCalledTimes(2);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('keeps a verified srcDoc frame visible when Electron reports a late ERR_ABORTED', () => {
-    vi.useFakeTimers();
-    let latestNavigationFailure: OpenDesignHostPreviewNavigationFailure | null = null;
-    let navigationFailureListener: OpenDesignHostPreviewNavigationFailureListener | null = null;
-    const emitNavigationFailure = (failure: OpenDesignHostPreviewNavigationFailure) => {
-      latestNavigationFailure = failure;
-      navigationFailureListener?.(failure);
-    };
-    const restoreHost = installMockOpenDesignHost({
-      host: {
-        preview: {
-          getLatestNavigationFailure: () => latestNavigationFailure,
-          subscribeNavigationFailure: (listener) => {
-            navigationFailureListener = listener;
-            return () => undefined;
-          },
-        },
-      },
-    });
-    try {
-      const renderViewer = (workspaceActive: boolean) => (
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile({ name: 'deck.html', path: 'deck.html' })}
-          liveHtml={'<!doctype html><html><body><main>Deck</main><script>location.reload()</script></body></html>'}
-          workspaceActive={workspaceActive}
-        />
-      );
-      const { rerender } = render(renderViewer(true));
-      const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(frame.name).toMatch(/^od-artifact-preview-srcdoc-[a-f0-9]+$/);
-      const postMessage = vi.spyOn(frame.contentWindow!, 'postMessage');
-      fireEvent.load(frame);
-      const probe = postMessage.mock.calls.find(
-        ([message]) => (message as { type?: unknown }).type === 'od:srcdoc-transport-ready-probe',
-      )?.[0] as { generation?: string; probeId?: string } | undefined;
-      expect(probe?.generation).toBeTruthy();
-      expect(probe?.probeId).toBeTruthy();
-      act(() => {
-        window.dispatchEvent(new MessageEvent('message', {
-          source: frame.contentWindow,
-          data: {
-            type: 'od:srcdoc-transport-activated',
-            generation: probe!.generation,
-            probeId: probe!.probeId,
-            bodyComplete: true,
-          },
-        }));
-      });
-      const probesBeforeFailure = postMessage.mock.calls.filter(
-        ([message]) => (message as { type?: unknown }).type === 'od:srcdoc-transport-ready-probe',
-      ).length;
-
-      act(() => {
-        emitNavigationFailure({
-          errorCode: -3,
-          eventId: 1,
-          frameName: frame.name,
-          occurredAtMs: Date.now(),
-          validatedUrl: 'about:srcdoc',
-        });
-        vi.runAllTimers();
-      });
-
-      expect(screen.getByTestId('artifact-preview-frame')).toBe(frame);
-      expect(frame.style.display).toBe('');
-      expect(postMessage.mock.calls.filter(
-        ([message]) => (message as { type?: unknown }).type === 'od:srcdoc-transport-ready-probe',
-      )).toHaveLength(probesBeforeFailure);
-      expect(safetyEventMock).not.toHaveBeenCalled();
-
-      rerender(renderViewer(false));
-      rerender(renderViewer(true));
-      expect(screen.getByTestId('artifact-preview-frame')).toBe(frame);
-      expect(frame.style.display).toBe('');
-    } finally {
-      restoreHost();
-      vi.useRealTimers();
-    }
-  });
-
-  it('uses an exact active ERR_ABORTED to probe an unverified generation once', () => {
-    // jsdom lays out 0x0; preview diagnostics now require a visible frame.
-    vi.spyOn(HTMLIFrameElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 600));
-    vi.useFakeTimers();
-    let navigationFailureListener: OpenDesignHostPreviewNavigationFailureListener | null = null;
-    const restoreHost = installMockOpenDesignHost({
-      host: {
-        preview: {
-          subscribeNavigationFailure: (listener) => {
-            navigationFailureListener = listener;
-            return () => undefined;
-          },
-        },
-      },
-    });
-    try {
-      render(
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile({ name: 'deck.html', path: 'deck.html' })}
-          liveHtml={'<!doctype html><html><body><main>Deck</main><script>location.reload()</script></body></html>'}
-          workspaceActive
-        />,
-      );
-      const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      const postMessage = vi.spyOn(frame.contentWindow!, 'postMessage');
-      act(() => {
-        navigationFailureListener?.({
-          errorCode: -3,
-          eventId: 1,
-          frameName: frame.name,
-          occurredAtMs: Date.now(),
-          validatedUrl: 'about:srcdoc',
-        });
-      });
-      expect(postMessage.mock.calls.filter(
-        ([message]) => (message as { type?: unknown }).type === 'od:srcdoc-transport-ready-probe',
-      )).toHaveLength(1);
-
-      act(() => {
-        vi.advanceTimersByTime(1_500);
-      });
-      expect(screen.getByTestId('artifact-preview-frame')).not.toBe(frame);
-      expect(safetyEventMock).toHaveBeenCalledTimes(1);
-    } finally {
-      restoreHost();
-      vi.useRealTimers();
-    }
-  });
-
-  it('immediately recovers an exact active Open Design blob navigation abort', () => {
-    // jsdom lays out 0x0; preview diagnostics now require a visible frame.
-    vi.spyOn(HTMLIFrameElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 600));
-    vi.useFakeTimers();
-    let navigationFailureListener: OpenDesignHostPreviewNavigationFailureListener | null = null;
-    const restoreHost = installMockOpenDesignHost({
-      host: {
-        preview: {
-          subscribeNavigationFailure: (listener) => {
-            navigationFailureListener = listener;
-            return () => undefined;
-          },
-        },
-      },
-    });
-    try {
-      render(
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile({ name: 'blob-deck.html', path: 'blob-deck.html' })}
-          liveHtml={'<!doctype html><html><body><main>Deck</main><script>location.reload()</script></body></html>'}
-          workspaceActive
-        />,
-      );
-      const failedFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      const failedUrl = 'blob:od://app/failed-preview-document';
-      failedFrame.setAttribute('src', failedUrl);
-
-      act(() => {
-        navigationFailureListener?.({
-          errorCode: -3,
-          eventId: 1,
-          frameName: failedFrame.name,
-          occurredAtMs: Date.now(),
-          validatedUrl: failedUrl,
-        });
-      });
-
-      const recoveredFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(recoveredFrame).not.toBe(failedFrame);
-      expect(recoveredFrame.srcdoc).toContain('data-od-lazy-srcdoc-transport');
-      expect(safetyEventMock).toHaveBeenCalledTimes(1);
-    } finally {
-      restoreHost();
-      vi.useRealTimers();
-    }
-  });
-
-  it('probes the active unverified frame when Electron loses the aborted frame name', () => {
-    // jsdom lays out 0x0; preview diagnostics now require a visible frame.
-    vi.spyOn(HTMLIFrameElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 800, 600));
-    vi.useFakeTimers();
-    let navigationFailureListener: OpenDesignHostPreviewNavigationFailureListener | null = null;
-    const restoreHost = installMockOpenDesignHost({
-      host: {
-        preview: {
-          subscribeNavigationFailure: (listener) => {
-            navigationFailureListener = listener;
-            return () => undefined;
-          },
-        },
-      },
-    });
-    try {
-      render(
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile({ name: 'deck.html', path: 'deck.html' })}
-          liveHtml={'<!doctype html><html><body><main>Deck</main><script>location.reload()</script></body></html>'}
-          workspaceActive
-        />,
-      );
-      const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      const postMessage = vi.spyOn(frame.contentWindow!, 'postMessage');
-
-      act(() => {
-        navigationFailureListener?.({
-          errorCode: -3,
-          eventId: 1,
-          occurredAtMs: Date.now(),
-          validatedUrl: 'about:srcdoc',
-        });
-      });
-
-      expect(postMessage.mock.calls.filter(
-        ([message]) => (message as { type?: unknown }).type === 'od:srcdoc-transport-ready-probe',
-      )).toHaveLength(1);
-
-      act(() => {
-        vi.advanceTimersByTime(1_500);
-      });
-      expect(screen.getByTestId('artifact-preview-frame')).not.toBe(frame);
-      expect(safetyEventMock).toHaveBeenCalledTimes(1);
-    } finally {
-      restoreHost();
-      vi.useRealTimers();
-    }
-  });
-
-  it('keeps live edit styles on the replacement frame and replays them when its bridge becomes ready', async () => {
-    vi.useFakeTimers();
-    let navigationFailureListener: OpenDesignHostPreviewNavigationFailureListener | null = null;
-    const restoreHost = installMockOpenDesignHost({
-      host: {
-        preview: {
-          subscribeNavigationFailure: (listener) => {
-            navigationFailureListener = listener;
-            return () => undefined;
-          },
-        },
-      },
-    });
-    try {
-      render(
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile({ name: 'deck.html', path: 'deck.html' })}
-          liveHtml={'<!doctype html><html><body><main data-od-id="hero">Deck</main><script>location.reload()</script></body></html>'}
-          workspaceActive
-        />,
-      );
-      const initialFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      act(() => {
-        navigationFailureListener?.({
-          errorCode: -3,
-          eventId: 1,
-          occurredAtMs: Date.now(),
-          validatedUrl: 'about:srcdoc',
-        });
-        vi.advanceTimersByTime(1_500);
-      });
-      const replacementFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(replacementFrame).not.toBe(initialFrame);
-      const replacementPostMessage = vi.spyOn(replacementFrame.contentWindow!, 'postMessage');
-
-      fireEvent.click(screen.getByTestId('manual-edit-mode-toggle'));
-      act(() => {
-        window.dispatchEvent(new MessageEvent('message', {
-          source: replacementFrame.contentWindow,
-          data: { type: 'od-edit-background' },
-        }));
-      });
-      fireEvent.click(screen.getByRole('button', { name: 'Pick Background' }));
-      fireEvent.click(screen.getByRole('button', { name: '#3b82f6' }));
-      const expectedStyleMessage = expect.objectContaining({
-        type: 'od-edit-preview-style',
-        id: '__body__',
-        styles: { backgroundColor: '#3b82f6' },
-      });
-      expect(replacementPostMessage).toHaveBeenCalledWith(expectedStyleMessage, '*');
-
-      replacementPostMessage.mockClear();
-      fireEvent.load(replacementFrame);
-      expect(replacementPostMessage).toHaveBeenCalledWith(expectedStyleMessage, '*');
-    } finally {
-      restoreHost();
-      vi.useRealTimers();
-    }
-  });
-
-  it('keeps the srcDoc iframe mounted across Code and Preview switches', () => {
-    vi.useFakeTimers();
-    try {
-      render(
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile({ name: 'sandbox.html', path: 'sandbox.html' })}
-          liveHtml={'<!doctype html><html><body><script>location.reload()</script></body></html>'}
-        />,
-      );
-
-      const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      const postMessage = vi.spyOn(frame.contentWindow!, 'postMessage');
-      fireEvent.load(frame);
-      const probes = () => postMessage.mock.calls
-        .map(([message]) => message as { type?: unknown; generation?: string; probeId?: string })
-        .filter((message) => message.type === 'od:srcdoc-transport-ready-probe');
-      expect(probes()).toHaveLength(1);
-
-      safetyEventMock.mockClear();
-      fireEvent.click(screen.getByRole('tab', { name: 'Code' }));
-      expect(screen.getByTestId('artifact-preview-frame')).toBe(frame);
-      expect(frame.closest<HTMLElement>('[hidden]')).toHaveStyle({ display: 'none' });
-      expect(screen.getByText(/location\.reload/)).toBeVisible();
-      act(() => {
-        vi.advanceTimersByTime(1_500);
-      });
-      expect(safetyEventMock).not.toHaveBeenCalled();
-
-      fireEvent.click(screen.getByRole('tab', { name: 'Preview' }));
-      const previewFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(previewFrame).toBe(frame);
-      expect(previewFrame.closest<HTMLElement>('[hidden]')).toBeNull();
-      const previewPostMessage = vi.spyOn(previewFrame.contentWindow!, 'postMessage');
-      const previewProbes = () => previewPostMessage.mock.calls
-        .map(([message]) => message as { type?: unknown; generation?: string; probeId?: string })
-        .filter((message) => message.type === 'od:srcdoc-transport-ready-probe');
-      const probeCountBeforeRecoveryCheck = previewProbes().length;
-      act(() => {
-        vi.advanceTimersByTime(1_500);
-      });
-      expect(previewProbes()).toHaveLength(probeCountBeforeRecoveryCheck + 1);
-      const previewProbe = previewProbes().at(-1)!;
-      act(() => {
-        window.dispatchEvent(new MessageEvent('message', {
-          source: previewFrame.contentWindow,
-          data: {
-            type: 'od:srcdoc-transport-activated',
-            generation: previewProbe.generation,
-            probeId: previewProbe.probeId,
-            bodyComplete: true,
-          },
-        }));
-        vi.runAllTimers();
-      });
-
-      expect(safetyEventMock).not.toHaveBeenCalled();
-      expect(screen.getByTestId('artifact-preview-frame')).toBe(previewFrame);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('updates the retained srcDoc iframe when an agent edits the file in Code mode', () => {
-    const fileV1 = htmlPreviewFile({
-      name: 'agent-edit.html',
-      path: 'agent-edit.html',
-      mtime: 1_000,
-    });
-    const renderViewer = (mtime: number, liveHtml: string) => (
-      <FileViewer
-        projectId="project-1"
-        projectKind="prototype"
-        file={{ ...fileV1, mtime }}
-        liveHtml={liveHtml}
-        workspaceActive
-      />
-    );
-    const { rerender } = render(renderViewer(
-      1_000,
-      '<!doctype html><html><body><main>Agent V1</main><script>location.reload()</script></body></html>',
-    ));
-    const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Code' }));
-    expect(screen.getByTestId('artifact-preview-frame')).toBe(frame);
-    expect(frame.dataset.odActive).toBe('false');
-
-    rerender(renderViewer(
-      2_000,
-      '<!doctype html><html><body><main>Agent V2</main><script>location.reload()</script></body></html>',
-    ));
-    expect(screen.getByTestId('artifact-preview-frame')).toBe(frame);
-    expect(frame.srcdoc).toContain('Agent V2');
-    expect(frame.srcdoc).not.toContain('Agent V1');
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Preview' }));
-    expect(screen.getByTestId('artifact-preview-frame')).toBe(frame);
-    expect(frame.dataset.odActive).toBe('true');
-    expect(frame.srcdoc).toContain('Agent V2');
-  });
-
-  it('prewarms hidden file-tab srcDoc updates and reactivates the latest generation without navigation', () => {
-    const fileV1 = htmlPreviewFile({
-      name: 'retained-agent-edit.html',
-      path: 'retained-agent-edit.html',
-      mtime: 1_000,
-    });
-    const renderViewer = (
-      workspaceActive: boolean,
-      mtime: number,
-      version: string,
-    ) => (
-      <FileViewer
-        projectId="project-1"
-        projectKind="prototype"
-        file={{ ...fileV1, mtime }}
-        liveHtml={`<!doctype html><html><body><main>${version}</main><script>location.reload()</script></body></html>`}
-        workspaceActive={workspaceActive}
-      />
-    );
-    const { rerender } = render(renderViewer(true, 1_000, 'Retained V1'));
-    const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-    const initialSrcDoc = frame.srcdoc;
-    expect(initialSrcDoc).toContain('Retained V1');
-
-    rerender(renderViewer(false, 2_000, 'Retained V2'));
-    expect(screen.getByTestId('artifact-preview-frame-srcdoc-retained-retained-agent-edit.html')).toBe(frame);
-    expect(frame.srcdoc).toContain('Retained V2');
-    expect(frame.srcdoc).not.toBe(initialSrcDoc);
-
-    rerender(renderViewer(false, 3_000, 'Retained V3'));
-    expect(frame.srcdoc).toContain('Retained V3');
-    expect(frame.srcdoc).not.toContain('Retained V2');
-    const prewarmedSrcDoc = frame.srcdoc;
-
-    rerender(renderViewer(true, 3_000, 'Retained V3'));
-    expect(screen.getByTestId('artifact-preview-frame')).toBe(frame);
-    expect(frame.srcdoc).toBe(prewarmedSrcDoc);
-  });
-
-  it('preserves an authored base without minting a project-scoped preview capability', async () => {
-    const context = teamWorkspaceContext();
-    const authoredBase = '<base href="https://cdn.example/assets/">';
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => (
-      new Response(JSON.stringify({ deployments: [] }), { status: 200 })
-    ));
-    vi.stubGlobal('fetch', fetchMock);
-
-    render(
-      <CollabProvider value={projectWorkspaceCollabValue(context)}>
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile({ name: 'brand.html', path: 'brand.html' })}
-          liveHtml={`<!doctype html><html><head>${authoredBase}</head><body><script>location.reload()</script></body></html>`}
-        />
-      </CollabProvider>,
-    );
-
-    await waitFor(() => {
-      const activeFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(activeFrame.getAttribute('data-od-render-mode')).toBe('srcdoc');
-      expect(activeFrame.srcdoc).toContain(authoredBase);
-      expect(fetchMock.mock.calls.some(([input]) => (
-        String(input).includes('/api/projects/project-1/files')
-      ))).toBe(true);
-    });
-    expect(fetchMock.mock.calls.some(([input]) => (
-      String(input).includes('/api/projects/project-1/preview-url')
-    ))).toBe(false);
-  });
-
-  it('does not mint from the previous file source while switching to an authored-base srcDoc', async () => {
-    const context = teamWorkspaceContext();
-    const authoredBase = '<base href="https://cdn.example/brand/">';
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url.includes('/api/projects/project-1/preview-url')) {
-        return new Response(JSON.stringify({
-          url: '/api/projects/project-1/preview/scope-1/first.html',
-          file: 'first.html',
-          csp: "default-src 'none'",
-          iframeSandbox: 'allow-scripts allow-forms',
-          opaqueOrigin: true,
-        }), { status: 200 });
-      }
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-    const renderViewer = (fileName: string, liveHtml: string) => (
-      <CollabProvider value={projectWorkspaceCollabValue(context)}>
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile({ name: fileName, path: fileName })}
-          liveHtml={liveHtml}
-        />
-      </CollabProvider>
-    );
-    const firstHtml = '<!doctype html><html><body><script>location.reload()</script></body></html>';
-    const secondHtml = `<!doctype html><html><head>${authoredBase}</head><body><script>location.reload()</script></body></html>`;
-    const { rerender } = render(renderViewer('first.html', firstHtml));
-
-    await waitFor(() => {
-      expect(fetchMock.mock.calls.filter(([input]) => (
-        String(input).includes('/api/projects/project-1/preview-url')
-      ))).toHaveLength(1);
-    });
-    fetchMock.mockClear();
-
-    rerender(renderViewer('second.html', secondHtml));
-    await waitFor(() => {
-      const activeFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(activeFrame.srcdoc).toContain(authoredBase);
-    });
-    expect(fetchMock.mock.calls.some(([input]) => (
-      String(input).includes('/api/projects/project-1/preview-url')
-    ))).toBe(false);
-  });
-
   it('keeps the URL-loaded iframe active when opening Draw after the URL preview bridge is ready', async () => {
     const { container } = render(
       <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()}
@@ -10206,15 +8451,12 @@ describe('FileViewer tweaks toolbar', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
 
-    renderWithProjectWorkspace(
-      <FileViewer
+    render(<FileViewer
         projectId="project-1"
         projectKind="prototype"
         file={htmlPreviewFile()}
         liveHtml={source}
-      />,
-      personalWorkspaceContext(),
-    );
+      />);
 
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/projects/project-1/files'))).toBe(true);
@@ -10246,15 +8488,12 @@ describe('FileViewer tweaks toolbar', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     try {
-      renderWithProjectWorkspace(
-        <FileViewer
+      render(<FileViewer
           projectId="project-1"
           projectKind="prototype"
           file={htmlPreviewFile({ name: 'page.html', path: 'page.html' })}
           liveHtml={'<html><body><script>localStorage.getItem("ready");</script><img src="assets/hero.png"></body></html>'}
-        />,
-        personalWorkspaceContext(),
-      );
+        />);
 
       const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
       expect(frame.getAttribute('data-od-render-mode')).toBe('srcdoc');
@@ -10292,58 +8531,6 @@ describe('FileViewer tweaks toolbar', () => {
     } finally {
       filesResponse.resolve(new Response(JSON.stringify({ files: [] }), { status: 200 }));
     }
-  });
-
-  it('surfaces raw-route security failures for Team preview assets without leaking the symlink target', async () => {
-    const source = '<html><body><img src="assets/hero.png" alt="Hero"></body></html>';
-    const fetchMock = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input);
-      if (url.includes('/api/projects/project-1/files')) {
-        return new Response(JSON.stringify({
-          files: [
-            htmlPreviewFile(),
-            baseFile({
-              name: 'assets/hero.png',
-              path: 'assets/hero.png',
-              type: 'file',
-              kind: 'image',
-              mime: 'image/png',
-            }),
-          ],
-        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-      }
-      if (url.includes('/api/projects/project-1/deployments')) {
-        return new Response(JSON.stringify({ deployments: [] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      if (url.includes('/api/projects/project-1/raw/assets/hero.png')) {
-        return new Response(JSON.stringify({
-          error: {
-            code: 'BAD_REQUEST',
-            message: 'Error: path escapes project dir via symlink /Users/me/.ssh/id_rsa',
-          },
-        }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-      }
-      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    renderWithProjectWorkspace(
-      <FileViewer
-        projectId="project-1"
-        projectKind="prototype"
-        file={htmlPreviewFile()}
-        liveHtml={source}
-      />,
-      teamWorkspaceContext(),
-    );
-
-    const warning = await screen.findByTestId('preview-asset-warning');
-    expect(warning.textContent).toContain('assets/hero.png');
-    expect(warning.textContent).toContain('Replace external symlinks');
-    expect(warning.textContent).not.toContain('/Users/me/.ssh');
   });
 
   it('always injects the manual-edit bridge into the preview srcDoc so entering Edit after materialization does not reload', async () => {
@@ -10746,134 +8933,6 @@ describe('FileViewer tweaks toolbar', () => {
     expect(srcDocFrame.srcdoc).toContain('data-od-selection-bridge');
   });
 
-  it('does not expose unresolved relative assets while a team srcDoc preview is materializing', async () => {
-    const filesResponse = deferredResponse();
-    const projectId = 'scoped-assets-project';
-    const fontPath = 'fonts/inter-variable-400.woff2';
-    const fetchMock = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === 'string'
-        ? input
-        : input instanceof Request
-          ? input.url
-          : String(input);
-      if (url === `/api/projects/${projectId}/files`) return filesResponse.promise;
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    try {
-      renderWithProjectWorkspace(
-        <FileViewer
-          projectId={projectId}
-          projectKind="prototype"
-          file={htmlPreviewFile({
-            name: 'system/artifacts/poster.html',
-            path: 'system/artifacts/poster.html',
-          })}
-          liveHtml={'<html><head><style>@font-face{src:url("../../fonts/inter-variable-400.woff2")}</style></head><body>Poster</body></html>'}
-        />,
-        teamWorkspaceContext(),
-      );
-
-      fireEvent.click(screen.getByTestId('comment-panel-toggle'));
-
-      const pendingFrame = await waitFor(() => {
-        const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-        expect(frame.getAttribute('data-od-render-mode')).toBe('srcdoc');
-        return frame;
-      });
-      expect(pendingFrame.srcdoc).not.toContain('../../fonts/inter-variable-400.woff2');
-
-      filesResponse.resolve(new Response(JSON.stringify({
-        files: [
-          htmlPreviewFile({
-            name: 'system/artifacts/poster.html',
-            path: 'system/artifacts/poster.html',
-          }),
-          baseFile({
-            name: fontPath,
-            path: fontPath,
-            mime: 'font/woff2',
-          }),
-        ],
-      }), { status: 200 }));
-
-      await waitFor(() => {
-        const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-        expect(frame.srcdoc).toContain(
-          `/api/projects/${projectId}/raw/${fontPath}`,
-        );
-        expect(frame.srcdoc).not.toContain('workspaceMemberId=');
-        expect(frame.srcdoc).not.toContain('../../fonts/inter-variable-400.woff2');
-      });
-    } finally {
-      filesResponse.resolve(new Response(JSON.stringify({ files: [] }), { status: 200 }));
-    }
-  });
-
-  it('materializes Team deck relative assets into server-authorized raw URLs before showing srcDoc', async () => {
-    const filesResponse = deferredResponse();
-    const projectId = 'scoped-deck-assets-project';
-    const deckPath = 'system/deck.html';
-    const imagePath = 'images/hero.png';
-    const fetchMock = vi.fn(async (input: string | URL | Request) => {
-      const url = typeof input === 'string'
-        ? input
-        : input instanceof Request
-          ? input.url
-          : String(input);
-      if (url === `/api/projects/${projectId}/files`) return filesResponse.promise;
-      return new Response(JSON.stringify({ deployments: [] }), { status: 200 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    try {
-      renderWithProjectWorkspace(
-        <FileViewer
-          projectId={projectId}
-          projectKind="prototype"
-          file={htmlPreviewFile({
-            name: deckPath,
-            path: deckPath,
-            artifactManifest: {
-              version: 1,
-              kind: 'deck',
-              title: 'Scoped deck',
-              entry: deckPath,
-              renderer: 'deck-html',
-              exports: ['html'],
-            },
-          })}
-          isDeck
-          liveHtml={'<html><body><section class="slide"><img src="../images/hero.png"></section></body></html>'}
-        />,
-        teamWorkspaceContext(),
-      );
-
-      const pendingFrame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      expect(pendingFrame.getAttribute('data-od-render-mode')).toBe('srcdoc');
-      expect(pendingFrame.srcdoc).not.toContain('../images/hero.png');
-
-      filesResponse.resolve(new Response(JSON.stringify({
-        files: [
-          htmlPreviewFile({ name: deckPath, path: deckPath }),
-          baseFile({ name: imagePath, path: imagePath }),
-        ],
-      }), { status: 200 }));
-
-      await waitFor(() => {
-        const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-        expect(frame.srcdoc).toContain(
-          `/api/projects/${projectId}/raw/${imagePath}`,
-        );
-        expect(frame.srcdoc).not.toContain('workspaceMemberId=');
-        expect(frame.srcdoc).not.toContain('../images/hero.png');
-      });
-    } finally {
-      filesResponse.resolve(new Response(JSON.stringify({ files: [] }), { status: 200 }));
-    }
-  });
-
   it('lets Draw direct send emit a queued annotation while a task is running', async () => {
     const annotationSpy = vi.fn();
     installCanvasSnapshotMocks();
@@ -11180,14 +9239,13 @@ describe('FileViewer tweaks toolbar', () => {
     }));
     const portalId = 'project-comments-read-rail';
     const initial = [comment('backfill', 99)];
-    const workspace = teamWorkspaceContext();
     const { rerender } = render(
-      <CollabProvider value={projectWorkspaceCollabValue(workspace)}>
+      <>
         <>
           <div id={portalId} />
           <FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml="<html><body /></html>" previewComments={initial} commentPortalId={portalId} />
         </>
-      </CollabProvider>,
+      </>,
     );
 
     fireEvent.click(screen.getByTestId('comment-panel-toggle'));
@@ -11197,7 +9255,7 @@ describe('FileViewer tweaks toolbar', () => {
     expect(screen.queryByTestId('comment-rail-unread-dot')).toBeNull();
 
     rerender(
-      <CollabProvider value={projectWorkspaceCollabValue(workspace)}>
+      <>
         <>
           <div id={portalId} />
           <FileViewer
@@ -11215,7 +9273,7 @@ describe('FileViewer tweaks toolbar', () => {
             ]}
           />
         </>
-      </CollabProvider>,
+      </>,
     );
 
     await waitFor(() => expect(readRequests).toHaveBeenCalledTimes(1));
@@ -11227,20 +9285,6 @@ describe('FileViewer tweaks toolbar', () => {
     await waitFor(() => expect(readRequests).toHaveBeenCalledTimes(2));
   });
 
-
-  it('does not light the dot for a newer trusted member self comment or another member at the read boundary', async () => {
-    const own: PreviewComment = {
-      id: 'own', projectId: 'project-1', conversationId: 'conversation-1', filePath: 'preview.html', elementId: 'own', selector: '[data-od-id="own"]', label: 'own', text: '', htmlHint: '', position: { x: 0, y: 0, width: 1, height: 1 }, note: 'own', status: 'open', createdAt: 102, updatedAt: 102, authorMemberId: 'wm-1',
-    };
-    const readFetch = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith('/comments/read')
-      ? new Response(JSON.stringify({ projectId: 'project-1', lastReadAt: 101 }), { headers: { 'Content-Type': 'application/json' } })
-      : new Response('{}', { headers: { 'Content-Type': 'application/json' } }));
-    vi.stubGlobal('fetch', readFetch);
-    renderWithProjectWorkspace(<FileViewer projectId="project-1" projectKind="prototype" file={htmlPreviewFile()} liveHtml="<html><body /></html>" previewComments={[own, { ...own, id: 'boundary', authorMemberId: 'wm-other', createdAt: 101, updatedAt: 101 }]} />, teamWorkspaceContext());
-    await waitFor(() => expect(readFetch.mock.calls.some(([input]) => String(input).endsWith('/comments/read'))).toBe(true));
-    await act(async () => { await Promise.resolve(); });
-    expect(screen.queryByTestId('comment-unread-dot')).toBeNull();
-  });
 
   it('keeps the unread dot after a failed read acknowledgment until a later server-confirmed retry', async () => {
     const firstRead = deferredResponse();
@@ -11779,66 +9823,6 @@ describe('FileViewer tweaks toolbar', () => {
       expect(layout.contains(popover)).toBe(true);
       expect(canvas.contains(popover)).toBe(false);
     });
-  });
-
-  it('keeps the Comment CTA for a new element annotation in a viewer-only team project', async () => {
-    const collab: CollabContextValue = {
-      workspaceContext: teamWorkspaceContext(),
-      workspaceContextLoading: false,
-      enabled: true,
-      member: { memberId: 'wm-1', name: 'Member', role: 'member' },
-      present: [],
-      publishedVersion: 1,
-      syncState: 'synced',
-      viewerOnly: true,
-      writerAuthority: 'denied',
-      isOwner: false,
-      isEffectiveOwner: false,
-      isSharedNonOwner: true,
-      ownerDisplayName: 'Owner',
-      ownerRole: 'owner',
-      downloadPending: false,
-      reportChange: () => {},
-      requestPublish: () => {},
-      refreshPresence: () => {},
-      checkStatusNow: () => {},
-    };
-
-    render(
-      <CollabProvider value={collab}>
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile()}
-          liveHtml='<html><body><main data-od-id="hero">Hero</main></body></html>'
-          viewerOnly
-          onSavePreviewComment={vi.fn()}
-        />
-      </CollabProvider>,
-    );
-
-    clickAgentTool('board-mode-toggle');
-    const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-    window.dispatchEvent(new MessageEvent('message', {
-      source: frame.contentWindow,
-      data: {
-        type: 'od:comment-target',
-        elementId: 'hero',
-        selector: '[data-od-id="hero"]',
-        label: 'Hero',
-        text: 'Hero',
-        position: { x: 8, y: 12, width: 120, height: 48 },
-        hoverPoint: { x: 12, y: 16 },
-        htmlHint: '<main data-od-id="hero">Hero</main>',
-      },
-    }));
-
-    const input = await screen.findByTestId('comment-popover-input');
-    fireEvent.change(input, { target: { value: 'Please tighten this heading.' } });
-
-    expect(input).not.toHaveAttribute('readonly');
-    expect(screen.getByTestId('comment-popover-save')).toHaveTextContent('Comment');
-    expect(screen.queryByTestId('comment-add-send')).toBeNull();
   });
 
   it('docks the comment side panel outside the clickable preview canvas', () => {
@@ -13591,83 +11575,6 @@ describe('FileViewer tweaks toolbar', () => {
     ]);
   });
 
-  it('keeps delivered external comments unhighlighted and sends them through the member send-to-chat path for a confirmed owner', async () => {
-    const comments: PreviewComment[] = [
-      {
-        id: 'external-comment', projectId: 'project-1', conversationId: 'conversation-1',
-        filePath: 'preview.html', elementId: 'external-anchor', selector: '[data-od-id="external-anchor"]',
-        label: 'External anchor', text: 'External target', htmlHint: '<p data-od-id="external-anchor">',
-        position: { x: 12, y: 24, width: 180, height: 40 }, note: 'External feedback.', status: 'open',
-        authorKind: 'user', authorAppUserId: 'share-user-1', authorDisplayName: 'Avery Visitor',
-        authorKey: 'share-user-key', createdAt: 10, updatedAt: 10,
-      },
-      {
-        id: 'member-comment', projectId: 'project-1', conversationId: 'conversation-1',
-        filePath: 'preview.html', elementId: 'member-anchor', selector: '[data-od-id="member-anchor"]',
-        label: 'Member anchor', text: 'Member target', htmlHint: '<p data-od-id="member-anchor">',
-        position: { x: 36, y: 48, width: 220, height: 52 }, note: 'Member feedback.', status: 'open',
-        authorKind: 'member', authorMemberId: 'member-2', authorDisplayName: 'Morgan Member',
-        authorKey: 'member-key', createdAt: 20, updatedAt: 20,
-      },
-    ];
-    const onSendBoardCommentAttachments = vi.fn().mockResolvedValue({
-      status: 'queued',
-      commentIds: comments.map((comment) => comment.id),
-    });
-    const ownerWorkspace = {
-      ...teamWorkspaceContext(),
-      role: 'owner' as const,
-      permissions: buildWorkspacePermissions({ role: 'owner', lifecycleState: 'active' }),
-    };
-    const ownerCollab: CollabContextValue = {
-      ...projectWorkspaceCollabValue(ownerWorkspace),
-      enabled: true,
-      member: { memberId: 'owner-member', name: 'Owner', role: 'owner' },
-      isOwner: true,
-      isEffectiveOwner: true,
-      writerAuthority: 'allowed',
-    };
-
-    render(
-      <CollabProvider value={ownerCollab}>
-        <FileViewer
-          projectId="project-1"
-          projectKind="prototype"
-          file={htmlPreviewFile()}
-          liveHtml='<html><body><p data-od-id="external-anchor">External target</p><p data-od-id="member-anchor">Member target</p></body></html>'
-          previewComments={comments}
-          onSendBoardCommentAttachments={onSendBoardCommentAttachments}
-        />
-      </CollabProvider>,
-    );
-
-    fireEvent.click(screen.getByTestId('comment-panel-toggle'));
-    const rows = await screen.findAllByTestId('comment-side-item');
-    expect(rows).toHaveLength(2);
-    for (const row of rows) {
-      expect(row.className).not.toMatch(/highlight/i);
-    }
-
-    const selectButtons = screen.getAllByRole('button', { name: 'Select' });
-    expect(selectButtons).toHaveLength(2);
-    for (const button of selectButtons) fireEvent.click(button);
-    fireEvent.click(screen.getByTestId('comment-side-send-claude'));
-
-    await waitFor(() => expect(onSendBoardCommentAttachments).toHaveBeenCalledTimes(1));
-    expect(onSendBoardCommentAttachments.mock.calls[0]?.[0]).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        id: 'external-comment', comment: 'External feedback.', filePath: 'preview.html',
-        elementId: 'external-anchor', selector: '[data-od-id="external-anchor"]',
-        pagePosition: { x: 12, y: 24, width: 180, height: 40 },
-      }),
-      expect.objectContaining({
-        id: 'member-comment', comment: 'Member feedback.', filePath: 'preview.html',
-        elementId: 'member-anchor', selector: '[data-od-id="member-anchor"]',
-        pagePosition: { x: 36, y: 48, width: 220, height: 52 },
-      }),
-    ]));
-  });
-
   it('moves focus between comment side panel toggles when collapsing and expanding without a pre-focused click target', async () => {
     const onCollapseChange = vi.fn();
     const onSelectAll = vi.fn();
@@ -13781,114 +11688,11 @@ describe('FileViewer tweaks toolbar', () => {
     expect(showComments.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('renders the signed-in user own avatar and name on their comment when the member roster is empty', async () => {
-    // A personal workspace (and the cold window before a team roster lands)
-    // answers `/api/workspace/members` 200 with an empty list, so NOTHING
-    // resolves through the directory — including the viewer themselves. The
-    // viewer's own identity must still render: it comes from the workspace
-    // context the caller already holds, not from this roster.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = typeof input === 'string' ? input : input.toString();
-        if (url.includes('/api/workspace/members')) {
-          return new Response(JSON.stringify({ members: [] }), { status: 200 });
-        }
-        return new Response(JSON.stringify({}), { status: 200 });
-      }),
-    );
-
-    const comment: PreviewComment = {
-      id: 'comment-mine',
-      projectId: 'project-1',
-      conversationId: 'conversation-1',
-      filePath: 'preview.html',
-      elementId: 'hero-copy',
-      selector: '[data-od-id="hero-copy"]',
-      label: 'Hero copy',
-      text: 'Hero copy',
-      htmlHint: '<p data-od-id="hero-copy">',
-      position: { x: 16, y: 24, width: 320, height: 48 },
-      note: 'Tighten this headline.',
-      status: 'open',
-      authorMemberId: 'wm-self',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-
-    render(
-      <CommentSidePanel
-        comments={[comment]}
-        currentUser={{ memberId: 'wm-self', displayName: '琼羽', role: 'owner' }}
-        selectedIds={new Set()}
-        activeCommentId={null}
-        collapsed={false}
-        onCollapsedChange={() => {}}
-        onToggleSelect={() => {}}
-        onSelectAll={() => {}}
-        onClearSelection={() => {}}
-        onReply={() => {}}
-        onSendSelected={() => {}}
-        sending={false}
-        t={t}
-      />,
-    );
-
-    const item = await screen.findByTestId('comment-side-item');
-    await waitFor(() => {
-      expect(item.querySelector('.comment-side-avatar')?.textContent).toBe('琼');
-    });
-    expect(within(item).getByText(/琼羽/)).toBeTruthy();
-    expect(within(item).getByText(/comment.authorRole.owner/)).toBeTruthy();
-  });
-
-  it.each(['personal', 'team'] as const)('matches saved, active and draft initials to the current user in a %s workspace with an empty roster', async workspaceType => {
-    const context = {
-      ...(workspaceType === 'personal' ? personalWorkspaceContext() : teamWorkspaceContext()),
-      workspaceMemberId: 'wm-self', displayName: '琼羽',
-    };
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).includes('/api/workspace/context')) return Response.json({ context });
-      if (String(input).includes('/api/workspace/members')) return Response.json({ members: [] });
-      return Response.json({});
-    }));
-    const comment: PreviewComment = {
-      id: 'mine', projectId: 'project-1', conversationId: 'conversation-1', filePath: 'preview.html',
-      elementId: 'hero-copy', selector: '[data-od-id="hero-copy"]', label: 'Hero', text: 'Hero',
-      htmlHint: '<p data-od-id="hero-copy">Hero</p>', position: { x: 16, y: 24, width: 320, height: 48 },
-      note: 'My comment', status: 'open', authorMemberId: 'wm-self', createdAt: 10, updatedAt: 10,
-    };
-    renderWithProjectWorkspace(<FileViewer projectId="project-1" projectKind="prototype"
-      file={htmlPreviewFile()} liveHtml='<html><body><p data-od-id="hero-copy">Hero</p></body></html>'
-      previewComments={[comment]} />, context);
-    fireEvent.click(screen.getByTestId('comment-panel-toggle'));
-    const row = await screen.findByTestId('comment-side-item');
-    await waitFor(() => expect(row.querySelector('.comment-side-avatar')).toHaveTextContent('琼'));
-    const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-    act(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: {
-      type: 'od:comment-targets', targets: [{ elementId: comment.elementId, selector: comment.selector,
-        label: comment.label, text: comment.text, htmlHint: comment.htmlHint, position: comment.position }],
-    } })));
-    const pin = await screen.findByTestId('comment-saved-marker-hero-copy');
-    expect(pin.querySelector('.comment-saved-pin')).toHaveTextContent('琼');
-    fireEvent.click(pin);
-    expect(await screen.findByTestId('comment-active-pin')).toHaveTextContent('琼');
-    act(() => window.dispatchEvent(new MessageEvent('message', { source: frame.contentWindow, data: {
-      type: 'od:comment-target', elementId: 'new-target', selector: 'h2', label: 'New target', text: '', htmlHint: '',
-      position: { x: 16, y: 80, width: 100, height: 30 },
-    } })));
-    expect(await screen.findByTestId('comment-active-pin')).toHaveTextContent('琼');
-    expect(screen.getByTestId('comment-active-pin')).toHaveAttribute('data-pin-number', '2');
-  });
-
   it('renders an unresolved member from its trusted display-name snapshot', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
         const url = typeof input === 'string' ? input : input.toString();
-        if (url.includes('/api/workspace/members')) {
-          return new Response(JSON.stringify({ members: [] }), { status: 200 });
-        }
         return new Response(JSON.stringify({}), { status: 200 });
       }),
     );
@@ -13915,7 +11719,6 @@ describe('FileViewer tweaks toolbar', () => {
     render(
       <CommentSidePanel
         comments={[comment]}
-        currentUser={{ memberId: 'wm-self', displayName: '琼羽', role: 'owner' }}
         selectedIds={new Set()}
         activeCommentId={null}
         collapsed={false}
@@ -14035,15 +11838,12 @@ describe('FileViewer tweaks toolbar', () => {
       createdAt: Date.now(), updatedAt: Date.now(),
     };
 
-    renderWithProjectWorkspace(
-      <CommentSidePanel
+    render(<CommentSidePanel
         comments={[comment]} selectedIds={new Set()} activeCommentId={null} collapsed={false}
         onCollapsedChange={() => {}} onToggleSelect={() => {}} onSelectAll={() => {}}
         onClearSelection={() => {}} onReply={() => {}} onSendSelected={() => {}}
         sending={false} t={t}
-      />,
-      teamWorkspaceContext(),
-    );
+      />);
 
     const item = await screen.findByTestId('comment-side-item');
     const avatar = item.querySelector<HTMLElement>('.comment-side-avatar');
@@ -14056,7 +11856,6 @@ describe('FileViewer tweaks toolbar', () => {
     expect(avatar?.style.color).toBe(expected.style.color);
     expect(within(item).getByText(/Avery Visitor/)).toBeTruthy();
     expect(within(item).getByText(/comment.authorRole.sharePage/)).toBeTruthy();
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/workspace/members'))).toBe(false);
   });
 
   it.each(['', '   ', undefined])('O4 shows a question-mark avatar and no author line for blank name %s', async (authorDisplayName) => {
@@ -14104,8 +11903,7 @@ describe('FileViewer tweaks toolbar', () => {
       createdAt: Date.now(), updatedAt: Date.now(),
     });
 
-    renderWithProjectWorkspace(
-      <CommentSidePanel
+    render(<CommentSidePanel
         comments={[
           emptyNameComment('empty', ''), emptyNameComment('whitespace', '   '), emptyNameComment('missing'),
         ]}
@@ -14113,9 +11911,7 @@ describe('FileViewer tweaks toolbar', () => {
         onCollapsedChange={() => {}} onToggleSelect={() => {}} onSelectAll={() => {}}
         onClearSelection={() => {}} onReply={() => {}} onSendSelected={() => {}}
         sending={false} t={t}
-      />,
-      teamWorkspaceContext(),
-    );
+      />);
 
     const items = await screen.findAllByTestId('comment-side-item');
     const avatars = items.map((item) => item.querySelector<HTMLElement>('.comment-side-avatar'));
@@ -14123,7 +11919,6 @@ describe('FileViewer tweaks toolbar', () => {
     expect(avatars[0]?.style.background).toBe(avatars[1]?.style.background);
     expect(avatars[1]?.style.background).toBe(avatars[2]?.style.background);
     for (const item of items) expect(item.querySelector('.comment-side-author-copy small')).toBeNull();
-    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/workspace/members'))).toBe(false);
   });
 
   it('keeps relative comment-time boundaries stable across clock boundaries', () => {
@@ -15710,69 +13505,6 @@ describe('LiveArtifactRefreshHistoryPanel', () => {
     expect(markup).toContain('从未');
     expect(markup).not.toContain('Last refreshed');
     expect(markup).not.toContain('>Never<');
-  });
-
-  it.each([
-    ['reanchored', 'versioned', '基于旧版本', { anchoredVersion: 1 }, { elementId: 'versioned', selector: '[data-od-id="versioned"]' }],
-    ['stale', 'moved', '锚点可能已移动', {}, { elementId: 'moved-now', selector: '[data-od-id="moved"]' }],
-    ['lost', 'lost', '锚点已丢失', {}, null],
-  ] as const)('localizes the %s anchor tooltip at the rendered marker', async (_state, elementId, expected, extra, target) => {
-    const comment: PreviewComment = {
-      id: `comment-${elementId}`,
-      projectId: 'project-1',
-      conversationId: 'conversation-1',
-      filePath: 'preview.html',
-      elementId,
-      selector: '[data-od-id="moved"]',
-      label: 'Heading',
-      text: 'Heading',
-      htmlHint: '<h1>Heading</h1>',
-      position: { x: 24, y: 32, width: 18, height: 18 },
-      note: 'Original note',
-      status: 'open',
-      createdAt: 1,
-      updatedAt: 1,
-      ...extra,
-    };
-    const collab: CollabContextValue = { ...projectWorkspaceCollabValue(teamWorkspaceContext()), enabled: true, publishedVersion: 2 };
-
-    render(
-      <I18nProvider initial="zh-CN">
-        <CollabProvider value={collab}>
-          <FileViewer projectId="project-1" projectKind="prototype" file={baseFile({ name: 'preview.html', path: 'preview.html', kind: 'html', mime: 'text/html' })} liveHtml='<html><body><main>Hero</main></body></html>' previewComments={[comment]} />
-        </CollabProvider>
-      </I18nProvider>,
-    );
-    fireEvent.click(screen.getByTestId('comment-panel-toggle'));
-    if (target) {
-      const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
-      window.dispatchEvent(new MessageEvent('message', {
-        source: frame.contentWindow,
-        data: {
-          type: 'od:comment-target',
-          ...target,
-          label: 'Heading',
-          text: 'Heading',
-          position: { x: 24, y: 32, width: 18, height: 18 },
-          htmlHint: '<h1>Heading</h1>',
-        },
-      }));
-    }
-
-    const marker = await screen.findByTestId(`comment-saved-marker-${elementId}`);
-    const pin = marker.querySelector('button');
-    expect(marker).toHaveClass(`comment-saved-marker--${_state}`);
-    expect(pin).toHaveClass('comment-saved-pin');
-    expect(pin).not.toHaveClass('od-tooltip');
-    expect(pin).toHaveAttribute('title', expect.stringContaining(expected));
-    expect(pin).toHaveAccessibleDescription(expect.stringContaining(expected));
-
-    fireEvent.pointerOver(pin!);
-    expect(pin).toHaveAttribute('title', expect.stringContaining(expected));
-    fireEvent.pointerOut(pin!);
-    fireEvent.focusIn(pin!);
-    expect(pin).toHaveAttribute('title', expect.stringContaining(expected));
-    fireEvent.focusOut(pin!);
   });
 
   it('keeps D1–D4 marker and deck-page presentation on the rendered selectors', () => {

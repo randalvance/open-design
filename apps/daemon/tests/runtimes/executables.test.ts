@@ -1,11 +1,10 @@
 import { test } from 'vitest';
-import { relative, resolve } from 'node:path';
+import { dirname, relative, resolve } from 'node:path';
 import {
   assert, chmodSync, claude, codex, deepseek, join, minimalAgentDef, mkdirSync, mkdtempSync, resolveAgentExecutable, rmSync, tmpdir, withEnvSnapshot, withPlatform, writeFileSync,
 } from './helpers/test-helpers.js';
 import {
   codexAppBundleCandidates,
-  resolveAmrOpenCodeExecutable,
 } from '../../src/runtimes/executables.js';
 
 const fsTest = process.platform === 'win32' ? test.skip : test;
@@ -69,137 +68,31 @@ test('resolveAgentExecutable finds Grok Build in OD_AGENT_HOME on Windows', () =
 // declarative `fallbackBins`-on-claude assertion above still runs on
 // every platform and is what catches regressions in the AGENT_DEF.
 fsTest(
-  'resolveAgentExecutable uses packaged built-in Vela for AMR with the bundled OpenCode companion tree',
+  'resolveAgentExecutable uses the packaged OpenCode for byok-opencode ahead of PATH',
   () => {
-    const root = mkdtempSync(join(tmpdir(), 'od-amr-built-in-'));
+    const root = mkdtempSync(join(tmpdir(), 'od-byok-opencode-bundled-'));
     try {
-      return withEnvSnapshot(['PATH', 'OD_AGENT_HOME', 'OD_RESOURCE_ROOT', 'VELA_OPENCODE_BIN'], () => {
-        const resourceRoot = join(root, 'resources', 'open-design');
-        const builtInVela = join(resourceRoot, 'bin', 'vela');
-        const companionTree = join(resourceRoot, 'bin', 'libexec', 'opencode');
-        mkdirSync(join(resourceRoot, 'bin'), { recursive: true });
-        mkdirSync(companionTree, { recursive: true });
-        writeFileSync(builtInVela, '#!/bin/sh\nexit 0\n');
-        chmodSync(builtInVela, 0o755);
-        // Match the resources.test.ts packaging contract: the companion tree
-        // is only valid when `<libexec>/opencode/opencode` actually exists +
-        // is executable. Directory-only checks were producing a false-positive
-        // availability path.
-        const companionExe = join(companionTree, 'opencode');
-        writeFileSync(companionExe, '#!/bin/sh\nexit 0\n');
-        chmodSync(companionExe, 0o755);
-        process.env.PATH = '';
-        process.env.OD_AGENT_HOME = join(root, 'empty-home');
+      return withEnvSnapshot(['PATH', 'OD_AGENT_HOME', 'OD_RESOURCE_ROOT', 'OPENCODE_BIN'], () => {
+        const resourceRoot = join(root, 'resources');
+        const bundled = join(resourceRoot, 'bin', 'libexec', 'opencode', 'opencode');
+        const pathBin = join(root, 'path-bin');
+        const pathOpenCode = join(pathBin, 'opencode');
+        mkdirSync(dirname(bundled), { recursive: true });
+        mkdirSync(pathBin, { recursive: true });
+        writeFileSync(bundled, '#!/bin/sh\nexit 0\n');
+        writeFileSync(pathOpenCode, '#!/bin/sh\nexit 0\n');
+        chmodSync(bundled, 0o755);
+        chmodSync(pathOpenCode, 0o755);
         process.env.OD_RESOURCE_ROOT = resourceRoot;
-        delete process.env.VELA_OPENCODE_BIN;
-
-        const resolved = resolveAgentExecutable(minimalAgentDef({ id: 'amr', bin: 'vela' }));
-
-        assert.equal(resolved, builtInVela);
-      });
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  },
-);
-
-fsTest(
-  'resolveAgentExecutable does not select packaged built-in Vela when OpenCode is missing',
-  () => {
-    const root = mkdtempSync(join(tmpdir(), 'od-amr-built-in-no-opencode-'));
-    try {
-      return withEnvSnapshot(['PATH', 'OD_AGENT_HOME', 'OD_RESOURCE_ROOT', 'VELA_OPENCODE_BIN'], () => {
-        const resourceRoot = join(root, 'resources', 'open-design');
-        const builtInVela = join(resourceRoot, 'bin', 'vela');
-        mkdirSync(join(resourceRoot, 'bin'), { recursive: true });
-        writeFileSync(builtInVela, '#!/bin/sh\nexit 0\n');
-        chmodSync(builtInVela, 0o755);
-        process.env.PATH = '';
-        process.env.OD_AGENT_HOME = join(root, 'empty-home');
-        process.env.OD_RESOURCE_ROOT = resourceRoot;
-        delete process.env.VELA_OPENCODE_BIN;
-
-        const resolved = resolveAgentExecutable(minimalAgentDef({ id: 'amr', bin: 'vela' }));
-
-        assert.equal(resolved, null);
-      });
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  },
-);
-
-fsTest(
-  'resolveAmrOpenCodeExecutable prefers the selected Vela companion over a PATH wrapper',
-  () => {
-    const root = mkdtempSync(join(tmpdir(), 'od-amr-selected-vela-companion-'));
-    try {
-      return withEnvSnapshot(
-        ['PATH', 'OD_AGENT_HOME', 'OD_RESOURCE_ROOT', 'VELA_BIN', 'VELA_OPENCODE_BIN'],
-        () => {
-          const selectedBinDir = join(root, 'selected', 'bin');
-          const selectedVela = join(selectedBinDir, 'vela');
-          const selectedCompanion = join(
-            selectedBinDir,
-            'libexec',
-            'opencode',
-            'opencode',
-          );
-          const pathBin = join(root, 'path-bin');
-          const pathWrapper = join(pathBin, 'opencode');
-          mkdirSync(join(selectedBinDir, 'libexec', 'opencode'), {
-            recursive: true,
-          });
-          mkdirSync(pathBin, { recursive: true });
-          writeFileSync(selectedVela, '#!/bin/sh\nexit 0\n');
-          writeFileSync(selectedCompanion, '#!/bin/sh\nexit 0\n');
-          writeFileSync(pathWrapper, '#!/bin/sh\nexit 0\n');
-          chmodSync(selectedVela, 0o755);
-          chmodSync(selectedCompanion, 0o755);
-          chmodSync(pathWrapper, 0o755);
-          process.env.PATH = pathBin;
-          process.env.OD_AGENT_HOME = join(root, 'empty-home');
-          process.env.OD_RESOURCE_ROOT = '';
-          process.env.VELA_BIN = selectedVela;
-          delete process.env.VELA_OPENCODE_BIN;
-
-          assert.equal(
-            resolveAmrOpenCodeExecutable(process.env),
-            selectedCompanion,
-          );
-        },
-      );
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  },
-);
-
-fsTest(
-  'resolveAgentExecutable prefers configured VELA_BIN over packaged built-in Vela',
-  () => {
-    const root = mkdtempSync(join(tmpdir(), 'od-amr-built-in-precedence-'));
-    try {
-      return withEnvSnapshot(['PATH', 'OD_AGENT_HOME', 'OD_RESOURCE_ROOT'], () => {
-        const resourceRoot = join(root, 'resources', 'open-design');
-        const builtInVela = join(resourceRoot, 'bin', 'vela');
-        const configuredVela = join(root, 'configured', 'vela');
-        mkdirSync(join(resourceRoot, 'bin'), { recursive: true });
-        mkdirSync(join(root, 'configured'), { recursive: true });
-        writeFileSync(builtInVela, '#!/bin/sh\nexit 0\n');
-        writeFileSync(configuredVela, '#!/bin/sh\nexit 0\n');
-        chmodSync(builtInVela, 0o755);
-        chmodSync(configuredVela, 0o755);
-        process.env.PATH = '';
-        process.env.OD_AGENT_HOME = join(root, 'empty-home');
-        process.env.OD_RESOURCE_ROOT = resourceRoot;
+        process.env.OD_AGENT_HOME = root;
+        process.env.PATH = pathBin;
+        delete process.env.OPENCODE_BIN;
 
         const resolved = resolveAgentExecutable(
-          minimalAgentDef({ id: 'amr', bin: 'vela' }),
-          { VELA_BIN: configuredVela },
+          minimalAgentDef({ id: 'byok-opencode', bin: 'opencode-cli', fallbackBins: ['opencode'] }),
         );
 
-        assert.equal(resolved, configuredVela);
+        assert.equal(resolved, bundled);
       });
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -208,28 +101,26 @@ fsTest(
 );
 
 fsTest(
-  'resolveAgentExecutable honors inherited VELA_BIN before PATH fallback',
+  'resolveAgentExecutable falls back to PATH OpenCode for byok-opencode without a packaged build',
   () => {
-    const root = mkdtempSync(join(tmpdir(), 'od-amr-env-bin-precedence-'));
+    const root = mkdtempSync(join(tmpdir(), 'od-byok-opencode-path-'));
     try {
-      return withEnvSnapshot(['PATH', 'OD_AGENT_HOME', 'OD_RESOURCE_ROOT', 'VELA_BIN'], () => {
+      return withEnvSnapshot(['PATH', 'OD_AGENT_HOME', 'OD_RESOURCE_ROOT', 'OPENCODE_BIN'], () => {
         const pathBin = join(root, 'path-bin');
-        const pathVela = join(pathBin, 'vela');
-        const envVela = join(root, 'env', 'vela');
+        const pathOpenCode = join(pathBin, 'opencode');
         mkdirSync(pathBin, { recursive: true });
-        mkdirSync(join(root, 'env'), { recursive: true });
-        writeFileSync(pathVela, '#!/bin/sh\nexit 0\n');
-        writeFileSync(envVela, '#!/bin/sh\nexit 0\n');
-        chmodSync(pathVela, 0o755);
-        chmodSync(envVela, 0o755);
+        writeFileSync(pathOpenCode, '#!/bin/sh\nexit 0\n');
+        chmodSync(pathOpenCode, 0o755);
+        delete process.env.OD_RESOURCE_ROOT;
+        process.env.OD_AGENT_HOME = root;
         process.env.PATH = pathBin;
-        process.env.OD_AGENT_HOME = join(root, 'empty-home');
-        process.env.OD_RESOURCE_ROOT = '';
-        process.env.VELA_BIN = envVela;
+        delete process.env.OPENCODE_BIN;
 
-        const resolved = resolveAgentExecutable(minimalAgentDef({ id: 'amr', bin: 'vela' }));
+        const resolved = resolveAgentExecutable(
+          minimalAgentDef({ id: 'byok-opencode', bin: 'opencode-cli', fallbackBins: ['opencode'] }),
+        );
 
-        assert.equal(resolved, envVela);
+        assert.equal(resolved, pathOpenCode);
       });
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -238,23 +129,21 @@ fsTest(
 );
 
 fsTest(
-  'resolveAgentExecutable falls back to PATH Vela when packaged built-in Vela is absent',
+  'resolveAgentExecutable does not treat a packaged OpenCode as any other agent',
   () => {
-    const root = mkdtempSync(join(tmpdir(), 'od-amr-path-fallback-'));
+    const root = mkdtempSync(join(tmpdir(), 'od-bundled-opencode-scope-'));
     try {
       return withEnvSnapshot(['PATH', 'OD_AGENT_HOME', 'OD_RESOURCE_ROOT'], () => {
-        const pathBin = join(root, 'path-bin');
-        const pathVela = join(pathBin, 'vela');
-        mkdirSync(pathBin, { recursive: true });
-        writeFileSync(pathVela, '#!/bin/sh\nexit 0\n');
-        chmodSync(pathVela, 0o755);
-        process.env.PATH = pathBin;
-        process.env.OD_AGENT_HOME = join(root, 'empty-home');
-        process.env.OD_RESOURCE_ROOT = join(root, 'resources', 'open-design');
+        const resourceRoot = join(root, 'resources');
+        const bundled = join(resourceRoot, 'bin', 'libexec', 'opencode', 'opencode');
+        mkdirSync(dirname(bundled), { recursive: true });
+        writeFileSync(bundled, '#!/bin/sh\nexit 0\n');
+        chmodSync(bundled, 0o755);
+        process.env.OD_RESOURCE_ROOT = resourceRoot;
+        process.env.OD_AGENT_HOME = root;
+        process.env.PATH = join(root, 'empty');
 
-        const resolved = resolveAgentExecutable(minimalAgentDef({ id: 'amr', bin: 'vela' }));
-
-        assert.equal(resolved, pathVela);
+        assert.equal(resolveAgentExecutable(minimalAgentDef({ id: 'pi', bin: 'pi' })), null);
       });
     } finally {
       rmSync(root, { recursive: true, force: true });

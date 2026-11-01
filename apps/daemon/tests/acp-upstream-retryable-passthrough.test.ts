@@ -162,18 +162,6 @@ describe('the passthrough does not hand out retries nobody granted', () => {
       + ' {"isRetryable":true}';
     expect(bridgeRetryable(raw, undefined)).toBe(false);
   });
-
-  it('leaves provider_routing_error retryable, as production already reports it', () => {
-    // The control from the same diagnostics bundle: run `43eed13f` (03:29)
-    // classified `upstream_unavailable / provider_routing_error` with
-    // `retryable: true`. Not every upstream failure was being judged dead, and
-    // this one must stay exactly where it is.
-    const raw = 'json-rpc id 4: AMR model catalog is temporarily unavailable. Please retry.';
-    const failure = classify(raw, true);
-    expect(failure?.failure_detail).toBe('provider_routing_error');
-    expect(failure?.retryable).toBe(true);
-    expect(failure?.user_action).toBe('retry');
-  });
 });
 
 /**

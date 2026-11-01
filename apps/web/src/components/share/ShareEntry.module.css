@@ -43,7 +43,7 @@
   transform: none;
 }
 
-/* Keep collaboration's disabled feedback while enabled card actions use
+/* Keep the disabled feedback while enabled card actions use
    the pre-#8408 glass-pill styles in styles/viewer/tools.css. */
 :global(.artifact-card) .card:global(.artifact-card-act):disabled {
   background: #F3F3F1;

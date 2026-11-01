@@ -51,7 +51,7 @@ const BRIEF_COPY: Record<LocalMcpBriefLocale, LocalizedBriefCopy> = {
     artifactNames: ENGLISH_ARTIFACT_NAMES,
     title: (artifactName) => `Choose the ${artifactName} direction`,
     description:
-      'Choose one option for each decision. The same readable brief can be used with OpenDesign Cloud or Local Codex.',
+      'Choose one option for each decision. The same readable brief can be used with a local coding agent or your own API key.',
     submitLabel: 'Confirm brief',
     completeCard:
       'Complete the rendered OpenDesign brief card. The confirmation returns a readable summary; internal correlation values must remain hidden.',
@@ -74,7 +74,7 @@ const BRIEF_COPY: Record<LocalMcpBriefLocale, LocalizedBriefCopy> = {
     },
     title: (artifactName) => `选择${artifactName}方向`,
     description:
-      '请为每项决策选择一个选项。确认后的可读需求可用于 OpenDesign Cloud、本地 Codex 或安全 BYOK。',
+      '请为每项决策选择一个选项。确认后的可读需求可用于本地编码智能体或你自己的 API Key。',
     submitLabel: '确认需求',
     completeCard: '请填写显示的 OpenDesign 需求卡。确认后会返回可读摘要；不要向用户展示内部关联值。',
     confirmed: '需求已确认。',
@@ -96,7 +96,7 @@ const BRIEF_COPY: Record<LocalMcpBriefLocale, LocalizedBriefCopy> = {
     },
     title: (artifactName) => `選擇${artifactName}方向`,
     description:
-      '請為每項決策選擇一個選項。確認後的可讀需求可用於 OpenDesign Cloud、本機 Codex 或安全 BYOK。',
+      '請為每項決策選擇一個選項。確認後的可讀需求可用於本機程式碼代理或你自己的 API Key。',
     submitLabel: '確認需求',
     completeCard: '請填寫顯示的 OpenDesign 需求卡。確認後會回傳可讀摘要；不要向使用者顯示內部關聯值。',
     confirmed: '需求已確認。',
@@ -118,7 +118,7 @@ const BRIEF_COPY: Record<LocalMcpBriefLocale, LocalizedBriefCopy> = {
     },
     title: (artifactName) => `${artifactName}の方向性を選択`,
     description:
-      '各項目から 1 つ選択してください。確認したブリーフは OpenDesign Cloud、ローカル Codex、安全な BYOK で利用できます。',
+      '各項目から 1 つ選択してください。確認したブリーフはローカルのコーディングエージェントやご自身の API キーで利用できます。',
     submitLabel: 'ブリーフを確認',
     completeCard:
       '表示された OpenDesign のブリーフカードに回答してください。確認後は読みやすい概要が返されます。内部の関連付け値は表示しないでください。',

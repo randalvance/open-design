@@ -1,234 +1,70 @@
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import express from 'express';
+import type { AddressInfo } from 'node:net';
+import type { Server } from 'node:http';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { describe, expect, it, vi } from 'vitest';
+import { ATTRIBUTION_CLAIM_PATH } from '@open-design/contracts';
 
-import type { AnalyticsService } from '../src/analytics.js';
-import { createAttributionService } from '../src/routes/attribution.js';
-import { readInstallationFile, writeInstallationFile } from '../src/installation.js';
-import { readAppConfig, type AppConfigPrefs, writeAppConfig } from '../src/app-config.js';
+import { registerAttributionRoutes } from '../src/routes/attribution.js';
 
-function analyticsStub(): AnalyticsService {
-  return {
-    capture: vi.fn(),
-    captureSafety: vi.fn(async () => undefined),
-    mergeAnonymousPerson: vi.fn(async () => undefined),
-    identifyGroup: vi.fn(async () => undefined),
-    shutdown: vi.fn(async () => undefined),
-  };
-}
+describe('download attribution routes', () => {
+  let server: Server;
+  let base: string;
+  let allowLocal: boolean;
+  const realFetch = globalThis.fetch;
 
-async function withTempData<T>(fn: (dataDir: string) => Promise<T>): Promise<T> {
-  const dataDir = await mkdtemp(join(tmpdir(), 'od-attribution-'));
-  try {
-    return await fn(dataDir);
-  } finally {
-    await rm(dataDir, { recursive: true, force: true });
-  }
-}
-
-describe('download attribution service', () => {
-  it('stores a pending token before telemetry consent', async () => {
-    await withTempData(async (dataDir) => {
-      const analytics = analyticsStub();
-      const service = createAttributionService({
-        analytics,
-        appConfig: { readAppConfig: async () => ({ telemetry: { metrics: false } }) },
-        paths: { RUNTIME_DATA_DIR: dataDir },
-        now: () => new Date('2026-07-10T00:00:00.000Z'),
-      });
-
-      const result = await service.claim({
-        source: 'mac_where_froms',
-        token: 'odtoken_123456',
-        rawUrl: 'https://download.open-design.ai/mac/arm64/odtoken_123456/Open.dmg',
-        platform: 'macos',
-      });
-
-      expect(result.status).toBe('pending_consent');
-      const installation = await readInstallationFile(dataDir);
-      expect(installation.pendingAttribution?.token).toBe('odtoken_123456');
-      expect(analytics.mergeAnonymousPerson).not.toHaveBeenCalled();
+  beforeEach(async () => {
+    allowLocal = true;
+    const app = express();
+    registerAttributionRoutes(app, {
+      http: { isLocalSameOrigin: () => allowLocal, resolvedPortRef: { current: 1 } },
     });
+    server = await new Promise<Server>((resolve) => {
+      const started = app.listen(0, '127.0.0.1', () => resolve(started));
+    });
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
 
-  it('does not claim pre-delete attribution after metrics are re-enabled', async () => {
-    await withTempData(async (dataDir) => {
-      await writeInstallationFile(dataDir, {
-        installationId: 'install-before-delete',
-        pendingAttribution: {
-          token: 'odtoken_predelete',
-          source: 'mac_where_froms',
-          capturedAt: '2026-07-10T00:00:00.000Z',
-        },
-        attributionClaimedAt: '2026-07-10T00:00:01.000Z',
-        attributionClaimResultAt: '2026-07-10T00:00:02.000Z',
-      });
-      await writeAppConfig(dataDir, {
-        installationId: 'install-after-delete',
-        telemetry: { metrics: false },
-      });
-      expect(await readInstallationFile(dataDir)).toEqual({ installationId: 'install-after-delete' });
-
-      await writeAppConfig(dataDir, { telemetry: { metrics: true } });
-      const analytics = analyticsStub();
-      const fetchImpl = vi.fn();
-      const service = createAttributionService({
-        analytics,
-        appConfig: { readAppConfig },
-        env: { OD_ATTRIBUTION_LEDGER_URL: 'https://ledger.test/api/attribution' },
-        fetchImpl: fetchImpl as unknown as typeof fetch,
-        paths: { RUNTIME_DATA_DIR: dataDir },
-      });
-
-      await expect(service.processPending()).resolves.toBeNull();
-      expect(fetchImpl).not.toHaveBeenCalled();
-      expect(analytics.mergeAnonymousPerson).not.toHaveBeenCalled();
-    });
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  it('consumes a pending token and merges the landing person after consent', async () => {
-    await withTempData(async (dataDir) => {
-      await writeInstallationFile(dataDir, {
-        installationId: 'install-123',
-        pendingAttribution: {
-          token: 'odtoken_abcdef',
-          source: 'mac_where_froms',
-          capturedAt: '2026-07-10T00:00:00.000Z',
-        },
-      });
-      const analytics = analyticsStub();
-      const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
-        status: 'consumed',
-        webDistinctId: 'web-anon-1',
-        properties: { od_utm_source: 'twitter', od_referrer: 'https://example.com' },
-      }), { status: 200 }));
-      const service = createAttributionService({
-        analytics,
-        appConfig: { readAppConfig: async () => ({ installationId: 'install-123', telemetry: { metrics: true } }) },
-        env: { OD_ATTRIBUTION_LEDGER_URL: 'https://ledger.test/api/attribution' },
-        fetchImpl: fetchImpl as unknown as typeof fetch,
-        paths: { RUNTIME_DATA_DIR: dataDir },
-        now: () => new Date('2026-07-10T00:01:00.000Z'),
-      });
-
-      const result = await service.processPending();
-
-      expect(result?.status).toBe('claimed');
-      expect(fetchImpl).toHaveBeenCalledWith(
-        'https://ledger.test/api/attribution/consume',
-        expect.objectContaining({ method: 'POST' }),
-      );
-      expect(analytics.mergeAnonymousPerson).toHaveBeenCalledWith(expect.objectContaining({
-        anonymousDistinctId: 'web-anon-1',
-        distinctId: 'install-123',
-      }));
-      const installation = await readInstallationFile(dataDir);
-      expect(installation.pendingAttribution).toBeUndefined();
-      expect(installation.attributionClaimedAt).toBe('2026-07-10T00:01:00.000Z');
-    });
+  const post = (route: string, body: unknown) => realFetch(`${base}${route}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
   });
 
-  it('rejects a token already consumed by another installation as a shared installer', async () => {
-    await withTempData(async (dataDir) => {
-      await writeInstallationFile(dataDir, {
-        installationId: 'install-123',
-        pendingAttribution: {
-          token: 'odtoken_shared',
-          source: 'windows_zone_identifier',
-          capturedAt: '2026-07-10T00:00:00.000Z',
-        },
-      });
-      const analytics = analyticsStub();
-      const service = createAttributionService({
-        analytics,
-        appConfig: { readAppConfig: async (): Promise<AppConfigPrefs> => ({ installationId: 'install-123', telemetry: { metrics: true } }) },
-        env: { OD_ATTRIBUTION_LEDGER_URL: 'https://ledger.test/api/attribution' },
-        fetchImpl: vi.fn(async () => new Response(JSON.stringify({ status: 'already_consumed_other' }), { status: 200 })) as unknown as typeof fetch,
-        paths: { RUNTIME_DATA_DIR: dataDir },
-      });
-
-      const result = await service.processPending();
-
-      expect(result?.status).toBe('shared_installer');
-      expect(analytics.mergeAnonymousPerson).not.toHaveBeenCalled();
-      expect(analytics.captureSafety).toHaveBeenCalledWith(expect.objectContaining({
-        eventName: 'attribution_shared_installer',
-        distinctId: 'install-123',
-      }));
+  it('answers a valid claim locally without any outbound request', async () => {
+    const outbound = vi.fn();
+    vi.stubGlobal('fetch', outbound);
+    const response = await post(ATTRIBUTION_CLAIM_PATH, { source: 'manual', token: 'odtoken_123456' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true, status: 'pending_consent', found: true, pending: true, merged: false,
     });
+    expect(outbound).not.toHaveBeenCalled();
   });
 
-  it('mints a first-party browser bridge only with metrics consent and a ledger secret', async () => {
-    await withTempData(async (dataDir) => {
-      const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
-        url: 'https://open-design.ai/clipper?od_bridge=odbr_12345678',
-      }), { status: 200 }));
-      const service = createAttributionService({
-        analytics: analyticsStub(),
-        appConfig: { readAppConfig: async () => ({ installationId: 'install-123', telemetry: { metrics: true } }) },
-        env: { OD_ATTRIBUTION_LEDGER_URL: 'https://ledger.test/api/attribution', OD_ATTRIBUTION_LEDGER_TOKEN: 'secret' },
-        fetchImpl: fetchImpl as unknown as typeof fetch,
-        paths: { RUNTIME_DATA_DIR: dataDir },
-      });
-
-      await expect(service.bridgeUrl('https://open-design.ai/clipper')).resolves.toBe(
-        'https://open-design.ai/clipper?od_bridge=odbr_12345678',
-      );
-      expect(fetchImpl).toHaveBeenCalledWith(
-        'https://ledger.test/api/attribution/bridge/mint',
-        expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Bearer secret' }) }),
-      );
-      await expect(service.bridgeUrl('https://example.com/')).resolves.toBeNull();
-    });
+  it('rejects a malformed claim', async () => {
+    expect((await post(ATTRIBUTION_CLAIM_PATH, { source: 'nope', token: 'odtoken_123456' })).status).toBe(400);
+    const badToken = await post(ATTRIBUTION_CLAIM_PATH, { source: 'manual', token: 'bad token' });
+    expect(await badToken.json()).toMatchObject({ status: 'invalid', found: false });
   });
 
-  it('replays an idempotent merge when the same-installation ledger retry carries the recovered browser identity', async () => {
-    await withTempData(async (dataDir) => {
-      const analytics = analyticsStub();
-      const fetchImpl = vi.fn()
-        .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'consumed', webDistinctId: 'web-1' }), { status: 200 }))
-        .mockResolvedValueOnce(new Response(JSON.stringify({ status: 'already_consumed_same', webDistinctId: 'web-1' }), { status: 200 }));
-      const service = createAttributionService({
-        analytics,
-        appConfig: { readAppConfig: async () => ({ installationId: 'install-123', telemetry: { metrics: true } }) },
-        env: { OD_ATTRIBUTION_LEDGER_URL: 'https://ledger.test/api/attribution' },
-        fetchImpl: fetchImpl as unknown as typeof fetch,
-        paths: { RUNTIME_DATA_DIR: dataDir },
-      });
-
-      await expect(service.claim({ token: 'odtoken_repeat', source: 'manual' })).resolves.toMatchObject({ status: 'claimed', merged: true });
-      await expect(service.claim({ token: 'odtoken_repeat', source: 'manual' })).resolves.toMatchObject({ status: 'already_claimed', merged: true });
-      expect(analytics.mergeAnonymousPerson).toHaveBeenCalledTimes(2);
-      expect(analytics.captureSafety).toHaveBeenCalledTimes(2);
-    });
+  it('never mints a tracked link, so the web client opens the original URL', async () => {
+    const outbound = vi.fn();
+    vi.stubGlobal('fetch', outbound);
+    const response = await post('/api/attribution/bridge-url', { url: 'https://open-design.ai/pricing' });
+    expect(await response.json()).toEqual({ url: null });
+    expect(outbound).not.toHaveBeenCalled();
+    expect((await post('/api/attribution/bridge-url', {})).status).toBe(400);
   });
 
-  it('merges a pending token when its first visible ledger response is already_consumed_same', async () => {
-    await withTempData(async (dataDir) => {
-      await writeInstallationFile(dataDir, {
-        installationId: 'install-recovered',
-        pendingAttribution: {
-          token: 'odtoken_recovered', source: 'mac_where_froms', capturedAt: '2026-07-10T00:00:00.000Z',
-        },
-      });
-      const analytics = analyticsStub();
-      const service = createAttributionService({
-        analytics,
-        appConfig: { readAppConfig: async () => ({ installationId: 'install-recovered', telemetry: { metrics: true } }) },
-        env: { OD_ATTRIBUTION_LEDGER_URL: 'https://ledger.test/api/attribution' },
-        fetchImpl: vi.fn(async () => new Response(JSON.stringify({
-          status: 'already_consumed_same', webDistinctId: 'web-recovered', properties: { od_utm_source: 'retry' },
-        }), { status: 200 })) as unknown as typeof fetch,
-        paths: { RUNTIME_DATA_DIR: dataDir },
-      });
-
-      await expect(service.processPending()).resolves.toMatchObject({ status: 'already_claimed', merged: true });
-      expect(analytics.mergeAnonymousPerson).toHaveBeenCalledWith(expect.objectContaining({
-        anonymousDistinctId: 'web-recovered', distinctId: 'install-recovered',
-      }));
-      expect((await readInstallationFile(dataDir)).pendingAttribution).toBeUndefined();
-    });
+  it('keeps the same-origin gate', async () => {
+    allowLocal = false;
+    expect((await post(ATTRIBUTION_CLAIM_PATH, { source: 'manual', token: 'odtoken_123456' })).status).toBe(403);
+    expect((await post('/api/attribution/bridge-url', { url: 'https://open-design.ai/' })).status).toBe(403);
   });
 });

@@ -26,7 +26,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { appendErrorStatusEvent, runFailureFieldsFromError } from '../../src/runtime/chat-events';
-import { daemonFailureVerdictFrom, resolveRunFailureUi } from '../../src/runtime/amr-guidance';
+import { daemonFailureVerdictFrom, resolveRunFailureUi } from '../../src/runtime/run-guidance';
 import type { ChatMessage } from '../../src/types';
 
 const base: ChatMessage = { id: 'm1', role: 'assistant', content: '' };

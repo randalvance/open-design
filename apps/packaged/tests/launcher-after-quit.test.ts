@@ -81,13 +81,12 @@ describe("inspectExistingDesktopForLauncher", () => {
     const invoke = vi.fn(async () => ({ accepted: true }));
     try {
       await expect(inspectExistingDesktopForLauncher(stamp(), {
-        deeplinkUrl: "opendesign://invite",
         getStatus: vi.fn(async (target: SidecarStamp) => target.app === APP_KEYS.DESKTOP
           ? { pid: 1234, state: "running", updatedAt: new Date().toISOString(), windowVisible: true }
           : { state: "running", url: "http://127.0.0.1:1234" }) as never,
         invoke: invoke as never, paths: fakePaths(root),
       })).resolves.toEqual({ action: "exit", reason: "existing-focused" });
-      expect(invoke).toHaveBeenCalledWith(stamp(), "show", { deeplinkUrl: "opendesign://invite" }, { timeoutMs: 800 });
+      expect(invoke).toHaveBeenCalledWith(stamp(), "show", {}, { timeoutMs: 800 });
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -140,12 +139,10 @@ describe("inspectExistingDesktopForLauncher", () => {
 
   it("asks a restorable headless owner to become the desktop instead of restarting it", async () => {
     const root = await mkdtemp(join(tmpdir(), "od-launcher-restorable-headless-"));
-    const deeplink = "opendesign://workspace/open";
     const invoke = vi.fn(async () => ({ accepted: true }));
     const stop = vi.fn(async () => sidecarStop(4321));
     try {
       await expect(inspectExistingDesktopForLauncher(stamp(), {
-        deeplinkUrl: deeplink,
         getStatus: vi.fn(async (target: SidecarStamp) => {
           if (target.mode !== "headless") throw new Error("runtime desktop absent");
           return target.app === APP_KEYS.DESKTOP
@@ -156,7 +153,7 @@ describe("inspectExistingDesktopForLauncher", () => {
         paths: fakePaths(root),
         stopSidecar: stop,
       })).resolves.toEqual({ action: "exit", reason: "existing-focused" });
-      expect(invoke).toHaveBeenCalledWith({ ...stamp(), mode: "headless" }, "show", { deeplinkUrl: deeplink }, { timeoutMs: 800 });
+      expect(invoke).toHaveBeenCalledWith({ ...stamp(), mode: "headless" }, "show", {}, { timeoutMs: 800 });
       expect(stop).not.toHaveBeenCalled();
       expect(await readFile(join(root, "logs", "launcher", "after-quit.log"), "utf8")).toContain("action=restore reason=restorable-headless");
     } finally {

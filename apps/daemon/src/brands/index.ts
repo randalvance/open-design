@@ -124,12 +124,10 @@ export interface StartBrandExtractionOptions {
   /** Matching rollback for a workspace-aware draft creator. */
   deleteUserDesignSystem?: typeof deleteUserDesignSystem;
   /** Final synchronous creation fence; throws to roll back the whole startup. */
-  bindCreatedProject?: (projectId: string) => void;
   /** Workspace to claim the extracted design system for (#145). Design systems
    *  share one directory, so the claim is what keeps a brand extracted in one
    *  workspace out of the next workspace's library. Omitted (signed out /
    *  single-player) leaves it unclaimed and visible everywhere. */
-  designSystemWorkspaceId?: string | null;
   /** Runtime data dir so the programmatically-built design system is sedimented
    *  into memory. Optional. */
   dataDir?: string;
@@ -366,10 +364,7 @@ export async function startBrandExtraction(
           sourceUrls: [url],
           sourceNotes: `Extracting from ${url}`,
         },
-        ...(opts.designSystemWorkspaceId?.trim()
-          ? { workspaceId: opts.designSystemWorkspaceId.trim() }
-          : {}),
-      });
+        });
       draftDesignSystemId = draft.id;
       meta.designSystemId = draft.id;
       patchMeta(brandsRoot, id, { designSystemId: draft.id });
@@ -465,7 +460,6 @@ export async function startBrandExtraction(
     // rollback boundary as the draft design system. A route-level bind after
     // this function returns cannot compensate the already-created brand,
     // project directory, transcript, and design-system envelope on failure.
-    opts.bindCreatedProject?.(projectId);
 
     // Programmatic-first runs immediately, but never blocks the start response.
     // The caller should land in the project with a real user/assistant transcript
@@ -488,7 +482,7 @@ export async function startBrandExtraction(
       : null;
     // Persist the transcript handles so EVERY terminal point — finalize success,
     // soft-fail/blocked/timeout, and user stop — can reconcile the synthetic
-    // "AMR · Working" row out of its perpetual `running` state, regardless of the
+    // "Working" row out of its perpetual `running` state, regardless of the
     // racy background timer. Without this the row stays "Working 13m…" forever
     // even after the brand finalizes `ready` in the background.
     if (programmaticTranscript) {
@@ -905,7 +899,7 @@ export type ProgrammaticExtractionOutcome = 'succeeded' | 'needs_attention' | 's
 /**
  * Flip the seeded programmatic-extraction transcript row to a terminal run
  * status. This is the SINGLE authority that retires the synthetic
- * "AMR · Working 13m…" row, driven entirely by persisted brand meta + the
+ * "Working 13m…" row, driven entirely by persisted brand meta + the
  * message itself, so it works from EVERY completion point — finalize success,
  * give-up / blocked / stall, and user stop — and survives a daemon restart.
  * Best-effort and idempotent; safe to call repeatedly.
@@ -1294,7 +1288,6 @@ export interface FinalizeBrandOptions {
   /** Workspace to claim a newly registered design system for (#145). A
    *  re-finalize reuses the draft, whose claim is already preserved, so this
    *  only matters on the agent-driven path that registers without a draft. */
-  designSystemWorkspaceId?: string | null;
   projectsRoot: string;
   /** Skills root so the final `brand.html` re-render can read the template. */
   skillsRoot: string;
@@ -1474,10 +1467,7 @@ async function finalizeBrandCore(opts: FinalizeBrandCoreOptions): Promise<BrandF
       ...(brand.description ? { companyBlurb: brand.description } : {}),
       sourceNotes: `Extracted from ${meta.sourceUrl}`,
     },
-    ...(opts.designSystemWorkspaceId?.trim()
-      ? { workspaceId: opts.designSystemWorkspaceId.trim() }
-      : {}),
-  });
+    });
   throwIfProgrammaticExtractionNotCurrent(opts);
   const designSystemId = summary.id;
   syncBrandSystemToUserDesignSystem(userDesignSystemsRoot, designSystemId, brandsRoot, id, body);

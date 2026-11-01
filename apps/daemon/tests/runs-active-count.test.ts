@@ -1,10 +1,8 @@
 // `GET /api/runs/active-count` is the desktop updater's restart-safety probe.
 //
-// The unscoped `GET /api/runs` listing answers 400 PROJECT_SCOPE_REQUIRED as
-// soon as any run belongs to a Workspace-bound project, so a host-level caller
-// that only needs "is anything still running?" could never get an answer for
-// Workspace users. The count route answers exactly that, without widening the
-// listing: it is loopback-only and never names a run, project or conversation.
+// A host-level caller only needs "is anything still running?". The count route
+// answers exactly that: it is loopback-only and never names a run, project or
+// conversation.
 
 import http from 'node:http';
 import express from 'express';
@@ -15,9 +13,6 @@ import path from 'node:path';
 
 import {
   closeDatabase,
-  ensureWorkspaceProject,
-  getWorkspaceProject,
-  getWorkspaceProjectByProjectId,
   insertProject,
   openDatabase,
 } from '../src/db.js';
@@ -38,8 +33,8 @@ afterEach(async () => {
   tempDir = null;
 });
 
-const TEAM_PROJECT = 'p-team-active-count';
-const UNBOUND_PROJECT = 'p-unbound-active-count';
+const FIRST_PROJECT = 'p-first-active-count';
+const SECOND_PROJECT = 'p-second-active-count';
 const TERMINAL = new Set(['succeeded', 'failed', 'canceled']);
 
 function sendApiError(
@@ -56,23 +51,16 @@ async function startServer() {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'od-runs-active-count-'));
   const db = openDatabase(tempDir);
   const now = Date.now();
-  for (const id of [TEAM_PROJECT, UNBOUND_PROJECT]) {
+  for (const id of [FIRST_PROJECT, SECOND_PROJECT]) {
     insertProject(db, { id, name: id, createdAt: now, updatedAt: now });
   }
-  ensureWorkspaceProject(db, {
-    projectId: TEAM_PROJECT,
-    workspaceId: 'ws-active-count',
-    visibility: 'team',
-    resourceState: 'active',
-    createdByWorkspaceMemberId: 'member-owner-active-count',
-  });
 
   const runs = new Map<string, any>();
   const seed = (id: string, projectId: string, agentId: string, status: string) =>
     runs.set(id, { id, projectId, agentId, status, conversationId: `conv-${id}`, events: [], clients: new Set() });
-  seed('run-team-amr-running', TEAM_PROJECT, 'amr', 'running');
-  seed('run-unbound-queued', UNBOUND_PROJECT, 'claude', 'queued');
-  seed('run-unbound-done', UNBOUND_PROJECT, 'claude', 'succeeded');
+  seed('run-first-hermes-running', FIRST_PROJECT, 'hermes', 'running');
+  seed('run-second-queued', SECOND_PROJECT, 'claude', 'queued');
+  seed('run-second-done', SECOND_PROJECT, 'claude', 'succeeded');
 
   const runsService = {
     get: (id: string) => runs.get(id) ?? null,
@@ -121,12 +109,6 @@ async function startServer() {
       pinAssistantMessageOnRunCreate: () => ({ ok: true }),
       reconcileAssistantMessageOnRunEnd: () => {},
     },
-    amrWorkspaceScope: { isSignedIn: () => false },
-    projectStore: {
-      getWorkspaceProject,
-      getWorkspaceProjectByProjectId,
-      ensureWorkspaceProject: (dbArg: any, input: any) => ensureWorkspaceProject(dbArg, input),
-    },
   } as any);
   const created = http.createServer(app);
   server = created;
@@ -155,14 +137,8 @@ function rawGet(port: number, pathname: string, headers: Record<string, string>)
 }
 
 describe('GET /api/runs/active-count', () => {
-  it('counts active runs across Workspace-bound and unbound projects', async () => {
+  it('counts active runs across projects', async () => {
     const { baseUrl } = await startServer();
-
-    // The unscoped listing still refuses: the count route must not be a
-    // side door around this boundary.
-    const listing = await fetch(`${baseUrl}/api/runs?status=active`);
-    expect(listing.status).toBe(400);
-    expect(((await listing.json()) as any).error.code).toBe('PROJECT_SCOPE_REQUIRED');
 
     const response = await fetch(`${baseUrl}/api/runs/active-count`);
     expect(response.status).toBe(200);
@@ -173,7 +149,7 @@ describe('GET /api/runs/active-count', () => {
   it('reveals no run, project or conversation identifiers', async () => {
     const { baseUrl } = await startServer();
     const text = await (await fetch(`${baseUrl}/api/runs/active-count`)).text();
-    for (const leaked of ['run-', TEAM_PROJECT, UNBOUND_PROJECT, 'conv-', 'amr']) {
+    for (const leaked of ['run-', FIRST_PROJECT, SECOND_PROJECT, 'conv-', 'hermes']) {
       expect(text).not.toContain(leaked);
     }
   });

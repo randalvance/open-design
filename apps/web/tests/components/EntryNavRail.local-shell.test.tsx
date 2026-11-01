@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 //
-// OPEND-3140 — the signed-out (local CLI / BYOK) shell gets the same entry
-// rail layout the cloud shell has: the 最近项目 section fed from the local
-// project list with live run status, the 项目 destination, and the message
-// centre riding the rail's foot dock instead of being a bare rail item.
+// The local (CLI / BYOK) shell is the only rail there is: the 最近项目 section
+// fed from the local project list with live run status, the 项目 destination,
+// and a local identity row at the foot that opens Settings.
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -40,8 +39,7 @@ function stubFetch() {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
     const match = /^\/api\/runs\?projectId=([^&]+)$/.exec(url);
     if (match) {
-      // A local project is read without any Workspace header — the daemon's
-      // headerless local branch is what answers.
+      // A local project is read without any Workspace header.
       const headers = new Headers(init?.headers);
       expect(headers.has('x-od-workspace-id')).toBe(false);
       const id = decodeURIComponent(match[1]!);
@@ -63,9 +61,6 @@ function stubFetch() {
         { status: 200, headers: { 'Content-Type': 'application/json' } },
       );
     }
-    if (url.includes('/messages?')) {
-      return Response.json({ messages: [], nextCursor: null, unreadCount: 0 });
-    }
     return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
   }) as unknown as typeof fetch;
 }
@@ -84,10 +79,8 @@ function renderLocalRail(overrides: Partial<Parameters<typeof EntryNavRail>[0]> 
         onViewChange={onViewChange}
         onNewProject={() => {}}
         open
-        context={null}
-        billing={null}
         onOpenSettings={onOpenSettings}
-        footerNotice={<div data-testid="local-sign-in-card">Sign in</div>}
+        footerNotice={<div data-testid="local-footer-notice" />}
         recentProjects={Array.from({ length: 5 }, (_, index) =>
           project(`p${index + 1}`, 1_000 - index))}
         onOpenRecentProject={onOpen}
@@ -114,7 +107,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('EntryNavRail local (signed-out) shell', () => {
+describe('EntryNavRail local shell', () => {
   it('lists the local projects in the 最近项目 section, newest first, with live run status', async () => {
     renderLocalRail();
     const toggle = screen.getByTestId('entry-nav-recent-toggle');
@@ -123,7 +116,6 @@ describe('EntryNavRail local (signed-out) shell', () => {
     expect(rows.map((row) => row.textContent)).toEqual(
       ['p1', 'p2', 'p3', 'p4', 'p5'].map((id) => `Project ${id}`),
     );
-    // The same feed and the same display mapping the cloud rail reads.
     await waitFor(() => {
       expect(within(rows[0]!).getByRole('img', { name: 'Running' })).toBeTruthy();
     });
@@ -168,27 +160,44 @@ describe('EntryNavRail local (signed-out) shell', () => {
     expect(drafts.textContent).toContain('All projects');
     fireEvent.click(drafts);
     expect(onViewChange).toHaveBeenCalledWith('drafts');
-    // Still no team catalogue without a workspace.
+    // There is no team catalogue.
     expect(screen.queryByTestId('entry-nav-all-projects')).toBeNull();
   });
 
-  it('docks the message centre beside a local identity row at the rail foot, like the cloud shell', async () => {
+  it('renders only the local shell: local dock and settings, nothing from the cloud shell', () => {
     renderLocalRail();
-    const dock = document.querySelector('.entry-nav-rail__account-dock') as HTMLElement | null;
-    expect(dock).not.toBeNull();
-    const bell = within(dock!).getByTestId('entry-nav-message-center');
-    expect(bell.classList.contains('entry-nav-rail__account-bell')).toBe(true);
-    expect(bell.getAttribute('aria-haspopup')).toBe('dialog');
-    // Not a plain rail destination any more.
-    expect(bell.classList.contains('entry-nav-rail__btn')).toBe(false);
-    expect(document.querySelector('.entry-nav-rail__group [data-testid="entry-nav-message-center"]')).toBeNull();
-    // The social links ride the dock, above the identity row, as they do signed in.
-    expect(within(dock!).getByTestId('entry-nav-rail-social')).toBeTruthy();
-    // The sign-in card keeps its slot in the footer.
-    expect(screen.getByTestId('local-sign-in-card')).toBeTruthy();
-    fireEvent.click(bell);
-    await waitFor(() => expect(screen.getByTestId('message-center-dialog')).toBeTruthy());
-    expect(bell.getAttribute('aria-expanded')).toBe('true');
+    const dock = screen.getByTestId('entry-nav-local-account-dock');
+    expect(within(dock).getByTestId('entry-nav-local-account')).toBeTruthy();
+    expect(screen.getAllByTestId('entry-settings-button')).toHaveLength(1);
+    // The footer slot still hosts whatever notice the shell hands it.
+    expect(screen.getByTestId('local-footer-notice')).toBeTruthy();
+
+    for (const testId of [
+      'entry-nav-message-center',
+      'entry-nav-account',
+      'entry-nav-team',
+      'entry-nav-team-switcher',
+      'entry-nav-all-projects',
+      'entry-nav-members',
+      'entry-nav-billing',
+      'entry-nav-board',
+      'entry-nav-rail-social',
+      'entry-cloud-signin-tip',
+      'entry-top-right-upgrade',
+    ]) {
+      expect(screen.queryByTestId(testId)).toBeNull();
+    }
+    for (const selector of [
+      '.entry-nav-rail__account-bell',
+      '.entry-nav-rail__team',
+      '.entry-nav-rail__menu-credits',
+      '.entry-local-mode-tip',
+      '.entry-top-right-credits',
+      '.entry-top-right-account-pill',
+    ]) {
+      expect(document.querySelector(selector)).toBeNull();
+    }
+    expect(screen.queryByRole('button', { name: /sign in|upgrade|invite/i })).toBeNull();
   });
 
   it('opens Settings from the local identity row', () => {

@@ -33,10 +33,10 @@ export const ACP_ARTIFACT_ECHO_START_RE = new RegExp(
   String.raw`^\s*(?:${ACP_ARTIFACT_OPEN_PATTERN}|${ACP_GENERATED_FILE_PREFIX_PATTERN}${ACP_ARTIFACT_OPEN_PATTERN})`,
   'i',
 );
-/** Maximum number of `acp_raw_event_shape` and `acp_artifact_text_suppression` diagnostic events emitted per session to avoid flooding the event stream. */
-export const ACP_RAW_EVENT_SHAPE_DIAGNOSTIC_LIMIT = 8;
-/** Maximum number of bytes retained from stderr to detect AMR retry/failure signals; older bytes are discarded to bound memory use. */
-export const AMR_STDERR_RETRY_TAIL_LIMIT = 16_000;
+/** Maximum number of `acp_artifact_text_suppression` diagnostic events emitted per session to avoid flooding the event stream. */
+export const ACP_DIAGNOSTIC_EVENT_LIMIT = 8;
+/** Maximum number of bytes retained from stderr for the child-exit diagnostic; older bytes are discarded to bound memory use. */
+export const ACP_STDERR_TAIL_LIMIT = 16_000;
 /** Maximum number of redacted stderr characters attached to an ACP child-exit diagnostic. */
 export const ACP_STDERR_DIAGNOSTIC_TAIL_LIMIT = 4_000;
 /**
@@ -46,7 +46,7 @@ export const ACP_STDERR_DIAGNOSTIC_TAIL_LIMIT = 4_000;
  * point, since a row must appear the moment the agent says it started. This
  * only bounds the UPDATES that follow.
  *
- * 250ms is read off the real AMR corpus (202 calls / 911 frames): a shell call
+ * 250ms is read off a real ACP corpus (202 calls / 911 frames): a shell call
  * lands its `in_progress` frames in bursts of three within ~14ms while its
  * payload is unchanged, and no burst of *changed* payloads was ever tighter
  * than a second. A quarter second collapses those bursts, keeps at most four

@@ -75,12 +75,9 @@ describe('mediaFailureNextStep', () => {
       expect(mediaFailureNextStep({ code: 'STUB_PROVIDER_DISABLED' })).toBe('open-settings');
     });
 
-    it('separates an expired Open Design session from a wrong BYOK key', () => {
+    it('reads an upstream credential failure as a Settings problem', () => {
       expect(
-        mediaFailureNextStep({ message: 'vela image 401: unauthorized', model: 'vela/gpt-image-2' }),
-      ).toBe('sign-in');
-      expect(
-        mediaFailureNextStep({ message: 'senseaudio tts 401: unauthorized', model: 'senseaudio-tts' }),
+        mediaFailureNextStep({ message: 'senseaudio tts 401: unauthorized' }),
       ).toBe('open-settings');
     });
   });

@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectView } from '../../src/components/ProjectView';
 import { streamViaDaemon } from '../../src/providers/daemon';
-import { buildWorkspacePermissions, buildWorkspaceSeatSummary, type WorkspaceCollabContext } from '@open-design/contracts';
+import { buildWorkspacePermissions, buildWorkspaceSeatSummary, type WorkspaceCollabContext } from '../helpers/workspace-context';
 import { I18nProvider } from '../../src/i18n';
 import { createProject } from '../../src/state/projects';
 import type { AppConfig, ChatMessage, Project, ProjectFile } from '../../src/types';
@@ -16,7 +16,6 @@ vi.mock('../../src/providers/daemon', async () => {
   const actual = await vi.importActual<typeof import('../../src/providers/daemon')>('../../src/providers/daemon');
   return {
     ...actual,
-    fetchAmrWalletSnapshot: vi.fn().mockResolvedValue(null),
     listActiveChatRuns: vi.fn().mockResolvedValue([]),
     listProjectRuns: vi.fn().mockResolvedValue([]),
     publishDaemonRunFinishedEvent: vi.fn(),
@@ -178,7 +177,7 @@ function mountProject() {
   return render(<I18nProvider initial="en"><ProjectView
     project={project} initialProjectDetail={{ project, resolvedDir: '/workspace/owner-test' }}
     routeConversationId={`conv-${project.id}`} routeFileName={null}
-    config={config} workspaceContextOverride={ambient}
+    config={config}
     agents={[{ id: 'opencode', name: 'OpenCode', bin: 'opencode', available: true, models: [] }]}
     skills={[]} designTemplates={[]} designSystems={[]} daemonLive
     onModeChange={vi.fn()} onAgentChange={vi.fn()} onAgentModelChange={vi.fn()}
@@ -300,7 +299,7 @@ afterEach(() => {
 
 async function runHomeArtifactScenario() {
   const created = await createProject({ id: project.id, name: project.name, skillId: null,
-    designSystemId: null, pendingPrompt: project.pendingPrompt, workspaceContext: ambient });
+    designSystemId: null, pendingPrompt: project.pendingPrompt,});
   expect(created.project.id).toBe(project.id);
   window.sessionStorage.setItem(`od:auto-send-first:${project.id}`, '1');
   window.sessionStorage.setItem(`od:auto-send-prompt:${project.id}`, project.pendingPrompt!);
@@ -315,7 +314,7 @@ async function runHomeArtifactScenario() {
     })).toHaveBeenCalledTimes(1);
     expect(streamController).toBeDefined();
     expect(runRequest?.assistantMessageId).toMatch(/^home-auto-send-.*-assistant$/);
-    expect(requests.some((r) => r.path.endsWith('/files') && r.method === 'GET' && r.role === 'member')).toBe(true);
+    expect(requests.some((r) => r.path.endsWith('/files') && r.method === 'GET')).toBe(true);
   });
   await act(async () => { frame('start', { bin: 'opencode' }); textFrame('Owner QA is active.\n'); });
   // A fresh Home project has the actual Design Files empty-state action.
@@ -358,7 +357,7 @@ async function runHomeArtifactScenario() {
   // artifact write. A later explicit GET must be a real invalidation/fresh read.
   const firstArtifactWrite = requests.find((r) => r.method === 'POST' && r.names.includes('agent-output.html'));
   const preWriteRead = requests.slice(0, firstArtifactWrite ? requests.indexOf(firstArtifactWrite) : 0).filter((r) => r.method === 'GET' && r.path.endsWith('/files')
-    && r.role === 'member' && r.names.length === 1 && r.names[0] === 'document.md').at(-1);
+    && r.names.length === 1 && r.names[0] === 'document.md').at(-1);
   expect(firstArtifactWrite).toBeDefined();
   expect(preWriteRead).toBeDefined();
   expect(firstArtifactWrite!.clock - preWriteRead!.clock).toBeGreaterThanOrEqual(0);
@@ -374,14 +373,13 @@ describe('Home auto-send artifact recovery ownership with production provider an
     expect(message.producedFiles?.map((file) => file.name)).toEqual(['agent-output.html']);
     expect(message.traceObjectFiles?.map((file) => file.name) ?? []).not.toContain('document.md');
   });
-  it('uses the resolved member authority for artifact POST and reads its fresh file list after owner handoff', async () => {
+  it('writes the artifact and reads its fresh file list', async () => {
     ambient = context('owner');
     const message = await runHomeArtifactScenario();
     const artifactWrites = requests.filter((r) => r.method === 'POST' && r.names.includes('agent-output.html'));
     expect(artifactWrites.length).toBeGreaterThan(0);
-    expect(artifactWrites.map((r) => r.role)).toEqual(artifactWrites.map(() => 'member'));
     const lastWrite = requests.lastIndexOf(artifactWrites[artifactWrites.length - 1]!);
-    expect(requests.slice(lastWrite + 1).some((r) => r.method === 'GET' && r.role === 'member'
+    expect(requests.slice(lastWrite + 1).some((r) => r.method === 'GET'
       && r.path.endsWith('/files') && r.names.includes('agent-output.html'))).toBe(true);
     expect(message.producedFiles?.map((file) => file.name)).toEqual(['agent-output.html']);
   });

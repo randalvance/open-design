@@ -70,37 +70,11 @@ Acorn is a daemon-local runtime dependency; the strict checker stays authoritati
 
 ## Local deployment acceptance
 
-### Alignment: explicit synthetic telemetry canary (2026-09-09)
+### Removed lanes
 
-The user authorized executing the proposed local upload acceptance. This does
-not authorize a push, release, real-model batch or upload of existing user data.
-
-| ID | Confirmed behavior | Acceptance |
-| --- | --- | --- |
-| S1 | Upload is explicitly opt-in; existing replay and real lanes remain offline | Default consent stays off; upload refuses real/dataset/external-fixture inputs |
-| S2 | Only three built-in synthetic outputs: clean, safely repairable, unrepairable | One repeat, isolated data and AMR home, no inherited user auth; real daemon performs finalization |
-| S3 | Exercise the real exporter through the configured official test relay | Both existing consent gates explicitly on, no direct credentials or manual metrics ingestion; await durable delivery outcome |
-| S4 | Distinguish synthetic records and verify actual ingestion | Unique synthetic-test environment, existing low-cardinality fixture model tag, exact Trace/Observation readback; relay acceptance alone is insufficient |
-
-The native Langfuse environment reuses the existing telemetry environment
-source. No new production privacy policy or sink-priority rule is introduced.
-
-Explicit, fixed-synthetic upload canary (never accepts an external dataset,
-fixture manifest, real mode, production profile or more than one repeat):
-
-```bash
-OPEN_DESIGN_TELEMETRY_RELAY_URL=https://telemetry-test.open-design.ai/api/langfuse \
-  pnpm exec tsx scripts/syntax-acceptance.ts --mode replay --upload-telemetry --repeat 1
-```
-
-The successful Run is followed by the normal client final-message GET/PUT with
-`telemetryFinalized: true`. Only the actual durable assistant message is reused;
-the harness does not manufacture usage, diagnostics or outcome metrics. It then
-waits for the isolated Run's durable exporter checkpoint. `failed`, `not_expected`,
-zero attempts and a missing receipt do not pass. Automatic repository dotenv
-loading is disabled for all tools-dev commands. Installation and legacy migration
-overrides are cleared; the upload lane also isolates AMR home and clears inherited
-account/direct-ingestion keys. PostHog remains disabled.
+The synthetic telemetry canary (`--upload-telemetry`) and the real-model lane
+(`--mode real`) are gone: telemetry and AMR no longer exist. `--mode replay` is the
+only lane. The receipts below are history and name flags that no longer run.
 
 Run from `e2e/`:
 
@@ -128,20 +102,6 @@ intentionally blocked delivery do not validate this policy. The harness rejects 
 The committed fixture is about 120 KB after removing original images/contact data.
 Its six error locations are preserved. The 1.3 MB original remains local and ignored;
 do not infer its timing from the smaller derivative. See fixture README/provenance.
-
-The opt-in `--mode real` lane requires dataset path/hash/row count, pinned runner
-path/version, Vela binary and test profile. It runs AMR / deepseek-v4-flash / explicit
-OD Next against a few unchanged pressure cases, without creating a remote batch.
-It validates integration, not deterministic repair coverage. It requires a runner
-that projects the complete Host terminal summary and, for warning delivery,
-`deliveredWithSyntaxWarningCount=1`, `recoveredDeliveryCount=0` and
-`blockedBrokenDeliveryCount=0`. Missing summaries or terminal evidence do not pass
-acceptance, even if the last checker status is `pass`. This lane's projected metrics
-alone do not prove original-byte preservation; fixed replay reads and compares the
-actual artifact to supply that evidence. No production-wallet
-fallback is permitted. Both lanes disable telemetry/content/manifest upload by
-default; only the explicit fixed-synthetic canary enables Trace upload. Neither
-offline replay nor the anonymous Trace canary proves R2 object materialization.
 
 ### Synthetic upload receipt: 2026-09-09
 

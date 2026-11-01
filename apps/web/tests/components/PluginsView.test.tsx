@@ -30,14 +30,6 @@ vi.mock('../../src/router', () => ({
 
 // PluginsView behavior is exercised against a settled signed-out/legacy
 // identity here. Workspace transition behavior has its own focused suite.
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>()),
-  useWorkspaceContext: () => ({
-    context: null,
-    loading: false,
-    refresh: vi.fn(),
-  }),
-}));
 
 vi.mock('../../src/state/projects', () => ({
   addPluginMarketplace: vi.fn(),
@@ -402,7 +394,6 @@ describe('PluginsView', () => {
     await waitFor(() =>
       expect(mockedInstallPluginSource).toHaveBeenCalledWith(
         source,
-        null,
       ),
     );
     expect(await screen.findByText('Installed New Plugin.')).toBeTruthy();
@@ -453,7 +444,7 @@ describe('PluginsView', () => {
     fireEvent.click(await screen.findByTestId('plugins-available-install-remote-plugin'));
 
     await waitFor(() =>
-      expect(mockedInstallPluginSource).toHaveBeenCalledWith('remote-plugin', null),
+      expect(mockedInstallPluginSource).toHaveBeenCalledWith('remote-plugin'),
     );
     expect(await screen.findByText('Installed New Plugin.')).toBeTruthy();
     expect(screen.getByTestId('plugins-tab-installed').getAttribute('aria-selected')).toBe('true');
@@ -473,7 +464,7 @@ describe('PluginsView', () => {
     fireEvent.click(within(dialog).getByTestId('plugins-available-details-install-remote-plugin'));
 
     await waitFor(() =>
-      expect(mockedInstallPluginSource).toHaveBeenCalledWith('remote-plugin@1.2.0', null),
+      expect(mockedInstallPluginSource).toHaveBeenCalledWith('remote-plugin@1.2.0'),
     );
     expect(await screen.findByText('Installed New Plugin.')).toBeTruthy();
     await waitFor(() =>
@@ -552,7 +543,7 @@ describe('PluginsView', () => {
 
     fireEvent.click(within(dialog).getByTestId('plugins-available-details-install-remote-plugin'));
     await waitFor(() =>
-      expect(mockedInstallPluginSource).toHaveBeenCalledWith('remote-plugin@1.1.0', null),
+      expect(mockedInstallPluginSource).toHaveBeenCalledWith('remote-plugin@1.1.0'),
     );
   });
 
@@ -710,7 +701,6 @@ describe('PluginsView', () => {
     expect(screen.queryByRole('button', { name: 'Install' })).toBeNull();
     expect(mockedListPlugins).toHaveBeenCalledWith({
       includeHidden: true,
-      workspaceContext: null,
     });
     expect(mockedApplyPlugin).not.toHaveBeenCalled();
   });

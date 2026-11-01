@@ -112,9 +112,9 @@ Current materialization-time parameters:
   `appVersion`, and the Windows executable fixed file version.
 - **Namespace / channel and runtime endpoints.**
   `win.electron-builder-dir` omits them. `open-design-config.json` — which
-  carries `namespace`, `amrProfile`, `telemetryRelayUrl`, `updateMetadataUrl`,
-  `posthogKey`/`posthogHost`, `webOutputMode`, and `namespaceBaseRoot` — is
-  regenerated on the materialization path by `writePackagedConfig`.
+  carries `namespace`, `updateMetadataUrl`, `webOutputMode`, and
+  `namespaceBaseRoot` — is regenerated on the materialization path by
+  `writePackagedConfig`.
 
 The downstream `win.nsis-payload-overlay`, `win.nsis-installer`,
 `win.portable-zip`, and `win.launcher-payload` nodes carry `namespace` and the
@@ -138,8 +138,7 @@ both hold:
 Adding a materialization-time parameter without (2) is not permitted.
 
 > Known asymmetry: app version satisfies (2). The other regenerated config
-> fields — `namespace`, `amrProfile`, `telemetryRelayUrl`,
-> `updateMetadataUrl`, `posthogKey`, `posthogHost`, `webOutputMode`,
+> fields — `namespace`, `updateMetadataUrl`, `webOutputMode`,
 > `namespaceBaseRoot`, and the packaged entrypoint fields — currently satisfy
 > only (1): they are rewritten but not asserted.
 

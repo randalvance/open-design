@@ -9,8 +9,6 @@ import type { ChatPane as ChatPaneComponent } from '../../src/components/ChatPan
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ProjectView } from '../../src/components/ProjectView';
-import type { ProjectWorkspaceScopeState } from '../../src/collab/useProjectWorkspaceScope';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import type {
   AgentInfo,
   AppConfig,
@@ -31,7 +29,6 @@ const listProjectRuns = vi.fn();
 const streamViaDaemon = vi.fn();
 const saveMessage = vi.fn();
 const createConversation = vi.fn();
-const checkAmrBalanceGate = vi.fn();
 const fetchBrands = vi.fn();
 
 /** What each composer send was told to do with its draft. */
@@ -39,54 +36,7 @@ const sendOutcomes: unknown[] = [];
 /** What the non-composer hosts got back from their own `handleSend` calls. */
 const hostSendOutcomes: unknown[] = [];
 
-const workspaceScopeMocks = vi.hoisted(() => {
-  const personalContext = (): WorkspaceCollabContext => ({
-    workspaceId: 'workspace-personal',
-    workspaceMemberId: 'member-personal',
-    workspaceType: 'personal',
-    role: 'owner',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: null,
-    providerMode: 'platform_credits',
-    seatSummary: {
-      seatLimit: 1,
-      usedSeats: 1,
-      availableSeats: 0,
-      isSeatFull: true,
-    },
-    permissions: {
-      canManageMembers: true,
-      canManageBilling: true,
-      canInviteMembers: true,
-      canManageAutoRecharge: true,
-      canShareProjects: true,
-      canWriteSyncedFiles: true,
-      canViewWorkspaceSettings: true,
-      canManageSharedResources: true,
-    },
-  } as WorkspaceCollabContext);
-  return {
-    personalContext,
-    ambientContext: null as WorkspaceCollabContext | null,
-    projectScope: {
-      loading: false,
-      scope: {
-        kind: 'personal' as const,
-        projectId: 'project-1',
-        workspaceId: 'workspace-personal',
-        visibility: 'personal' as const,
-        context: personalContext(),
-      },
-    } as ProjectWorkspaceScopeState,
-  };
-});
 
-const projectCollabMocks = vi.hoisted(() => ({
-  viewerOnly: false,
-  writerAuthority: 'allowed' as 'allowed' | 'denied' | 'pending',
-}));
 
 vi.mock('../../src/analytics/provider', () => ({
   useAnalytics: () => ({ track: vi.fn() }),
@@ -101,45 +51,8 @@ vi.mock('../../src/router', () => ({ navigate: vi.fn() }));
 
 vi.mock('../../src/providers/anthropic', () => ({ streamMessage: vi.fn() }));
 
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>()),
-  useWorkspaceContext: () => ({
-    context: workspaceScopeMocks.ambientContext,
-    loading: false,
-  }),
-  lastResolvedTeamProjects: () => [],
-  lastResolvedWorkspaceContext: () => workspaceScopeMocks.ambientContext,
-  workspaceIdentityCanBillAmr: (state: { context: unknown; loading: boolean }) =>
-    state.context !== null || state.loading,
-  useWorkspaceBilling: () => null,
-}));
 
-vi.mock('../../src/collab/useProjectWorkspaceScope', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useProjectWorkspaceScope')>()),
-  useProjectWorkspaceScope: () => workspaceScopeMocks.projectScope,
-}));
 
-vi.mock('../../src/collab/useProjectCollab', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/collab/useProjectCollab')>()),
-  useProjectCollab: () => ({
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: 'local_only',
-    viewerOnly: projectCollabMocks.viewerOnly,
-    isOwner: true,
-    writerAuthority: projectCollabMocks.writerAuthority,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: vi.fn(),
-    requestPublish: vi.fn(),
-    refreshPresence: vi.fn(),
-    checkStatusNow: vi.fn(),
-    applyContentTransferState: vi.fn(),
-  }),
-}));
 
 vi.mock('../../src/providers/daemon', () => ({
   GENERIC_DAEMON_DISCONNECT_CODE: 'GENERIC_DAEMON_DISCONNECT',
@@ -147,16 +60,9 @@ vi.mock('../../src/providers/daemon', () => ({
   fetchChatRunStatus: (...args: unknown[]) => fetchChatRunStatus(...args),
   listActiveChatRuns: (...args: unknown[]) => listActiveChatRuns(...args),
   listProjectRuns: (...args: unknown[]) => listProjectRuns(...args),
-  publishDaemonRunFinishedEvent: vi.fn(),
   reattachDaemonRun: vi.fn(),
   streamViaDaemon: (...args: unknown[]) => streamViaDaemon(...args),
   // 拦截档的弹窗是真的渲染出来的,它要的 provider 得给全。
-  fetchAmrWalletSnapshot: vi.fn().mockResolvedValue(null),
-  formatVelaBalanceUsd: (value: string | null) => `$${value ?? '0'}`,
-  fetchVelaLoginStatus: vi.fn().mockResolvedValue({ loggedIn: true }),
-  startVelaLogin: vi.fn(),
-  cancelVelaLogin: vi.fn(),
-  canUpgradeVelaPlan: vi.fn().mockReturnValue(false),
   launchAntigravityOauth: vi.fn(),
 }));
 
@@ -164,10 +70,6 @@ vi.mock('../../src/providers/project-events', () => ({
   useProjectFileEvents: vi.fn(),
 }));
 
-vi.mock('../../src/runtime/amr-balance-gate', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../src/runtime/amr-balance-gate')>()),
-  checkAmrBalanceGate: (...args: unknown[]) => checkAmrBalanceGate(...args),
-}));
 
 vi.mock('../../src/runtime/brands', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/runtime/brands')>()),
@@ -396,11 +298,9 @@ const localConfig: AppConfig = {
 };
 
 /** OpenDesign Cloud:2719 那条路唯一会跑预检的配置。 */
-const amrConfig: AppConfig = { ...localConfig, agentId: 'amr' };
 
 const agents = [
   { id: 'agent-1', name: 'OpenCode', bin: 'opencode', available: true, models: [] },
-  { id: 'amr', name: 'OpenDesign Cloud', available: true, models: [] },
 ] as unknown as AgentInfo[];
 
 const userMessage: ChatMessage = {
@@ -480,9 +380,6 @@ beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
   conversationMessages = [userMessage, failedAssistant];
-  workspaceScopeMocks.ambientContext = workspaceScopeMocks.personalContext();
-  projectCollabMocks.viewerOnly = false;
-  projectCollabMocks.writerAuthority = 'allowed';
   listConversations.mockResolvedValue([conversation]);
   createConversation.mockResolvedValue(conversation);
   listMessages.mockImplementation(async () => conversationMessages);
@@ -496,7 +393,6 @@ beforeEach(() => {
   listProjectRuns.mockResolvedValue([]);
   saveMessage.mockResolvedValue(null);
   streamViaDaemon.mockResolvedValue(undefined);
-  checkAmrBalanceGate.mockResolvedValue({ kind: 'allow' });
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => new Response('{}', { status: 200 })),
@@ -532,16 +428,6 @@ describe('OPEND-2821 门控为真时,宿主要说出原因而不是静默吞掉�
     expect(streamViaDaemon).not.toHaveBeenCalled();
   });
 
-  it('只读访客 → 宿主宣告「只读」', async () => {
-    projectCollabMocks.viewerOnly = true;
-
-    renderProjectView();
-    await waitForConversation();
-
-    await waitFor(() =>
-      expect(screen.getByTestId('recovery-blocked-reason').textContent).toBe('read-only'),
-    );
-  });
 
   /*
    * 反向锚点。没有这一条,「永远禁用」也能让上面两条全绿 —— 而那是把守卫
@@ -641,142 +527,8 @@ describe('重试请求归属在确认/拒绝时释放，失败历史始终保留
     );
   });
 
-  it('预检拒绝(余额不足)的重试 → 请求归属释放，失败历史仍保留', async () => {
-    let settleGate: ((result: unknown) => void) | null = null;
-    checkAmrBalanceGate.mockImplementation(
-      () => new Promise((resolve) => {
-        settleGate = resolve;
-      }),
-    );
-
-    renderProjectView(amrConfig);
-    await waitForConversation();
-    await waitFor(() =>
-      expect(screen.getByTestId('recovery-blocked-reason').textContent).toBe('none'),
-    );
-
-    fireEvent.click(screen.getByTestId('chat-retry'));
-
-    await waitFor(() => expect(checkAmrBalanceGate).toHaveBeenCalled());
-    // 预检还在飞:这一刻宣告必须已经立起来,否则卡早就没了。
-    expect(screen.getByTestId('retry-pending-id').textContent).toBe('assistant-failed');
-
-    settleGate!({
-      kind: 'hard',
-      reason: 'insufficient',
-      snapshot: {
-        status: 'available',
-        profile: 'prod',
-        user: { plan: 'free' },
-        balanceUsd: '0',
-        updatedAt: null,
-        fetchedAt: new Date().toISOString(),
-        stale: false,
-        source: 'vela_api',
-      },
-    });
-
-    await waitFor(() =>
-      expect(screen.getByTestId('retry-pending-id').textContent).toBe('none'),
-    );
-    expect(streamViaDaemon).not.toHaveBeenCalled();
-    expect(screen.getByTestId('assistant-summary').textContent).toContain(
-      'assistant-failed|failed',
-    );
-  });
 });
 
-describe('OPEND-2719 余额不足是终局:不进队列,不起任务,弹窗和卡照出', () => {
-  const insufficient = {
-    kind: 'hard' as const,
-    reason: 'insufficient' as const,
-    snapshot: {
-      status: 'available' as const,
-      profile: 'prod',
-      user: { plan: 'free' },
-      balanceUsd: '0',
-      updatedAt: null,
-      fetchedAt: new Date().toISOString(),
-      stale: false,
-      source: 'vela_api' as const,
-    },
-  };
-
-  it('余额不足的一发:弹窗出、任务不起、队列一条都不许多', async () => {
-    conversationMessages = [];
-    checkAmrBalanceGate.mockResolvedValue(insufficient);
-
-    renderProjectView(amrConfig);
-    await waitForConversation();
-    await waitFor(() =>
-      expect((screen.getByTestId('send-message') as HTMLButtonElement).disabled).toBe(false),
-    );
-
-    fireEvent.click(screen.getByTestId('send-message'));
-
-    await waitFor(() => expect(screen.getByTestId('amr-balance-dialog')).toBeTruthy());
-    expect(streamViaDaemon).not.toHaveBeenCalled();
-    expect(screen.getByTestId('queued-count').textContent).toBe('0');
-  });
-
-  it('余额不足之后再发一条:同样出弹窗,同样不进队列', async () => {
-    conversationMessages = [];
-    checkAmrBalanceGate.mockResolvedValue(insufficient);
-
-    renderProjectView(amrConfig);
-    await waitForConversation();
-    await waitFor(() =>
-      expect((screen.getByTestId('send-message') as HTMLButtonElement).disabled).toBe(false),
-    );
-
-    fireEvent.click(screen.getByTestId('send-message'));
-    await waitFor(() => expect(screen.getByTestId('amr-balance-dialog')).toBeTruthy());
-
-    fireEvent.click(screen.getByTestId('send-message'));
-    await waitFor(() => expect(checkAmrBalanceGate).toHaveBeenCalledTimes(2));
-
-    expect(screen.getByTestId('amr-balance-dialog')).toBeTruthy();
-    expect(screen.getByTestId('queued-count').textContent).toBe('0');
-    expect(streamViaDaemon).not.toHaveBeenCalled();
-  });
-
-  it('被拦下的正文交还给输入框,不靠队列替它保管', async () => {
-    conversationMessages = [];
-    checkAmrBalanceGate.mockResolvedValue(insufficient);
-
-    renderProjectView(amrConfig);
-    await waitForConversation();
-    await waitFor(() =>
-      expect((screen.getByTestId('send-message') as HTMLButtonElement).disabled).toBe(false),
-    );
-
-    fireEvent.click(screen.getByTestId('send-message'));
-
-    await waitFor(() => expect(sendOutcomes).toEqual(['restore-draft']));
-  });
-
-  /*
-   * 反向锚点:预检放行时什么都没变 —— 队列不该因为这次改动开始吞消息,
-   * 输入框也不该赖着不清。
-   */
-  it('反向锚点:预检放行时照常起任务,不进队列,输入框照常清空', async () => {
-    conversationMessages = [];
-    checkAmrBalanceGate.mockResolvedValue({ kind: 'allow' });
-
-    renderProjectView(amrConfig);
-    await waitForConversation();
-    await waitFor(() =>
-      expect((screen.getByTestId('send-message') as HTMLButtonElement).disabled).toBe(false),
-    );
-
-    fireEvent.click(screen.getByTestId('send-message'));
-
-    await waitFor(() => expect(streamViaDaemon).toHaveBeenCalledTimes(1));
-    expect(screen.getByTestId('queued-count').textContent).toBe('0');
-    expect(screen.queryByTestId('amr-balance-dialog')).toBeNull();
-    await waitFor(() => expect(sendOutcomes).toEqual([undefined]));
-  });
-});
 
 /*
  * OPEND-2719 的**收窄**(PR #7927 评审)。
@@ -791,94 +543,6 @@ describe('OPEND-2719 余额不足是终局:不进队列,不起任务,弹窗和�
  * 所以判据改成肯定式:只有 `handleComposerSend` 自己打上的标记才走这条路。
  * 下面四条钉的是「别人的行为一个字没变」。
  */
-describe('OPEND-2719 收窄:只有输入框那条路把正文要回去', () => {
-  const insufficient = {
-    kind: 'hard' as const,
-    reason: 'insufficient' as const,
-    snapshot: {
-      status: 'available' as const,
-      profile: 'prod',
-      user: { plan: 'free' },
-      balanceUsd: '0',
-      updatedAt: null,
-      fetchedAt: new Date().toISOString(),
-      stale: false,
-      source: 'vela_api' as const,
-    },
-  };
-
-  async function renderBlockedAmrProject() {
-    checkAmrBalanceGate.mockResolvedValue(insufficient);
-    renderProjectView(amrConfig);
-    await waitForConversation();
-    await waitFor(() =>
-      expect(screen.getByTestId('recovery-blocked-reason').textContent).toBe('none'),
-    );
-  }
-
-  it('分享到社区:余额不足时照旧进队列,不抢输入框', async () => {
-    await renderBlockedAmrProject();
-
-    fireEvent.click(screen.getByTestId('share-to-open-design'));
-
-    await waitFor(() => expect(screen.getByTestId('queued-count').textContent).toBe('1'));
-    expect(screen.getByTestId('queued-prompts').textContent).not.toBe('');
-    expect(streamViaDaemon).not.toHaveBeenCalled();
-    // 输入框那条路一次都没被叫到,自然也没有正文要还。
-    expect(sendOutcomes).toEqual([]);
-  });
-
-  it('继续未完成任务:余额不足时照旧进队列', async () => {
-    await renderBlockedAmrProject();
-
-    fireEvent.click(screen.getByTestId('continue-remaining'));
-
-    await waitFor(() => expect(screen.getByTestId('queued-count').textContent).toBe('1'));
-    expect(streamViaDaemon).not.toHaveBeenCalled();
-  });
-
-  it('续跑:余额不足时照旧进队列', async () => {
-    await renderBlockedAmrProject();
-
-    fireEvent.click(screen.getByTestId('resume-run'));
-
-    await waitFor(() => expect(screen.getByTestId('queued-count').textContent).toBe('1'));
-    expect(streamViaDaemon).not.toHaveBeenCalled();
-  });
-
-  /*
-   * 问答表单是这一组里代价最高的一个:它把答案(和刚上传的文件)只留了一份,
-   * 靠 `acceptDurableQueue` 的 `true` 才敢释放表单。被误拖上「不代管」那条路
-   * 会让它收到 `false` —— 表单解锁、上传回滚,用户被要求重答一遍。
-   */
-  it('问答表单的答案:余额不足时进队列,而且要被告知「已durable接住」', async () => {
-    await renderBlockedAmrProject();
-
-    fireEvent.click(screen.getByTestId('submit-question-form'));
-
-    await waitFor(() => expect(screen.getByTestId('queued-count').textContent).toBe('1'));
-    await waitFor(() => expect(hostSendOutcomes).toEqual([true]));
-    expect(streamViaDaemon).not.toHaveBeenCalled();
-  });
-
-  /*
-   * 反向锚点:收窄之后输入框那条路必须还在。没有这一条,「谁都不走这条路」
-   * 也能让上面四条全绿 —— 而那等于把 2719 又改回去了。
-   */
-  it('反向锚点:输入框那条路仍然不进队列,正文仍然还回去', async () => {
-    conversationMessages = [];
-    await renderBlockedAmrProject();
-    await waitFor(() =>
-      expect((screen.getByTestId('send-message') as HTMLButtonElement).disabled).toBe(false),
-    );
-
-    fireEvent.click(screen.getByTestId('send-message'));
-
-    await waitFor(() => expect(sendOutcomes).toEqual(['restore-draft']));
-    expect(screen.getByTestId('queued-count').textContent).toBe('0');
-    expect(streamViaDaemon).not.toHaveBeenCalled();
-  });
-});
 
 /*
  * `composerOwnedDraft` 是 **transport-only** 的,和 `acceptDurableQueue` 同类:
@@ -889,7 +553,6 @@ describe('OPEND-2719 收窄:只有输入框那条路把正文要回去', () => {
 describe('OPEND-2719:输入框认领不许落进队列', () => {
   it('会话正忙时排队的那条输入框消息,落库的 meta 里没有这份认领', async () => {
     conversationMessages = [];
-    checkAmrBalanceGate.mockResolvedValue({ kind: 'allow' });
     // 第一发跑起来就不结束 —— 会话进入 busy,第二发只能排队。
     streamViaDaemon.mockImplementation(
       async (options: { onRunCreated?: (runId: string) => void }) => {
@@ -898,7 +561,7 @@ describe('OPEND-2719:输入框认领不许落进队列', () => {
       },
     );
 
-    renderProjectView(amrConfig);
+    renderProjectView(localConfig);
     await waitForConversation();
     await waitFor(() =>
       expect((screen.getByTestId('send-message') as HTMLButtonElement).disabled).toBe(false),
@@ -922,41 +585,15 @@ describe('OPEND-2719:输入框认领不许落进队列', () => {
  * whether an error card survives retry or which surface owns the next failure.
  */
 describe('2026-09-14 retry replaces the old error surface without erasing history', () => {
-  // G16: only Cloud failures expose manual Retry. Keep the earlier local-CLI
-  // callback/composer gate tests intact and use a Cloud-owned failed attempt
-  // for this real ChatPane group, including folded and busy-history cases.
-  let cloudFailedAssistant: ChatMessage;
+  let retriedFailedAssistant: ChatMessage;
 
   beforeEach(() => {
-    cloudFailedAssistant = structuredClone({ ...failedAssistant, agentId: 'amr' });
-    conversationMessages = [userMessage, cloudFailedAssistant];
+    retriedFailedAssistant = structuredClone(failedAssistant);
+    conversationMessages = [userMessage, retriedFailedAssistant];
   });
 
   type RunOptions = Parameters<typeof import('../../src/providers/daemon').streamViaDaemon>[0];
-  type GateOutcome = Awaited<ReturnType<typeof import('../../src/runtime/amr-balance-gate').checkAmrBalanceGate>>;
-
-  function deferred<T>() {
-    let resolve!: (value: T) => void;
-    const promise = new Promise<T>((settle) => { resolve = settle; });
-    return { promise, resolve };
-  }
-
-  const insufficient = (): GateOutcome => ({
-    kind: 'hard',
-    reason: 'insufficient',
-    snapshot: {
-      status: 'available',
-      profile: 'prod',
-      user: { plan: 'free' },
-      balanceUsd: '0',
-      updatedAt: null,
-      fetchedAt: '2026-09-14T04:00:00.000Z',
-      stale: false,
-      source: 'vela_api',
-    },
-  });
-
-  async function renderRealChat(config = amrConfig) {
+  async function renderRealChat(config = localConfig) {
     chatSurface.real = true;
     // Run terminal callbacks refresh the transcript. Keep that read faithful
     // to completed writes instead of restoring the seed fixture after success.
@@ -976,8 +613,8 @@ describe('2026-09-14 retry replaces the old error surface without erasing histor
   }
 
   function expectOriginalFailurePreserved() {
-    expect(chatSurface.props?.messages.find((message) => message.id === cloudFailedAssistant.id))
-      .toEqual(cloudFailedAssistant);
+    expect(chatSurface.props?.messages.find((message) => message.id === retriedFailedAssistant.id))
+      .toEqual(retriedFailedAssistant);
   }
 
   function captureRun() {
@@ -999,141 +636,15 @@ describe('2026-09-14 retry replaces the old error surface without erasing histor
     await waitFor(() => expect(streamViaDaemon).toHaveBeenCalledTimes(1));
 
     expect(chatSurface.props?.messages.some((message) =>
-      message.role === 'assistant' && message.id !== cloudFailedAssistant.id && !message.runId,
+      message.role === 'assistant' && message.id !== retriedFailedAssistant.id && !message.runId,
     )).toBe(true);
     expect(screen.queryByTestId('chat-run-error-card')).toBeNull();
     expectOriginalFailurePreserved();
   });
 
-  it('an insufficient-balance rejection replaces the old failure card with the balance card', async () => {
-    const gate = deferred<GateOutcome>();
-    checkAmrBalanceGate.mockReturnValue(gate.promise);
-    await renderRealChat(amrConfig);
-    fireEvent.click(screen.getByTestId('chat-error-retry'));
-    await waitFor(() => expect(checkAmrBalanceGate).toHaveBeenCalledTimes(1));
-    // Settle the real preflight path before checking the screenshot's terminal
-    // state. An earlier pending-card failure must not hide this second defect.
-    await act(async () => gate.resolve(insufficient()));
-    await waitFor(() => expect(screen.getByTestId('chat-upgrade-card')).toBeTruthy());
 
-    expect(screen.queryByTestId('chat-run-error-card')).toBeNull();
-    expect(screen.getAllByTestId('chat-upgrade-card')).toHaveLength(1);
-    expect(streamViaDaemon).not.toHaveBeenCalled();
-    expect(chatSurface.props?.queuedItems ?? []).toHaveLength(0);
-    expectOriginalFailurePreserved();
-  });
 
-  it('a folded task retry replaces its visible head error after a rejected physical-tail retry', async () => {
-    const gate = deferred<GateOutcome>();
-    checkAmrBalanceGate.mockReturnValue(gate.promise);
-    const planning: ChatMessage = {
-      ...cloudFailedAssistant,
-      id: 'assistant-task-head',
-      runId: 'run-task-plan',
-      runStatus: 'succeeded',
-      content: 'Retained planning output.',
-      events: [],
-      strategyTaskExecutionId: 'task-folded-retry',
-      strategyTaskRunIndex: 0,
-      strategyTaskBlocked: true,
-      strategyTaskBlockedText: null,
-    };
-    const production: ChatMessage = {
-      ...cloudFailedAssistant,
-      id: 'assistant-task-tail',
-      runId: 'run-task-production',
-      content: 'Retained failed production output.',
-      createdAt: 3,
-      strategyTaskExecutionId: 'task-folded-retry',
-      strategyTaskRunIndex: 1,
-      strategyTaskBlocked: true,
-      strategyTaskBlockedText: null,
-    };
-    conversationMessages = [userMessage, planning, production];
-    // A persisted successful strategy predecessor probes its task projection on
-    // hydration. Returning null would simulate a missing daemon run and trigger
-    // the separate stale-run fallback before anyone clicks Retry.
-    fetchChatRunStatus.mockImplementation(async (runId: string) => {
-      const message = conversationMessages.find((candidate) => candidate.runId === runId);
-      if (!message) return null;
-      return {
-        id: runId,
-        projectId: project.id,
-        conversationId: conversation.id,
-        assistantMessageId: message.id,
-        agentId: message.agentId,
-        status: message.runStatus,
-        createdAt: message.createdAt,
-        updatedAt: message.createdAt,
-        strategyTask: {
-          taskExecutionId: 'task-folded-retry',
-          strategy: {
-            id: 'od-next-strategy', version: '2.0.0',
-            packageHash: 'b'.repeat(64), snapshotId: 'snapshot-folded-retry',
-          },
-          inputStage: 'production',
-          outcome: 'blocked',
-          route: 'full_plan',
-          executionMode: 'simple',
-          activeRunId: production.runId,
-          terminal: true,
-        },
-      };
-    });
-    const view = await renderRealChat(amrConfig);
-    expect(chatSurface.props?.messages).toEqual([userMessage, planning, production]);
-    // Actual ChatPane folds both runs into the first assistant's displayed ID.
-    expect(screen.getByTestId('history-assistant-task-head').textContent)
-      .toContain('Retained failed production output.');
-    fireEvent.click(screen.getByTestId('chat-error-retry'));
-    await waitFor(() => expect(checkAmrBalanceGate).toHaveBeenCalledTimes(1));
-    await act(async () => gate.resolve(insufficient()));
-    await waitFor(() => expect(screen.getByTestId('chat-upgrade-card')).toBeTruthy());
 
-    expect(screen.queryByTestId('chat-run-error-card')).toBeNull();
-    expect(streamViaDaemon).not.toHaveBeenCalled();
-    expect(chatSurface.props?.messages).toEqual([userMessage, planning, production]);
-    view.unmount();
-    renderProjectView(amrConfig);
-    await waitFor(() => expect(chatSurface.props?.messages).toEqual([userMessage, planning, production]));
-    expect(screen.queryByTestId('chat-run-error-card')).toBeNull();
-  });
-
-  it('a rejected retry remains consumed after remounting the same client conversation', async () => {
-    const gate = deferred<GateOutcome>();
-    checkAmrBalanceGate.mockReturnValue(gate.promise);
-    const view = await renderRealChat(amrConfig);
-    fireEvent.click(screen.getByTestId('chat-error-retry'));
-    await waitFor(() => expect(checkAmrBalanceGate).toHaveBeenCalledTimes(1));
-    await act(async () => gate.resolve(insufficient()));
-    await waitFor(() => expect(screen.getByTestId('chat-upgrade-card')).toBeTruthy());
-    view.unmount();
-    renderProjectView(amrConfig);
-    await waitFor(() => expect(chatSurface.props?.messages.some((message) =>
-      message.id === cloudFailedAssistant.id,
-    )).toBe(true));
-    expect(screen.queryByTestId('chat-run-error-card')).toBeNull();
-    expectOriginalFailurePreserved();
-  });
-
-  it('restricted session storage does not stop the accepted retry consuming its old card', async () => {
-    const gate = deferred<GateOutcome>();
-    checkAmrBalanceGate.mockReturnValue(gate.promise);
-    const storageWrite = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new DOMException('storage disabled', 'SecurityError');
-    });
-    try {
-      await renderRealChat(amrConfig);
-      fireEvent.click(screen.getByTestId('chat-error-retry'));
-      await waitFor(() => expect(checkAmrBalanceGate).toHaveBeenCalledTimes(1));
-      await act(async () => gate.resolve(insufficient()));
-      await waitFor(() => expect(screen.getByTestId('chat-upgrade-card')).toBeTruthy());
-      expect(screen.queryByTestId('chat-run-error-card')).toBeNull();
-      expectOriginalFailurePreserved();
-    } finally {
-      storageWrite.mockRestore();
-    }
-  });
 
   it('a confirmed replacement that succeeds leaves no error card and preserves the prior failure', async () => {
     const getRun = captureRun();
@@ -1263,20 +774,19 @@ describe('2026-09-14 retry replaces the old error surface without erasing histor
   });
 
   it('an active run disables the real retry button and guards direct callback invocation', async () => {
-    conversationMessages = [strandedRunningAssistant, userMessage, cloudFailedAssistant];
+    conversationMessages = [strandedRunningAssistant, userMessage, retriedFailedAssistant];
     fetchChatRunStatus.mockImplementation(() => new Promise(() => {}));
     chatSurface.real = true;
-    renderProjectView(amrConfig);
+    renderProjectView(localConfig);
     await waitFor(() => expect(chatSurface.props?.recoveryActionsBlockedReason).toBe('conversation-busy'));
     const retry = screen.getByTestId('chat-error-retry') as HTMLButtonElement;
     expect(retry.disabled).toBe(true);
 
     await act(async () => {
       fireEvent.click(retry);
-      chatSurface.props?.onRetry?.(cloudFailedAssistant, 'manual_retry');
+      chatSurface.props?.onRetry?.(retriedFailedAssistant, 'manual_retry');
     });
     expect(streamViaDaemon).not.toHaveBeenCalled();
-    expect(checkAmrBalanceGate).not.toHaveBeenCalled();
     expect(chatSurface.props?.queuedItems ?? []).toHaveLength(0);
     expect(screen.getAllByTestId('chat-run-error-card')).toHaveLength(1);
     expect(screen.queryByTestId('chat-error-actions-blocked')).toBeNull();
@@ -1289,8 +799,8 @@ describe('2026-09-14 retry replaces the old error surface without erasing histor
     // The callbacks intentionally share the pre-update closure; two separate
     // fireEvent calls would flush React between them and miss this boundary.
     await act(async () => {
-      retry(cloudFailedAssistant, 'manual_retry');
-      retry(cloudFailedAssistant, 'manual_retry');
+      retry(retriedFailedAssistant, 'manual_retry');
+      retry(retriedFailedAssistant, 'manual_retry');
     });
     await waitFor(() => expect(streamViaDaemon).toHaveBeenCalled());
     expect(streamViaDaemon).toHaveBeenCalledTimes(1);
@@ -1298,28 +808,4 @@ describe('2026-09-14 retry replaces the old error surface without erasing histor
     expectOriginalFailurePreserved();
   });
 
-  it('a late rejected retry from conversation A does not paint a balance card over conversation B', async () => {
-    const gate = deferred<GateOutcome>();
-    checkAmrBalanceGate.mockReturnValue(gate.promise);
-    const otherConversation = { ...conversation, id: 'conv-b', title: 'B' };
-    const otherMessage: ChatMessage = {
-      id: 'user-b', role: 'user', content: 'conversation B', createdAt: 10,
-    };
-    listConversations.mockResolvedValue([conversation, otherConversation]);
-    listMessages.mockImplementation(async (_projectId: string, id: string) =>
-      id === 'conv-b' ? [otherMessage] : conversationMessages,
-    );
-    await renderRealChat(amrConfig);
-    fireEvent.click(screen.getByTestId('chat-error-retry'));
-    await waitFor(() => expect(checkAmrBalanceGate).toHaveBeenCalledTimes(1));
-    await act(async () => { chatSurface.props?.onSelectConversation?.('conv-b'); });
-    await waitFor(() => expect(chatSurface.props?.messages.map((message) => message.id)).toEqual(['user-b']));
-    await act(async () => gate.resolve(insufficient()));
-
-    expect(chatSurface.props?.activeConversationId).toBe('conv-b');
-    expect(chatSurface.props?.messages).toEqual([otherMessage]);
-    expect(screen.queryByTestId('chat-run-error-card')).toBeNull();
-    expect(screen.queryByTestId('chat-upgrade-card')).toBeNull();
-    expect(streamViaDaemon).not.toHaveBeenCalled();
-  });
 });

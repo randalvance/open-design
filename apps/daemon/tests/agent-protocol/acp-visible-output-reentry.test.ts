@@ -2,11 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { runMemoryAcpTurn, safeObservation, textUpdate } from './acp-memory-peer.js';
 
 describe('ACP completion preserves text-before-terminal under synchronous send reentry', () => {
-  for (const amr of [true, false]) {
-    it(`${amr ? 'AMR residual-output check' : 'generic original completion'} tolerates the same prompt result replayed from streaming status`, async () => {
+  {
+    it('generic original completion tolerates the same prompt result replayed from streaming status', async () => {
       let replayCount = 0;
       const turn = await runMemoryAcpTurn({
-        amr,
         prompt: 'Return exactly the single character < and nothing else.',
         updates: [textUpdate('<')],
         onSend(event, payload, replayPromptResultSynchronously) {

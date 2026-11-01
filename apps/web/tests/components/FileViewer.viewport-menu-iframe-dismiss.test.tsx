@@ -24,47 +24,9 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ReactNode } from 'react';
-import { CollabProvider, type CollabContextValue } from '../../src/collab/collab-context';
 import { FileViewer } from '../../src/components/FileViewer';
 import { resetSharedCancellableGet } from '../../src/lib/shared-cancellable-get';
 import type { ProjectFile } from '../../src/types';
-import { workspaceContextFixture } from '../helpers/workspace-context';
-
-const WORKSPACE_CONTEXT = workspaceContextFixture({
-  workspaceId: 'ws-viewport-menu',
-  workspaceMemberId: 'member-viewport-menu',
-});
-
-function collabValue(): CollabContextValue {
-  return {
-    workspaceContext: WORKSPACE_CONTEXT,
-    workspaceContextLoading: false,
-    projectResourceAuthority: 'workspace',
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'pending',
-    isOwner: false,
-    isEffectiveOwner: false,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: () => {},
-    requestPublish: () => {},
-    refreshPresence: () => {},
-    checkStatusNow: () => {},
-  };
-}
-
-function Wrap({ children }: { children: ReactNode }) {
-  return <CollabProvider value={collabValue()}>{children}</CollabProvider>;
-}
-
 function pageFile(): ProjectFile {
   return {
     name: 'page.html',
@@ -121,9 +83,7 @@ describe('preview viewport menu dismissal (OPEND-2035)', () => {
     installFetchMock(projectId);
 
     render(
-      <Wrap>
-        <FileViewer projectId={projectId} projectKind="prototype" file={pageFile()} />
-      </Wrap>,
+      <FileViewer projectId={projectId} projectKind="prototype" file={pageFile()} />
     );
 
     await waitFor(() => expect(document.querySelector('.viewer-viewport-trigger')).not.toBeNull());
@@ -147,9 +107,7 @@ describe('preview viewport menu dismissal (OPEND-2035)', () => {
     installFetchMock(projectId);
 
     render(
-      <Wrap>
-        <FileViewer projectId={projectId} projectKind="prototype" file={pageFile()} />
-      </Wrap>,
+      <FileViewer projectId={projectId} projectKind="prototype" file={pageFile()} />
     );
 
     await waitFor(() => expect(document.querySelector('.viewer-viewport-trigger')).not.toBeNull());

@@ -21,47 +21,9 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ReactNode } from 'react';
-import { CollabProvider, type CollabContextValue } from '../../src/collab/collab-context';
 import { FileViewer } from '../../src/components/FileViewer';
 import { resetSharedCancellableGet } from '../../src/lib/shared-cancellable-get';
 import type { ProjectFile } from '../../src/types';
-import { workspaceContextFixture } from '../helpers/workspace-context';
-
-const WORKSPACE_CONTEXT = workspaceContextFixture({
-  workspaceId: 'ws-present-exit',
-  workspaceMemberId: 'member-present-exit',
-});
-
-function collabValue(): CollabContextValue {
-  return {
-    workspaceContext: WORKSPACE_CONTEXT,
-    workspaceContextLoading: false,
-    projectResourceAuthority: 'workspace',
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'pending',
-    isOwner: false,
-    isEffectiveOwner: false,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: () => {},
-    requestPublish: () => {},
-    refreshPresence: () => {},
-    checkStatusNow: () => {},
-  };
-}
-
-function Wrap({ children }: { children: ReactNode }) {
-  return <CollabProvider value={collabValue()}>{children}</CollabProvider>;
-}
-
 function deckFile(): ProjectFile {
   return {
     name: 'deck.html',
@@ -163,9 +125,7 @@ describe('presentation overlay exit affordance (OPEND-2156)', () => {
     installFetchMock(projectId);
 
     render(
-      <Wrap>
-        <FileViewer projectId={projectId} projectKind="prototype" file={pageFile()} />
-      </Wrap>,
+      <FileViewer projectId={projectId} projectKind="prototype" file={pageFile()} />
     );
 
     await waitFor(() => expect(document.querySelector('.present-trigger')).not.toBeNull());
@@ -182,9 +142,7 @@ describe('presentation overlay exit affordance (OPEND-2156)', () => {
     installFetchMock(projectId);
 
     render(
-      <Wrap>
-        <FileViewer projectId={projectId} projectKind="prototype" file={pageFile()} />
-      </Wrap>,
+      <FileViewer projectId={projectId} projectKind="prototype" file={pageFile()} />
     );
 
     await waitFor(() => expect(document.querySelector('.present-trigger')).not.toBeNull());
@@ -224,9 +182,7 @@ describe('presentation overlay exit affordance (OPEND-2156)', () => {
     vi.stubGlobal('open', vi.fn(() => fakePopup));
 
     render(
-      <Wrap>
-        <FileViewer projectId={projectId} projectKind="slide_deck" file={deckFile()} isDeck />
-      </Wrap>,
+      <FileViewer projectId={projectId} projectKind="slide_deck" file={deckFile()} isDeck />
     );
 
     await waitFor(() => expect(document.querySelector('.present-trigger')).not.toBeNull());

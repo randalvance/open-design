@@ -22,7 +22,6 @@ vi.mock('../../src/providers/daemon', async () => {
     createGenericDaemonDisconnectError: actual.createGenericDaemonDisconnectError,
     DAEMON_STREAM_RECONNECT_LIMIT: actual.DAEMON_STREAM_RECONNECT_LIMIT,
     fetchChatRunStatus: vi.fn(),
-    fetchAmrWalletSnapshot: vi.fn().mockResolvedValue(null),
     listActiveChatRuns: vi.fn().mockResolvedValue([]),
     listProjectRuns: vi.fn().mockResolvedValue([]),
     publishDaemonRunFinishedEvent: vi.fn(),
@@ -162,7 +161,6 @@ function mountProject(runConfig: AppConfig = config) {
     initialProjectDetail={{ project, resolvedDir: '/workspace/owner-test' }}
     routeFileName={null}
     config={runConfig}
-    workspaceContextOverride={null}
     agents={[{ id: 'byok-opencode', name: 'BYOK OpenCode', bin: 'opencode', available: true, models: [] }]}
     skills={[]}
     designTemplates={[]}
@@ -364,7 +362,7 @@ describe('ProjectView manual ownership through actual provider disconnect order 
       });
       if (nullStatusBeforeManualRetry) {
         await waitFor(() => {
-          expect(fetchChatRunStatus).toHaveBeenCalledWith(originalRunId, null);
+          expect(fetchChatRunStatus).toHaveBeenCalledWith(originalRunId);
           expect(screen.getByRole('button', { name: 'Reconnect' })).toBeEnabled();
           expect(reattachDaemonRun).not.toHaveBeenCalled();
         });

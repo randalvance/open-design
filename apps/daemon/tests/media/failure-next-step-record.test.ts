@@ -8,7 +8,14 @@ import {
   updateMediaTask,
 } from '../../src/media/tasks.js';
 import { mediaTaskErrorFromFailure } from '../../src/routes/media.js';
-import { VelaMediaError } from '../../src/media/vela.js';
+
+/** A provider failure carrying the structured fields the record preserves. */
+function providerRefusal(
+  message: string,
+  fields: { code: string; subject: string; retryable: boolean },
+): Error {
+  return Object.assign(new Error(message), fields);
+}
 
 /** Shape of `StubProviderDisabledError` (apps/daemon/src/media/index.ts), which is module-private. */
 function stubProviderDisabled(model: string): Error {
@@ -61,7 +68,7 @@ function roundTrip(error: unknown): ReturnType<typeof mediaTaskErrorFromFailure>
 describe('recorded media failures carry a next step', () => {
   it('classifies a content refusal as something the user can fix', () => {
     const error = mediaTaskErrorFromFailure(
-      new VelaMediaError('the request was refused', {
+      providerRefusal('the request was refused', {
         code: 'safety_rejection',
         subject: 'prompt',
         retryable: false,
@@ -108,7 +115,7 @@ describe('recorded media failures carry a next step', () => {
 
   it('survives the SQLite round-trip the way code and retryable do', () => {
     const restored = roundTrip(
-      new VelaMediaError('the reference image was refused', {
+      providerRefusal('the reference image was refused', {
         code: 'safety_rejection',
         subject: 'input_image',
         retryable: false,

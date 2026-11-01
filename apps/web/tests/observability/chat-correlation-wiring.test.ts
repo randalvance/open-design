@@ -4,10 +4,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  clearExceptionTrackingContext,
-  setExceptionTrackingContext,
-} from '../../src/analytics/error-tracking';
-import {
   __resetChatContextForTest,
   chatCorrelation,
 } from '../../src/observability/chat-context';
@@ -16,6 +12,8 @@ import {
   installChatInteractionObserver,
 } from '../../src/observability/chat-interaction';
 import { reattachDaemonRun, streamViaDaemon } from '../../src/providers/daemon';
+import { reportedSafetyEventsNamed, watchSafetyEvents } from '../helpers/safety-events';
+
 
 /**
  * These specs are about WIRING, not about the observability modules.
@@ -65,19 +63,8 @@ function emitSlowInteraction(target: Element): void {
   }
 }
 
-/** Safety-telemetry beacons, decoded off the transport `reportSafetyEvent` uses. */
 function safetyEvents(name: string): Array<Record<string, unknown>> {
-  const decoded: Array<{ event?: string; properties?: Record<string, unknown> }> = [];
-  for (const call of fetchMock.mock.calls) {
-    const init = call[1] as RequestInit | undefined;
-    if (typeof init?.body !== 'string') continue;
-    try {
-      decoded.push(JSON.parse(init.body) as { event?: string; properties?: Record<string, unknown> });
-    } catch {
-      // Not a telemetry beacon (run-create bodies land here too).
-    }
-  }
-  return decoded.filter((e) => e.event === name).map((e) => e.properties ?? {});
+  return reportedSafetyEventsNamed(name);
 }
 
 function composerTarget(): Element {
@@ -155,16 +142,10 @@ const completedProjection = {
 beforeEach(() => {
   eventCallbacks = [];
   document.body.innerHTML = '';
+  watchSafetyEvents();
   fetchMock.mockReset();
   fetchMock.mockResolvedValue(new Response('', { status: 200 }));
   globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-  setExceptionTrackingContext({
-    apiKey: 'phc_test',
-    host: 'https://us.i.posthog.com',
-    distinctId: 'chat-correlation-wiring-test',
-    clientType: 'web',
-    osName: 'Mac OS X',
-  });
   (globalThis as unknown as { PerformanceObserver: unknown }).PerformanceObserver =
     FakePerformanceObserver;
   __resetChatContextForTest();
@@ -176,7 +157,6 @@ afterEach(() => {
   __resetChatInteractionForTest();
   vi.useRealTimers();
   vi.restoreAllMocks();
-  clearExceptionTrackingContext();
   globalThis.fetch = ORIGINAL_FETCH;
   document.body.innerHTML = '';
 });

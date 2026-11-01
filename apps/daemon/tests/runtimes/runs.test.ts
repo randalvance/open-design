@@ -1615,13 +1615,6 @@ describe('run event log persistence', () => {
       conversationId: 'c1',
       assistantMessageId: 'm1',
       agentId: 'claude',
-      workspaceScope: {
-        schemaVersion: 1,
-        projectId: 'p1',
-        workspaceId: 'workspace-a',
-        workspaceMemberId: 'member-a',
-        source: 'persisted_project_binding',
-      },
     });
     const statePath = path.join(tmpDir, run.id, 'state.json');
 
@@ -1630,13 +1623,6 @@ describe('run event log persistence', () => {
       id: run.id,
       status: 'queued',
       assistantMessageId: 'm1',
-      workspaceScope: {
-        schemaVersion: 1,
-        projectId: 'p1',
-        workspaceId: 'workspace-a',
-        workspaceMemberId: 'member-a',
-        source: 'persisted_project_binding',
-      },
     });
 
     runs.setAnalyticsRecovery(run, {
@@ -1990,43 +1976,64 @@ describe('run event log persistence', () => {
       expect(restarted.list({ projectId: 'p1', status: 'active' })).toEqual([]);
     });
 
-    it('keeps the persisted workspace scope and runtime on hydrated project runs', () => {
-      const workspaceScope = {
-        schemaVersion: 1,
-        projectId: 'p-team',
-        workspaceId: 'workspace-a',
-        source: 'persisted_project_binding',
-      };
+    it('keeps the runtime on hydrated project runs', () => {
       const before = createRunsWithLog(tmpDir);
-      const teamRun = before.create({
-        projectId: 'p-team',
-        conversationId: 'c-team',
-        agentId: 'amr',
-        workspaceScope,
-      });
-      before.finish(teamRun, 'succeeded', 0, null);
       const localRun = before.create({
         projectId: 'p-team',
         conversationId: 'c-team',
         agentId: 'claude',
-        workspaceScope: null,
       });
       before.finish(localRun, 'succeeded', 0, null);
 
       const restarted = createRunsWithLog(tmpDir);
       const listed = restarted.list({ projectId: 'p-team' });
-      expect(listed).toHaveLength(2);
-      // The route's visibility filters key off these two fields, so they must
-      // come back exactly as persisted for the same authorization decision.
-      expect(listed.find((run) => run.id === teamRun.id)).toMatchObject({
-        agentId: 'amr',
-        workspaceScope,
-      });
+      expect(listed).toHaveLength(1);
       expect(listed.find((run) => run.id === localRun.id)).toMatchObject({
         agentId: 'claude',
-        workspaceScope: null,
       });
       expect(restarted.list({ projectId: 'p-other' })).toEqual([]);
+    });
+
+    it('still loads a historic run whose agent was retired, including its stored workspace scope', () => {
+      const before = createRunsWithLog(tmpDir);
+      const historic = before.create({
+        projectId: 'p-history',
+        conversationId: 'c-history',
+        agentId: 'amr',
+        model: 'deepseek-v4-flash',
+      });
+      before.emit(historic, 'error', {
+        error: { code: 'AMR_INSUFFICIENT_BALANCE', message: 'insufficient balance', retryable: false },
+      });
+      before.finish(historic, 'failed', 1, null);
+
+      // What an install upgraded from a Cloud build has on disk: a state file
+      // carrying fields this build no longer knows how to write.
+      const statePath = path.join(tmpDir, historic.id, 'state.json');
+      const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+      fs.writeFileSync(statePath, JSON.stringify({
+        ...state,
+        workspaceScope: {
+          schemaVersion: 1,
+          projectId: 'p-history',
+          workspaceId: 'workspace-a',
+          source: 'persisted_project_binding',
+        },
+      }));
+
+      const restarted = createRunsWithLog(tmpDir);
+      const [listed] = restarted.list({ projectId: 'p-history' });
+      expect(listed).toMatchObject({
+        id: historic.id,
+        agentId: 'amr',
+        status: 'failed',
+      });
+      expect(restarted.statusBody(restarted.get(historic.id))).toMatchObject({
+        id: historic.id,
+        agentId: 'amr',
+        status: 'failed',
+      });
+      expect(restarted.list({ projectId: 'p-history', status: 'active' })).toEqual([]);
     });
 
     it('lists runs created after the restart alongside hydrated history and forgets dropped runs', () => {

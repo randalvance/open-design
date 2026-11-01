@@ -3,12 +3,12 @@
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const listProjectRunsWithScope = vi.fn();
+const listProjectRuns = vi.fn();
 
 vi.mock('@open-design/host', () => ({ setHostPetVisible: vi.fn() }));
 vi.mock('../../src/providers/daemon', () => ({
   RUNS_CHANGED_EVENT: 'od:runs-changed',
-  listProjectRunsWithScope: (...args: unknown[]) => listProjectRunsWithScope(...args),
+  listProjectRuns: (...args: unknown[]) => listProjectRuns(...args),
 }));
 vi.mock('../../src/state/projects', () => ({ listProjects: vi.fn(async () => []) }));
 vi.mock('../../src/state/config', () => ({
@@ -29,28 +29,15 @@ async function flush() {
 describe('DesktopPetSurface task polling', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    listProjectRunsWithScope.mockReset();
+    listProjectRuns.mockReset();
   });
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
   });
 
-  it('stops polling once the daemon requires a project scope', async () => {
-    listProjectRunsWithScope.mockResolvedValue({ runs: [], scopeRequired: true });
-    render(<DesktopPetSurface />);
-    await flush();
-    expect(listProjectRunsWithScope).toHaveBeenCalledTimes(1);
-
-    for (let i = 0; i < 10; i++) {
-      await act(async () => { vi.advanceTimersByTime(1000); });
-      await flush();
-    }
-    expect(listProjectRunsWithScope).toHaveBeenCalledTimes(1);
-  });
-
   it('keeps polling on the task interval, not on every config reload', async () => {
-    listProjectRunsWithScope.mockResolvedValue({ runs: [], scopeRequired: false });
+    listProjectRuns.mockResolvedValue([]);
     render(<DesktopPetSurface />);
     await flush();
 
@@ -59,6 +46,6 @@ describe('DesktopPetSurface task polling', () => {
       await flush();
     }
     // Initial read plus three 2s ticks; config reloads every 1.5s add nothing.
-    expect(listProjectRunsWithScope).toHaveBeenCalledTimes(4);
+    expect(listProjectRuns).toHaveBeenCalledTimes(4);
   });
 });

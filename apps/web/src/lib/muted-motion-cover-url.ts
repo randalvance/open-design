@@ -1,4 +1,4 @@
-import { appendResourceQuery } from '../collab/workspace-identity';
+import { appendResourceQuery } from '../utils/resource-query';
 
 /**
  * A background cover iframe must never make sound.

@@ -1,8 +1,6 @@
-import { pendingCommentFileRetirements } from './collab/comment-file-retirements.js';
-import { withCommentFileDeletion, type CommentFileDeletion } from './collab/comment-file-deletion.js';
+
 import type { Express, Response } from 'express';
-import { publicFileMutationHandler } from './routes/public-file-mutation-handler.js';
-import type { PublicFileMutations } from './collab/public-file-mutations.js';
+import { projectMutationHandler, type ProjectMutationLane } from './projects/project-mutation-lane.js';
 import { deleteProjectWorkspaceArtifacts } from './chat-artifacts/store.js';
 import {
   PROJECT_EXPORT_MANIFEST_SCHEMA,
@@ -11,16 +9,9 @@ import {
 } from '@open-design/contracts';
 import nodePath from 'node:path';
 import os from 'node:os';
-import { readFile, rm } from 'node:fs/promises';
 import type { Readable } from 'node:stream';
 import { isBlocked as isBlockedSystemDir } from './linked-dirs.js';
 import type { RouteDeps } from './server-context.js';
-import type {
-  AuthorizedProjectToolRequest,
-  AuthorizeProjectRequest,
-  AuthorizeProjectToolRequest,
-} from './collab/project-request-authority.js';
-import { workspaceResourceContextFromRequest } from './collab/workspace-resource-mutation.js';
 import { PROJECT_EXPORT_TOOL_ENDPOINT } from './tool-tokens.js';
 import {
   InlineAssetsLimitError,
@@ -46,19 +37,9 @@ import { readProjectFileVersion } from './project-file-versions.js';
 import { authorizeReasoningEgress, sendReasoningEgressDenial } from './reasoning-egress.js';
 import { sandboxImportedProjectRootUnavailableReason } from './sandbox-mode.js';
 import { parseOrchestratorWorkspace } from './workspace-contract.js';
-import {
-  authorizeCreatedProjectWorkspace,
-  bindCreatedProjectToWorkspace,
-  sendCreatedProjectWorkspaceError,
-} from './collab/created-project-workspace.js';
-import type { WorkspaceDirectoryFetchResult } from './collab/vela-workspace-context.js';
-import type { BoundWorkspaceResourceMutationGate } from './collab/workspace-resource-mutation.js';
 
 export interface RegisterImportRoutesDeps extends RouteDeps<'db' | 'http' | 'uploads' | 'node' | 'ids' | 'paths' | 'imports' | 'auth' | 'projectStore' | 'conversations' | 'projectFiles' | 'validation'> {
-  publicFileMutations?: PublicFileMutations;
-  stopPublicFilesBeforeDelete?: CommentFileDeletion;
-  fetchProjectCreationWorkspaceDirectory?: () => Promise<WorkspaceDirectoryFetchResult>;
-  enforceWorkspaceProjectMutation?: BoundWorkspaceResourceMutationGate;
+  projectMutations?: ProjectMutationLane;
 }
 
 export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps) {
@@ -100,11 +81,8 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
   } = ctx.auth;
   const {
     getProject,
-    getWorkspaceProject,
-    getWorkspaceProjectByProjectId,
     insertProject,
     updateProject,
-    ensureWorkspaceProject,
   } = ctx.projectStore;
   const { insertConversation } = ctx.conversations;
   const { setTabs } = ctx.projectFiles;
@@ -120,14 +98,6 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
       try {
         if (!req.file)
           return res.status(400).json({ error: 'zip file required' });
-        const createWorkspace = await authorizeCreatedProjectWorkspace(
-          req,
-          ctx.fetchProjectCreationWorkspaceDirectory,
-        );
-        if (!createWorkspace.ok) {
-          fs.promises.unlink(req.file.path).catch(() => {});
-          return sendCreatedProjectWorkspaceError(res, createWorkspace);
-        }
         const originalName =
           req.file.originalname || 'Claude Design export.zip';
         if (!/\.zip$/i.test(originalName)) {
@@ -170,12 +140,6 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
             updatedAt: now,
           });
           setTabs(db, id, [imported.entryFile], imported.entryFile);
-          bindCreatedProjectToWorkspace(
-            (input) => ensureWorkspaceProject(db, input),
-            createWorkspace.context,
-            id,
-            now,
-          );
           return createdProject;
         })();
         res.json({
@@ -202,27 +166,12 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
   // Replace an existing project's working directory in-place. Mirrors
   // the same trust-gate, realpath, and data-dir checks as folder import,
   // but updates metadata.baseDir on an existing project record.
-  app.post('/api/projects/:id/working-dir', publicFileMutationHandler(ctx.publicFileMutations, async (req, res) => {
+  app.post('/api/projects/:id/working-dir', projectMutationHandler(ctx.projectMutations, async (req, res) => {
     try {
       const projectId = typeof req.params.id === 'string' ? req.params.id : '';
       const existing = getProject(db, projectId);
       if (!existing) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
-      }
-      if (
-        ctx.enforceWorkspaceProjectMutation
-        && !(await ctx.enforceWorkspaceProjectMutation(
-          req,
-          res,
-          sendApiError,
-          getWorkspaceProject,
-          getWorkspaceProjectByProjectId,
-          db,
-          projectId,
-          'writeFiles',
-        ))
-      ) {
-        return;
       }
       const { baseDir, orchestratorWorkspace } = req.body || {};
       if (typeof baseDir !== 'string' || !baseDir.trim()) {
@@ -320,10 +269,8 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
       const entryFile = await detectEntryFile(normalizedPath);
       const previousRoot = await fs.promises.realpath(existing.metadata?.baseDir ?? projectDir(PROJECTS_DIR, projectId)).catch(() => null);
       const replacing = previousRoot !== normalizedPath;
-      const pendingRetirements = pendingCommentFileRetirements(db, projectId);
-      if (!replacing && pendingRetirements.some(row => !row.committed)) throw new Error('COMMENT_FILE_RETIREMENT_PENDING');
       let updated: ReturnType<typeof updateProject> = null;
-      await withCommentFileDeletion(replacing || pendingRetirements.length ? ctx.stopPublicFilesBeforeDelete : undefined, projectId, undefined, async () => {
+      {
         const existingMeta = getProject(db, projectId)?.metadata ?? {};
         const { orchestratorWorkspace: _existingOrchestratorWorkspace, ...preservedMeta } =
           existingMeta;
@@ -339,16 +286,13 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
           ...(trustedPickerImport ? { fromTrustedPicker: true as const } : {}),
         };
         // End every old local pointer with the root switch, including local-only
-        // notes with no admitted fact. Remote retirement may fail afterward.
-        return db.transaction((): void | false => {
+        // notes.
+        db.transaction((): void => {
           updated = updateProject(db, projectId, { metadata: nextMeta });
           if (!updated) throw new Error('PROJECT_NOT_FOUND');
-          if (!replacing) return false;
-          deleteProjectWorkspaceArtifacts(db, projectId);
+          if (replacing) deleteProjectWorkspaceArtifacts(db, projectId);
         })();
-      }, replacing ? undefined : 'committed-retry');
-      // Retirement adopts reserved metadata after the root mutation commits.
-      updated = getProject(db, projectId);
+      }
       if (!updated) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
@@ -366,13 +310,6 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
 
   app.post('/api/import/folder', async (req, res) => {
     try {
-      const createWorkspace = await authorizeCreatedProjectWorkspace(
-        req,
-        ctx.fetchProjectCreationWorkspaceDirectory,
-      );
-      if (!createWorkspace.ok) {
-        return sendCreatedProjectWorkspaceError(res, createWorkspace);
-      }
       const { baseDir, name, skillId, designSystemId, orchestratorWorkspace } = req.body || {};
       if (typeof baseDir !== 'string' || !baseDir.trim()) {
         return sendApiError(res, 400, 'BAD_REQUEST', 'baseDir required');
@@ -485,10 +422,7 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
           ? name.trim()
           : path.basename(normalizedPath);
       const entryFile = await detectEntryFile(normalizedPath);
-      const designSystemValidation = await validateProjectDesignSystemId(
-        designSystemId,
-        { workspaceId: createWorkspace.context?.workspaceId ?? null },
-      );
+      const designSystemValidation = await validateProjectDesignSystemId(designSystemId);
       if (!designSystemValidation.ok) {
         return sendApiError(
           res,
@@ -497,10 +431,7 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
           designSystemValidation.message,
         );
       }
-      const skillValidation = await validateProjectSkillId(
-        skillId,
-        { workspaceId: createWorkspace.context?.workspaceId ?? null },
-      );
+      const skillValidation = await validateProjectSkillId(skillId);
       if (!skillValidation.ok) {
         return sendApiError(
           res,
@@ -541,12 +472,6 @@ export function registerImportRoutes(app: Express, ctx: RegisterImportRoutesDeps
         // the imported folder's artifacts. Persist an empty saved tab state so
         // ProjectView does not auto-open the detected primary file on hydration.
         setTabs(db, id, [], null);
-        bindCreatedProjectToWorkspace(
-          (input) => ensureWorkspaceProject(db, input),
-          createWorkspace.context,
-          id,
-          now,
-        );
         return createdProject;
       })();
       /** @type {import('@open-design/contracts').ImportFolderResponse} */
@@ -613,10 +538,6 @@ const RENDERER_PREVIEW_SCOPE_SETUP_MARGIN_MS = 10_000;
 const SCREENSHOT_RENDER_PREVIEW_SCOPE_TTL_MS =
   DESKTOP_RENDERER_IPC_TIMEOUT_MS + RENDERER_PREVIEW_SCOPE_SETUP_MARGIN_MS;
 
-type AuthorizedExportRead = {
-  readonly previewWorkspace: AuthorizedProjectToolRequest['workspace'];
-};
-
 type ScreenshotExportBody = {
   readonly deck?: unknown;
   readonly editable?: unknown;
@@ -630,13 +551,10 @@ type ScreenshotExportBody = {
 };
 
 type ScreenshotExportRequest = {
-  readonly authority: AuthorizedExportRead;
   readonly body: ScreenshotExportBody | null | undefined;
 };
 
 export interface RegisterProjectExportRoutesDeps extends RouteDeps<'db' | 'http' | 'paths' | 'node' | 'ids' | 'projectStore' | 'exports' | 'projectFiles' | 'validation' | 'auth' | 'projectPreviewScopes'> {
-  authorizeProjectRequest: AuthorizeProjectRequest;
-  authorizeProjectToolRequest: AuthorizeProjectToolRequest;
   isApiTokenAuthorization: (authorization: string | undefined) => boolean;
 }
 
@@ -676,10 +594,9 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
     res: any,
     options: {
       allowNavigationQuery?: boolean;
-      deriveWorkspaceFromProject?: boolean;
       toolEndpoint?: string;
     } = {},
-  ): Promise<AuthorizedExportRead | null> {
+  ): Promise<boolean> {
     const authorization = req.get('authorization');
     // Only Bearer credentials can be run-scoped tool tokens: that is the sole
     // shape `bearerTokenFromRequest` parses. A reverse proxy that authenticates
@@ -702,44 +619,13 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
         'project:export',
         { endpoint: options.toolEndpoint ?? req.path },
       );
-      if (!grant) return null;
+      if (!grant) return false;
       if (ctx.auth.requestProjectOverride(req.params.id, grant.projectId)) {
         sendApiError(res, 403, 'FORBIDDEN', 'tool token belongs to a different project');
-        return null;
+        return false;
       }
-      const authority = await ctx.authorizeProjectToolRequest(
-        res,
-        grant.projectId,
-        { mode: 'read' },
-      );
-      return authority ? { previewWorkspace: authority.workspace } : null;
     }
-    if (options.deriveWorkspaceFromProject) {
-      const authority = await ctx.authorizeProjectToolRequest(
-        res,
-        req.params.id,
-        { mode: 'read' },
-      );
-      return authority ? { previewWorkspace: authority.workspace } : null;
-    }
-    const authorized = await ctx.authorizeProjectRequest(
-      req,
-      res,
-      req.params.id,
-      options.allowNavigationQuery
-        ? { mode: 'read', allowNavigationQuery: true }
-        : { mode: 'read' },
-    );
-    if (!authorized) return null;
-    const requestWorkspace = workspaceResourceContextFromRequest(req);
-    return {
-      previewWorkspace: requestWorkspace === null || requestWorkspace === 'missing'
-        ? null
-        : {
-            workspaceId: requestWorkspace.workspaceId,
-            workspaceMemberId: requestWorkspace.workspaceMemberId,
-          },
-    };
+    return true;
   }
 
   function isNoSlideDeckRenderError(rendered: { ok: boolean; error?: string }): boolean {
@@ -967,7 +853,7 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
     projectId: string,
     request: ScreenshotExportRequest,
   ) {
-    const { authority, body } = request;
+    const { body } = request;
     let renderOutputDir: string | null = null;
     let renderPreviewScope: string | null = null;
     try {
@@ -992,7 +878,7 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
         if (format === 'image' && typeof desktopArtifactExporter === 'function') {
           renderPreviewScope = ctx.projectPreviewScopes.mint(
             projectId,
-            authority.previewWorkspace,
+            null,
             { ttlMs: SCREENSHOT_RENDER_PREVIEW_SCOPE_TTL_MS },
           );
           const input = await buildDesktopArtifactExportInput({
@@ -1082,7 +968,7 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
       };
       renderPreviewScope = ctx.projectPreviewScopes.mint(
         projectId,
-        authority.previewWorkspace,
+        null,
         { ttlMs: SCREENSHOT_RENDER_PREVIEW_SCOPE_TTL_MS },
       );
       renderOptions.baseHref = scopedProjectPreviewBaseHref(
@@ -1422,7 +1308,6 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await ctx.authorizeProjectRequest(req, res, project.id, { mode: 'read' })) return;
       const files = await listFiles(PROJECTS_DIR, req.params.id, {
         metadata: project.metadata,
       });
@@ -1456,7 +1341,6 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await ctx.authorizeProjectRequest(req, res, project.id, { mode: 'read' })) return;
       const metadata = project?.metadata ?? null;
       const versionId = normalizeExportVersionId(req.body?.versionId);
       const sourceHtml = await readExportVersionSource(req.params.id, fileName, versionId, metadata);
@@ -1488,11 +1372,10 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
   // to the agent and hope it runs python-pptx" path with a deterministic export.
   app.post('/api/projects/:id/export/pptx', async (req, res) => {
     const authority = await authorizeExportRead(req, res, {
-      deriveWorkspaceFromProject: true,
       toolEndpoint: PROJECT_EXPORT_TOOL_ENDPOINT,
     });
     if (!authority) return;
-    await handleScreenshotExport(res, 'pptx', req.params.id, { authority, body: req.body });
+    await handleScreenshotExport(res, 'pptx', req.params.id, { body: req.body });
   });
 
   // Programmatic screenshot-based (raster) PDF: one pixel-perfect page per slide.
@@ -1500,11 +1383,10 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
   // what you see" counterpart that shares the slide renderer with PPTX.
   app.post('/api/projects/:id/export/pdf-image', async (req, res) => {
     const authority = await authorizeExportRead(req, res, {
-      deriveWorkspaceFromProject: true,
       toolEndpoint: PROJECT_EXPORT_TOOL_ENDPOINT,
     });
     if (!authority) return;
-    await handleScreenshotExport(res, 'pdf', req.params.id, { authority, body: req.body });
+    await handleScreenshotExport(res, 'pdf', req.params.id, { body: req.body });
   });
 
   // Programmatic image export: a single pixel-perfect PNG. For a deck it renders
@@ -1513,11 +1395,10 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
   // host-compositor snapshot, the size never depends on the preview pane.
   app.post('/api/projects/:id/export/image', async (req, res) => {
     const authority = await authorizeExportRead(req, res, {
-      deriveWorkspaceFromProject: true,
       toolEndpoint: PROJECT_EXPORT_TOOL_ENDPOINT,
     });
     if (!authority) return;
-    await handleScreenshotExport(res, 'image', req.params.id, { authority, body: req.body });
+    await handleScreenshotExport(res, 'image', req.params.id, { body: req.body });
   });
 
   // A true one-file HTML export: every required same-project dependency is
@@ -1525,7 +1406,6 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
   // are listed in a machine-readable manifest inside the output.
   app.post('/api/projects/:id/export/html', async (req, res) => {
     const authority = await authorizeExportRead(req, res, {
-      deriveWorkspaceFromProject: true,
       toolEndpoint: PROJECT_EXPORT_TOOL_ENDPOINT,
     });
     if (!authority) return;
@@ -1546,7 +1426,6 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
       return sendApiError(res, 400, 'BAD_REQUEST', 'invalid export format');
     }
     const authority = await authorizeExportRead(req, res, {
-      deriveWorkspaceFromProject: true,
       toolEndpoint: PROJECT_EXPORT_TOOL_ENDPOINT,
     });
     if (!authority) return;
@@ -1558,7 +1437,6 @@ export function registerProjectExportRoutes(app: Express, ctx: RegisterProjectEx
       });
     }
     await handleScreenshotExport(res, format, req.params.id, {
-      authority,
       body: {
         fileName,
         // pptx is deck-only (handleScreenshotExport forces it); pdf/image honor the
@@ -2008,7 +1886,6 @@ function roleForExportManifestFile(
 }
 
 export interface RegisterFinalizeRoutesDeps extends RouteDeps<'db' | 'http' | 'paths' | 'projectStore' | 'validation' | 'finalize'> {
-  authorizeProjectRequest: AuthorizeProjectRequest;
 }
 
 export function registerFinalizeRoutes(app: Express, ctx: RegisterFinalizeRoutesDeps) {
@@ -2095,12 +1972,6 @@ export function registerFinalizeRoutes(app: Express, ctx: RegisterFinalizeRoutes
       if (!project) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await ctx.authorizeProjectRequest(
-        req,
-        res,
-        project.id,
-        { mode: 'write', capability: 'writeFiles' },
-      )) return;
 
       const finalizeAbort = new AbortController();
       const abortFromRequest = (): void => {

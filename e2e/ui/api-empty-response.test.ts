@@ -4,7 +4,6 @@ import {
   routeSuccessfulRuns,
   suppressWhatsNew,
 } from '@/playwright/mock-factory';
-import { mockAmrPersonalWorkspace } from '@/playwright/amr';
 import { openNewProjectModal as openNewProjectModalFromProjects } from '@/playwright/rail';
 import type { Page } from '@playwright/test';
 import { T } from '@/timeouts';
@@ -28,17 +27,6 @@ test.beforeEach(async ({ page }) => {
    * 的发版公告挡在外面。本用例考的是「空流应当显示批准的失败标题而不是 Done」。
    */
   await suppressWhatsNew(page);
-  await page.route('**/api/integrations/vela/status*', async (route) => {
-    await route.fulfill({
-      json: {
-        loggedIn: true,
-        profile: 'local',
-        configPath: '/tmp/.amr/config.json',
-        user: { id: 'api-empty-response', email: 'api-empty-response@example.com' },
-      },
-    });
-  });
-  await mockAmrPersonalWorkspace(page);
   await page.addInitScript((key) => {
     window.localStorage.setItem(
       key,
@@ -116,11 +104,6 @@ async function createProject(page: Page, name: string) {
 async function gotoEntryHome(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
-  const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve OpenDesign' });
-  if (await privacyDialog.isVisible()) {
-    await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
-    await expect(privacyDialog).toHaveCount(0);
-  }
   await expect(page.getByTestId('home-hero')).toBeVisible();
   await expect(page.getByTestId('home-hero-input')).toBeVisible();
 }

@@ -2,11 +2,6 @@
 
 import { act, cleanup, render } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  buildWorkspacePermissions,
-  buildWorkspaceSeatSummary,
-  type WorkspaceCollabContext,
-} from '@open-design/contracts';
 
 const registryMocks = vi.hoisted(() => ({
   fetchProjectFileText: vi.fn(),
@@ -21,36 +16,16 @@ import {
   type KitModuleUpload,
 } from '../../src/runtime/kit-upload';
 
-function teamContext(): WorkspaceCollabContext {
-  return {
-    workspaceId: 'workspace-a',
-    workspaceType: 'team',
-    workspaceMemberId: 'member-a',
-    role: 'owner',
-    memberStatus: 'active',
-    lifecycleState: 'active',
-    billingState: 'active',
-    planId: 'team_plus',
-    providerMode: 'platform_credits',
-    teamId: 'team-a',
-    seatSummary: buildWorkspaceSeatSummary({ seatLimit: 3, usedSeats: 1 }),
-    permissions: buildWorkspacePermissions({ role: 'owner', lifecycleState: 'active' }),
-  };
-}
-
 let latestUpload: KitModuleUpload | null = null;
 
 function Harness({
-  workspaceContext,
   onError,
 }: {
-  workspaceContext: WorkspaceCollabContext;
   onError?: (module: 'logo' | 'image' | 'font', message: string) => void;
 }) {
   latestUpload = useKitModuleUpload({
     projectId: 'project-a',
     title: 'Acme',
-    workspaceContext,
     onError,
   });
   return null;
@@ -64,7 +39,6 @@ afterEach(() => {
 
 describe('useKitModuleUpload Workspace reads', () => {
   it('reads the existing Team brand under the pinned identity before patching it', async () => {
-    const workspaceContext = teamContext();
     const existingBrand = {
       name: 'Acme',
       tagline: 'Never erase this',
@@ -104,14 +78,14 @@ describe('useKitModuleUpload Workspace reads', () => {
       mime: 'image/svg+xml',
     });
     registryMocks.fetchProjectFileText.mockImplementation(
-      async (_projectId: string, name: string, options?: { workspaceContext?: WorkspaceCollabContext }) =>
-        name === 'brand.json' && options?.workspaceContext === workspaceContext
+      async (_projectId: string, name: string) =>
+        name === 'brand.json'
           ? JSON.stringify(existingBrand)
           : null,
     );
     registryMocks.writeProjectTextFile.mockResolvedValue({ name: 'brand.json' });
 
-    render(<Harness workspaceContext={workspaceContext} />);
+    render(<Harness />);
     await act(async () => {
       await latestUpload?.uploadModule(
         'logo',
@@ -122,7 +96,7 @@ describe('useKitModuleUpload Workspace reads', () => {
     expect(registryMocks.fetchProjectFileText).toHaveBeenCalledWith(
       'project-a',
       'brand.json',
-      { cache: 'no-store', workspaceContext },
+      { cache: 'no-store' },
     );
     const written = JSON.parse(String(registryMocks.writeProjectTextFile.mock.calls[0]?.[2]));
     expect(written).toEqual(expect.objectContaining({
@@ -140,7 +114,6 @@ describe('useKitModuleUpload Workspace reads', () => {
   });
 
   it('never replaces a Team brand with an empty fallback when the guarded read fails', async () => {
-    const workspaceContext = teamContext();
     const onError = vi.fn();
     registryMocks.uploadProjectFile.mockResolvedValue({
       name: 'logos/new.svg',
@@ -151,7 +124,7 @@ describe('useKitModuleUpload Workspace reads', () => {
     });
     registryMocks.fetchProjectFileText.mockResolvedValue(null);
 
-    render(<Harness workspaceContext={workspaceContext} onError={onError} />);
+    render(<Harness onError={onError} />);
     await act(async () => {
       await latestUpload?.uploadModule(
         'logo',

@@ -15,8 +15,6 @@
  * @see apps/daemon/src/legacy-data-migrator.ts
  * @see https://github.com/nexu-io/open-design/issues/710
  */
-import { spawn } from 'node:child_process';
-import { once } from 'node:events';
 import { EventEmitter } from 'node:events';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -27,7 +25,6 @@ import type { SidecarStamp } from '@open-design/sidecar';
 import { APP_KEYS } from '@open-design/sidecar-proto';
 
 import {
-  observeDaemonExit,
   buildPackagedDaemonSpawnEnv,
   closeManagedChild,
   createPackagedSidecarSpawnOptions,
@@ -139,7 +136,7 @@ describe('resolveDaemonStatusTimeoutMs', () => {
   it('widens the baseline to 90 seconds on win32 for AV-scan-slow first launches', () => {
     // Windows Defender scanning freshly-written packaged binaries inflates the
     // daemon cold start (native better-sqlite3 load + first SQLite open + pipe
-    // bind) past 35s; PostHog showed ~90% of the status-timeout devices did open
+    // bind) past 35s; ~90% of the status-timeout devices did open
     // on a later launch, so the wider budget lets the first launch succeed.
     expect(resolveDaemonStatusTimeoutMs({}, 'win32')).toBe(90_000);
   });
@@ -707,193 +704,31 @@ it('passes the original desktop attempt/session to the daemon before it starts',
     );
   });
 
-  it('forwards the packaged telemetry relay URL to the daemon when configured', () => {
+  it('forwards no cloud environment to the daemon, even from an inherited launch env', () => {
     const env = buildPackagedDaemonSpawnEnv(fakePaths(), {
-      appVersion: null,
+      appVersion: '1.0.0',
       daemonCliEntry: null,
-      legacyDataDir: null,
       requireDesktopAuth: true,
-      telemetryRelayUrl: 'https://telemetry.open-design.ai/api/langfuse',
-    });
-    expect(env.OPEN_DESIGN_TELEMETRY_RELAY_URL).toBe(
-      'https://telemetry.open-design.ai/api/langfuse',
-    );
-  });
-
-  it('forwards the packaged AMR profile to the daemon when configured', () => {
-    const env = buildPackagedDaemonSpawnEnv(fakePaths(), {
-      appVersion: null,
-      amrProfile: 'test',
-      daemonCliEntry: null,
-      legacyDataDir: null,
-      requireDesktopAuth: true,
-    });
-    expect(env.OPEN_DESIGN_AMR_PROFILE).toBe('test');
-  });
-
-  it('forwards the per-profile Vela console origins to the daemon', () => {
-    const env = buildPackagedDaemonSpawnEnv(fakePaths(), {
-      appVersion: null,
-      amrProfile: 'prod',
-      daemonCliEntry: null,
-      legacyDataDir: null,
-      requireDesktopAuth: true,
-      velaWebUrl: 'https://prod.example.invalid',
-      velaWebUrls: {
-        prod: 'https://prod.example.invalid',
-        test: 'https://test.example.invalid',
-        'feature-test': 'https://feature.example.invalid',
+      desktopHandoffEnv: {
+        OPEN_DESIGN_AMR_PROFILE: 'test',
+        OD_VELA_WEB_URL: 'https://vela.example.invalid',
+        OD_SHARE_VIEWER_URL: 'https://share.example.invalid',
       },
     });
-    expect(JSON.parse(env.OD_VELA_WEB_URLS ?? '{}')).toEqual({
-      prod: 'https://prod.example.invalid',
-      test: 'https://test.example.invalid',
-      'feature-test': 'https://feature.example.invalid',
-    });
-  });
 
-  it.each(['feature-test', 'test'] as const)(
-    'enables the vela-cli workspace-team transport for a %s build with an injected vela web origin',
-    (amrProfile) => {
-      const env = buildPackagedDaemonSpawnEnv(fakePaths(), {
-        appVersion: null,
-        amrProfile,
-        daemonCliEntry: null,
-        legacyDataDir: null,
-        requireDesktopAuth: true,
-        velaWebUrl: 'https://vela.example.invalid',
-      });
-      expect(env.OPEN_DESIGN_AMR_PROFILE).toBe(amrProfile);
-      expect(env.OD_WORKSPACE_CONTEXT_SOURCE).toBe('vela');
-      expect(env.OD_TEAM_PROJECTS_TRANSPORT).toBe('vela-cli');
-      expect(env.OD_COLLAB_TRANSPORT).toBe('vela-cli');
-      expect(env.OD_RESOURCE_TRANSPORT).toBe('vela-cli');
-      expect(env.OD_VELA_WEB_URL).toBe('https://vela.example.invalid');
-    },
-  );
-
-  // The gate is profile AND origin. A build whose CI secret was never
-  // configured must degrade to "workspace-team dormant" rather than turn the
-  // transports on against an unknown backend.
-  it.each(['feature-test', 'test'] as const)(
-    'leaves the workspace-team transport off for a %s build with no injected vela web origin',
-    (amrProfile) => {
-      for (const velaWebUrl of [undefined, null, '', '   ']) {
-        const env = buildPackagedDaemonSpawnEnv(fakePaths(), {
-          appVersion: null,
-          amrProfile,
-          daemonCliEntry: null,
-          legacyDataDir: null,
-          requireDesktopAuth: true,
-          velaWebUrl,
-        });
-        expect('OD_WORKSPACE_CONTEXT_SOURCE' in env).toBe(false);
-        expect('OD_TEAM_PROJECTS_TRANSPORT' in env).toBe(false);
-        expect('OD_COLLAB_TRANSPORT' in env).toBe(false);
-        expect('OD_RESOURCE_TRANSPORT' in env).toBe(false);
-        expect('OD_VELA_WEB_URL' in env).toBe(false);
-      }
-    },
-  );
-
-  it('leaves the workspace-team transport off for builds without a workspace-team backend', () => {
-    for (const amrProfile of ['prod', 'local', null] as const) {
-      const env = buildPackagedDaemonSpawnEnv(fakePaths(), {
-        appVersion: null,
-        amrProfile,
-        daemonCliEntry: null,
-        legacyDataDir: null,
-        requireDesktopAuth: true,
-      });
-      expect('OD_WORKSPACE_CONTEXT_SOURCE' in env).toBe(false);
-      expect('OD_TEAM_PROJECTS_TRANSPORT' in env).toBe(false);
-      expect('OD_COLLAB_TRANSPORT' in env).toBe(false);
-      expect('OD_RESOURCE_TRANSPORT' in env).toBe(false);
-      expect('OD_VELA_WEB_URL' in env).toBe(false);
+    for (const key of [
+      'OPEN_DESIGN_AMR_PROFILE',
+      'OD_VELA_WEB_URL',
+      'OD_VELA_WEB_URLS',
+      'OD_WORKSPACE_CONTEXT_SOURCE',
+      'OD_TEAM_PROJECTS_TRANSPORT',
+      'OD_COLLAB_TRANSPORT',
+      'OD_RESOURCE_TRANSPORT',
+      'OD_SHARE_VIEWER_URL',
+      'OD_SHARE_VIEWER_URLS',
+    ]) {
+      expect(key in env, key).toBe(false);
     }
-  });
-
-  // Workspace Team is released, so a prod bundle handed an origin now turns the
-  // transports on — that is the shipping path for stable users.
-  it('enables the workspace-team transport for a prod build with an injected vela web origin', () => {
-    const env = buildPackagedDaemonSpawnEnv(fakePaths(), {
-      appVersion: null,
-      amrProfile: 'prod',
-      daemonCliEntry: null,
-      legacyDataDir: null,
-      requireDesktopAuth: true,
-      velaWebUrl: 'https://open-design.ai/cloud',
-    });
-    expect(env.OD_WORKSPACE_CONTEXT_SOURCE).toBe('vela');
-    expect(env.OD_TEAM_PROJECTS_TRANSPORT).toBe('vela-cli');
-    expect(env.OD_COLLAB_TRANSPORT).toBe('vela-cli');
-    expect(env.OD_RESOURCE_TRANSPORT).toBe('vela-cli');
-    expect(env.OD_VELA_WEB_URL).toBe('https://open-design.ai/cloud');
-  });
-
-  // The profile allowlist remains the load-bearing half of the gate for every
-  // profile that is NOT a released Vela backend: a `local` or profile-less
-  // bundle handed an origin must still stay dormant rather than point the
-  // transports at a backend that does not serve them.
-  it('never enables the workspace-team transport for a local or profile-less build', () => {
-    for (const amrProfile of ['local', null] as const) {
-      const env = buildPackagedDaemonSpawnEnv(fakePaths(), {
-        appVersion: null,
-        amrProfile,
-        daemonCliEntry: null,
-        legacyDataDir: null,
-        requireDesktopAuth: true,
-        velaWebUrl: 'https://vela.example.invalid',
-      });
-      expect('OD_WORKSPACE_CONTEXT_SOURCE' in env).toBe(false);
-      expect('OD_TEAM_PROJECTS_TRANSPORT' in env).toBe(false);
-      expect('OD_COLLAB_TRANSPORT' in env).toBe(false);
-      expect('OD_RESOURCE_TRANSPORT' in env).toBe(false);
-      expect('OD_VELA_WEB_URL' in env).toBe(false);
-    }
-  });
-
-  // The origin half of the gate is what protects a misconfigured prod build:
-  // no injected origin means dormant, never a guessed backend.
-  it('keeps a prod build dormant when no vela web origin was injected', () => {
-    const env = buildPackagedDaemonSpawnEnv(fakePaths(), {
-      appVersion: null,
-      amrProfile: 'prod',
-      daemonCliEntry: null,
-      legacyDataDir: null,
-      requireDesktopAuth: true,
-    });
-    expect('OD_WORKSPACE_CONTEXT_SOURCE' in env).toBe(false);
-    expect('OD_TEAM_PROJECTS_TRANSPORT' in env).toBe(false);
-    expect('OD_COLLAB_TRANSPORT' in env).toBe(false);
-    expect('OD_RESOURCE_TRANSPORT' in env).toBe(false);
-    expect('OD_VELA_WEB_URL' in env).toBe(false);
-  });
-
-  it('forwards POSTHOG_KEY/POSTHOG_HOST to the daemon spawn env when baked into the bundle', () => {
-    const env = buildPackagedDaemonSpawnEnv(fakePaths(), {
-      appVersion: null,
-      daemonCliEntry: null,
-      legacyDataDir: null,
-      requireDesktopAuth: true,
-      posthogKey: 'phc_packaged_test',
-      posthogHost: 'https://us.i.posthog.com',
-    });
-    expect(env.POSTHOG_KEY).toBe('phc_packaged_test');
-    expect(env.POSTHOG_HOST).toBe('https://us.i.posthog.com');
-  });
-
-  it('omits POSTHOG_KEY/POSTHOG_HOST for fork builds that lack the secret', () => {
-    const env = buildPackagedDaemonSpawnEnv(fakePaths(), {
-      appVersion: null,
-      daemonCliEntry: null,
-      legacyDataDir: null,
-      requireDesktopAuth: true,
-      posthogKey: null,
-      posthogHost: null,
-    });
-    expect(env.POSTHOG_KEY).toBeUndefined();
-    expect(env.POSTHOG_HOST).toBeUndefined();
   });
 });
 
@@ -1270,76 +1105,3 @@ describe('packaged sidecar log rotation', () => {
   });
 });
 
-
-describe('ready daemon exit supervision', () => {
-  it.each([[null, 'SIGKILL', 'killed'], [null, 'SIGTERM', 'killed'], [7, null, 'crash'], [0, null, 'clean-exit']] as const)('observes runtime code=%s signal=%s once', async (code, signal, reason) => {
-    const child = Object.assign(new EventEmitter(), { exitCode: null, signalCode: null });
-    const report = vi.fn(async () => {});
-    const observer = observeDaemonExit(child, report);
-    expect(observer.markReady()).toBe(true);
-    child.emit('exit', code, signal);
-    child.emit('exit', code, signal);
-    await observer.flush();
-    expect(report).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ exit_code: code, signal, reason, intentional: false,
-      occurred_at: expect.any(String) }));
-  });
-  it.each([137, 134, 143])('keeps a numeric supervisor exit %s a crash, not a signal (OPEND-4256)', async (code) => {
-    const child = Object.assign(new EventEmitter(), { exitCode: null, signalCode: null });
-    const report = vi.fn(async () => {});
-    const observer = observeDaemonExit(child, report);
-    observer.markReady();
-    child.emit('exit', code, null);
-    await observer.flush();
-    expect(report).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ exit_code: code, signal: null,
-      reason: 'crash', intentional: false }));
-  });
-  it('marks intentional teardown before the signal arrives', async () => {
-    const child = Object.assign(new EventEmitter(), { exitCode: null, signalCode: null });
-    const report = vi.fn(async () => {});
-    const observer = observeDaemonExit(child, report);
-    observer.markReady(); observer.beginShutdown(); child.emit('exit', null, 'SIGKILL');
-    await observer.flush();
-    expect(report).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ intentional: true, reason: 'clean-exit' }));
-  });
-  it('leaves startup deaths to startup reporting and refuses stale ready status', async () => {
-    const child = Object.assign(new EventEmitter(), { exitCode: null, signalCode: null });
-    const report = vi.fn(async () => {});
-    const observer = observeDaemonExit(child, report);
-    child.emit('exit', null, 'SIGKILL');
-    expect(observer.markReady()).toBe(false);
-    await observer.flush(); expect(report).not.toHaveBeenCalled();
-  });
-});
-
-
-it.skipIf(process.platform === 'win32')('observes a real running child killed with SIGKILL exactly once', async () => {
-  const child = spawn(process.execPath, ['-e', "process.stdout.write('ready'); setInterval(() => {}, 1000)"]);
-  const report = vi.fn(async () => {});
-  const observer = observeDaemonExit(child, report);
-  try {
-    await once(child.stdout!, 'data');
-    observer.markReady();
-    const exited = once(child, 'exit');
-    child.kill('SIGKILL');
-    await exited; await observer.flush();
-    expect(report).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reason: 'killed', signal: 'SIGKILL', exit_code: null }));
-  } finally { child.kill('SIGKILL'); }
-});
-
-
-it('marks forced shutdown and closes without waiting for an unresolved observation', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'od-intentional-close-'));
-  const child = Object.assign(new EventEmitter(), { exitCode: null, signalCode: null });
-  const report = vi.fn(() => new Promise<void>(() => {}));
-  const observer = observeDaemonExit(child, report); observer.markReady();
-  try {
-    await closeManagedChild({ app: APP_KEYS.DAEMON, child, daemonExitObserver: observer,
-      logHandle: { close: async () => {} }, logPath: join(root, 'latest.log'), stamp: testStamp(),
-      generation: { stop: async () => {
-        child.emit('exit', null, 'SIGKILL');
-        return { forcedPids: [42], remainingPids: [] };
-      } },
-    } as unknown as Parameters<typeof closeManagedChild>[0]);
-    expect(report).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ reason: 'clean-exit', intentional: true }));
-  } finally { rmSync(root, { recursive: true, force: true }); }
-});

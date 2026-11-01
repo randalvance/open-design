@@ -1,4 +1,4 @@
-import { pendingCommentFileRetirements } from './collab/comment-file-retirements.js';
+import { parseCommentFileState, pendingCommentFileRetirements } from './projects/comment-file-facts.js';
 // SQLite-backed persistence for projects, conversations, messages, and the
 // per-project set of open workspace tabs. The on-disk project folder under
 // .od/projects/<id>/ is still the single owner of the user's actual files
@@ -27,17 +27,19 @@ import {
   stripNextStepMarkers,
   asPreviewCommentAnchorState,
 } from '@open-design/contracts';
-import { parseCommentFileState } from './collab/comment-file-facts.js';
-import { migrateCollabSyncSnapshots } from './collab/sync-snapshot-store.js';
-import { migrateCommentRelayOutbox } from './collab/comment-relay-outbox.js';
-import { migratePublicFilePublications } from './collab/public-file-publication-store.js';
-import { migrateCommentInboundStore } from './collab/comment-inbound-store.js';
-import { migrateOwnedContentSync } from './collab/owned-content-store.js';
-import { migrateAmrTerminalReportOutbox } from './storage/amr-terminal-report-outbox.js';
+import {
+  migrateAmrTerminalReportOutbox,
+  migrateCollabSyncSnapshots,
+  migrateCommentInboundStore,
+  migrateCommentRelayOutbox,
+  migrateOwnedContentSync,
+  migratePublicFilePublications,
+  migratePublishedCommentBackfillState,
+} from './storage/legacy-cloud-schema.js';
 import {
   collapseWorkspaceProjectHomes,
   type WorkspaceProjectHomeRow,
-} from './collab/workspace-project-home.js';
+} from './storage/workspace-project-home.js';
 import { scrubDsmlToolProtocolTail } from './artifacts/text-suppression.js';
 import {
   listMessageArtifactRows,
@@ -116,7 +118,7 @@ function migrate(db: SqliteDb): void {
     );
 
     -- A project belongs to exactly ONE workspace, so project_id is the key.
-    -- See collab/workspace-project-home.ts for the ruling and the repair path.
+    -- See storage/workspace-project-home.ts for the ruling and the repair path.
     CREATE TABLE IF NOT EXISTS workspace_projects (
       project_id TEXT PRIMARY KEY,
       workspace_id TEXT NOT NULL,
@@ -688,6 +690,7 @@ function migrate(db: SqliteDb): void {
   migratePublicFilePublications(db);
   migrateCommentInboundStore(db);
   migrateOwnedContentSync(db);
+  migratePublishedCommentBackfillState(db);
 }
 
 /**
@@ -696,7 +699,7 @@ function migrate(db: SqliteDb): void {
  *
  * Product ruling (2026-07-21): a project is created in a workspace and lives
  * there; sharing flips `visibility` within that workspace rather than projecting
- * the project into a second one. See collab/workspace-project-home.ts for the
+ * the project into a second one. See storage/workspace-project-home.ts for the
  * full statement and for the rule that picks the surviving row.
  *
  * Two steps, in this order, inside one transaction:
@@ -1145,166 +1148,6 @@ export function listProjects(db: SqliteDb) {
 }
 
 /**
- * Every project with NO `workspace_projects` binding row at all — the "no
- * scope" catalog `GET /api/projects` must actually serve (spec 04 §10.2#1).
- * `listProjects` above stays the unfiltered form other internal callers
- * (library-sync's inventory scan, `listProjectIds` for the design-run
- * cross-reference) legitimately still want; this is the ONE new consumer that
- * needs the join. A project bound to ANY workspace — personal or team — is
- * someone's claimed resource and must not leak into a headerless read.
- */
-export function listUnboundProjects(db: SqliteDb) {
-  const rows = db
-    .prepare(
-      `SELECT p.id, p.name, p.skill_id AS skillId,
-              p.design_system_id AS designSystemId,
-              p.pending_prompt AS pendingPrompt,
-              p.metadata_json AS metadataJson,
-              p.applied_plugin_snapshot_id AS appliedPluginSnapshotId,
-              p.custom_instructions AS customInstructions,
-              p.created_at AS createdAt,
-              p.updated_at AS updatedAt
-         FROM projects p
-         LEFT JOIN workspace_projects wp ON wp.project_id = p.id
-        WHERE wp.project_id IS NULL
-        ORDER BY p.updated_at DESC`,
-    )
-    .all() as DbRow[];
-  return rows.map(normalizeProject);
-}
-
-export function getWorkspaceProject(db: SqliteDb, workspaceId: string, projectId: string) {
-  return db
-    .prepare(
-      `SELECT project_id AS projectId,
-              workspace_id AS workspaceId,
-              visibility,
-              resource_state AS resourceState,
-              created_by_workspace_member_id AS createdByWorkspaceMemberId,
-              updated_by_workspace_member_id AS updatedByWorkspaceMemberId,
-              resource_hub_resource_id AS resourceHubResourceId,
-              cloud_tombstoned_at AS cloudTombstonedAt,
-              sync_state AS syncState,
-              version,
-              created_at AS createdAt,
-              updated_at AS updatedAt
-         FROM workspace_projects
-        WHERE workspace_id = ? AND project_id = ?`,
-    )
-    .get(workspaceId, projectId) as DbRow | undefined;
-}
-
-export function listWorkspaceProjects(db: SqliteDb, workspaceId: string) {
-  return db
-    .prepare(
-      `SELECT p.id,
-              p.name,
-              p.skill_id AS skillId,
-              p.design_system_id AS designSystemId,
-              p.pending_prompt AS pendingPrompt,
-              p.metadata_json AS metadataJson,
-              p.applied_plugin_snapshot_id AS appliedPluginSnapshotId,
-              p.custom_instructions AS customInstructions,
-              p.created_at AS createdAt,
-              p.updated_at AS updatedAt,
-              wp.project_id AS workspaceProjectId,
-              wp.workspace_id AS workspaceId,
-              wp.visibility AS workspaceVisibility,
-              wp.resource_state AS resourceState,
-              wp.created_by_workspace_member_id AS createdByWorkspaceMemberId,
-              wp.updated_by_workspace_member_id AS updatedByWorkspaceMemberId,
-              wp.resource_hub_resource_id AS resourceHubResourceId,
-              wp.cloud_tombstoned_at AS cloudTombstonedAt,
-              wp.sync_state AS syncState,
-              wp.version AS workspaceVersion,
-              wp.created_at AS workspaceCreatedAt,
-              wp.updated_at AS workspaceUpdatedAt
-         FROM workspace_projects wp
-         JOIN projects p ON p.id = wp.project_id
-        WHERE wp.workspace_id = ?
-        ORDER BY MAX(p.updated_at, wp.updated_at) DESC`,
-    )
-    .all(workspaceId) as DbRow[];
-}
-
-/**
- * Every project's workspace, as one map. The bulk form of
- * {@link getWorkspaceProjectByProjectId}, for list endpoints that would
- * otherwise issue one lookup per project on a hot path.
- */
-export function listWorkspaceProjectBindings(db: SqliteDb): Map<string, string> {
-  const rows = db
-    .prepare(`SELECT project_id AS projectId, workspace_id AS workspaceId FROM workspace_projects`)
-    .all() as Array<{ projectId: string; workspaceId: string }>;
-  return new Map(rows.map((row) => [row.projectId, row.workspaceId]));
-}
-
-export function listTeamWorkspaceProjectShares(db: SqliteDb) {
-  return db
-    .prepare(
-      `SELECT project_id AS projectId,
-              workspace_id AS workspaceId,
-              visibility,
-              created_by_workspace_member_id AS createdByWorkspaceMemberId,
-              updated_by_workspace_member_id AS updatedByWorkspaceMemberId,
-              sync_state AS syncState,
-              metadata_refresh_pending AS metadataRefreshPending
-         FROM workspace_projects
-        WHERE visibility = 'team'
-          AND resource_state != 'deleted'`,
-    )
-    .all() as DbRow[];
-}
-
-/**
- * Durable metadata-only catalog repair marker. This is intentionally separate
- * from `sync_state`: a failed rename upsert does not mean the project's
- * published content failed to sync.
- */
-export function setWorkspaceProjectMetadataRefreshPending(
-  db: SqliteDb,
-  workspaceId: string,
-  projectId: string,
-  pending: boolean,
-): void {
-  db.prepare(
-    `UPDATE workspace_projects
-        SET metadata_refresh_pending = ?
-      WHERE workspace_id = ? AND project_id = ?`,
-  ).run(pending ? 1 : 0, workspaceId, projectId);
-}
-
-/**
- * The workspace a project belongs to, looked up by project alone.
- *
- * A project has exactly one workspace (see collab/workspace-project-home.ts), so
- * this — not `getWorkspaceProject(db, workspaceId, projectId)` — is the question
- * to ask before binding a project anywhere. Asking the two-key form and getting
- * nothing back means "not in THIS workspace", which an older build mistook for
- * "not bound anywhere" and answered by writing another row.
- */
-export function getWorkspaceProjectByProjectId(db: SqliteDb, projectId: string) {
-  return db
-    .prepare(
-      `SELECT project_id AS projectId,
-              workspace_id AS workspaceId,
-              visibility,
-              resource_state AS resourceState,
-              created_by_workspace_member_id AS createdByWorkspaceMemberId,
-              updated_by_workspace_member_id AS updatedByWorkspaceMemberId,
-              resource_hub_resource_id AS resourceHubResourceId,
-              cloud_tombstoned_at AS cloudTombstonedAt,
-              sync_state AS syncState,
-              version,
-              created_at AS createdAt,
-              updated_at AS updatedAt
-         FROM workspace_projects
-        WHERE project_id = ?`,
-    )
-    .get(projectId) as DbRow | undefined;
-}
-
-/**
  * The `updatedAt` a writer passes when its write is SYNC, not a local person's
  * change: keep the row's existing answer instead of stamping "now".
  *
@@ -1338,411 +1181,6 @@ function nextUpdatedAt(patched: unknown, existing: unknown): number {
     return existing;
   }
   return Date.now();
-}
-
-/**
- * Bind a project to a workspace, or return the binding it already has.
- *
- * Deliberately keyed on the PROJECT, not on `(workspace, project)`: a project
- * already bound elsewhere is returned as-is rather than bound a second time.
- * That is what makes the caller's "ensure" idempotent across workspaces instead
- * of one back-fill per workspace visited — and it is also what the narrowed
- * primary key now enforces, so an accidental second insert throws instead of
- * silently duplicating.
- *
- * A fresh binding's `updated_at` falls back to the PROJECT's own `updated_at`,
- * not to now: the project list reports `MAX(p.updated_at, wp.updated_at)` as one
- * "last changed" time, so a binding written while syncing an old project must
- * not claim the project just changed (see {@link SYNC_KEEPS_UPDATED_AT}). A
- * caller that genuinely means "now" — a brand-new project — gets the same answer
- * either way, because its project row was stamped now a moment ago.
- */
-export function ensureWorkspaceProject(db: SqliteDb, input: DbRow) {
-  const now = Date.now();
-  const existing = getWorkspaceProjectByProjectId(db, input.projectId);
-  if (existing) return existing;
-  const boundProjectUpdatedAt = getProject(db, input.projectId)?.updatedAt;
-  const insertedUpdatedAt = typeof input.updatedAt === 'number'
-    ? input.updatedAt
-    : typeof boundProjectUpdatedAt === 'number'
-      ? boundProjectUpdatedAt
-      : now;
-  db.prepare(
-    `INSERT INTO workspace_projects
-       (project_id, workspace_id, visibility, resource_state,
-        created_by_workspace_member_id, updated_by_workspace_member_id,
-        resource_hub_resource_id, cloud_tombstoned_at,
-        sync_state, version, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    input.projectId,
-    input.workspaceId,
-    input.visibility ?? 'personal',
-    input.resourceState ?? 'active',
-    input.createdByWorkspaceMemberId ?? null,
-    input.updatedByWorkspaceMemberId ?? input.createdByWorkspaceMemberId ?? null,
-    input.resourceHubResourceId ?? null,
-    input.cloudTombstonedAt ?? null,
-    input.syncState ?? 'local_only',
-    input.version ?? 1,
-    input.createdAt ?? now,
-    insertedUpdatedAt,
-  );
-  return getWorkspaceProject(db, input.workspaceId, input.projectId);
-}
-
-export function updateWorkspaceProject(db: SqliteDb, workspaceId: string, projectId: string, patch: DbRow) {
-  const existing = getWorkspaceProject(db, workspaceId, projectId);
-  if (!existing) return null;
-  const next: DbRow = {
-    ...existing,
-    ...patch,
-    resourceHubResourceId: patch.resourceHubResourceId === undefined
-      ? existing.resourceHubResourceId
-      : patch.resourceHubResourceId,
-    cloudTombstonedAt: patch.cloudTombstonedAt === undefined
-      ? existing.cloudTombstonedAt
-      : patch.cloudTombstonedAt,
-    updatedAt: nextUpdatedAt(patch.updatedAt, existing.updatedAt),
-  };
-  db.prepare(
-    `UPDATE workspace_projects
-        SET workspace_id = ?,
-            visibility = ?,
-            resource_state = ?,
-            created_by_workspace_member_id = ?,
-            updated_by_workspace_member_id = ?,
-            resource_hub_resource_id = ?,
-            cloud_tombstoned_at = ?,
-            sync_state = ?,
-            version = ?,
-            updated_at = ?
-      WHERE workspace_id = ? AND project_id = ?`,
-  ).run(
-    workspaceId,
-    next.visibility,
-    next.resourceState,
-    next.createdByWorkspaceMemberId ?? null,
-    next.updatedByWorkspaceMemberId ?? null,
-    next.resourceHubResourceId ?? null,
-    next.cloudTombstonedAt ?? null,
-    next.syncState ?? null,
-    next.version ?? 1,
-    next.updatedAt,
-    workspaceId,
-    projectId,
-  );
-  return getWorkspaceProject(db, workspaceId, projectId);
-}
-
-/**
- * Update a project's `workspace_projects` row by project alone, reassigning
- * `workspace_id` to whatever the caller passes — the one case where the row's
- * CURRENT workspace is allowed to differ from the workspace this event is
- * asserting.
- *
- * `updateWorkspaceProject` requires the caller to already know the row's
- * current `workspace_id` (its lookup and its `WHERE` both key on it), which is
- * right for callers acting on a row they just read. It is wrong for a remote
- * team-share notification: the local row can predate the share (a personal
- * draft the user made before ever joining the team it just got shared into),
- * so it sits under an unrelated, stale `workspace_id`. Asking
- * `updateWorkspaceProject(db, newWorkspaceId, ...)` in that case finds nothing
- * — same shape of mistake `getWorkspaceProjectByProjectId`'s own doc comment
- * warns about — and the row is silently never migrated: visibility and
- * sync_state stay frozen at whatever they were, so the project never starts
- * pulling the sharer's updates.
- */
-export function rebindWorkspaceProject(db: SqliteDb, projectId: string, patch: DbRow) {
-  const existing = getWorkspaceProjectByProjectId(db, projectId);
-  if (!existing) return null;
-  const workspaceId = typeof patch.workspaceId === 'string' ? patch.workspaceId : existing.workspaceId;
-  const next: DbRow = {
-    ...existing,
-    ...patch,
-    workspaceId,
-    resourceHubResourceId: patch.resourceHubResourceId === undefined
-      ? existing.resourceHubResourceId
-      : patch.resourceHubResourceId,
-    cloudTombstonedAt: patch.cloudTombstonedAt === undefined
-      ? existing.cloudTombstonedAt
-      : patch.cloudTombstonedAt,
-    updatedAt: nextUpdatedAt(patch.updatedAt, existing.updatedAt),
-  };
-  db.prepare(
-    `UPDATE workspace_projects
-        SET workspace_id = ?,
-            visibility = ?,
-            resource_state = ?,
-            created_by_workspace_member_id = ?,
-            updated_by_workspace_member_id = ?,
-            resource_hub_resource_id = ?,
-            cloud_tombstoned_at = ?,
-            sync_state = ?,
-            version = ?,
-            updated_at = ?
-      WHERE project_id = ?`,
-  ).run(
-    workspaceId,
-    next.visibility,
-    next.resourceState,
-    next.createdByWorkspaceMemberId ?? null,
-    next.updatedByWorkspaceMemberId ?? null,
-    next.resourceHubResourceId ?? null,
-    next.cloudTombstonedAt ?? null,
-    next.syncState ?? null,
-    next.version ?? 1,
-    next.updatedAt,
-    projectId,
-  );
-  return getWorkspaceProjectByProjectId(db, projectId);
-}
-
-export function deleteWorkspaceProject(db: SqliteDb, workspaceId: string, projectId: string): void {
-  db.prepare(
-    `DELETE FROM workspace_projects
-      WHERE workspace_id = ? AND project_id = ?`,
-  ).run(workspaceId, projectId);
-}
-
-/**
- * The workspace a project's TEAM projection lives in — the project's pinned
- * scope for hub-facing calls (presence, comments). A project shared to (or
- * pulled from) a team has exactly one team-visibility row; personal drafts
- * have none and resolve to null so callers fall back to the local selection.
- */
-export function findTeamWorkspaceIdForProject(db: SqliteDb, projectId: string): string | null {
-  const row = db.prepare(
-    `SELECT workspace_id AS workspaceId
-       FROM workspace_projects
-      WHERE project_id = ? AND visibility = 'team'
-      LIMIT 1`,
-  ).get(projectId) as { workspaceId?: string } | undefined;
-  const workspaceId = typeof row?.workspaceId === 'string' ? row.workspaceId.trim() : '';
-  return workspaceId || null;
-}
-
-export function countWorkspaceProjectRefs(db: SqliteDb, projectId: string): number {
-  const row = db.prepare(
-    `SELECT COUNT(*) AS count
-       FROM workspace_projects
-      WHERE project_id = ?`,
-  ).get(projectId) as { count?: number } | undefined;
-  return Number(row?.count ?? 0);
-}
-
-const WORKSPACE_RESOURCE_SELECT_COLUMNS = `
-              resource_type AS resourceType,
-              resource_id AS resourceId,
-              workspace_id AS workspaceId,
-              visibility,
-              resource_state AS resourceState,
-              created_by_workspace_member_id AS createdByWorkspaceMemberId,
-              updated_by_workspace_member_id AS updatedByWorkspaceMemberId,
-              resource_hub_resource_id AS resourceHubResourceId,
-              cloud_tombstoned_at AS cloudTombstonedAt,
-              sync_state AS syncState,
-              version,
-              created_at AS createdAt,
-              updated_at AS updatedAt`;
-
-/**
- * The generic counterpart of {@link getWorkspaceProject}, parameterized by
- * `resourceType` ('plugin' | 'skill' | 'design_system' — 'project' itself
- * stays on the dedicated `workspace_projects` table above). Returns null when
- * the resource is unbound OR bound to a DIFFERENT workspace than the one
- * asked about — same "wrong workspace reads as absent" contract as
- * `getWorkspaceProject`.
- */
-export function getWorkspaceResource(
-  db: SqliteDb,
-  resourceType: string,
-  workspaceId: string,
-  resourceId: string,
-) {
-  return db
-    .prepare(
-      `SELECT ${WORKSPACE_RESOURCE_SELECT_COLUMNS}
-         FROM workspace_resources
-        WHERE resource_type = ? AND workspace_id = ? AND resource_id = ?`,
-    )
-    .get(resourceType, workspaceId, resourceId) as DbRow | undefined;
-}
-
-/**
- * The workspace a resource belongs to, looked up by resource alone (mirrors
- * {@link getWorkspaceProjectByProjectId}). Because `(resource_type,
- * resource_id)` is the table's primary key, a resource can only ever have
- * ONE binding row — this is the question to ask before binding a resource
- * anywhere, not the two-key form above.
- */
-export function getWorkspaceResourceByResourceId(
-  db: SqliteDb,
-  resourceType: string,
-  resourceId: string,
-) {
-  return db
-    .prepare(
-      `SELECT ${WORKSPACE_RESOURCE_SELECT_COLUMNS}
-         FROM workspace_resources
-        WHERE resource_type = ? AND resource_id = ?`,
-    )
-    .get(resourceType, resourceId) as DbRow | undefined;
-}
-
-export function listWorkspaceResources(db: SqliteDb, resourceType: string, workspaceId: string) {
-  return db
-    .prepare(
-      `SELECT ${WORKSPACE_RESOURCE_SELECT_COLUMNS}
-         FROM workspace_resources
-        WHERE resource_type = ? AND workspace_id = ?
-        ORDER BY updated_at DESC`,
-    )
-    .all(resourceType, workspaceId) as DbRow[];
-}
-
-/** Workspace ids that still own a live Team resource binding.
- *
- * Background reconciliation uses this persisted witness after restarts. It
- * deliberately returns ids only; callers must resolve each id against the
- * current authoritative Workspace directory before touching the resource hub.
- */
-export function listTeamWorkspaceResourceWorkspaceIds(db: SqliteDb): string[] {
-  const rows = db
-    .prepare(
-      `SELECT DISTINCT workspace_id AS workspaceId
-         FROM workspace_resources
-        WHERE visibility = 'team'
-          AND resource_state != 'deleted'
-        ORDER BY workspace_id`,
-    )
-    .all() as Array<{ workspaceId: string }>;
-  return rows.map((row) => row.workspaceId);
-}
-
-/**
- * Bind a resource to a workspace, or return the binding it already has.
- *
- * Deliberately keyed on `(resourceType, resourceId)`, not on `(workspace,
- * resource)` — see {@link ensureWorkspaceProject}'s doc comment for why: a
- * resource already bound elsewhere is returned as-is rather than bound a
- * second time, which is what makes this idempotent across workspaces and
- * what the `(resource_type, resource_id)` primary key enforces physically.
- */
-export function ensureWorkspaceResource(
-  db: SqliteDb,
-  resourceType: string,
-  workspaceId: string,
-  resourceId: string,
-  input: DbRow = {},
-) {
-  const now = Date.now();
-  const existing = getWorkspaceResourceByResourceId(db, resourceType, resourceId);
-  if (existing) return existing;
-  db.prepare(
-    `INSERT INTO workspace_resources
-       (resource_type, resource_id, workspace_id, visibility, resource_state,
-        created_by_workspace_member_id, updated_by_workspace_member_id,
-        resource_hub_resource_id, cloud_tombstoned_at,
-        sync_state, version, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    resourceType,
-    resourceId,
-    workspaceId,
-    input.visibility ?? 'personal',
-    input.resourceState ?? null,
-    input.createdByWorkspaceMemberId ?? null,
-    input.updatedByWorkspaceMemberId ?? input.createdByWorkspaceMemberId ?? null,
-    input.resourceHubResourceId ?? null,
-    input.cloudTombstonedAt ?? null,
-    input.syncState ?? null,
-    input.version ?? 1,
-    input.createdAt ?? now,
-    input.updatedAt ?? now,
-  );
-  return getWorkspaceResource(db, resourceType, workspaceId, resourceId);
-}
-
-export function updateWorkspaceResource(
-  db: SqliteDb,
-  resourceType: string,
-  workspaceId: string,
-  resourceId: string,
-  patch: DbRow,
-) {
-  const existing = getWorkspaceResource(db, resourceType, workspaceId, resourceId);
-  if (!existing) return null;
-  const next: DbRow = {
-    ...existing,
-    ...patch,
-    resourceHubResourceId: patch.resourceHubResourceId === undefined
-      ? existing.resourceHubResourceId
-      : patch.resourceHubResourceId,
-    cloudTombstonedAt: patch.cloudTombstonedAt === undefined
-      ? existing.cloudTombstonedAt
-      : patch.cloudTombstonedAt,
-    updatedAt: typeof patch.updatedAt === 'number' ? patch.updatedAt : Date.now(),
-  };
-  db.prepare(
-    `UPDATE workspace_resources
-        SET workspace_id = ?,
-            visibility = ?,
-            resource_state = ?,
-            created_by_workspace_member_id = ?,
-            updated_by_workspace_member_id = ?,
-            resource_hub_resource_id = ?,
-            cloud_tombstoned_at = ?,
-            sync_state = ?,
-            version = ?,
-            updated_at = ?
-      WHERE resource_type = ? AND workspace_id = ? AND resource_id = ?`,
-  ).run(
-    workspaceId,
-    next.visibility,
-    next.resourceState ?? null,
-    next.createdByWorkspaceMemberId ?? null,
-    next.updatedByWorkspaceMemberId ?? null,
-    next.resourceHubResourceId ?? null,
-    next.cloudTombstonedAt ?? null,
-    next.syncState ?? null,
-    next.version ?? 1,
-    next.updatedAt,
-    resourceType,
-    workspaceId,
-    resourceId,
-  );
-  return getWorkspaceResource(db, resourceType, workspaceId, resourceId);
-}
-
-export function deleteWorkspaceResource(
-  db: SqliteDb,
-  resourceType: string,
-  workspaceId: string,
-  resourceId: string,
-): void {
-  db.prepare(
-    `DELETE FROM workspace_resources
-      WHERE resource_type = ? AND workspace_id = ? AND resource_id = ?`,
-  ).run(resourceType, workspaceId, resourceId);
-}
-
-/**
- * Delete a resource's binding row regardless of which workspace it is
- * currently bound to. Callers that delete the resource's underlying record
- * (e.g. plugin uninstall) MUST call this — there is no ON DELETE CASCADE for
- * this table (see the table's doc comment in `migrate()`), so skipping this
- * leaves an orphan `workspace_resources` row pointing at nothing.
- */
-export function deleteWorkspaceResourceByResourceId(
-  db: SqliteDb,
-  resourceType: string,
-  resourceId: string,
-): void {
-  db.prepare(
-    `DELETE FROM workspace_resources
-      WHERE resource_type = ? AND resource_id = ?`,
-  ).run(resourceType, resourceId);
 }
 
 /**
@@ -3780,7 +3218,7 @@ interface PreviewCommentReadOptions {
 
 function currentPreviewCommentFilter(db: SqliteDb, projectId: string): (comment: PreviewComment) => boolean {
   const state = parseCommentFileState(getProject(db, projectId)?.metadata?._commentFiles);
-  const pending = new Set(pendingCommentFileRetirements(db, projectId).map(row => row.fact.sourceFileId));
+  const pending = new Set(pendingCommentFileRetirements(db, projectId).map(fact => fact.sourceFileId));
   const facts = new Map(state?.files.map(fact => [fact.sourceFileId, fact]));
   // A creator may comment before any receipt/share exists. The existing
   // workspace pointer proves only that local lifetime, never remote admission.
@@ -4393,7 +3831,11 @@ export function deleteConversationAndRepairTeamCommentAnchor(
 ): { anchorCreated: boolean } {
   let anchorCreated = false;
   const remove = db.transaction(() => {
-    const binding = getWorkspaceProjectByProjectId(db, projectId);
+    // A project an older build shared keeps its internal comment anchor, so
+    // comments pulled into this conversation move there instead of cascading.
+    const binding = db.prepare(
+      'SELECT visibility, resource_state AS resourceState FROM workspace_projects WHERE project_id = ?',
+    ).get(projectId) as { visibility?: string; resourceState?: string } | undefined;
     if (binding?.visibility === 'team' && binding.resourceState !== 'deleted') {
       const repaired = ensureTeamProjectCommentConversations(
         db,

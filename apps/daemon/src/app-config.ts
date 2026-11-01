@@ -95,10 +95,6 @@ export interface OrbitConfigPrefs {
   enabled: boolean;
   time: string;
   templateSkillId?: string | null;
-  workspaceScope?: {
-    workspaceId: string;
-    workspaceMemberId: string;
-  } | null;
 }
 
 export interface ProjectLocationPrefs {
@@ -182,7 +178,7 @@ const AGENT_MODEL_KEYS: ReadonlySet<string> = new Set([
   'reasoning',
   'serviceTier',
 ]);
-const RETIRED_AGENT_IDS: ReadonlySet<string> = new Set(['gemini']);
+const RETIRED_AGENT_IDS: ReadonlySet<string> = new Set(['gemini', 'amr']);
 
 const TELEMETRY_KEYS: ReadonlySet<string> = new Set([
   'metrics',
@@ -203,15 +199,6 @@ function validateTelemetry(raw: unknown): TelemetryPrefs | undefined {
 }
 
 const AGENT_CLI_ENV_KEYS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
-  ['amr', new Set([
-    'VELA_BIN',
-    'VELA_API_URL',
-    'VELA_LINK_URL',
-    'VELA_RUNTIME_KEY',
-    'VELA_OPENCODE_BIN',
-    'OPEN_DESIGN_AMR_PROFILE',
-    'OPENCODE_TEST_HOME',
-  ])],
   ['aider', new Set(['AIDER_BIN'])],
   ['claude', new Set(['CLAUDE_CONFIG_DIR', 'CLAUDE_BIN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'MMD_MODEL_ROUTES_FILE'])],
   ['codex', new Set(['CODEX_HOME', 'CODEX_BIN', 'OPENAI_BASE_URL', 'CODEX_API_KEY', 'OPENAI_API_KEY'])],
@@ -337,23 +324,6 @@ function validateOrbit(raw: unknown): OrbitConfigPrefs | undefined {
     orbit.templateSkillId = typeof obj.templateSkillId === 'string' && obj.templateSkillId.trim()
       ? obj.templateSkillId.trim()
       : null;
-  }
-  if (Object.hasOwn(obj, 'workspaceScope')) {
-    const rawScope = obj.workspaceScope;
-    if (rawScope && typeof rawScope === 'object' && !Array.isArray(rawScope)) {
-      const workspaceId =
-        typeof (rawScope as Record<string, unknown>).workspaceId === 'string'
-          ? ((rawScope as Record<string, unknown>).workspaceId as string).trim()
-          : '';
-      const workspaceMemberId =
-        typeof (rawScope as Record<string, unknown>).workspaceMemberId === 'string'
-          ? ((rawScope as Record<string, unknown>).workspaceMemberId as string).trim()
-          : '';
-      orbit.workspaceScope =
-        workspaceId && workspaceMemberId ? { workspaceId, workspaceMemberId } : null;
-    } else {
-      orbit.workspaceScope = null;
-    }
   }
 
   return orbit;
@@ -615,19 +585,6 @@ function applyConfigValue(
   if (key === 'orbit') {
     const validated = validateOrbit(value);
     if (validated !== undefined) {
-      const existingOrbit = target[key] as OrbitConfigPrefs | undefined;
-      if (
-        value
-        && typeof value === 'object'
-        && !Array.isArray(value)
-        && !Object.hasOwn(value, 'workspaceScope')
-        && existingOrbit?.workspaceScope
-      ) {
-        // Older clients do not know this field. Editing Orbit time/enabled
-        // must not silently convert an already-scoped unattended automation
-        // back into an ambient/unbound one. An explicit null still clears it.
-        validated.workspaceScope = existingOrbit.workspaceScope;
-      }
       target[key] = validated;
     } else {
       delete target[key];
@@ -718,56 +675,11 @@ function filterAllowedKeys(obj: Record<string, unknown>): AppConfigPrefs {
   return normalizeRetiredAgentPrefs(normalizeAgentCliEnvPrefs(result as AppConfigPrefs));
 }
 
-// Fill in telemetry defaults when the saved config has no `telemetry`
-// field at all (fresh install, pre-disclosure). `metrics` / `content`
-// default to true so onboarding-funnel events emit from the first
-// render — without these defaults the gate at
-// `analytics.ts` (`if (cfg.telemetry?.metrics !== true) return`)
-// dropped every event a user fired before the post-onboarding
-// disclosure modal had a chance to set them. An EXPLICIT `false`
-// the user previously saved is preserved (only `undefined` gets
-// the new default), so opt-out users stay opted out across the
-// 0.7.x → 0.8.0 upgrade.
+// Telemetry is off and cannot be turned on. A saved `metrics: true` from an
+// earlier version reads back as false, and the fields stay in responses so the
+// web contract still parses.
 function applyTelemetryDefaults(prefs: AppConfigPrefs): AppConfigPrefs {
-  if (prefs.telemetry === undefined) {
-    return {
-      ...prefs,
-      telemetry: { metrics: true, content: true },
-    };
-  }
-  return prefs;
-}
-
-export type MetricsConsentRead = {
-  status: 'missing' | 'available' | 'unavailable';
-  metrics: boolean;
-};
-
-/** Unlike general config hydration, consent must distinguish a fresh install
- * from damaged/unreadable saved preferences. Never recover a lost opt-out by
- * silently defaulting a corrupt file to an empty config. */
-export async function readMetricsConsent(dataDir: string): Promise<MetricsConsentRead> {
-  try {
-    const raw: unknown = JSON.parse(await readFile(configFile(dataDir), 'utf8'));
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      return { status: 'unavailable', metrics: false };
-    }
-    const telemetry = (raw as Record<string, unknown>).telemetry;
-    if (telemetry !== undefined) {
-      if (!telemetry || typeof telemetry !== 'object' || Array.isArray(telemetry)) {
-        return { status: 'unavailable', metrics: false };
-      }
-      const metrics = (telemetry as Record<string, unknown>).metrics;
-      if (typeof metrics !== 'boolean') return { status: 'unavailable', metrics: false };
-      return { status: 'available', metrics };
-    }
-    return { status: 'available', metrics: applyTelemetryDefaults({}).telemetry?.metrics === true };
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { status: 'missing', metrics: applyTelemetryDefaults({}).telemetry?.metrics === true };
-    }
-    return { status: 'unavailable', metrics: false };
-  }
+  return { ...prefs, telemetry: { metrics: false, content: false } };
 }
 
 export async function readAppConfig(dataDir: string): Promise<AppConfigPrefs> {
@@ -801,9 +713,7 @@ export async function readAppConfig(dataDir: string): Promise<AppConfigPrefs> {
   return applyTelemetryDefaults(base);
 }
 
-// Synchronous mirror of readAppConfig for callers that cannot await — e.g.
-// building the spawn env for the vela CLI inside the synchronous
-// spawnEnvForAgent. It reuses the exact same parsing, validation and telemetry
+// Synchronous mirror of readAppConfig for callers that cannot await. It reuses the exact same parsing, validation and telemetry
 // defaulting as the async path, so the consent decision and installationId can
 // never drift from what the rest of the daemon (and the web analytics config)
 // sees. The only intentional difference is that it skips the best-effort
@@ -864,32 +774,6 @@ async function readAppConfigFileOnly(dataDir: string): Promise<AppConfigPrefs> {
 // Serialize concurrent writes to the same dataDir so the read-modify-write
 // cycle doesn't lose updates when two PUT requests overlap.
 const writeLocks = new Map<string, Promise<unknown>>();
-const configObservers = new Map<string, Set<() => void>>();
-export function observeAppConfig(dataDir: string, observer: () => void): () => void {
-  const observers = configObservers.get(dataDir) ?? new Set<() => void>();
-  observers.add(observer); configObservers.set(dataDir, observers);
-  return () => { observers.delete(observer); if (!observers.size) configObservers.delete(dataDir); };
-}
-
-/** Automatic content upload must fail closed on corrupt preferences instead of applying defaults. */
-export function automaticDiagnosticsConsent(dataDir: string): boolean {
-  try {
-    const raw: unknown = JSON.parse(readFileSync(configFile(dataDir), 'utf8'));
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
-    const telemetry = (raw as Record<string, unknown>).telemetry;
-    if (telemetry !== undefined && (telemetry === null || typeof telemetry !== 'object' || Array.isArray(telemetry))) return false;
-    if (telemetry !== undefined) {
-      const value = telemetry as Record<string, unknown>;
-      return value.metrics === true && value.content === true;
-    }
-    const prefs = applyTelemetryDefaults(filterAllowedKeys(raw as Record<string, unknown>));
-    return prefs.telemetry?.metrics === true && prefs.telemetry?.content === true;
-  } catch (error) {
-    // A new installation has the same defaults as the existing telemetry settings.
-    return (error as NodeJS.ErrnoException).code === 'ENOENT';
-  }
-}
-
 export async function writeAppConfig(
   dataDir: string,
   partial: Record<string, unknown>,
@@ -943,15 +827,12 @@ async function doWrite(
     ? inferAgentCliEnvIntentForExplicitEnvWrite(next as AppConfigPrefs)
     : next as AppConfigPrefs;
   const normalizedNext = normalizeAgentCliEnvPrefs(nextWithInferredIntent);
-  const normalizedNextWithoutRetiredAgents = normalizeRetiredAgentPrefs(normalizedNext);
+  const normalizedNextWithoutRetiredAgents = applyTelemetryDefaults(normalizeRetiredAgentPrefs(normalizedNext));
   const file = configFile(dataDir);
   await mkdir(path.dirname(file), { recursive: true });
   const tmp = file + '.' + randomBytes(4).toString('hex') + '.tmp';
   await writeFile(tmp, JSON.stringify(normalizedNextWithoutRetiredAgents, null, 2), 'utf8');
   await rename(tmp, file);
-  for (const observer of configObservers.get(dataDir) ?? []) {
-    try { observer(); } catch { /* preference persistence must not depend on background consumers */ }
-  }
   const installationIdWasExplicitlyReset = Object.prototype.hasOwnProperty.call(partial, 'installationId')
     && (partial.installationId == null || (
       typeof existing.installationId === 'string'

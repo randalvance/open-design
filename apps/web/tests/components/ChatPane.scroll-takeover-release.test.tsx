@@ -12,7 +12,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 import { ChatPane } from '../../src/components/ChatPane';
 import { releaseChatScrollTakeover } from '../../src/runtime/chat-scroll-takeover';
-import type { AppConfig, ChatMessage } from '../../src/types';
+import type { ChatMessage } from '../../src/types';
 
 const translate = (key: string, vars?: Record<string, string | number>) => {
   if (vars && Object.keys(vars).length > 0) {
@@ -94,10 +94,8 @@ function chatPane(props: { messages: ChatMessage[]; activeConversationId: string
         { projectId: 'project-1', id: 'conv-2', title: 'Two', createdAt: 1, updatedAt: 1 },
       ]}
       activeConversationId={props.activeConversationId}
-      messagesConversationId={props.activeConversationId}
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'claude', agentCliEnv: {} } as unknown as AppConfig}
     />
   );
 }

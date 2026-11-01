@@ -8,7 +8,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { PackagedLauncherRuntime } from "../src/launcher-runtime.js";
 import {
-  findPackagedDeeplinkArg,
   launchPackagedPayloadDesktop,
   planPackagedPayloadDesktopDelegation,
 } from "../src/payload-desktop-launch.js";
@@ -63,31 +62,31 @@ describe("payload desktop delegation", () => {
     });
   });
 
-  it("forwards only the OS invite URL across an outer-to-payload cold start", () => {
-    const deeplink = "opendesign://workspace/invite/continue?nonce=payload-cold-start";
-    expect(findPackagedDeeplinkArg(["Open Design.exe", "--unrelated", deeplink])).toBe(deeplink);
-    expect(findPackagedDeeplinkArg(["Open Design.exe", "--unrelated"])).toBeNull();
-    const plan = planPackagedPayloadDesktopDelegation(fakeRuntime(false), {
-      currentPid: 4321,
-      forwardedArgs: ["Open Design.exe", "--unrelated", deeplink],
-      timeoutMs: 60_000,
-    });
+  it("forwards nothing from the outer's argv across an outer-to-payload cold start", () => {
+    const originalArgv = process.argv;
+    process.argv = ["Open Design.exe", "--unrelated", "opendesign://workspace/open"];
+    try {
+      const plan = planPackagedPayloadDesktopDelegation(fakeRuntime(false), {
+        currentPid: 4321,
+        timeoutMs: 60_000,
+      });
 
-    expect(plan?.args).toContain(deeplink);
-    expect(plan?.args).not.toContain("--unrelated");
+      expect(plan?.args).not.toContain("--unrelated");
+      expect(plan?.args).not.toContain("opendesign://workspace/open");
+    } finally {
+      process.argv = originalArgv;
+    }
   });
 
   it("carries launch-mode arguments so a delegated headless launch stays headless", () => {
     const plan = planPackagedPayloadDesktopDelegation(fakeRuntime(false), {
       currentPid: 4321,
       extraArgs: ["--headless"],
-      forwardedArgs: ["Open Design", "--headless", "--unrelated"],
       timeoutMs: 60_000,
     });
     // The payload re-derives its sidecar mode from its own argv, so the mode flag must arrive
     // together with the delegated pointer that keeps its pre-armed attempt from reading as a failure.
     expect(plan?.args.filter((arg) => arg === "--headless")).toEqual(["--headless"]);
-    expect(plan?.args).not.toContain("--unrelated");
     expect(parseLauncherDelegatedArgs(plan?.args ?? [])).toEqual({ generation: 1, version: "1.2.3-beta.5" });
   });
 

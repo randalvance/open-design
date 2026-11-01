@@ -19,9 +19,9 @@ import { MEDIA_USER_REPLY_CONTRACT } from '../../src/prompts/media-contract.js';
  */
 function imagePrompt(): string {
   return composeSystemPrompt({
-    agentId: 'amr',
+    agentId: 'claude',
     locale: 'zh-CN',
-    metadata: { kind: 'image', imageModel: 'vela/gpt-image-2' } as any,
+    metadata: { kind: 'image', imageModel: 'gpt-image-2' } as any,
   });
 }
 

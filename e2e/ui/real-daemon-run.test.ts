@@ -16,8 +16,6 @@ import type { FakeAcpHandshakeRuntime, FakeAgentId } from '@/playwright/fake-age
 import { T } from '@/timeouts';
 
 const STORAGE_KEY = 'open-design:config';
-const EXPERIENCE_SURVEY_RETIRED_KEY = 'open-design:experience-survey:v1:retired';
-const EXPERIENCE_SURVEY_DELIVERIES_KEY = 'open-design:experience-survey:v1:deliveries';
 const GENERATED_FILE = 'real-daemon-smoke.html';
 const GENERATED_HEADING = 'Real Daemon Smoke';
 const EDITED_GENERATED_HEADING = 'Real Daemon Smoke Edited';
@@ -33,16 +31,6 @@ const FOLLOW_UP_FILE = 'follow-up-daemon-smoke.html';
 const OD_NEXT_CANARY_FILE = 'od-next-active-canary.html';
 const DECK_DIRECT_NAVIGATION_BUDGET_MS = 2_500;
 const MEDIA_ONLY_FILE = 'media-only.png';
-const SERVER_DERIVED_WORKSPACE_HEADERS = {
-  'x-od-workspace-id': 'e2e-server-derived-workspace',
-  'x-od-workspace-type': 'personal',
-  'x-od-workspace-member-id': 'e2e-server-derived-member',
-  'x-od-workspace-role': 'owner',
-  'x-od-workspace-member-status': 'active',
-  'x-od-workspace-lifecycle-state': 'active',
-  'x-od-workspace-can-share-projects': 'true',
-  'x-od-workspace-can-write-synced-files': 'true',
-} as const;
 let fakeRuntimes: Awaited<ReturnType<typeof createFakeAgentRuntimes>>;
 let fakeAcpHandshakeRuntime: FakeAcpHandshakeRuntime;
 
@@ -451,83 +439,6 @@ test('[P0] OD Next retired app-config preference preserves the active default an
   });
 });
 
-test('[P1] delivered artifact opens the one-time experience survey and accepts an Other response', async ({ page }) => {
-  await enableExperienceSurvey(page);
-  await createProject(page, 'Delivered artifact survey smoke');
-  await expectWorkspaceReady(page);
-
-  await sendPrompt(page, 'Create a deterministic smoke artifact');
-
-  const { projectId } = await currentProjectContext(page);
-  await expectProjectFilesToContain(page, projectId, [GENERATED_FILE]);
-  await expect(artifactPreviewFrame(page).getByRole('heading', { name: GENERATED_HEADING })).toBeVisible();
-
-  const survey = page.getByRole('dialog', {
-    name: /We'd love your feedback — help improve Open ?Design/,
-  });
-  const recommendation = survey.getByText(
-    /How likely are you to recommend Open ?Design to a colleague or friend\?/,
-  );
-  await expect(recommendation).toBeVisible({ timeout: T.medium });
-  await survey.getByRole('button', { name: '8', exact: true }).click();
-  await expect(survey.getByText('Which one should we improve first?')).toBeVisible();
-  await survey.getByRole('button', { name: 'Something else', exact: true }).click();
-  const other = survey.getByRole('textbox', { name: 'Tell us in your own words' });
-  await expect(other).toBeFocused();
-  await other.fill('Keep generated artifact previews visible after delivery.');
-  await survey.getByRole('button', { name: 'Send', exact: true }).click();
-  await expect(survey.getByText('Thank you!')).toBeVisible();
-
-  await expect
-    .poll(() => page.evaluate((key) => window.localStorage.getItem(key), EXPERIENCE_SURVEY_RETIRED_KEY))
-    .toBe('1');
-
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await waitForLoadingToClear(page);
-  await expect(survey).toHaveCount(0);
-});
-
-test('[P0] bound project reads derive Workspace authority without browser query scope', async ({ page }) => {
-  const projectId = `server-derived-raw-${Date.now()}`;
-  const { conversationId } = await createProjectViaApi(
-    page,
-    projectId,
-    'Server-derived raw authority',
-    undefined,
-    SERVER_DERIVED_WORKSPACE_HEADERS,
-  );
-
-  expect(conversationId).toBeTruthy();
-  const conversationsResponse = await page.request.get(
-    `/api/projects/${projectId}/conversations`,
-  );
-  expect(
-    conversationsResponse.ok(),
-    await conversationsResponse.text(),
-  ).toBeTruthy();
-  const messagesResponse = await page.request.get(
-    `/api/projects/${projectId}/conversations/${conversationId}/messages`,
-  );
-  expect(messagesResponse.ok(), await messagesResponse.text()).toBeTruthy();
-
-  const writeResponse = await page.request.post(`/api/projects/${projectId}/files`, {
-    headers: SERVER_DERIVED_WORKSPACE_HEADERS,
-    data: {
-      name: GENERATED_FILE,
-      content: `<!doctype html><html><body><h1>${GENERATED_HEADING}</h1></body></html>`,
-    },
-  });
-  expect(writeResponse.ok(), await writeResponse.text()).toBeTruthy();
-
-  const rawPath = `/api/projects/${projectId}/raw/${GENERATED_FILE}`;
-  const response = await page.goto(rawPath, { waitUntil: 'domcontentloaded' });
-  expect(response?.ok(), await response?.text()).toBeTruthy();
-  expect(new URL(page.url()).searchParams.has('workspaceId')).toBe(false);
-  expect(new URL(page.url()).searchParams.has('workspaceMemberId')).toBe(false);
-  await expect(page.getByRole('heading', { name: GENERATED_HEADING })).toBeVisible();
-  await expect(page.locator('body')).not.toContainText('WORKSPACE_CONTEXT_REQUIRED');
-});
-
 test('[P0] real daemon run persists an artifact streamed across multiple chunks', async ({ page }) => {
   await createProject(page, 'Chunked daemon run smoke');
   await expectWorkspaceReady(page);
@@ -601,11 +512,8 @@ test('[P0] ACP handshake refusal is actionable, persists, and does not auto-retr
     'Open Design does not currently support this agent version. Please switch to a supported version and try again.',
   );
   await expect(card).not.toContainText(rawError);
-  // OPEND-2807 / G16: a failed local CLI run has exactly these three actions.
-  await expect(card.getByRole('button')).toHaveText([
-    'Contact us', 'Export logs', 'Switch to OpenDesign Cloud',
-  ]);
-  await expect(card.getByRole('button', { name: /^Retry$/ })).toHaveCount(0);
+  // A failed local CLI run has exactly these three actions.
+  await expect(card.getByRole('button')).toHaveText(['Contact us', 'Export logs', 'Retry']);
   await expect.poll(() => countAcpRunSessionStarts(fakeAcpHandshakeRuntime.invocationLog)).toBe(1);
 
   const { projectId, conversationId } = await currentProjectContext(page);
@@ -631,13 +539,8 @@ test('[P1] real daemon classifies a Claude prompt-too-long result and preserves 
   await expect(card.getByTestId('chat-run-error-description')).toHaveText(
     'The current context exceeds the length the model can handle. Please start a new conversation and try again.',
   );
-  // OPEND-2807 / G16: a failed local CLI run has exactly these three actions.
-  await expect(card.getByRole('button')).toHaveText([
-    'Contact us', 'Export logs', 'Switch to OpenDesign Cloud',
-  ]);
-  await expect(card.getByRole('button', { name: /^Retry$/ })).toHaveCount(0);
-  // The Cloud action remains in this one error card, with no separate suggestion card.
-  await expect(page.getByRole('button', { name: 'Switch to OpenDesign Cloud', exact: true })).toHaveCount(1);
+  // A failed local CLI run has exactly these three actions.
+  await expect(card.getByRole('button')).toHaveText(['Contact us', 'Export logs', 'Retry']);
 
   await page.reload({ waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
@@ -1212,7 +1115,6 @@ test('[P1] plugin authoring produces a generated-plugin scaffold with action car
   await setBrowserAgentConfig(page, 'codex');
   await configureFakeAgent(page, 'codex');
   await expectBrowserAgentConfig(page, 'codex');
-  await dismissPrivacyDialog(page);
 
   // Enter plugin authoring through the current Plugins Add panel. The
   // agent-assisted option hands its prompt back to the Home composer; the
@@ -1327,7 +1229,6 @@ async function createProject(
   }
   await waitForLoadingToClear(page);
   await expectBrowserAgentConfig(page, agentId);
-  await dismissPrivacyDialog(page);
 }
 
 async function createHandshakeRefusingKimiProject(page: Page, name: string) {
@@ -1356,7 +1257,6 @@ async function createHandshakeRefusingKimiProject(page: Page, name: string) {
   });
   await waitForLoadingToClear(page);
   await expectBrowserAgentConfig(page, 'kimi');
-  await dismissPrivacyDialog(page);
 }
 
 async function prepareLocalOdNextCanary(
@@ -1379,7 +1279,6 @@ async function prepareLocalOdNextCanary(
   await configureFakeAgent(page, 'opencode');
   await setOdNextStrategyMode(page, strategyMode);
   await expectBrowserAgentConfig(page, 'opencode');
-  await dismissPrivacyDialog(page);
   await openNewProjectModalFromProjects(page);
   await page.getByTestId('new-project-tab-prototype').click();
   await page.getByTestId('new-project-name').fill(name);
@@ -1406,7 +1305,6 @@ async function prepareSelectedDeckTemplateCanary(
   await configureFakeAgent(page, 'opencode');
   await setOdNextStrategyMode(page, strategyMode);
   await expectBrowserAgentConfig(page, 'opencode');
-  await dismissPrivacyDialog(page);
   await openNewProjectModalFromProjects(page);
   await page.getByTestId('new-project-tab-deck').click();
   const selectedTemplate = page.getByRole('radio', { name: 'Example Helix', exact: true });
@@ -1481,7 +1379,6 @@ async function createByokOpenCodeProject(page: Page, name: string) {
   await setBrowserByokOpenCodeConfig(page);
   await configureByokOpenCodeWithoutProvider(page);
   await expectBrowserAgentConfig(page, 'byok-opencode');
-  await dismissPrivacyDialog(page);
   await openNewProjectModalFromProjects(page);
   await page.getByTestId('new-project-tab-prototype').click();
   await page.getByTestId('new-project-name').fill(name);
@@ -1566,11 +1463,6 @@ async function gotoEntryHome(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
   await projectsSettled;
-  const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve OpenDesign' });
-  if (await privacyDialog.isVisible()) {
-    await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
-    await expect(privacyDialog).toHaveCount(0);
-  }
   await expect(page.getByTestId('home-hero')).toBeVisible();
   await expect(page.getByTestId('home-hero-input')).toBeVisible();
 }
@@ -1656,17 +1548,9 @@ async function sendPromptAndReloadBeforeCreateResponse(page: Page, prompt: strin
 async function openNewProjectModal(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
-  await dismissPrivacyDialog(page);
   await openNewProjectModalFromProjects(page);
 }
 
-async function dismissPrivacyDialog(page: Page) {
-  const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve OpenDesign' });
-  if (await privacyDialog.isVisible()) {
-    await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
-    await expect(privacyDialog).toHaveCount(0);
-  }
-}
 
 async function waitForLoadingToClear(page: Page) {
   await page.getByText('Loading OpenDesign…').waitFor({ state: 'hidden', timeout: T.long });
@@ -1735,33 +1619,6 @@ async function expectGeneratedPreviewToRemainStable(page: Page, heading: string)
     'generated artifact preview iframe was replaced after first paint',
   ).toBe(true);
   await expect(artifactPreviewFrame(page).getByRole('heading', { name: heading })).toBeVisible();
-}
-
-async function enableExperienceSurvey(page: Page) {
-  const response = await page.request.put('/api/app-config', {
-    data: {
-      telemetry: { metrics: true, content: false, artifactManifest: false },
-      privacyDecisionAt: 1,
-    },
-  });
-  expect(response.ok()).toBeTruthy();
-
-  await page.addInitScript(({ configKey, deliveriesKey, retiredKey }) => {
-    const resetMarker = 'od-e2e:experience-survey-reset';
-    if (window.sessionStorage.getItem(resetMarker) !== '1') {
-      window.localStorage.removeItem(deliveriesKey);
-      window.localStorage.removeItem(retiredKey);
-      window.sessionStorage.setItem(resetMarker, '1');
-    }
-    const parsed = JSON.parse(window.localStorage.getItem(configKey) ?? '{}') as Record<string, unknown>;
-    parsed.privacyDecisionAt = 1;
-    parsed.telemetry = { metrics: true, content: false, artifactManifest: false };
-    window.localStorage.setItem(configKey, JSON.stringify(parsed));
-  }, {
-    configKey: STORAGE_KEY,
-    deliveriesKey: EXPERIENCE_SURVEY_DELIVERIES_KEY,
-    retiredKey: EXPERIENCE_SURVEY_RETIRED_KEY,
-  });
 }
 
 async function configureFakeAgent(page: Page, agentId: FakeAgentId) {

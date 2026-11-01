@@ -19,7 +19,7 @@ import {
   nextChatReconnectView,
   type ChatReconnectView,
 } from '../../src/runtime/chat/reconnect-state';
-import type { AppConfig, ChatMessage } from '../../src/types';
+import type { ChatMessage } from '../../src/types';
 
 const translate = (key: string, vars?: Record<string, string | number>) => {
   if (vars && Object.keys(vars).length > 0) {
@@ -103,7 +103,6 @@ function pane(opts: ChatOpts) {
       activeConversationId={CONV}
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'claude', agentCliEnv: {} } as unknown as AppConfig}
     />
   );
 }

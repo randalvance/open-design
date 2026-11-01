@@ -15,6 +15,10 @@ describe('agentDisplayName', () => {
     expect(agentDisplayName('kimi')).toBe('Kimi CLI');
   });
 
+  it('keeps a label for historic runs of the retired amr agent', () => {
+    expect(agentDisplayName('amr')).toBe('OpenDesign');
+  });
+
   it('resolves common aliases like "claude code" and "qodercli"', () => {
     expect(agentDisplayName('Claude Code')).toBe('Claude');
     expect(agentDisplayName('qodercli')).toBe('Qoder');

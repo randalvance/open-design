@@ -51,15 +51,15 @@ export function supportsDeferredHeadlessDesktop(
   return platform === "darwin" && request.headless && request.mcpInstallAgent == null;
 }
 
-type DesktopIntentEvent = "activate" | "did-become-active" | "open-url";
+type DesktopIntentEvent = "activate" | "did-become-active";
 
-export type DesktopIntentSource = "activate" | "open-url";
+export type DesktopIntentSource = "activate";
 
 export type DesktopIntentEmitter = {
   on(event: DesktopIntentEvent, listener: (...args: unknown[]) => void): unknown;
 };
 
-/** How close `did-become-active` and the reopen/URL event must be to count as one user action. */
+/** How close `did-become-active` and the reopen event must be to count as one user action. */
 export const DESKTOP_INTENT_PAIRING_WINDOW_MS = 1_500;
 
 /**
@@ -97,7 +97,6 @@ export function watchUserDesktopIntent(
     }
   });
   app.on("activate", () => request("activate"));
-  app.on("open-url", () => request("open-url"));
 }
 
 type DesktopHandleShape = {
@@ -150,7 +149,7 @@ export function createDeferredDesktopController<THandle extends DesktopHandleSha
       if (current != null) return await current.invoke(action, input);
       if (action === SIDECAR_MESSAGES.SHOW) {
         // Answer the launcher immediately; the restored desktop then handles
-        // the same SHOW so a forwarded deeplink is dispatched and focused.
+        // the same SHOW so it focuses.
         void restore().then((handle) => handle.invoke(action, input)).catch(() => undefined);
         return { accepted: true };
       }

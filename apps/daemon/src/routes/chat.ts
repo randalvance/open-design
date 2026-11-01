@@ -32,13 +32,11 @@ import {
   classifyAIHubMixModel,
 } from '../integrations/aihubmix.js';
 import { isSafeId as isSafeProjectId } from '../projects.js';
-import { projectKindToTracking } from '@open-design/contracts/analytics';
 import { proxyDispatcherRequestInit, validateUserProviderBaseUrl } from '../connectionTest.js';
 import { isKnownReasoningEffort, resolveModelForServiceTier } from '../runtimes/models.js';
 import { googleStreamGenerateContentUrl } from '../integrations/google-models.js';
 import { createRoleMarkerGuard } from '../role-marker-guard.js';
 import { authorizeReasoningEgress, sendReasoningEgressDenial } from '../reasoning-egress.js';
-import type { AuthorizeProjectRequest } from '../collab/project-request-authority.js';
 
 // Allowlist for the `/feedback` route. Mirrors the
 // ChatMessageFeedbackReasonCode union in packages/contracts/src/api/chat.ts.
@@ -61,7 +59,6 @@ const FEEDBACK_REASON_ALLOWLIST: ReadonlySet<string> = new Set([
 ]);
 
 export interface RegisterChatRoutesDeps extends RouteDeps<'db' | 'design' | 'http' | 'chat' | 'agents' | 'critique' | 'validation' | 'lifecycle' | 'paths' | 'telemetry' | 'appConfig'> {
-  authorizeProjectRequest: AuthorizeProjectRequest;
 }
 
 export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
@@ -98,17 +95,10 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
   // Run lifecycle routes live in `routes/runs.ts`; this file owns feedback,
   // connection tests, critique handoff, and provider proxy routes.
 
-  // Receives the user's thumbs-up/down (+ reason codes) for an assistant
-  // turn and forwards it to Langfuse as a `score-create`. Web persists the
-  // feedback itself via PUT /messages/:id; this endpoint exists only as a
-  // telemetry side channel — the daemon is the single network egress for
-  // Langfuse and gates on `telemetry.metrics + telemetry.content` consent.
-  //
-  // The consent + sink decision is fast (awaits a small file read, no
-  // network); we await it so the response status honestly reflects whether
-  // the score was enqueued, skipped for consent, or skipped because no
-  // Langfuse sink is configured. The actual Langfuse network call happens
-  // as a detached promise inside the bridge.
+  // Validates the user's thumbs-up/down for an assistant turn. The rating
+  // itself is persisted through PUT /messages/:id; this endpoint keeps its
+  // validation and response shape, and always answers `skipped_no_sink` because
+  // the daemon relays feedback nowhere.
   app.post('/api/runs/:id/feedback', async (req, res) => {
     const runId = req.params.id;
     const body = (req.body ?? {}) as Partial<{
@@ -140,52 +130,7 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
     if (!run || typeof run.projectId !== 'string' || !run.projectId) {
       return sendApiError(res, 404, 'NOT_FOUND', 'run not found');
     }
-    if (!await ctx.authorizeProjectRequest(
-      req,
-      res,
-      run.projectId,
-      { mode: 'write', capability: 'writeFiles' },
-    )) return;
-    // Drop anything outside the contract-side reason allowlist and
-    // deduplicate; otherwise a malformed or replayed client payload could
-    // create unknown Langfuse categories or duplicate score ids in the
-    // same batch.
-    const reasonCodes = Array.isArray(body.reasonCodes)
-      ? Array.from(
-          new Set(
-            body.reasonCodes.filter(
-              (c): c is string =>
-                typeof c === 'string' && FEEDBACK_REASON_ALLOWLIST.has(c),
-            ),
-          ),
-        )
-      : [];
-    const customReason = typeof body.customReason === 'string' ? body.customReason : '';
-    const reportFeedback = ctx.telemetry?.reportFeedback;
-    if (!reportFeedback) {
-      res.status(202).json({ status: 'skipped_no_sink' });
-      return;
-    }
-    // Build score metadata bag that lands in the Langfuse score body.
-    // Mirrors the PostHog event so analysts can cross-reference. Every
-    // identity field comes from the daemon-owned run object; request bodies
-    // cannot retarget a score to another project/conversation/message.
-    const scoreMetadata: Record<string, unknown> = {
-      projectId: run.projectId,
-      conversationId: run.conversationId ?? null,
-      assistantMessageId: run.assistantMessageId ?? null,
-      hasCustomReason: body.hasCustomReason === true,
-      customReason,
-    };
-    const outcome = await reportFeedback({
-      runId,
-      rating: body.rating,
-      reasonCodes,
-      hasCustomReason: body.hasCustomReason === true,
-      customReason,
-      scoreMetadata,
-    });
-    res.status(202).json(outcome);
+    res.status(202).json({ status: 'skipped_no_sink' });
   });
 
   // ---- Connection tests (single-shot JSON; no SSE) ------------------------
@@ -432,12 +377,6 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
   app.post(
     '/api/projects/:projectId/critique/:runId/interrupt',
     async (req, res) => {
-      if (!await ctx.authorizeProjectRequest(
-        req,
-        res,
-        req.params.projectId,
-        { mode: 'write', capability: 'writeFiles' },
-      )) return;
       critiqueInterruptHandler(req, res);
     },
   );
@@ -457,12 +396,6 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
   app.get(
     '/api/projects/:projectId/critique/:runId/artifact',
     async (req, res) => {
-      if (!await ctx.authorizeProjectRequest(
-        req,
-        res,
-        req.params.projectId,
-        { mode: 'read', allowNavigationQuery: true },
-      )) return;
       await critiqueArtifactHandler(req, res);
     },
   );
@@ -1587,22 +1520,6 @@ export function registerChatRoutes(app: Express, ctx: RegisterChatRoutesDeps) {
         'projectId is required and must be a safe identifier',
       );
     }
-    // The provider completion may immediately request a media tool that writes
-    // into this project. Authorize the whole loop before URL resolution,
-    // upstream egress, credential seeding, or tool execution so a read-only
-    // Team member cannot spend a BYOK key or mutate the creator's files.
-    //
-    // The shared gate preserves the signed-out/local compatibility contract:
-    // a project with no persisted Workspace binding is accepted without
-    // consulting cloud authority. Only a bound project must prove the exact
-    // creator-capable Workspace identity.
-    if (!await ctx.authorizeProjectRequest(
-      req,
-      res,
-      projectId,
-      { mode: 'write', capability: 'writeFiles' },
-    )) return;
-
     const effectiveBaseUrl = baseUrl || opts.defaultBaseUrl;
     const validated = await validateExternalApiBaseUrl(effectiveBaseUrl);
     if (validated.error) {

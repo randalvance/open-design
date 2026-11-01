@@ -18,18 +18,6 @@ vi.mock('../../src/components/home-hero/PlaceholderCarousel', () => ({
   PlaceholderCarousel: () => null,
 }));
 
-vi.mock('../../src/collab/useWorkspaceContext', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../../src/collab/useWorkspaceContext')>();
-  return {
-    ...actual,
-    useWorkspaceContext: () => ({
-      context: null,
-      loading: false,
-      failure: 'unsupported' as const,
-    }),
-  };
-});
-
 import { HomeView } from '../../src/components/HomeView';
 import { I18nProvider } from '../../src/i18n';
 import { ProjectCreateError } from '../../src/state/projects';
@@ -194,9 +182,9 @@ describe('home composer sending state', () => {
 
   it('surfaces a business HTTP error without claiming the daemon is unreachable', async () => {
     const onSubmit = vi.fn().mockRejectedValue(new ProjectCreateError(
-      'Workspace membership authority is temporarily unavailable',
+      'Project storage is temporarily unavailable',
       503,
-      'WORKSPACE_AUTHORITY_UNAVAILABLE',
+      'INTERNAL_ERROR',
       true,
       'request-1',
     ));
@@ -207,7 +195,7 @@ describe('home composer sending state', () => {
     fireEvent.click(await screen.findByTestId('home-hero-submit'));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Workspace membership authority is temporarily unavailable',
+      'Project storage is temporarily unavailable',
     );
     expect(screen.getByRole('alert')).not.toHaveTextContent('Local service');
     expect(screen.getByTestId('home-hero-input')).toHaveTextContent(

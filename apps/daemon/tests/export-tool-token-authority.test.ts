@@ -17,7 +17,6 @@ import type {
 } from '@open-design/sidecar-proto';
 import {
   closeDatabase,
-  ensureWorkspaceProject,
   insertProject,
   openDatabase,
 } from '../src/db.js';
@@ -41,7 +40,6 @@ const rendererStylesheetPath = 'styles/export.css';
 const rendererImagePath = 'assets/hero.png';
 
 describe('od export run-scoped project authority', () => {
-  let authorityServer: http.Server;
   let daemonShutdown: () => Promise<void> | void;
   let daemonUrl = '';
   let lastRendererAssetUrl = '';
@@ -54,8 +52,6 @@ describe('od export run-scoped project authority', () => {
   const projectId = `project_${randomUUID()}`;
   const foreignProjectId = `project_${randomUUID()}`;
   const unboundProjectId = `project_${randomUUID()}`;
-  const workspaceId = `workspace_${randomUUID()}`;
-  const memberId = `member_${randomUUID()}`;
   const boundProjectHtml = `<!doctype html><html><head><base href="${legacyBaseHref}"><link rel="stylesheet" href="${rendererStylesheetPath}"></head><body><main data-renderer-asset-authority>${projectId}</main><img src="${rendererImagePath}" alt=""></body></html>`;
 
   beforeAll(async () => {
@@ -82,18 +78,6 @@ describe('od export run-scoped project authority', () => {
       createdAt: now,
       updatedAt: now,
     });
-    ensureWorkspaceProject(db, {
-      projectId,
-      workspaceId,
-      visibility: 'team',
-      createdByWorkspaceMemberId: memberId,
-    });
-    ensureWorkspaceProject(db, {
-      projectId: foreignProjectId,
-      workspaceId: 'foreign-workspace',
-      visibility: 'team',
-      createdByWorkspaceMemberId: 'foreign-member',
-    });
     for (const id of [projectId, foreignProjectId, unboundProjectId]) {
       const projectDir = path.join(dataDir, 'projects', id);
       await mkdir(projectDir, { recursive: true });
@@ -111,39 +95,6 @@ describe('od export run-scoped project authority', () => {
       }
     }
 
-    authorityServer = http.createServer((_req, res) => {
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({
-        items: [
-          {
-            workspaceId: 'unrelated-workspace',
-            workspaceName: 'Unrelated workspace',
-            workspaceType: 'personal',
-            workspaceMemberId: 'unrelated-member',
-            role: 'owner',
-            memberStatus: 'active',
-            lifecycleState: 'active',
-          },
-          {
-            workspaceId,
-            workspaceName: 'Exact project workspace',
-            workspaceType: 'team',
-            workspaceMemberId: memberId,
-            role: 'owner',
-            memberStatus: 'active',
-            lifecycleState: 'active',
-          },
-        ],
-      }));
-    });
-    await new Promise<void>((resolve) => authorityServer.listen(0, '127.0.0.1', resolve));
-    const authorityAddress = authorityServer.address();
-    if (!authorityAddress || typeof authorityAddress === 'string') {
-      throw new Error('authority server did not bind');
-    }
-    vi.stubEnv('OD_WORKSPACE_CONTEXT_SOURCE', 'vela');
-    vi.stubEnv('VELA_CONTROL_KEY', 'test-control-key');
-    vi.stubEnv('VELA_API_URL', `http://127.0.0.1:${authorityAddress.port}`);
     vi.stubEnv('OD_API_TOKEN', daemonApiToken);
 
     const renderer = (input: DesktopRenderSlidesInput): Promise<DesktopRenderSlidesResult> => {
@@ -190,7 +141,6 @@ describe('od export run-scoped project authority', () => {
 
   afterAll(async () => {
     await daemonShutdown?.();
-    await new Promise<void>((resolve) => authorityServer.close(() => resolve()));
     toolTokenRegistry.clear();
     closeDatabase();
     vi.unstubAllEnvs();
@@ -217,15 +167,15 @@ describe('od export run-scoped project authority', () => {
     expect(body).toEqual(png);
   });
 
-  it('exports the exact token-bound project without explicit workspace flags', async () => {
-    // Given: a run-scoped token for a project bound to the second directory workspace.
+  it('exports the exact token-bound project', async () => {
+    // Given: a run-scoped token for the project.
     const token = toolTokenRegistry.mint({
       projectId,
       runId: `run_${randomUUID()}`,
     }).token;
     const outputPath = path.join(outputDir, 'token-bound.png');
 
-    // When: the documented spawned-agent wrapper command runs without workspace flags.
+    // When: the documented spawned-agent wrapper command runs.
     const result = await runExportCli(projectId, outputPath, token);
 
     // Then: the exact project exports through its token authority.
@@ -233,15 +183,14 @@ describe('od export run-scoped project authority', () => {
     expect(existsSync(outputPath)).toBe(true);
   });
 
-  it('derives a bound project workspace without a tool token or workspace flags', async () => {
+  it('exports a project without a tool token', async () => {
     // Given: Harness did not forward the short-lived bearer token into its nested shell tool.
     const outputPath = path.join(outputDir, 'project-id-bound.png');
 
     // When: the documented wrapper command identifies only the project and file.
     const result = await runExportCli(projectId, outputPath);
 
-    // Then: the daemon derives the exact persisted project binding instead of
-    // requiring the caller to know an active/default Workspace.
+    // Then: the project id alone is enough to address the export.
     expect(result.code, result.stderr).toBe(0);
     expect(existsSync(outputPath)).toBe(true);
   });
@@ -258,14 +207,13 @@ describe('od export run-scoped project authority', () => {
       'stale-member',
     ]);
 
-    // Then: parsing remains backwards compatible and the stale values do not
-    // override the project's persisted binding.
+    // Then: parsing remains backwards compatible and the stale values are ignored.
     expect(result.code, result.stderr).toBe(0);
     expect(existsSync(outputPath)).toBe(true);
   });
 
   it('loads relative renderer assets for a bound project whose HTML already declares a base', async () => {
-    // Given: a valid run token bound to a Workspace project whose renderer needs relative assets
+    // Given: a valid run token bound to a project whose renderer needs relative assets
     // and whose source HTML already declares an unrelated external base.
     const token = toolTokenRegistry.mint({
       projectId,

@@ -22,7 +22,6 @@ import {
 import { Button } from "@open-design/components";
 import { navigate } from "../router";
 import { deleteProjectFile, projectFileUrl, uploadProjectFiles } from "../providers/registry";
-import { useProjectCollabContext } from "../collab/collab-context";
 import { useAnalytics } from "../analytics/provider";
 import {
   trackAssistantFeedbackButtonClick,
@@ -124,7 +123,7 @@ type TranslateFn = (
 ) => string;
 
 // The host reports whether it accepted the answer into a real chat turn. A
-// `false` result means a pre-run guard (for example the AMR balance gate)
+// `false` result means a pre-run guard
 // prevented the send, so the inline form must remain editable.
 export type QuestionFormSubmitHandler = (
   text: string,
@@ -450,10 +449,9 @@ function AssistantMessageImpl({
   nextStepVariant = 'default',
 }: Props) {
   const t = useT();
-  const { workspaceContext } = useProjectCollabContext();
   const imageSrc = useCallback(
-    (path: string) => projectId ? projectFileUrl(projectId, path, workspaceContext) : path,
-    [projectId, workspaceContext],
+    (path: string) => projectId ? projectFileUrl(projectId, path) : path,
+    [projectId],
   );
   // A blocked strategy task is a sticky terminal verdict: the daemon rejects
   // every further continuation with 409 STRATEGY_TASK_STATE_MISMATCH, so the
@@ -3173,7 +3171,6 @@ function FormBlock({
 }) {
   const t = useT();
   const analytics = useAnalytics();
-  const { workspaceContext } = useProjectCollabContext();
   const formKey =
     projectId && conversationId
       ? `${projectId}:${conversationId}:${assistantMessageId}:${form.id}`
@@ -3311,12 +3308,12 @@ function FormBlock({
     if (!projectId) return false;
     const deleted = await Promise.all(
       pending.map((attachment) =>
-        deleteProjectFile(projectId, attachment.path, workspaceContext),
+        deleteProjectFile(projectId, attachment.path),
       ),
     );
     pendingUploadCleanupRef.current = pending.filter((_, index) => !deleted[index]);
     return pendingUploadCleanupRef.current.length === 0;
-  }, [projectId, workspaceContext]);
+  }, [projectId]);
 
   const handleSubmit = useCallback(
     async (
@@ -3373,8 +3370,6 @@ function FormBlock({
         const result = await uploadProjectFiles(
           projectId,
           flatFiles.map((entry) => entry.file),
-          undefined,
-          workspaceContext,
         ).catch((error) => ({
           uploaded: [],
           failed: flatFiles.map((entry) => ({
@@ -4093,13 +4088,13 @@ function buildBlocks(events: AgentEvent[]): Block[] {
         ev.label === "thinking" ||
         ev.label === "empty_response" ||
         /*
-         * `model` —— **AMR(ACP)独有**的一条运行时标记,不是助手内容。
+         * `model` —— **ACP 独有**的一条运行时标记,不是助手内容。
          *
          * `apps/daemon/src/agent-protocol/acp/session.ts` 在 `session/new`、
          * `session/set_model` 完成、以及选型失败回落时各发一次
          * `{ label: 'model', model: <当前模型> }`;`providers/daemon.ts` 把
          * `model` 折进 `detail`。走 stdout 协议的 runtime(claude / codex /
-         * opencode …)一条都不发,所以这一行只在 AMR 那一路冒出来。
+         * opencode …)一条都不发,所以这一行只在 ACP 那一路冒出来。
          *
          * 它无条件戳在**一轮的最下面**,内容是模型 id —— 而模型身份输入区的
          * 模型芯片上已经写着了。用户 2026-08-27:「这个模型的标识可以去掉」。
@@ -4108,7 +4103,7 @@ function buildBlocks(events: AgentEvent[]): Block[] {
          * 仍按 `label === 'model'` 归因,那一路不受影响。
         */
         ev.label === "model" ||
-        // Vela emits OpenCode's compaction lifecycle as internal observability.
+        // OpenCode's compaction lifecycle is internal observability.
         // Older transcripts persisted it as a generic status before the ACP
         // adapter classified it as a diagnostic, so suppress that legacy label
         // during history replay as well as on the live path.
@@ -4139,7 +4134,7 @@ function buildBlocks(events: AgentEvent[]): Block[] {
         //
         // `label: 'model'` used to be the worked example here — it fires once
         // after `session/new` and again once model selection settles. It no
-        // longer reaches this branch: it is skipped above as AMR transport
+        // longer reaches this branch: it is skipped above as ACP transport
         // telemetry.
         last.detail = ev.detail;
         continue;

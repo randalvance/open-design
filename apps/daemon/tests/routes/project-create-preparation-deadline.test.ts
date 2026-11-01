@@ -66,9 +66,6 @@ function buildDeps(input: {
       updateProject: vi.fn(),
       validateLinkedDirs: () => ({ dirs: [] }),
       getProject: () => null,
-      getWorkspaceProject: () => null,
-      getWorkspaceProjectByProjectId: () => null,
-      listWorkspaceProjects: () => [],
       listProjects: () => [],
     }),
     projectFiles: functionProxy({
@@ -82,7 +79,6 @@ function buildDeps(input: {
       listLatestProjectRunStatuses: () => new Map(),
       listProjectsAwaitingInput: () => new Set(),
       listProjects: () => [],
-      listUnboundProjects: () => [],
     }),
     events: functionProxy({ activeProjectEventSinks: new Map() }),
     ids: { randomId: () => 'conversation-id' },
@@ -99,9 +95,6 @@ function buildDeps(input: {
         return { ok: true, id };
       }),
     },
-    collabSync: functionProxy(),
-    authorizeProjectRequest: vi.fn(async () => true),
-    fetchProjectCreationWorkspaceDirectory: vi.fn(async () => ({ ok: false, items: [] })),
     pluginScope: {
       loadRegistry: vi.fn(async () => ({
         skills: [],

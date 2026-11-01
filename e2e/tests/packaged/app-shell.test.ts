@@ -91,25 +91,24 @@ function probe(document: PackagedAppShellProbeDocument): PackagedAppShellSnapsho
   return snapshot;
 }
 
-// The surface a signed-in packaged app comes up on.
+// The surface a set-up packaged app comes up on.
 const HOME_SHELL: readonly FixtureNode[] = [
   { classes: ['entry-shell'] },
   { attributes: { 'data-testid': 'entry-nav-home' }, classes: ['entry-nav__item'] },
   { attributes: { 'data-testid': 'entry-nav-updater' }, classes: ['entry-nav__item'] },
 ];
 
-// The auth-first surface a fresh install or a completed but signed-out core
-// run comes up on: EntryShell's onboarding shell wrapping OnboardingView's
-// identity gate. Runtime selection intentionally follows Cloud sign-in.
-const CLOUD_SIGN_IN_LANDING: readonly FixtureNode[] = [
+// The surface a fresh install comes up on: EntryShell's onboarding shell wrapping
+// OnboardingView's welcome landing.
+const WELCOME_LANDING: readonly FixtureNode[] = [
   { classes: ['entry-shell', 'entry-shell--no-header', 'entry-shell--onboarding'] },
   { classes: ['entry-onboarding-modal'] },
-  { classes: ['onboarding-view', 'onboarding-view--cloud'] },
-  { classes: ['onboarding-cloud__primary'] },
+  { classes: ['onboarding-view', 'onboarding-view--welcome'] },
+  { classes: ['onboarding-welcome__primary'] },
 ];
 
 describe('packaged app-shell probe', () => {
-  it('accepts auth-first routes as packaged renderer URLs', () => {
+  it('accepts onboarding routes as packaged renderer URLs', () => {
     expect(packagedAppRouteUrl('od://app/')).toBe(true);
     expect(packagedAppRouteUrl('od://app/onboarding')).toBe(true);
     expect(packagedAppRouteUrl('http://127.0.0.1:3000/')).toBe(false);
@@ -118,34 +117,34 @@ describe('packaged app-shell probe', () => {
   it('ships a self-contained expression that reads the globals the renderer has', () => {
     expect(packagedAppShellExpression).toContain('(document, HTMLElement)');
     expect(packagedAppShellExpression).toContain('[data-testid="entry-nav-home"]');
-    expect(packagedAppShellExpression).toContain('.onboarding-cloud__primary');
+    expect(packagedAppShellExpression).toContain('.onboarding-welcome__primary');
   });
 
-  it('tracks the identity gate rendered by the current onboarding shell', async () => {
+  it('tracks the welcome landing rendered by the current onboarding shell', async () => {
     const [entryShellSource, macSpecSource, winSpecSource] = await Promise.all([
       readFile(new URL('../../../apps/web/src/components/EntryShell.tsx', import.meta.url), 'utf8'),
       readFile(new URL('../../specs/mac.spec.ts', import.meta.url), 'utf8'),
       readFile(new URL('../../specs/win.spec.ts', import.meta.url), 'utf8'),
     ]);
-    const identityProbe = "querySelector('.onboarding-cloud__primary')";
+    const landingProbe = "querySelector('.onboarding-welcome__primary')";
 
-    expect(entryShellSource).toContain('className="onboarding-cloud__primary"');
-    expect(packagedAppShellExpression).toContain('.onboarding-cloud__primary');
-    expect(macSpecSource).toContain(identityProbe);
-    expect(winSpecSource).toContain(identityProbe);
+    expect(entryShellSource).toContain('className="onboarding-welcome__primary"');
+    expect(packagedAppShellExpression).toContain('.onboarding-welcome__primary');
+    expect(macSpecSource).toContain(landingProbe);
+    expect(winSpecSource).toContain(landingProbe);
   });
 
   it('reports home for the main shell', () => {
     expect(probe(renderFixture(HOME_SHELL))).toMatchObject({
-      cloudSignInVisible: false,
+      welcomeLandingVisible: false,
       homeVisible: true,
       onboardingVisible: false,
     });
   });
 
-  it('reports the cloud sign-in identity gate', () => {
-    expect(probe(renderFixture(CLOUD_SIGN_IN_LANDING))).toMatchObject({
-      cloudSignInVisible: true,
+  it('reports the welcome landing', () => {
+    expect(probe(renderFixture(WELCOME_LANDING))).toMatchObject({
+      welcomeLandingVisible: true,
       homeVisible: false,
       onboardingVisible: true,
     });
@@ -159,7 +158,7 @@ describe('packaged app-shell probe', () => {
 
   it('reports nothing for a blank window', () => {
     expect(probe(renderFixture([], { title: '' }))).toMatchObject({
-      cloudSignInVisible: false,
+      welcomeLandingVisible: false,
       homeVisible: false,
       onboardingVisible: false,
     });
@@ -175,22 +174,21 @@ describe('packaged app-shell terminal state', () => {
     expect(packagedAppShellSettled(snapshot, { acceptOnboardingLanding: true })).toBe(true);
   });
 
-  // The bug this file exists for. A packaged first run that nobody signs in to
-  // comes to rest on the cloud sign-in landing — `connectStepRuntimeReady` in
-  // EntryShell.tsx will not advance without a signed-in cloud account, an
-  // installed local CLI, or a verified BYOK key, none of which a release runner
+  // The bug this file exists for. A packaged first run that nobody sets up comes
+  // to rest on the welcome landing — `connectStepRuntimeReady` in EntryShell.tsx
+  // will not advance without an installed local CLI or a verified BYOK key, none of which a release runner
   // has. Treating that as "not settled" made the Windows smoke wait 45s for a
   // home shell that can never arrive, which is why the 0.18.0 stable cut had to
   // fall back to `win_x64_smoke_mode: skip`.
-  it('settles on the cloud sign-in landing when the profile only needs a rendered surface', () => {
-    const snapshot = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+  it('settles on the welcome landing when the profile only needs a rendered surface', () => {
+    const snapshot = probe(renderFixture(WELCOME_LANDING));
 
     expect(packagedAppShellState(snapshot)).toBe('onboarding-landing');
     expect(packagedAppShellSettled(snapshot, { acceptOnboardingLanding: true })).toBe(true);
   });
 
   it('still requires home when the profile has to drive the entry rail', () => {
-    const snapshot = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const snapshot = probe(renderFixture(WELCOME_LANDING));
 
     expect(packagedAppShellSettled(snapshot, { acceptOnboardingLanding: false })).toBe(false);
     expect(packagedAppShellFailureReason(snapshot, { acceptOnboardingLanding: false })).toContain(
@@ -204,7 +202,7 @@ describe('packaged app-shell terminal state', () => {
     expect(packagedAppShellState(snapshot)).toBeNull();
     expect(packagedAppShellSettled(snapshot, { acceptOnboardingLanding: true })).toBe(false);
     expect(packagedAppShellFailureReason(snapshot, { acceptOnboardingLanding: true })).toContain(
-      'neither the home nav rail nor the onboarding cloud sign-in landing rendered',
+      'neither the home nav rail nor the onboarding welcome landing rendered',
     );
   });
 
@@ -222,7 +220,7 @@ describe('packaged app-shell terminal state', () => {
     expect(packagedAppShellState(snapshot)).toBeNull();
     expect(packagedAppShellSettled(snapshot, { acceptOnboardingLanding: true })).toBe(false);
     expect(packagedAppShellFailureReason(snapshot, { acceptOnboardingLanding: true })).toContain(
-      'cloud sign-in landing did not render',
+      'welcome landing did not render',
     );
   });
 
@@ -239,11 +237,11 @@ describe('packaged app-shell terminal state', () => {
 // The postcondition PerishCode's review on #6481 asked to keep: a run that
 // seeds onboarding as completed must still notice when a cold launch loses it.
 // Auth-first means a retained completed user may legitimately see the same
-// cloud sign-in landing as a first run, so the seed check and surface policy
+// welcome landing as a first run, so the seed check and surface policy
 // must stay separate.
 describe('packaged app-shell policy', () => {
-  it('accepts the auth-first landing when a seeded core run retained onboarding completion', () => {
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+  it('accepts the welcome landing when a seeded core run retained onboarding completion', () => {
+    const landing = probe(renderFixture(WELCOME_LANDING));
     const policy = packagedAppShellPolicy({
       coreProfile: true,
       daemonOnboardingCompleted: true,
@@ -254,7 +252,7 @@ describe('packaged app-shell policy', () => {
     expect(packagedAppShellSettled(landing, policy)).toBe(true);
   });
 
-  it('requires home when the scenario does not establish auth-first permission', () => {
+  it('requires home when the scenario does not establish welcome-landing permission', () => {
     expect(
       packagedAppShellPolicy({ coreProfile: true, daemonOnboardingCompleted: true, seededOnboardingCompleted: false }),
     ).toEqual({ acceptOnboardingLanding: false });
@@ -270,7 +268,7 @@ describe('packaged app-shell policy', () => {
   });
 
   it('does not infer completed-user auth permission without a seed', () => {
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(WELCOME_LANDING));
     const policy = packagedAppShellPolicy({ coreProfile: true, daemonOnboardingCompleted: true, seededOnboardingCompleted: false });
 
     expect(packagedAppShellSettled(landing, policy)).toBe(false);
@@ -297,7 +295,7 @@ describe('packaged app-shell policy', () => {
   });
 
   it('requires an explicit permission before accepting the landing', () => {
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(WELCOME_LANDING));
 
     for (const acceptOnboardingLanding of [undefined, null, 1, 'yes']) {
       expect(
@@ -328,7 +326,7 @@ describe('packaged app-shell policy', () => {
   });
 
   it('keeps a lost seed failing at the shell check', () => {
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(WELCOME_LANDING));
     const policy = packagedAppShellPolicy({
       coreProfile: true,
       daemonOnboardingCompleted: false,
@@ -369,7 +367,7 @@ describe('packaged app-shell policy', () => {
   });
 
   it('lets an unseeded run settle on the landing', () => {
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(WELCOME_LANDING));
     const policy = packagedAppShellPolicy({ coreProfile: true, daemonOnboardingCompleted: false, seededOnboardingCompleted: false });
 
     expect(packagedAppShellSettled(landing, policy)).toBe(true);
@@ -553,9 +551,9 @@ describe('packaged launch scenarios', () => {
     return { now: () => t, sleep: async (ms: number) => { t += ms; } };
   };
 
-  it('settles a genuine first run on the cloud sign-in landing', async () => {
+  it('settles a genuine first run on the welcome landing', async () => {
     const clock = virtualClock();
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(WELCOME_LANDING));
 
     const result = await runPackagedAppShellPhase({
       coreProfile: true,
@@ -585,9 +583,9 @@ describe('packaged launch scenarios', () => {
     expect(result).toEqual({ appShell: 'home', onboardingCompleted: true });
   });
 
-  it('settles a retained completed user on the core auth-first landing', async () => {
+  it('settles a retained completed user on the core welcome landing', async () => {
     const clock = virtualClock();
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(WELCOME_LANDING));
 
     const result = await runPackagedAppShellPhase({
       coreProfile: true,
@@ -603,7 +601,7 @@ describe('packaged launch scenarios', () => {
 
   it('fails a completed user whose seeded state was lost across the relaunch', async () => {
     const clock = virtualClock();
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(WELCOME_LANDING));
 
     await expect(
       runPackagedAppShellPhase({
@@ -630,7 +628,7 @@ describe('packaged launch scenarios', () => {
         scenario: 'first-run',
         sleep: clock.sleep,
       }),
-    ).rejects.toThrow(/neither the home nav rail nor the onboarding cloud sign-in landing rendered/);
+    ).rejects.toThrow(/neither the home nav rail nor the onboarding welcome landing rendered/);
   });
 });
 
@@ -652,7 +650,7 @@ describe('real fresh-install app-config response', () => {
 
   it('settles a first run whose daemon never wrote the key', async () => {
     const clock = virtualClock();
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(WELCOME_LANDING));
 
     const result = await runPackagedAppShellPhase({
       coreProfile: true,
@@ -669,7 +667,7 @@ describe('real fresh-install app-config response', () => {
 
   it('still fails a completed user whose key went missing', async () => {
     const clock = virtualClock();
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(WELCOME_LANDING));
 
     await expect(
       runPackagedAppShellPhase({
@@ -686,7 +684,7 @@ describe('real fresh-install app-config response', () => {
 
   it('keeps a wrong-typed key a fault even for a first run', async () => {
     const clock = virtualClock();
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(WELCOME_LANDING));
 
     await expect(
       runPackagedAppShellPhase({
@@ -705,7 +703,7 @@ describe('real fresh-install app-config response', () => {
 
   it('keeps transport and HTTP faults closed for a first run', async () => {
     const clock = virtualClock();
-    const landing = probe(renderFixture(CLOUD_SIGN_IN_LANDING));
+    const landing = probe(renderFixture(WELCOME_LANDING));
 
     for (const failure of [fakeConfigFetch({ ok: false, status: 500 }), fakeConfigFetch({ throws: true })]) {
       await expect(

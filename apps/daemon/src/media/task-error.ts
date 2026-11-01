@@ -47,7 +47,6 @@ export function mediaTaskErrorFromFailure(
       status: typeof err?.status === 'number' ? err.status : undefined,
       message,
       retryable: typeof retryable === 'boolean' ? retryable : undefined,
-      model: context.model,
     }),
   };
 }

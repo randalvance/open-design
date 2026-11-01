@@ -1619,8 +1619,7 @@
    so the name still sizes to its own text and the chip's 220px cap still
    ellipses the long ones. The campaign badge rides with it — it hangs off the
    end of the name and would otherwise sit alone beside the mark. */
-.home-hero__execution-switcher .inline-switcher__chip-model-name,
-.home-hero__execution-switcher .inline-switcher__campaign-badge {
+.home-hero__execution-switcher .inline-switcher__chip-model-name {
   max-width: 0;
   margin-left: -7px;
   opacity: 0;
@@ -1632,17 +1631,13 @@
 }
 .home-hero__execution-switcher .inline-switcher__chip:hover .inline-switcher__chip-model-name,
 .home-hero__execution-switcher .inline-switcher__chip:focus-visible .inline-switcher__chip-model-name,
-.home-hero__execution-switcher .inline-switcher__chip[aria-expanded='true'] .inline-switcher__chip-model-name,
-.home-hero__execution-switcher .inline-switcher__chip:hover .inline-switcher__campaign-badge,
-.home-hero__execution-switcher .inline-switcher__chip:focus-visible .inline-switcher__campaign-badge,
-.home-hero__execution-switcher .inline-switcher__chip[aria-expanded='true'] .inline-switcher__campaign-badge {
+.home-hero__execution-switcher .inline-switcher__chip[aria-expanded='true'] .inline-switcher__chip-model-name {
   max-width: 160px;
   margin-left: 0;
   opacity: 1;
 }
 @media (prefers-reduced-motion: reduce) {
-  .home-hero__execution-switcher .inline-switcher__chip-model-name,
-  .home-hero__execution-switcher .inline-switcher__campaign-badge {
+  .home-hero__execution-switcher .inline-switcher__chip-model-name {
     transition: none;
   }
 }
@@ -3089,7 +3084,6 @@
   margin-inline: auto;
 }
 
-
 /* Positioning context so the edge auto-scroll zones anchor to just the
    scrolling presets row (not the title above it). No min-height: the cards'
    16:9 preview already gives the row a stable height at every card width, and
@@ -3937,7 +3931,6 @@
     transition: none;
   }
 }
-
 
 /* ============================================================
    Composer-footer Template picker (project-type templates)

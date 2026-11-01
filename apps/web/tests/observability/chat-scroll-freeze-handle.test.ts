@@ -4,10 +4,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  clearExceptionTrackingContext,
-  setExceptionTrackingContext,
-} from '../../src/analytics/error-tracking';
-import {
   ACTIVITY_CAPACITY,
   FREEZE_REQUESTED_PX,
   FREEZE_WHEEL_COUNT,
@@ -32,6 +28,8 @@ import {
   __resetChatScrollFreezeForTest,
   installChatScrollFreezeObserver,
 } from '../../src/observability/chat-scroll-freeze';
+import { reportedSafetyEvents, watchSafetyEvents } from '../helpers/safety-events';
+
 
 /**
  * Why this file exists
@@ -56,8 +54,6 @@ import {
  *     `Element.prototype`.
  */
 
-const fetchMock = vi.fn();
-const ORIGINAL_FETCH = globalThis.fetch;
 const ORIGINAL_RAF = globalThis.requestAnimationFrame;
 const ORIGINAL_CAF = globalThis.cancelAnimationFrame;
 
@@ -70,18 +66,8 @@ function advanceClock(ms: number): void {
   clock += ms;
 }
 
-function sentEvents(): Array<{ event: string; properties: Record<string, unknown> }> {
-  return fetchMock.mock.calls.map((call) => {
-    const init = call[1] as RequestInit;
-    return JSON.parse(init.body as string) as {
-      event: string;
-      properties: Record<string, unknown>;
-    };
-  });
-}
-
 function eventsNamed(name: string): Array<Record<string, unknown>> {
-  return sentEvents()
+  return reportedSafetyEvents()
     .filter((e) => e.event === name)
     .map((e) => e.properties);
 }
@@ -171,16 +157,7 @@ function handle(): ChatScrollFreezeHandle {
 
 beforeEach(() => {
   clock = 0;
-  fetchMock.mockReset();
-  fetchMock.mockResolvedValue(new Response('', { status: 200 }));
-  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-  setExceptionTrackingContext({
-    apiKey: 'phc_test',
-    host: 'https://us.i.posthog.com',
-    distinctId: 'chat-scroll-freeze-handle-test',
-    clientType: 'web',
-    osName: 'Mac OS X',
-  });
+  watchSafetyEvents();
   rafSpy = vi.fn((cb: FrameRequestCallback) => {
     cb(clock);
     return ++rafHandle;
@@ -200,8 +177,6 @@ afterEach(() => {
   __resetChatScrollFreezeForTest();
   disarmScrollWriteTrace();
   vi.restoreAllMocks();
-  clearExceptionTrackingContext();
-  globalThis.fetch = ORIGINAL_FETCH;
   globalThis.requestAnimationFrame = ORIGINAL_RAF;
   globalThis.cancelAnimationFrame = ORIGINAL_CAF;
   document.body.innerHTML = '';

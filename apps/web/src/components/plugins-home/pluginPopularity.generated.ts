@@ -1,10 +1,11 @@
-// AUTO-GENERATED — DO NOT EDIT BY HAND.
+// Frozen snapshot: the PostHog job that generated this file is gone (telemetry
+// is removed), so these scores no longer refresh. Edit only by hand.
 //
 // Blended template popularity, used to order the plugin/example grid and the
 // Home rail so the templates users actually reach for lead each category and
 // sub-category (OPEND-449). Higher score = more popular; range [0, 1].
 //
-// How it is built (deterministic, creds-free transform):
+// How it was built (deterministic, creds-free transform):
 //   score = 0.6 * norm(log1p(distinctUsers)) + 0.4 * norm(log1p(runs))
 //   • window: trailing 28 days of `run_finished` events (by plugin_id)
 //   • distinct users are the anti-gaming signal; runs add engagement depth
@@ -17,9 +18,6 @@
 //   • templates below 20 distinct users are OMITTED so thin-sample
 //     tail templates keep their curated/visual fallback order
 //
-// Regenerate with: pnpm exec tsx scripts/refresh-plugin-popularity.ts --write
-// Refreshed weekly by .github/workflows/refresh-plugin-popularity.yml.
-// See pluginPopularity.RUNBOOK.md here.
 
 export interface PluginPopularityMeta {
   readonly generatedAt: string;

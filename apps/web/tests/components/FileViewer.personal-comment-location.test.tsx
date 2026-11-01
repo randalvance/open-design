@@ -1,17 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { CollabProvider, type CollabContextValue } from '../../src/collab/collab-context';
 import { FileViewer } from '../../src/components/FileViewer';
 import type { PreviewComment, ProjectFile } from '../../src/types';
-
-const personal: CollabContextValue = {
-  workspaceContext: null, workspaceContextLoading: false, enabled: false,
-  member: null, present: [], publishedVersion: null, syncState: 'synced', viewerOnly: false,
-  writerAuthority: 'allowed', isOwner: true, isEffectiveOwner: true, isSharedNonOwner: false,
-  ownerDisplayName: null, ownerRole: null, downloadPending: false,
-  reportChange() {}, requestPublish() {}, refreshPresence() {}, checkStatusNow() {},
-};
 const file: ProjectFile = { name: 'index.html', path: 'index.html', type: 'file', size: 100,
   mtime: 1, kind: 'html', mime: 'text/html' };
 const uuid = '8b9f8213-bad2-45cd-adf3-81fd2770cf35';
@@ -22,14 +13,14 @@ const comment: PreviewComment = {
   note: 'Personal feedback', status: 'open', createdAt: 1, updatedAt: 1,
 };
 const html = `<html><body><p data-od-comment-id="${uuid}">Target</p></body></html>`;
-const tree = (currentFile = file, content = html, comments = [comment], enabled = false) => <CollabProvider value={enabled ? { ...personal, enabled: true, publishedVersion: 2 } : personal}>
+const tree = (currentFile = file, content = html, comments = [comment]) => (
   <FileViewer projectId="p" projectKind="prototype" file={currentFile} liveHtml={content} previewComments={comments} />
-</CollabProvider>;
+);
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.history.replaceState(null, '', '/'); });
-async function setup(transport: 'url' | 'srcdoc' = 'url', enabled = false, comments = [comment]) {
+async function setup(transport: 'url' | 'srcdoc' = 'url', comments = [comment]) {
   if (transport === 'srcdoc') window.history.replaceState(null, '', '/?forceInline=1');
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({})));
-  const view = render(tree(file, html, comments, enabled));
+  const view = render(tree(file, html, comments));
   const frame = screen.getByTestId('artifact-preview-frame') as HTMLIFrameElement;
   Object.defineProperty(frame, 'clientHeight', { configurable: true, value: 600 });
   const post = vi.spyOn(frame.contentWindow!, 'postMessage');
@@ -138,8 +129,8 @@ it('Personal: preserves legacy row selection without adding a live-locate reques
   expect(post.mock.calls.filter(call => call[0]?.locate)).toHaveLength(0);
   expect(screen.getByTestId('comment-active-pin')).toHaveStyle({ top: '0px' });
 });
-it.each([false, true])('URL locate (collab=%s): consumes an initially visible reply, not later owner scrolling', async enabled => {
-  const { post, dispatch, target } = await setup('url', enabled);
+it('URL locate: consumes an initially visible reply, not later owner scrolling', async () => {
+  const { post, dispatch, target } = await setup('url');
   await dispatch({ type: 'od:comment-targets', targets: [target] });
   fireEvent.click(screen.getByTestId('comment-side-item'));
   const request = post.mock.calls.map(call => call[0]).find(data => data?.locate);
@@ -157,8 +148,8 @@ it.each([false, true])('URL locate (collab=%s): consumes an initially visible re
   expect(post.mock.calls.filter(call => call[0]?.type === 'od:preview-scroll-by')).toHaveLength(1);
   expect(post).toHaveBeenCalledWith({ type: 'od:preview-scroll-by', left: 0, top: 1515.5 }, '*');
 });
-it.each([false, true])('URL locate (collab=%s): invalid/stale/unmeasurable replies do not consume initial locate', async enabled => {
-  const { frame, post, dispatch, target } = await setup('url', enabled);
+it('URL locate: invalid/stale/unmeasurable replies do not consume initial locate', async () => {
+  const { frame, post, dispatch, target } = await setup('url');
   await dispatch({ type: 'od:comment-targets', targets: [target] });
   fireEvent.click(screen.getByTestId('comment-side-item'));
   await dispatch({ ...target, type: 'od:comment-active-target-update', position: { ...target.position, width: 0 } });
@@ -197,7 +188,7 @@ it('Personal: an unresolved request cannot reveal through a later valid report; 
 it('Personal: changing a pending selection prevents old tagged or untagged replies from revealing it', async () => {
   const nextComment = { ...comment, id: 'next-comment', elementId: 'cmt:11111111-1111-4111-8111-111111111111',
     selector: '[data-od-comment-id="11111111-1111-4111-8111-111111111111"]', note: 'Next feedback' };
-  const { post, dispatch, target } = await setup('url', false, [comment, nextComment]);
+  const { post, dispatch, target } = await setup('url', [comment, nextComment]);
   const nextTarget = { ...nextComment, position: { ...target.position, x: 100, y: 120 } };
   await dispatch({ type: 'od:comment-targets', targets: [target, nextTarget] });
   const [firstRow, nextRow] = screen.getAllByTestId('comment-side-item');
@@ -266,9 +257,9 @@ it('Personal: file/project changes clear loss and reject the old request while t
   fireEvent.click(screen.getByTestId('comment-panel-toggle'));
   fireEvent.click(screen.getByTestId('comment-side-item'));
   expect(screen.queryByTestId('comment-location-unavailable')).toBeNull();
-  view.rerender(<CollabProvider value={personal}>
+  view.rerender(<>
     <FileViewer projectId="other-project" projectKind="prototype" file={file} liveHtml={html} previewComments={[comment]} />
-  </CollabProvider>);
+  </>);
   await dispatch({ type: 'od:comment-location-missing', requestId: old.requestId });
   expect(screen.queryByTestId('comment-location-unavailable')).toBeNull();
 });

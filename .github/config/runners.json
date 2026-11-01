@@ -21,7 +21,6 @@
       "js_hot": "nexu.medium",
       "ui_hot": "nexu.large",
       "ui_p0": "nexu.medium",
-      "ui_p0_heavy": "nexu.xlarge",
       "visual_hot": "nexu.large"
     },
     "economic": {
@@ -32,7 +31,6 @@
       "js_hot": "github.ubuntu",
       "ui_hot": "github.ubuntu",
       "ui_p0": "github.ubuntu",
-      "ui_p0_heavy": "github.ubuntu",
       "visual_hot": "github.ubuntu"
     },
     "blacksmith": {
@@ -43,7 +41,6 @@
       "js_hot": "blacksmith.small",
       "ui_hot": "blacksmith.large",
       "ui_p0": "blacksmith.large",
-      "ui_p0_heavy": "blacksmith.large",
       "visual_hot": "blacksmith.large"
     }
   }

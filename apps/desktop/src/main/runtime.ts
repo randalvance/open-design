@@ -1,7 +1,5 @@
-import { classifyProcessExit } from "@open-design/contracts/analytics";
-import { reportDesktopObservabilityEvent } from "./observability.js";
 import { execFile } from "node:child_process";
-import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { appendFile, mkdir, realpath, stat, writeFile } from "node:fs/promises";
 import { release } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -405,7 +403,6 @@ export type DesktopRuntime = {
 };
 
 export type DesktopRuntimeOptions = {
-  telemetryContext?: { app_session_id: string; launch_attempt_id: string | null; app_version: string | null };
   // Per-process secret shared with the daemon at startup (over its
   // sidecar IPC) so the main process can mint HMAC tokens for the
   // `dialog:pick-and-import` flow. The secret stays in main-process
@@ -1753,7 +1750,7 @@ function showWindowButtons(window: BrowserWindow): void {
 // leaving users unable to locate the window. Cross-platform safe: only
 // acts when the window is actually minimized or hidden, preserving any
 // user-adjusted window state. Also the revealed path of `DesktopRuntime.show()`
-// (deeplink hand-off / external show): restore-before-focus is what brings a
+// (external show): restore-before-focus is what brings a
 // minimized client back, so exported for regression coverage.
 export function ensureWindowVisible(window: BrowserWindow): void {
   if (window.isDestroyed()) return;
@@ -1957,41 +1954,6 @@ function checkOptionsFromHost(options: unknown): { autoDownload?: boolean } | un
   const payload = input?.payload;
   if (payload == null || typeof payload.autoDownload !== "boolean") return undefined;
   return { autoDownload: payload.autoDownload };
-}
-
-async function reportRendererCrash(
-  options: DesktopRuntimeOptions,
-  properties: {
-    reason: string;
-    exit_code: number | null;
-    loop_tripped?: boolean;
-    // Set on the bounded "recovery-attempt" signal (reason === "recovery-attempt"):
-    // the Nth time the breaker re-armed and tried to actively recover this
-    // session. Lets triage see chronic loopers (index keeps climbing) apart from
-    // devices that recovered (no further recovery-attempt events).
-    recovery_attempt?: number;
-  },
-): Promise<void> {
-  try {
-    // discoverDaemonUrl returns the real http://127.0.0.1:<port> URL the
-    // sidecar daemon listens on. In tools-dev callers omit it and fall back
-    // to discoverUrl (which is also http in dev). In packaged builds it's
-    // mandatory because the renderer-only `od://app/` scheme isn't
-    // reachable from main-process Node fetch.
-    const baseUrl = (await (options.discoverDaemonUrl?.() ?? options.discoverUrl())) ?? null;
-    if (!baseUrl) return;
-    await reportDesktopObservabilityEvent(async () => baseUrl, "desktop_renderer_crash", {
-      ...options.telemetryContext,
-      event_id: randomUUID(), occurred_at: new Date().toISOString(),
-      reason: properties.reason, exit_reason: classifyProcessExit(properties.reason),
-      exit_code: properties.exit_code, loop_tripped: properties.loop_tripped ?? false,
-      recovery_suppressed: properties.loop_tripped ?? false,
-      recovery_attempt: properties.recovery_attempt ?? null,
-    });
-  } catch {
-    // Best-effort. The user is already in a degraded state — failing to
-    // report the crash must not cascade into another failure path.
-  }
 }
 
 /**
@@ -2235,14 +2197,13 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
   let ticking = false;
   // Bounds the reload loop when the renderer crashes deterministically (a
   // GPU/V8 CHECK, a corrupt profile): without it a wedged device reloads →
-  // crashes → reloads forever, staying blank and flooding telemetry (one
-  // 0.14.0 machine logged 26k renderer-crash events in a day). When it opens we
+  // crashes → reloads forever, staying blank (one 0.14.0 machine logged 26k
+  // renderer crashes in a day). When it opens we
   // park on a recoverable error screen and re-arm after a quiet cooldown.
   const rendererCrashLoop = new RendererCrashLoopBreaker();
   // Monotonic per session: how many times the breaker re-armed and tried to
   // recover (a passive reload). Not reset on a successful load, so a chronic
-  // looper's index keeps climbing while a recovered device simply stops
-  // emitting recovery-attempt events.
+  // looper's index keeps climbing in the log.
   let rendererRecoveryAttempts = 0;
 
   const consoleEntries: DesktopConsoleEntry[] = [];
@@ -2379,19 +2340,15 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
     });
   });
 
-  // Renderer-process crashes are completely invisible to the web bundle's
-  // own analytics surface (the renderer is dead — no JS can run, no
-  // window.error fires). The main process is the last layer that can
-  // observe them, so we forward the event to the daemon's safety-event
-  // bridge (`POST /api/observability/event`), which posts directly to
-  // PostHog with `device_id = installationId`. Best-effort: a failure to
-  // reach the daemon must not block the crash recovery flow.
+  // Renderer-process crashes are invisible to the web bundle (the renderer is
+  // dead — no JS can run, no window.error fires). The main process is the last
+  // layer that can observe them, so it logs them and drives crash recovery.
   window.webContents.on("render-process-gone", (_event, details) => {
     // During app quit / teardown the renderer goes away and the window (and its
     // webContents) can already be destroyed when this fires. Reading getURL()
     // then throws "Object has been destroyed" as a fatal uncaught exception, so
-    // guard the same way `sendUpdaterStatus` does below and skip crash-report /
-    // recovery work once the window is already on its way out.
+    // guard the same way `sendUpdaterStatus` does below and skip recovery work
+    // once the window is already on its way out.
     const gone = window.isDestroyed() || window.webContents.isDestroyed();
     console.error("[open-design desktop] main window render-process-gone", {
       exitCode: details.exitCode,
@@ -2399,26 +2356,13 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
       url: gone ? null : window.webContents.getURL(),
     });
     // During app quit / teardown the window is already destroyed; skip all
-    // crash-loop bookkeeping, telemetry, and recovery (mirrors the getURL guard
-    // above — a clean teardown must not look like a crash).
+    // crash-loop bookkeeping and recovery (mirrors the getURL guard above — a
+    // clean teardown must not look like a crash).
     if (gone) return;
     // A clean-exit is intentional teardown; only a crash / OOM / OS kill feeds
     // the crash-loop breaker and triggers recovery.
-    const isCrash = details.reason !== "clean-exit";
-    const outcome = isCrash
-      ? rendererCrashLoop.recordCrash(Date.now())
-      : { tripped: false, suppressTelemetry: rendererCrashLoop.isOpen(), justOpened: false };
-    // Report every crash up to and including the one that trips the breaker so
-    // the loop is visible in analytics, then go quiet — one wedged device must
-    // not emit tens of thousands of identical events.
-    if (!outcome.suppressTelemetry) {
-      void reportRendererCrash(options, {
-        reason: details.reason,
-        exit_code: typeof details.exitCode === "number" ? details.exitCode : null,
-        loop_tripped: outcome.tripped,
-      });
-    }
-    if (!isCrash) return;
+    if (details.reason === "clean-exit") return;
+    const outcome = rendererCrashLoop.recordCrash(Date.now());
     if (outcome.tripped) {
       // Breaker open: stop the poll loop from cycling a deterministic crash.
       // Show the recoverable error screen once (on the opening crash) instead
@@ -2941,11 +2885,6 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
             "[open-design desktop] renderer crash-loop cooldown elapsed — attempting recovery reload",
             { attempt: rendererRecoveryAttempts },
           );
-          void reportRendererCrash(options, {
-            reason: "recovery-attempt",
-            exit_code: null,
-            recovery_attempt: rendererRecoveryAttempts,
-          });
           rendererFailed = true;
         } else {
           schedule(RUNNING_POLL_MS);
@@ -3107,8 +3046,8 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
         return;
       }
       // A minimized window must be restored before focus — `focus()` alone
-      // leaves it in the Dock, silently breaking the deeplink hand-off whose
-      // entire payload is this bring-to-front.
+      // leaves it in the Dock, silently breaking an external show whose entire
+      // payload is this bring-to-front.
       ensureWindowVisible(window);
     },
     status() {

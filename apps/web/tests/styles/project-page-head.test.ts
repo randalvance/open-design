@@ -6,9 +6,6 @@
 //   product recording on OPEND-3178).
 // - The project card's footer keeps the relative time whole: the creator
 //   ellipsises, the time never shrinks (OPEND-3201).
-// - The 全部项目 head is the Demo grid — title on row 1, the collection tabs
-//   and the toolbar cluster on row 2, toolbar right-aligned (OPEND-3108; the
-//   I2 #8186 PR noted `justify-content: flex-end` as the S-series gap).
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
@@ -84,35 +81,3 @@ describe('project card footer keeps the time whole (OPEND-3201)', () => {
   });
 });
 
-describe('全部项目 page head (OPEND-3108)', () => {
-  it('lays the title on row 1 and the tabs + toolbar on row 2, toolbar right-aligned', () => {
-    const head = declarations(recentProjectsCss, '.recent-projects__head--personal');
-    expect(lastValue(head, 'display')).toBe('grid');
-    expect(lastValue(head, 'grid-template-columns')).toBe('minmax(0, 1fr) auto');
-
-    const title = declarations(recentProjectsCss, '.recent-projects__head--personal .recent-projects__title-block');
-    expect(lastValue(title, 'grid-row')).toBe('1');
-    expect(lastValue(title, 'grid-column')).toBe('1 / -1');
-
-    const tabs = declarations(recentProjectsCss, '.recent-projects__collection-switch');
-    expect(lastValue(tabs, 'grid-row')).toBe('2');
-    expect(lastValue(tabs, 'grid-column')).toBe('1');
-
-    const controls = declarations(recentProjectsCss, '.recent-projects__head--personal .recent-projects__controls');
-    expect(lastValue(controls, 'grid-row')).toBe('2');
-    expect(lastValue(controls, 'grid-column')).toBe('2');
-    expect(lastValue(controls, 'justify-self')).toBe('end');
-    expect(lastValue(declarations(recentProjectsCss, '.recent-projects__controls'), 'justify-content')).toBe('flex-end');
-  });
-
-  it('draws a tab as a transparent pill that fills only when hovered or current', () => {
-    const option = declarations(recentProjectsCss, '.recent-projects__collection-option');
-    expect(lastValue(option, 'background')).toBe('transparent');
-    // `height: auto` is load-bearing: primitives.css's bare `button { height: 36px }`
-    // would otherwise pin the box and swallow the padding.
-    expect(lastValue(option, 'height')).toBe('auto');
-    expect(lastValue(option, 'border-radius')).toBe('var(--radius-pill)');
-    const current = declarations(recentProjectsCss, '.recent-projects__collection-option[aria-checked="true"]');
-    expect(lastValue(current, 'background')).toBe('var(--bg-subtle)');
-  });
-});

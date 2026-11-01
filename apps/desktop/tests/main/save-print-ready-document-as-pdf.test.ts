@@ -338,7 +338,7 @@ describe('waitForPrintableContent', () => {
   // any of those can stall forever — a font or image URL that never settles
   // fires neither `load` nor `error`, so the page-side promise never
   // resolves. Nothing here bounded that wait, so the hang propagated all the
-  // way up: daemon -> desktop IPC has a 600s ceiling, and PostHog shows 122
+  // way up: daemon -> desktop IPC has a 600s ceiling, and field data shows 122
   // of 142 `DESKTOP_RENDERER_UNAVAILABLE` export failures sitting at exactly
   // ~10 minutes before the user finally sees an error.
   //

@@ -330,7 +330,6 @@ export function packagedHomeFirstRunExpression(): string {
         runEventRequestCount: 0,
         runEventResponseStatuses: [],
         submitClicked: false,
-        workspaceRequestHeaders: {},
         workspaceTabClicksBeforeOutput: 0,
       };
 
@@ -350,15 +349,6 @@ export function packagedHomeFirstRunExpression(): string {
           && pathname.endsWith('/events')
           && pathname.split('/').length === 5;
         if (isCreateRun) {
-          const requestHeaders = new Headers(
-            input instanceof Request ? input.headers : init?.headers,
-          );
-          const workspaceId = requestHeaders.get('x-od-workspace-id');
-          const workspaceMemberId = requestHeaders.get('x-od-workspace-member-id');
-          state.workspaceRequestHeaders = {
-            ...(workspaceId ? { 'x-od-workspace-id': workspaceId } : {}),
-            ...(workspaceMemberId ? { 'x-od-workspace-member-id': workspaceMemberId } : {}),
-          };
           state.createRunRequestCount += 1;
         }
         if (isRunEvents) state.runEventRequestCount += 1;
@@ -452,7 +442,7 @@ export function packagedHomeFirstRunSnapshotExpression(
       const diagnosticFetch = typeof state?.originalFetch === 'function'
         ? state.originalFetch
         : globalThis.fetch.bind(globalThis);
-      const diagnosticRequestInit = { headers: state?.workspaceRequestHeaders ?? {} };
+      const diagnosticRequestInit = {};
 
       async function collect() {
         const [route, encodedProjectId, conversationsRoute, encodedConversationId] =
@@ -573,7 +563,7 @@ export function packagedHomeFirstRunDiagnosticsExpression(maxTextChars = 64_000)
       const diagnosticFetch = typeof state?.originalFetch === 'function'
         ? state.originalFetch
         : globalThis.fetch.bind(globalThis);
-      const diagnosticRequestInit = { headers: state?.workspaceRequestHeaders ?? {} };
+      const diagnosticRequestInit = {};
       const clip = (value) => {
         const text = String(value ?? '');
         return text.length > limit ? text.slice(0, limit) + '…[truncated]' : text;

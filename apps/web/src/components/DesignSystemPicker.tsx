@@ -12,7 +12,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { DesignSystemSummary, WorkspaceCollabContext } from '@open-design/contracts';
+import type { DesignSystemSummary } from '@open-design/contracts';
 import { useI18n } from '../i18n';
 import {
   localizeDesignSystemCategory,
@@ -32,10 +32,6 @@ function isUserSystem(system: DesignSystemSummary): boolean {
   return system.source === 'user' || system.isEditable === true;
 }
 
-function isTeamSystem(system: DesignSystemSummary): boolean {
-  return system.teamShared === true || system.teamSynced === true;
-}
-
 interface PopoverAnchor {
   left: number;
   width: number;
@@ -51,7 +47,6 @@ interface Props {
   designSystems: DesignSystemSummary[];
   selectedId: string | null;
   loading?: boolean;
-  // Read-only viewer of a team-shared project cannot switch the design system.
   disabled?: boolean;
   onChange: (id: string | null) => void;
   /**
@@ -69,7 +64,6 @@ interface Props {
   /** Hide the recursive "Create" action when the picker is already on create. */
   showCreateAction?: boolean;
   /** Project-owned identity used for preview reads while shell context catches up. */
-  workspaceContext?: WorkspaceCollabContext | null;
 }
 
 export function DesignSystemPicker({
@@ -81,7 +75,6 @@ export function DesignSystemPicker({
   variant = 'project',
   label,
   showCreateAction = true,
-  workspaceContext,
 }: Props) {
   const { locale, t } = useI18n();
   const triggerDisabled = Boolean(loading || disabled);
@@ -207,17 +200,15 @@ export function DesignSystemPicker({
   }, [query, designSystems, locale]);
 
   // Split the filtered list into the same scopes the Design Systems tab uses:
-  // personal first, then team-shared systems, then official presets.
-  const { userSystems, teamSystems, officialSystems } = useMemo(() => {
+  // personal first, then official presets.
+  const { userSystems, officialSystems } = useMemo(() => {
     const mine: DesignSystemSummary[] = [];
-    const team: DesignSystemSummary[] = [];
     const official: DesignSystemSummary[] = [];
     for (const system of filtered) {
-      if (isTeamSystem(system)) team.push(system);
-      else if (isUserSystem(system)) mine.push(system);
+      if (isUserSystem(system)) mine.push(system);
       else official.push(system);
     }
-    return { userSystems: mine, teamSystems: team, officialSystems: official };
+    return { userSystems: mine, officialSystems: official };
   }, [filtered]);
 
   const selectDesignSystem = (id: string | null) => {
@@ -397,16 +388,6 @@ export function DesignSystemPicker({
                   </div>
                 ) : null}
                 {userSystems.map(renderOption)}
-                {teamSystems.length > 0 ? (
-                  <div
-                    className="project-ds-picker-group-label"
-                    role="presentation"
-                    data-testid="project-ds-picker-group-team"
-                  >
-                    {t('pluginsView.tab.team')}
-                  </div>
-                ) : null}
-                {teamSystems.map(renderOption)}
                 {officialSystems.length > 0 ? (
                   <div
                     className="project-ds-picker-group-label"
@@ -438,7 +419,6 @@ export function DesignSystemPicker({
                   >
                     <DesignSystemKitPreview
                       system={previewSystem}
-                      workspaceContext={workspaceContext}
                       brandSummary={brandsByDesignSystem.get(previewSystem.id) ?? null}
                       variant="compact"
                       showCover={false}
@@ -472,7 +452,6 @@ export function DesignSystemPicker({
   const previewModal: ReactNode = previewModalSystem ? (
     <DesignSystemPreviewModal
       system={previewModalSystem}
-      workspaceContext={workspaceContext}
       onClose={() => setPreviewModalSystem(null)}
     />
   ) : null;

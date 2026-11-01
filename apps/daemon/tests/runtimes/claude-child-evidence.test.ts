@@ -2,12 +2,9 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { evaluateRuntimeEvidenceGraphV1 } from '@open-design/contracts';
+import { evaluateRuntimeEvidenceGraphV1, normalizeAgentObservationV1 } from '@open-design/contracts';
 import { describe, expect, it } from 'vitest';
 
-import { buildStructuredMainRunObservationV1 } from '../../src/observability/main-run-observation.js';
-import { adaptMainRunToolObservationsV1 } from '../../src/observability/runtime-child-observations.js';
-import { safeTaskObservationRuntimeVersions } from '../../src/observability/task-observation-aggregation.js';
 import {
   CLAUDE_CHILD_EVIDENCE_ADAPTER_VERSION,
   adaptClaudeChildRuntimeFactV1,
@@ -58,15 +55,18 @@ function replay(caseId: string, opts?: {
 }
 
 function root(status: 'running' | 'completed') {
-  return buildStructuredMainRunObservationV1({
-    taskExecutionId: 'task-execution-1',
-    runId: 'run-1',
-    taskRunIndex: 1,
-    runtimeSessionId: 'session-synthetic',
+  return normalizeAgentObservationV1({
+    identity: {
+      observationId: 'task-run:task-execution-1:run-1',
+      taskExecutionId: 'task-execution-1',
+      runId: 'run-1',
+      taskRunIndex: 1,
+      runtimeSessionId: 'session-synthetic',
+    },
+    kind: 'task_run',
     stage: 'production',
     status,
-    startedAtMs: 900,
-    ...(status === 'completed' ? { endedAtMs: 1100 } : {}),
+    limitations: ['synthetic_contract_parent'],
   });
 }
 
@@ -207,39 +207,6 @@ describe('Claude native Child evidence side channel', () => {
     expect(mainEvents).not.toContainEqual(expect.objectContaining({ name: 'Bash' }));
   });
 
-  it('normalizes parent Agent tool behavior for every runtime without retaining arguments or results', () => {
-    const observations = adaptMainRunToolObservationsV1({
-      events: [
-        {
-          event: 'agent', timestamp: 1_000,
-          data: { type: 'tool_use', id: 'raw-parent-call', name: 'Read', input: { path: '/secret' } },
-        },
-        {
-          event: 'agent', timestamp: 1_020,
-          data: { type: 'tool_result', toolUseId: 'raw-parent-call', content: 'secret output' },
-        },
-      ],
-      taskExecutionId: 'task-execution-1',
-      runId: 'run-1',
-      taskRunIndex: 1,
-      taskRunObservationId: 'task-run:task-execution-1:run-1',
-      stage: 'production',
-      agentCliVersion: 'runtime 1.0.0',
-      runtimeAdapterVersion: 'adapter/v1',
-    });
-    expect(observations).toHaveLength(1);
-    expect(observations[0]).toMatchObject({
-      kind: 'tool',
-      status: 'completed',
-      identity: { parentObservationId: 'task-run:task-execution-1:run-1' },
-      attributes: { toolName: 'Read', agentCliVersion: 'runtime 1.0.0' },
-    });
-    const serialized = JSON.stringify(observations);
-    expect(serialized).not.toContain('raw-parent-call');
-    expect(serialized).not.toContain('/secret');
-    expect(serialized).not.toContain('secret output');
-  });
-
   it('normalizes a matched Task sidechain lifecycle to L2 without inventing Prompt or usage', () => {
     const { mainEvents, facts } = replay('child_success');
 
@@ -257,10 +224,6 @@ describe('Claude native Child evidence side channel', () => {
         agentCliVersion: '2.1.219 (Claude Code)',
         runtimeAdapterVersion: CLAUDE_CHILD_EVIDENCE_ADAPTER_VERSION,
       },
-    });
-    expect(safeTaskObservationRuntimeVersions(observations[2]!)).toEqual({
-      agentCliVersion: '2.1.219 (Claude Code)',
-      runtimeAdapterVersion: CLAUDE_CHILD_EVIDENCE_ADAPTER_VERSION,
     });
     // ⚠️ LEGACY SHAPE, on purpose. These `turn_end`s come from `stop_reason` on
     // the `assistant` wrapper, which Claude Code 2.1.259 leaves null on every

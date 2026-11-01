@@ -15,20 +15,11 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { resolveRunFailureUi } from '../../src/runtime/amr-guidance';
+import { resolveRunFailureUi } from '../../src/runtime/run-guidance';
 
-const CLOUD = 'chat.runError.title.signInRequired.amr';
 const LOCAL_AGENT = 'chat.runError.title.signInRequired.other';
 
 describe('title.signInRequired 拆成 S02 / S04 两边', () => {
-  // S04 · Open Design 智能体没登录 / 授权过期。三个 code 都归它 ——
-  // daemon 的分类器早就把这三个当成同一类(category `auth`)。
-  it.each(['AMR_AUTH_REQUIRED', 'AGENT_AUTH_REQUIRED', 'UNAUTHORIZED'])(
-    'AMR 的 %s 落在 Cloud 那一边',
-    (code) => {
-      expect(resolveRunFailureUi(code, null, 'amr').titleKey).toBe(CLOUD);
-    },
-  );
 
   // S02 · 本地 agent 没登录 / 登录过期。
   it.each([
@@ -47,9 +38,6 @@ describe('title.signInRequired 拆成 S02 / S04 两边', () => {
     expect(ui.secondaryRetry).toBe(true);
   });
 
-  it('两边不是同一个键', () => {
-    expect(CLOUD).not.toBe(LOCAL_AGENT);
-  });
 
   /*
    * 拆完之后旧键必须**在映射表里彻底消失**。留着它就是留一个「随便哪一边」的
@@ -57,7 +45,7 @@ describe('title.signInRequired 拆成 S02 / S04 两边', () => {
    */
   it('映射表里再没有那个合并键', () => {
     const src = readFileSync(
-      resolve(__dirname, '../../src/runtime/amr-guidance.ts'),
+      resolve(__dirname, '../../src/runtime/run-guidance.ts'),
       'utf8',
     );
     expect(src).not.toMatch(/'chat\.runError\.title\.signInRequired'/);

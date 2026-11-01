@@ -9,7 +9,7 @@ import type { ComponentProps } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatPane } from '../../src/components/ChatPane';
-import type { AppConfig, ChatMessage } from '../../src/types';
+import type { ChatMessage } from '../../src/types';
 
 const translate = (key: string, vars?: Record<string, string | number>) => {
   if (vars && Object.keys(vars).length > 0) {
@@ -103,14 +103,12 @@ function renderChat(extraProps: Partial<ComponentProps<typeof ChatPane>> = {}) {
       onSend={vi.fn()}
       onStop={vi.fn()}
       onRetry={onRetry}
-      onSwitchToAmrAndRetry={vi.fn()}
       conversations={[
         { projectId: 'project-1', id: 'conv-1', title: 'Current', createdAt: 1, updatedAt: 1 },
       ]}
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
       {...extraProps}
     />,
   );
@@ -129,23 +127,6 @@ describe('OPEND-2821 门控禁用动作，说明只使用已批准文案', () =>
     expect(onRetry).not.toHaveBeenCalled();
   });
 
-  it('宿主确认只读：用批准标题正文说明，重试仍禁用且不触发回调', () => {
-    const { onRetry } = renderChat({
-      recoveryActionsBlockedReason: 'read-only',
-      accessError: 'read-only',
-    });
-
-    const retry = screen.getByTestId('chat-error-retry') as HTMLButtonElement;
-    expect(retry.disabled).toBe(true);
-    const card = screen.getByTestId('chat-run-error-card');
-    expect(card.contains(screen.getByText('chat.runError.title.readOnlyAccess'))).toBe(true);
-    expect(screen.getByTestId('chat-run-error-description').textContent).toBe(
-      'chat.runError.actionBlocked.readOnly',
-    );
-    expect(screen.queryByTestId('chat-error-actions-blocked')).toBeNull();
-    fireEvent.click(retry);
-    expect(onRetry).not.toHaveBeenCalled();
-  });
 
   /*
    * 反向锚点。少了这一条,「按钮永远禁用」也能让上面两条全绿 —— 那是把守卫

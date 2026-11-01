@@ -25,7 +25,7 @@ import { forwardRef } from 'react';
 import { Button } from '@open-design/components';
 
 import { ChatPane } from '../../../src/components/ChatPane';
-import type { AppConfig, ChatMessage } from '../../../src/types';
+import type { ChatMessage } from '../../../src/types';
 
 vi.mock('../../../src/i18n', () => ({
   useI18n: () => ({ locale: 'en', setLocale: () => undefined, t: (key: string) => key }),
@@ -70,19 +70,17 @@ function renderFailure(agentId: 'amr' | 'claude') {
     events: [{ kind: 'status', label: 'error', code: 'AGENT_EXECUTION_FAILED', detail: 'failed' }],
   };
   const onRetry = vi.fn();
-  const onSwitchToAmrAndRetry = vi.fn();
   render(
     <ChatPane
       messages={[message]} streaming={false} error={null}
       projectId="project-1" projectFiles={[]}
       onEnsureProject={async () => 'project-1'} onSend={vi.fn()} onStop={vi.fn()}
-      onRetry={onRetry} onSwitchToAmrAndRetry={onSwitchToAmrAndRetry}
+      onRetry={onRetry}
       conversations={[{ projectId: 'project-1', id: 'conv-1', title: 'Current', createdAt: 1, updatedAt: 1 }]}
       activeConversationId="conv-1" onSelectConversation={vi.fn()} onDeleteConversation={vi.fn()}
-      config={{ agentId, agentCliEnv: {} } as AppConfig}
     />,
   );
-  return { message, onRetry, onSwitchToAmrAndRetry };
+  return { message, onRetry };
 }
 
 function expectSharedSmallButton(element: HTMLElement, fingerprint: string[]): void {
@@ -97,28 +95,25 @@ describe('失败卡三颗按钮同壳', () => {
     expect(fp.some((className) => /button/i.test(className))).toBe(true);
   });
 
-  it('Cloud 重试使用共享小尺寸主按钮并调用原失败轮次', () => {
+  it('重试使用共享小尺寸主按钮并调用原失败轮次', () => {
     const fingerprint = buttonFingerprint();
-    const { message, onRetry, onSwitchToAmrAndRetry } = renderFailure('amr');
+    const { message, onRetry } = renderFailure('amr');
     const retry = screen.getByTestId('chat-error-retry');
     expectSharedSmallButton(retry, fingerprint);
     expect(retry.dataset.runErrorAction).toBe('primary');
     expect(retry.classList.contains('chat-error-action')).toBe(false);
     fireEvent.click(retry);
     expect(onRetry).toHaveBeenCalledExactlyOnceWith(message, 'manual_retry');
-    expect(onSwitchToAmrAndRetry).not.toHaveBeenCalled();
   });
 
-  it('CLI 的 Cloud 动作使用同一小尺寸主按钮，不附加旧重试', () => {
+  it('CLI 的重试使用同一小尺寸主按钮', () => {
     const fingerprint = buttonFingerprint();
-    const { message, onRetry, onSwitchToAmrAndRetry } = renderFailure('claude');
-    const cloud = screen.getByTestId('chat-error-switch-to-cloud');
+    const { message, onRetry } = renderFailure('claude');
+    const cloud = screen.getByTestId('chat-error-retry');
     expectSharedSmallButton(cloud, fingerprint);
     expect(cloud.dataset.runErrorAction).toBe('primary');
-    expect(screen.queryByTestId('chat-error-retry')).toBeNull();
     fireEvent.click(cloud);
-    expect(onSwitchToAmrAndRetry).toHaveBeenCalledExactlyOnceWith(message);
-    expect(onRetry).not.toHaveBeenCalled();
+    expect(onRetry).toHaveBeenCalledExactlyOnceWith(message, 'manual_retry');
   });
 
   it('常驻两颗实际使用共享小尺寸次级按钮', () => {

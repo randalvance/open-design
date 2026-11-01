@@ -82,19 +82,7 @@ import {
   type ProviderTestRequest,
 } from '@open-design/contracts/api/connectionTest';
 import { googleGenerateContentUrl } from './integrations/google-models.js';
-import { readVelaCredentialRevision, resolveAmrProfile } from './integrations/vela.js';
-import { amrModelLoadingCache } from './runtimes/amr-model-cache.js';
-import { buildAmrModelCacheKey } from './runtimes/amr-model-probe.js';
-import {
-  fetchVelaPresetModels,
-  fetchVelaRemoteModelsWithRetry,
-} from './runtimes/defs/amr.js';
-import {
-  getRememberedLiveModels,
-  preferFreshLiveModels,
-  resolveDefaultModelFromOptions,
-  resolveModelForAgent,
-} from './runtimes/models.js';
+import { resolveModelForAgent } from './runtimes/models.js';
 import {
   BYOK_OPENCODE_PROVIDER_ID,
   buildOpenCodeByokProviderConfig,
@@ -2146,7 +2134,6 @@ function attachAgentStreamHandlers(
   cwd: string,
   model: string | undefined,
   modelEnv: Record<string, string | undefined>,
-  liveModelScope: string | null,
   send: (event: string, payload: unknown) => void,
   appendRawStdout?: (chunk: string) => void,
 ): AgentSpawnHandle {
@@ -2192,7 +2179,7 @@ function attachAgentStreamHandlers(
       // Same substitution as the chat-run path in server.ts: omitted models can
       // resolve to a concrete fallback, while an explicit 'default' is preserved
       // so ACP runtimes can use their upstream configured default.
-      model: resolveModelForAgent(def as never, model ?? null, modelEnv, liveModelScope),
+      model: resolveModelForAgent(def as never, model ?? null, modelEnv),
       mcpServers: [],
       send,
     });
@@ -2289,36 +2276,6 @@ async function prepareOpenCodeConnectionTestCwd(tempDir: string): Promise<void> 
   } catch {
     // OpenCode responds more reliably inside a git worktree, but a missing or
     // misconfigured local git binary must not sink an otherwise healthy CLI.
-  }
-}
-
-async function resolveConnectionTestModelForAgent(
-  def: RuntimeAgentDef,
-  requestedModel: string | null,
-  env: NodeJS.ProcessEnv,
-  liveModelScope: string | null,
-  launchPath?: string | null,
-): Promise<string | null> {
-  const resolved = resolveModelForAgent(def, requestedModel, env, liveModelScope);
-  if (def.id !== 'amr' || resolved !== 'default' || !launchPath) return resolved;
-
-  try {
-    const cacheKey = buildAmrModelCacheKey({
-      launchPath,
-      env,
-      credentialRevision: readVelaCredentialRevision(env),
-    });
-    const catalog = await amrModelLoadingCache.get(cacheKey, {
-      fetchPreset: () => fetchVelaPresetModels(launchPath, env),
-      fetchRemote: () => fetchVelaRemoteModelsWithRetry(launchPath, env),
-    });
-    const liveModels = preferFreshLiveModels(
-      catalog.models ?? [],
-      getRememberedLiveModels(def.id, liveModelScope),
-    );
-    return resolveDefaultModelFromOptions(liveModels) ?? resolved;
-  } catch {
-    return resolved;
   }
 }
 
@@ -2646,7 +2603,6 @@ async function testAgentConnectionInternal(
       undefined,
       { resolvedBin: executableResolution.selectedPath },
     );
-    const liveModelScope = input.agentId === 'amr' ? resolveAmrProfile(baseEnv) : null;
     const mmdRouteLaunchEnv = input.agentId === 'claude'
       ? await loadMmdRouteLaunchEnv(
           {
@@ -2661,13 +2617,7 @@ async function testAgentConnectionInternal(
       ...baseEnv,
       ...(mmdRouteLaunchEnv || {}),
     }, executableResolution);
-    model = await resolveConnectionTestModelForAgent(
-      def,
-      model,
-      env,
-      liveModelScope,
-      executableResolution.launchPath,
-    ) ?? model;
+    model = resolveModelForAgent(def, model, env) ?? model;
     const auth = await probeAgentAuthStatus(def, executableResolution.launchPath, env);
     if (auth?.status === 'missing') {
       // Preflight auth probe runs after binary resolution but before the
@@ -2727,7 +2677,6 @@ async function testAgentConnectionInternal(
       tempDir,
       model,
       env,
-      liveModelScope,
       sendAgentEvent,
       sink.appendRawStdout,
     );

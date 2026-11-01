@@ -50,7 +50,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatPane } from '../../../src/components/ChatPane';
 import { memoryWrittenCardContent } from '../../../src/runtime/useMemoryWrittenCard';
-import type { AppConfig, ChatMessage } from '../../../src/types';
+import type { ChatMessage } from '../../../src/types';
 
 afterEach(() => cleanup());
 
@@ -155,7 +155,6 @@ function renderChat(messages: ChatMessage[]) {
       activeConversationId="conv-1"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={{ agentId: 'claude', agentCliEnv: {} } as unknown as AppConfig}
     />,
   );
 }

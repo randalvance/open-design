@@ -647,18 +647,19 @@ describe('GET /api/projects/:id resolvedDir', () => {
     });
     expect(createResp.status).toBe(200);
 
+    const nestedHtml = '<!doctype html><style>@font-face{src:url("../../fonts/inter.woff2")}</style><h1>nested ok</h1>';
     const writeResp = await fetch(`${baseUrl}/api/projects/${projectId}/files`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: 'nested/demo/index.html',
-        content: '<!doctype html><style>@font-face{src:url("../../fonts/inter.woff2")}</style><h1>nested ok</h1>',
+        content: nestedHtml,
       }),
     });
     expect(writeResp.status).toBe(200);
 
     const rawResp = await fetch(
-      `${baseUrl}/api/projects/${projectId}/raw/nested/demo/index.html?workspaceId=ws-cover&workspaceMemberId=wm-cover`,
+      `${baseUrl}/api/projects/${projectId}/raw/nested/demo/index.html`,
       {
       headers: { Origin: 'null' },
       },
@@ -666,12 +667,8 @@ describe('GET /api/projects/:id resolvedDir', () => {
     expect(rawResp.status).toBe(200);
     expect(rawResp.headers.get('content-type')).toContain('text/html');
     expect(rawResp.headers.get('access-control-allow-origin')).toBe('*');
-    const html = await rawResp.text();
-    expect(html).toContain('<h1>nested ok</h1>');
-    expect(html).toContain(
-      `/api/projects/${projectId}/raw/fonts/inter.woff2?workspaceId=ws-cover&workspaceMemberId=wm-cover`,
-    );
-    expect(html).not.toContain('../../fonts/inter.woff2');
+    // A plain raw read returns the stored bytes; relative URLs are not rewritten.
+    expect(await rawResp.text()).toBe(nestedHtml);
   });
   it('rejects non-boolean skipDiscoveryBrief on POST /api/projects', async () => {
     const projectId = `proj-skip-discovery-bad-${Date.now()}`;

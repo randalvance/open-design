@@ -622,9 +622,7 @@ export type SidecarShutdownMessage = { type: typeof SIDECAR_MESSAGES.SHUTDOWN };
 export type DesktopEvalMessage = { input: DesktopEvalInput; type: typeof SIDECAR_MESSAGES.EVAL };
 export type DesktopScreenshotMessage = { input: DesktopScreenshotInput; type: typeof SIDECAR_MESSAGES.SCREENSHOT };
 export type DesktopConsoleMessage = { type: typeof SIDECAR_MESSAGES.CONSOLE };
-export type DesktopShowInput = {
-  deeplinkUrl?: string;
-};
+export type DesktopShowInput = Record<string, never>;
 export type DesktopShowMessage = { input?: DesktopShowInput; type: typeof SIDECAR_MESSAGES.SHOW };
 export type DesktopClickMessage = { input: DesktopClickInput; type: typeof SIDECAR_MESSAGES.CLICK };
 export type DesktopExportPdfMessage = { input: DesktopExportPdfInput; type: typeof SIDECAR_MESSAGES.EXPORT_PDF };
@@ -1085,13 +1083,11 @@ function normalizeDesktopUpdateInput(input: unknown): DesktopUpdateInput {
 
 function normalizeDesktopShowInput(input: unknown): DesktopShowInput {
   const value = assertObject(input, "desktop show input");
+  // An outer launcher installed by an older build outlives payload updates and
+  // can still attach `deeplinkUrl` to SHOW. Accept and drop it so that launcher
+  // keeps focusing the running window instead of failing the handoff.
   assertKnownKeys(value, ["deeplinkUrl"], "desktop show input");
-  if (value.deeplinkUrl == null) return {};
-  const deeplinkUrl = normalizeNonEmptyString(value.deeplinkUrl, "desktop show deeplinkUrl");
-  if (!deeplinkUrl.startsWith("opendesign://")) {
-    throw new Error("desktop show deeplinkUrl must use the opendesign scheme");
-  }
-  return { deeplinkUrl };
+  return {};
 }
 
 function normalizeMessageType(value: unknown, label: string): string {

@@ -13,20 +13,15 @@ import {
   it,
 } from 'vitest';
 
-import { agentCliEnvForAgent, readAppConfig, readMetricsConsent, writeAppConfig } from '../src/app-config.js';
+import { agentCliEnvForAgent, readAppConfig, readAppConfigSync, writeAppConfig } from '../src/app-config.js';
 import { spawnEnvForAgent } from '../src/runtimes/env.js';
 import { readOdNextRolloutPolicy } from '../src/strategies/od-next/rollout.js';
 import { isLocalSameOrigin } from '../src/origin-validation.js';
 
-// Default telemetry preference applied when an existing config has no
-// telemetry block (fresh install, pre-disclosure). See
-// `app-config.ts#applyTelemetryDefaults` and `state/config.ts#DEFAULT_CONFIG`
-// for the matching client default. Tests that previously expected an
-// empty `{}` are now updated to expect this default; tests confirming
-// "user opted out → stays opted out" assert on `metrics: false`.
+// Telemetry is forced off for every config; see `applyTelemetryDefaults`.
 const DEFAULT_TELEMETRY = {
-  metrics: true,
-  content: true,
+  metrics: false,
+  content: false,
 } as const;
 
 describe('app-config', () => {
@@ -40,26 +35,6 @@ describe('app-config', () => {
     await rm(dataDir, { recursive: true, force: true });
   });
 
-  describe('strict metrics consent', () => {
-    it('distinguishes a missing first-install config from damaged and unreadable preferences', async () => {
-      expect(await readMetricsConsent(dataDir)).toEqual({ status: 'missing', metrics: true });
-      const file = path.join(dataDir, 'app-config.json');
-      await writeAppConfig(dataDir, { telemetry: { metrics: false, content: false } });
-      expect(await readMetricsConsent(dataDir)).toEqual({ status: 'available', metrics: false });
-      for (const damaged of ['{"telemetry":{"metrics":false}', 'null', '[]', '42', '{"telemetry":null}', '{"telemetry":{"metrics":"true"}}']) {
-        await writeFile(file, damaged);
-        expect(await readMetricsConsent(dataDir)).toEqual({ status: 'unavailable', metrics: false });
-      }
-      await rm(file);
-      await mkdir(file);
-      expect(await readMetricsConsent(dataDir)).toEqual({ status: 'unavailable', metrics: false });
-    });
-
-    it('preserves defaults on valid older configs without telemetry', async () => {
-      await writeFile(path.join(dataDir, 'app-config.json'), '{"onboardingCompleted":true}');
-      expect(await readMetricsConsent(dataDir)).toEqual({ status: 'available', metrics: true });
-    });
-  });
 
   describe('readAppConfig', () => {
     it('returns default telemetry when config file does not exist', async () => {
@@ -175,26 +150,6 @@ describe('app-config', () => {
       expect(cfg).toEqual({ telemetry: DEFAULT_TELEMETRY });
     });
 
-    it('preserves an explicit telemetry opt-out across reads', async () => {
-      // Regression guard: the `applyTelemetryDefaults` helper must only
-      // fill in defaults when the saved config has NO telemetry field.
-      // A user who explicitly opted out (toggled metrics off in
-      // Settings → Privacy) keeps `metrics: false`; we never silently
-      // re-enable it on read.
-      await writeFile(
-        path.join(dataDir, 'app-config.json'),
-        JSON.stringify({
-          telemetry: { metrics: false, content: false, artifactManifest: false },
-        }),
-      );
-      const cfg = await readAppConfig(dataDir);
-      expect(cfg.telemetry).toEqual({
-        metrics: false,
-        content: false,
-        artifactManifest: false,
-      });
-    });
-
     it('preserves and validates the silent update preference', async () => {
       await writeFile(
         path.join(dataDir, 'app-config.json'),
@@ -204,18 +159,6 @@ describe('app-config', () => {
       expect((await readAppConfig(dataDir)).allowSilentUpdates).toBe(true);
       expect((await writeAppConfig(dataDir, { allowSilentUpdates: false })).allowSilentUpdates).toBe(false);
       expect((await writeAppConfig(dataDir, { allowSilentUpdates: 'yes' })).allowSilentUpdates).toBeUndefined();
-    });
-
-    it('preserves a partial explicit telemetry (metrics on, content off)', async () => {
-      // The user picked a non-default combo (e.g. metrics on for funnel,
-      // content off for privacy). We hand back exactly what they saved
-      // — defaults never overwrite explicit per-field choices.
-      await writeFile(
-        path.join(dataDir, 'app-config.json'),
-        JSON.stringify({ telemetry: { metrics: true, content: false } }),
-      );
-      const cfg = await readAppConfig(dataDir);
-      expect(cfg.telemetry).toEqual({ metrics: true, content: false });
     });
 
     it('preserves omitted orbit.templateSkillId from legacy stored config', async () => {
@@ -236,90 +179,6 @@ describe('app-config', () => {
         time: '09:30',
       });
       expect(cfg.orbit).not.toHaveProperty('templateSkillId');
-    });
-
-    it('preserves only the minimal persisted Orbit Workspace identity', async () => {
-      await writeFile(
-        path.join(dataDir, 'app-config.json'),
-        JSON.stringify({
-          orbit: {
-            enabled: true,
-            time: '09:30',
-            workspaceScope: {
-              workspaceId: ' workspace-a ',
-              workspaceMemberId: ' member-a ',
-              role: 'owner',
-            },
-          },
-        }),
-      );
-
-      const cfg = await readAppConfig(dataDir);
-
-      expect(cfg.orbit?.workspaceScope).toEqual({
-        workspaceId: 'workspace-a',
-        workspaceMemberId: 'member-a',
-      });
-    });
-
-    it('keeps scoped Orbit identity when an older client updates Orbit without that field', async () => {
-      await writeAppConfig(dataDir, {
-        orbit: {
-          enabled: true,
-          time: '09:30',
-          workspaceScope: {
-            workspaceId: 'workspace-a',
-            workspaceMemberId: 'member-a',
-          },
-        },
-      });
-
-      await writeAppConfig(dataDir, {
-        orbit: {
-          enabled: false,
-          time: '10:15',
-        },
-      });
-
-      await expect(readAppConfig(dataDir)).resolves.toMatchObject({
-        orbit: {
-          enabled: false,
-          time: '10:15',
-          workspaceScope: {
-            workspaceId: 'workspace-a',
-            workspaceMemberId: 'member-a',
-          },
-        },
-      });
-    });
-
-    it('allows an explicit null to clear a persisted Orbit Workspace identity', async () => {
-      await writeAppConfig(dataDir, {
-        orbit: {
-          enabled: true,
-          time: '09:30',
-          workspaceScope: {
-            workspaceId: 'workspace-a',
-            workspaceMemberId: 'member-a',
-          },
-        },
-      });
-
-      await writeAppConfig(dataDir, {
-        orbit: {
-          enabled: false,
-          time: '10:15',
-          workspaceScope: null,
-        },
-      });
-
-      await expect(readAppConfig(dataDir)).resolves.toMatchObject({
-        orbit: {
-          enabled: false,
-          time: '10:15',
-          workspaceScope: null,
-        },
-      });
     });
 
     it('falls back to default orbit time for out-of-range stored values', async () => {
@@ -476,6 +335,47 @@ describe('app-config', () => {
       expect(cfg.agentModels).toBeUndefined();
     });
 
+    it('clears the retired hosted agent from a config saved by an older build', async () => {
+      await writeFile(path.join(dataDir, 'app-config.json'), JSON.stringify({
+        agentId: 'amr',
+        agentModels: {
+          amr: { model: 'deepseek-v4-flash' },
+          claude: { model: 'sonnet' },
+        },
+        agentCliEnv: {
+          amr: {
+            VELA_BIN: '~/bin/vela',
+            VELA_API_URL: 'https://custom-amr.example',
+            VELA_RUNTIME_KEY: 'saved-runtime-key',
+            OPEN_DESIGN_AMR_PROFILE: 'local',
+            OPENCODE_TEST_HOME: '~/.open-design-amr-opencode',
+          },
+          claude: { CLAUDE_BIN: '~/bin/claude' },
+        },
+      }));
+
+      const cfg = await readAppConfig(dataDir);
+
+      expect(cfg.agentId).toBeUndefined();
+      expect(cfg.agentModels).toEqual({ claude: { model: 'sonnet' } });
+      expect(cfg.agentCliEnv).toEqual({ claude: { CLAUDE_BIN: '~/bin/claude' } });
+      expect(agentCliEnvForAgent(cfg.agentCliEnv, 'amr')).toEqual({});
+      expect(JSON.stringify(cfg)).not.toContain('saved-runtime-key');
+    });
+
+    it('drops the retired hosted agent when a stale client writes it back', async () => {
+      const cfg = await writeAppConfig(dataDir, {
+        agentId: 'amr',
+        agentModels: { amr: { model: 'deepseek-v4-flash' } },
+        agentCliEnv: { amr: { VELA_BIN: '~/bin/vela' } },
+      });
+
+      expect(cfg.agentId).toBeUndefined();
+      expect(cfg.agentModels).toBeUndefined();
+      expect(cfg.agentCliEnv).toBeUndefined();
+      await expect(readAppConfig(dataDir)).resolves.not.toHaveProperty('agentCliEnv.amr');
+    });
+
     it('clears retired Gemini agent preferences from stored config', async () => {
       await writeFile(path.join(dataDir, 'app-config.json'), JSON.stringify({
         agentId: 'gemini',
@@ -545,12 +445,6 @@ describe('app-config', () => {
       expect(cfg.agentCliEnv).toEqual({
         claude: { CLAUDE_CONFIG_DIR: '~/.claude-2', ANTHROPIC_BASE_URL: 'https://proxy.example/anthropic', ANTHROPIC_API_KEY: 'sk-proxy-anthropic', ANTHROPIC_AUTH_TOKEN: 'sk-proxy-token', MMD_MODEL_ROUTES_FILE: '~/.config/mms/model-routes.json' },
         codex: { CODEX_HOME: '~/.codex-alt', CODEX_BIN: '~/bin/codex-next', OPENAI_BASE_URL: 'https://proxy.example/openai', OPENAI_API_KEY: 'sk-proxy-openai' },
-        amr: {
-          VELA_BIN: '~/bin/vela',
-          VELA_API_URL: 'https://custom-amr.example',
-          OPEN_DESIGN_AMR_PROFILE: 'local',
-          OPENCODE_TEST_HOME: '~/.open-design-amr-opencode',
-        },
         opencode: { OPENCODE_BIN: '~/bin/opencode' },
         'trae-cli': { TRAE_CLI_BIN: '~/bin/traecli-public' },
         // pi's config-directory override survives the save (#8093); the
@@ -865,98 +759,28 @@ describe('app-config telemetry prefs', () => {
     expect(cfg.privacyDecisionAt).toBeUndefined();
   });
 
-  it('persists full telemetry prefs', async () => {
-    await writeAppConfig(dataDir, {
-      telemetry: { metrics: true, content: true, artifactManifest: false },
-    });
-    const cfg = await readAppConfig(dataDir);
-    expect(cfg.telemetry).toEqual({
-      metrics: true,
-      content: true,
-      artifactManifest: false,
-    });
+  it.each([
+    ['full prefs', { metrics: true, content: true, artifactManifest: true }],
+    ['a partial pref', { metrics: true }],
+    ['a non-boolean value', { metrics: 'yes' }],
+    ['a non-object', [true]],
+    ['null', null],
+  ])('cannot turn telemetry on by writing %s', async (_label, telemetry) => {
+    const written = await writeAppConfig(dataDir, { telemetry } as any);
+    expect(written.telemetry).toEqual(DEFAULT_TELEMETRY);
+    expect((await readAppConfig(dataDir)).telemetry).toEqual(DEFAULT_TELEMETRY);
+    const onDisk = JSON.parse(await readFile(path.join(dataDir, 'app-config.json'), 'utf8'));
+    expect(onDisk.telemetry).toEqual(DEFAULT_TELEMETRY);
   });
 
-  it('persists partial telemetry prefs and omits absent keys', async () => {
-    await writeAppConfig(dataDir, { telemetry: { metrics: true } });
-    const cfg = await readAppConfig(dataDir);
-    expect(cfg.telemetry).toEqual({ metrics: true });
-  });
-
-  it('drops telemetry inner values that are not booleans', async () => {
-    await writeAppConfig(dataDir, {
-      telemetry: {
-        metrics: 'yes' as any,
-        content: 1 as any,
-        artifactManifest: true,
-      },
-    } as any);
-    const cfg = await readAppConfig(dataDir);
-    expect(cfg.telemetry).toEqual({ artifactManifest: true });
-  });
-
-  it('drops invalid telemetry entirely from the on-disk file (read backfills the default)', async () => {
-    // Pre-default era: a bad-shaped `telemetry` write got stripped and
-    // `readAppConfig` returned `cfg.telemetry === undefined`. After the
-    // 2026-05-22 default-on switch, the same read backfills the
-    // default — telemetry is never undefined for callers, but the
-    // user's invalid value still didn't make it to disk. The
-    // assertion now tracks "what the gate sees" (the default), since
-    // that's the actually observable behavior; the write-validation
-    // invariant the test was guarding is still in force (nothing of
-    // the bad input survives).
+  it('writing telemetry does not disturb other keys', async () => {
     await writeAppConfig(dataDir, {
       onboardingCompleted: true,
-      telemetry: { metrics: 'yes' } as any,
-    } as any);
+      telemetry: { metrics: true },
+    });
     const cfg = await readAppConfig(dataDir);
     expect(cfg.onboardingCompleted).toBe(true);
     expect(cfg.telemetry).toEqual(DEFAULT_TELEMETRY);
-  });
-
-  it('drops unknown keys nested inside telemetry', async () => {
-    await writeAppConfig(dataDir, {
-      telemetry: { metrics: true, rogue: true } as any,
-    } as any);
-    const cfg = await readAppConfig(dataDir);
-    expect(cfg.telemetry).toEqual({ metrics: true });
-    expect(cfg.telemetry).not.toHaveProperty('rogue');
-  });
-
-  it('drops telemetry when value is not a plain object (read backfills default)', async () => {
-    await writeAppConfig(dataDir, { telemetry: [true] } as any);
-    const cfg = await readAppConfig(dataDir);
-    expect(cfg.telemetry).toEqual(DEFAULT_TELEMETRY);
-  });
-
-  it('clearing telemetry by sending null resets to default (read backfills)', async () => {
-    // Sending `null` for telemetry erases the on-disk field. Read
-    // path then backfills the default because the absence of a value
-    // is treated the same as a fresh install. If the user really
-    // wants to opt out, the PrivacySection writes
-    // `{ metrics: false, content: false, ... }` explicitly — that
-    // shape persists and is preserved across reads (see "preserves
-    // an explicit telemetry opt-out across reads" above).
-    await writeAppConfig(dataDir, {
-      telemetry: { metrics: true, content: true },
-    });
-    await writeAppConfig(dataDir, { telemetry: null } as any);
-    const cfg = await readAppConfig(dataDir);
-    expect(cfg.telemetry).toEqual(DEFAULT_TELEMETRY);
-  });
-
-  it('merges telemetry without disturbing other keys', async () => {
-    await writeAppConfig(dataDir, {
-      installationId: 'install-1',
-      telemetry: { metrics: true },
-      agentId: 'claude',
-    });
-    await writeAppConfig(dataDir, { telemetry: { content: true } });
-    const cfg = await readAppConfig(dataDir);
-    expect(cfg.installationId).toBe('install-1');
-    expect(cfg.agentId).toBe('claude');
-    // telemetry is replaced (not deep-merged) — matches the agentModels semantics.
-    expect(cfg.telemetry).toEqual({ content: true });
   });
 });
 

@@ -101,7 +101,7 @@ describe('OD Next controlled rollout', () => {
     it('admits discovery even when the retired Labs preference was off', () => {
       expect(evaluateOdNextRollout({
         policy: readOdNextRolloutPolicy({}, { odNextStrategyMode: 'off' }),
-        assignmentIdentity: 'project:conversation', taskType: 'discovery', agentId: 'amr',
+        assignmentIdentity: 'project:conversation', taskType: 'discovery', agentId: 'claude',
         agentVersion: '0.0.38', sourceKind: 'bundled',
       })).toMatchObject({ requestedMode: 'active', effectiveMode: 'active', eligible: true });
     });

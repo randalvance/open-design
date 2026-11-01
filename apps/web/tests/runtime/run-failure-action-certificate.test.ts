@@ -30,7 +30,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { resolveRunFailureUi } from '../../src/runtime/amr-guidance';
+import { resolveRunFailureUi } from '../../src/runtime/run-guidance';
 import { en } from '../../src/i18n/locales/en';
 import { zhCN } from '../../src/i18n/locales/zh-CN';
 
@@ -99,7 +99,6 @@ describe('S30 · daemon 判定不可重试的环境失败,卡片不能给〔重�
       // 设计是故意保留重试的:上游同一句话里混着一类真·网络抖动。
       expect(ui.secondaryRetry).toBe(true);
       // 这一档不推 Cloud —— 用户的公司网络在 Cloud 那条路上一样在。
-      expect(ui.cloudSwitchCta).toBe(false);
     },
   );
 

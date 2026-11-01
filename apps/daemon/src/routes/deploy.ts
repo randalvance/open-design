@@ -1,11 +1,9 @@
 import type { Express } from 'express';
 import type { RouteDeps } from '../server-context.js';
-import type { AuthorizeProjectRequest } from '../collab/project-request-authority.js';
 import { clientRequestIdFor } from '../http/client-request-id.js';
 import { classifyDeployFailure } from '../deploy/failure-detail.js';
 
 export interface RegisterDeployRoutesDeps extends RouteDeps<'db' | 'http' | 'paths' | 'ids' | 'deploy' | 'projectStore'> {
-  authorizeProjectRequest: AuthorizeProjectRequest;
 }
 
 export function registerDeployRoutes(app: Express, ctx: RegisterDeployRoutesDeps) {
@@ -87,7 +85,6 @@ export function registerDeployRoutes(app: Express, ctx: RegisterDeployRoutesDeps
       if (!getProject(db, req.params.id)) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await ctx.authorizeProjectRequest(req, res, req.params.id, { mode: 'read' })) return;
       /** @type {import('@open-design/contracts').ProjectDeploymentsResponse} */
       const body = { deployments: publicDeployments(listDeployments(db, req.params.id)) };
       res.json(body);
@@ -136,12 +133,6 @@ export function registerDeployRoutes(app: Express, ctx: RegisterDeployRoutesDeps
       if (!deployProject) {
         return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       }
-      if (!await ctx.authorizeProjectRequest(
-        req,
-        res,
-        req.params.id,
-        { mode: 'write', capability: 'writeFiles' },
-      )) return;
 
       const prior = getDeployment(db, req.params.id, fileName, providerId);
       const files = await buildDeployFileSet(
@@ -240,7 +231,6 @@ export function registerDeployRoutes(app: Express, ctx: RegisterDeployRoutesDeps
         return sendApiError(res, 400, 'BAD_REQUEST', 'fileName required');
       }
       const preflightProject = getProject(db, req.params.id);
-      if (!await ctx.authorizeProjectRequest(req, res, req.params.id, { mode: 'read' })) return;
       /** @type {import('@open-design/contracts').DeployPreflightResponse} */
       const body = await prepareDeployPreflight(
         PROJECTS_DIR,
@@ -270,7 +260,6 @@ export function registerDeployRoutes(app: Express, ctx: RegisterDeployRoutesDeps
 }
 
 export interface RegisterDeploymentCheckRoutesDeps extends RouteDeps<'db' | 'http' | 'deploy' | 'projectStore'> {
-  authorizeProjectRequest: AuthorizeProjectRequest;
 }
 
 export function registerDeploymentCheckRoutes(app: Express, ctx: RegisterDeploymentCheckRoutesDeps) {
@@ -286,12 +275,6 @@ export function registerDeploymentCheckRoutes(app: Express, ctx: RegisterDeploym
         if (!getProject(db, req.params.id)) {
           return sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
         }
-        if (!await ctx.authorizeProjectRequest(
-          req,
-          res,
-          req.params.id,
-          { mode: 'write', capability: 'writeFiles' },
-        )) return;
         const existing = getDeploymentById(
           db,
           req.params.id,

@@ -1,6 +1,5 @@
 import { expect, test } from '@/playwright/suite';
 import { ACTIVE_ARTIFACT_PREVIEW_SELECTOR } from '@/playwright/artifact-preview';
-import { expectStableCount } from '@/playwright/assertions';
 import { applyStandardMocks, routeAgents, routeSuccessfulRuns } from '@/playwright/mock-factory';
 import {
   clickDeckNextSlide,
@@ -28,94 +27,6 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.use({ screenshot: 'off', video: 'off', trace: 'off' });
-test('B2 confirmed PDF save survives focus history refresh in the running product', async ({ page }, testInfo) => {
-  await routeMockAgents(page);
-  const projectId = await createEmptyProject(page, 'B2 export guide');
-  await seedHtmlArtifact(page, projectId, 'guide.html', '<!doctype html><html><head><title>B2 export</title></head><body><h1>B2 export fixture</h1></body></html>');
-  await page.route('**/api/integrations/vela/status*', route => route.fulfill({ json: {
-    loggedIn: true, profile: 'test', configPath: '', user: { id: 'b2-browser-account', email: 'fixture@example.invalid' },
-  } }));
-  let refreshing = false;
-  let releaseHistory!: () => void;
-  const historyReady = new Promise<void>(resolve => { releaseHistory = resolve; });
-  let refreshRead = false;
-  await page.route(`**/api/projects/${projectId}/share-state`, async route => {
-    if (refreshing) { refreshRead = true; await historyReady; }
-    await route.fulfill({ json: { projectId, bindingExists: false, hasEverShared: false, publications: [] } });
-  });
-  // Controlled native-save acknowledgement at the production HTTP boundary.
-  // This proves UI consumption, not an actual OS save or cloud login.
-  await page.route(`**/api/projects/${projectId}/export/pdf`, async route => {
-    refreshing = true;
-    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await expect.poll(() => refreshRead).toBe(true);
-    await route.fulfill({ json: { ok: true } });
-  });
-  await page.goto(`/projects/${projectId}/files/guide.html`);
-  await openDesignFile(page, 'guide.html');
-  await expect(artifactPreview(page)).toBeVisible();
-  const guide = page.getByRole('status', { name: 'Share the link, invite feedback', exact: true });
-  await expect(guide).toHaveCount(0);
-  await page.getByRole('button', { name: 'Export', exact: true }).click();
-  const saved = page.waitForResponse(response => response.url().endsWith(`/api/projects/${projectId}/export/pdf`) && response.request().method() === 'POST');
-  await page.getByRole('menuitem', { name: /Export as PDF/i }).click();
-  expect((await saved).ok()).toBe(true);
-  await expect(guide).toHaveCount(0);
-  releaseHistory();
-  const capture = testInfo.outputPath('b2-guide.png');
-  try {
-    await expect(guide).toBeVisible();
-    await guide.hover();
-    await expect(guide).not.toContainText('Awaiting');
-  } finally {
-    await page.screenshot({ path: capture });
-    await testInfo.attach('B2 production entry, controlled native save ack; OS save UNKNOWN', { path: capture, contentType: 'image/png' });
-  }
-  await guide.getByRole('button', { name: 'Try sharing', exact: true }).click();
-  await expect(guide).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Share', exact: true })).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.getByRole('menu').getByRole('heading', { name: 'Share', exact: true })).toBeVisible();
-});
-
-test.describe('K8 scoped comment sync banner', () => {
-  test('real preview entry reads sync state and clears the banner after login refresh', async ({ page }) => {
-    await routeMockAgents(page);
-    const projectId = await createEmptyProject(page, 'K8 sync banner');
-    await seedHtmlArtifact(page, projectId, 'sync.html', manualEditHtml());
-    // First prove production registration on the actual tools-dev daemon.
-    // A local project has no verified cloud scope, so the honest result is null.
-    const actual = await page.request.get(`/api/projects/${projectId}/comment-sync-state`);
-    expect(actual.status()).toBe(200);
-    expect(await actual.json()).toBeNull();
-    let sessionMissing = true;
-    let reads = 0;
-    // Controlled upstream states prove the running UI consumption path, not
-    // successful cloud authentication or real scoped outbox delivery.
-    await page.route(`**/api/projects/${projectId}/comment-sync-state`, async route => {
-      expect(route.request().method()).toBe('GET');
-      reads += 1;
-      await route.fulfill({ json: { pending: sessionMissing ? 1 : 0, lastError: 'COMMENT_SYNC_DELIVERY_FAILED', sessionMissing, shareStopped: null } });
-    });
-    await page.goto(`/projects/${projectId}/files/sync.html`);
-    await openDesignFile(page, 'sync.html');
-    await expect(artifactPreview(page)).toBeVisible();
-    await clickPreviewToolbarAction(page, 'comment-panel-toggle', /^Comments \(\d+\)$/);
-    const panel = page.getByTestId('comment-side-panel');
-    await expect(panel).toBeVisible();
-    const banner = panel.getByRole('status');
-    await expect(banner).toContainText('Comment sync is paused');
-    await expect(banner.getByRole('button', { name: 'Sign in', exact: true })).toBeEnabled();
-    await expect(page.getByTestId('board-mode-toggle')).toBeEnabled();
-    const beforeLogin = reads;
-    sessionMissing = false;
-    await page.evaluate(() => window.dispatchEvent(new CustomEvent('od:amr-login-status-change', { detail: { reason: 'login' } })));
-    await expect.poll(() => reads).toBeGreaterThan(beforeLogin);
-    await expect(banner).toHaveCount(0);
-    await expect(panel).toBeVisible();
-    await expect(page.getByTestId('board-mode-toggle')).toBeEnabled();
-  });
-});
-
 test('[P0] manual edit inspector previews and persists page and selected element styles', async ({ page }) => {
   await routeMockAgents(page);
   const projectId = await createEmptyProject(page, 'Manual edit smoke');
@@ -800,10 +711,9 @@ test('[P1] draw annotation composer floats near the selected mark and can be que
   await expect(queuedStrip.getByTestId('chat-queued-send-row')).toHaveCount(1);
 });
 
-test('[P1] first-loop onboarding completes once after a successful artifact export', async ({ page }) => {
+test('[P1] a first-loop artifact can be exported as standalone HTML more than once', async ({ page }) => {
   test.setTimeout(60_000);
-  const analyticsBodies: string[] = [];
-  const analyticsConfig = {
+  const appConfig = {
     mode: 'daemon',
     apiKey: '',
     baseUrl: 'https://api.anthropic.com',
@@ -814,35 +724,19 @@ test('[P1] first-loop onboarding completes once after a successful artifact expo
     onboardingCompleted: true,
     agentModels: {},
     privacyDecisionAt: 1,
-    telemetry: { metrics: true, content: false, artifactManifest: false },
   };
   await page.addInitScript(
     ({ key, value }) => {
       window.localStorage.setItem(key, JSON.stringify(value));
     },
-    { key: STORAGE_KEY, value: analyticsConfig },
+    { key: STORAGE_KEY, value: appConfig },
   );
   await page.route('**/api/app-config', async (route) => {
     if (route.request().method() === 'GET') {
-      await route.fulfill({ json: { config: analyticsConfig } });
+      await route.fulfill({ json: { config: appConfig } });
       return;
     }
     await route.continue();
-  });
-  await page.route('**/api/analytics/config', async (route) => {
-    await route.fulfill({
-      json: {
-        enabled: true,
-        env: 'e2e',
-        key: 'phc_e2e',
-        host: 'https://analytics.open-design.test',
-        installationId: 'e2e-installation',
-      },
-    });
-  });
-  await page.route('https://analytics.open-design.test/**', async (route) => {
-    analyticsBodies.push(route.request().postData() ?? '');
-    await route.fulfill({ status: 200, json: { status: 1 } });
   });
 
   await routeMockAgents(page);
@@ -875,28 +769,12 @@ test('[P1] first-loop onboarding completes once after a successful artifact expo
   ]);
   expect(download.suggestedFilename()).toMatch(/first-loop-export.*\.html$/i);
 
-  await expect.poll(() => analyticsBodies.join('\n'), { timeout: 15_000 }).toContain('onboarding_completed');
-  const raw = analyticsBodies.join('\n');
-  expect(raw).toContain('home_recommendation');
-  expect(raw).toContain('e2e-recommendation-card');
-  expect(raw).toContain('prompt_sent');
-  expect(raw).toContain('generated');
-  expect(raw).toContain('artifact_viewed');
-  expect(raw).toContain('delivered');
-
   await openShareExportMenu(page);
-  await Promise.all([
+  const [secondDownload] = await Promise.all([
     page.waitForEvent('download'),
     shareMenu.getByRole('menuitem', { name: /Export as standalone HTML/ }).click(),
   ]);
-  await expectStableCount(
-    () => analyticsBodies.join('\n').match(/onboarding_completed/g)?.length ?? 0,
-    1,
-    {
-      timeout: 750,
-      message: 're-exporting the same first-loop artifact should not emit a duplicate completion event',
-    },
-  );
+  expect(secondDownload.suggestedFilename()).toMatch(/first-loop-export.*\.html$/i);
 });
 
 test('[P0] manual edit mode keeps deck navigation available for deck-shaped HTML', async ({ page }) => {
@@ -1113,11 +991,6 @@ async function gotoEntryHome(page: Page) {
     }
     await waitForLoadingToClear(page).catch(() => {});
     if (await page.getByTestId('home-hero').isVisible({ timeout: 3_000 }).catch(() => false)) break;
-  }
-  const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve OpenDesign' });
-  if (await privacyDialog.isVisible()) {
-    await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
-    await expect(privacyDialog).toHaveCount(0);
   }
   await expect(page.getByTestId('home-hero')).toBeVisible();
   await expect(page.getByTestId('home-hero-input')).toBeVisible();

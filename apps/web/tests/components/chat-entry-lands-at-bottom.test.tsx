@@ -324,7 +324,6 @@ function pane({ messages, loading, activeConversationId = 'conv-1' }: PaneOption
       onStop={() => {}}
       conversations={[]}
       activeConversationId={activeConversationId}
-      messagesConversationId={loading ? null : activeConversationId}
       onSelectConversation={() => {}}
       onDeleteConversation={() => {}}
     />

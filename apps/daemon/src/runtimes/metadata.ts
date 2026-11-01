@@ -1,8 +1,3 @@
-import {
-  DEFAULT_VELA_CONSOLE_ORIGIN,
-  resolveEffectiveVelaConsoleOrigin,
-} from '../integrations/vela-console-origin.js';
-
 /** HTTPS links for the web UI when an agent is unavailable. Keys match `AGENT_DEFS[].id`. */
 const AGENT_INSTALL_LINKS: Record<
   string,
@@ -11,9 +6,6 @@ const AGENT_INSTALL_LINKS: Record<
   amp: {
     installUrl: 'https://ampcode.com/manual#install',
     docsUrl: 'https://ampcode.com/manual',
-  },
-  amr: {
-    docsUrl: 'https://github.com/nexu-io/open-design/blob/main/docs/new-agent-runtime-acp.md',
   },
   claude: {
     installUrl: 'https://docs.anthropic.com/en/docs/claude-code/setup',
@@ -113,11 +105,7 @@ export function installMetaForAgent(
 ): { installUrl?: string; docsUrl?: string } {
   const meta = AGENT_INSTALL_LINKS[agentId];
   if (!meta) return {};
-  const installUrl = sanitizeHttpsUrl(
-    agentId === 'amr'
-      ? `${resolveEffectiveVelaConsoleOrigin(process.env, configuredEnv) ?? DEFAULT_VELA_CONSOLE_ORIGIN}/dashboard`
-      : meta.installUrl,
-  );
+  const installUrl = sanitizeHttpsUrl(meta.installUrl);
   const docsUrl = sanitizeHttpsUrl(meta.docsUrl);
   return {
     ...(installUrl ? { installUrl } : {}),

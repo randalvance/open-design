@@ -16,7 +16,6 @@ vi.mock('../../src/providers/daemon', () => ({
   GENERIC_DAEMON_DISCONNECT_CODE: 'DAEMON_STREAM_DISCONNECTED',
   GENERIC_DAEMON_DISCONNECT_MESSAGE: 'daemon stream disconnected before run completed',
   fetchChatRunStatus: vi.fn(),
-  fetchAmrWalletSnapshot: vi.fn().mockResolvedValue(null),
   listActiveChatRuns: vi.fn().mockResolvedValue([]),
   listProjectRuns: vi.fn().mockResolvedValue([]),
   publishDaemonRunFinishedEvent: vi.fn(),
@@ -147,7 +146,6 @@ function mountProject(runConfig: AppConfig = config) {
     initialProjectDetail={{ project, resolvedDir: '/workspace/owner-test' }}
     routeFileName={null}
     config={runConfig}
-    workspaceContextOverride={null}
     agents={[{ id: 'byok-opencode', name: 'BYOK OpenCode', bin: 'opencode', available: true, models: [] }]}
     skills={[]}
     designTemplates={[]}

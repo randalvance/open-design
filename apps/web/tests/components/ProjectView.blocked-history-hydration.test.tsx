@@ -8,9 +8,7 @@
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { forwardRef, type ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildWorkspacePermissions, buildWorkspaceSeatSummary, OD_NEXT_AGENT_DECLARED_BLOCK_REASON,
-  StrategyTaskProjectionV2Schema, type ChatRunStatusResponse, type StrategyTaskProjectionV2,
-  type WorkspaceCollabContext } from '@open-design/contracts';
+import { OD_NEXT_AGENT_DECLARED_BLOCK_REASON, StrategyTaskProjectionV2Schema, type ChatRunStatusResponse, type StrategyTaskProjectionV2 } from '@open-design/contracts';import { buildWorkspacePermissions, buildWorkspaceSeatSummary, type WorkspaceCollabContext } from '../helpers/workspace-context';
 import { ProjectView } from '../../src/components/ProjectView';
 import { I18nProvider } from '../../src/i18n';
 import { en } from '../../src/i18n/locales/en';
@@ -31,7 +29,7 @@ vi.mock('../../src/providers/daemon', async () => {
       observedChat.proofCompletions.push(args[0]);
       return result;
     }),
-    fetchVelaLoginStatus: vi.fn().mockResolvedValue(null), streamViaDaemon: vi.fn().mockResolvedValue(undefined),
+    streamViaDaemon: vi.fn().mockResolvedValue(undefined),
     reattachDaemonRun: vi.fn().mockResolvedValue(undefined),
     listActiveChatRuns: vi.fn().mockResolvedValue([]), listProjectRuns: vi.fn().mockResolvedValue([]),
     publishDaemonRunFinishedEvent: vi.fn() };
@@ -80,7 +78,6 @@ const RESULT: ProjectFile = { name: 'result.html', path: 'result.html', kind: 'h
 let sequence = 0;
 let project: Project;
 let context: WorkspaceCollabContext;
-let contexts: Map<string, WorkspaceCollabContext>;
 let histories: Map<string, ChatMessage[]>;
 let proofs: Map<string, ChatRunStatusResponse>;
 let proofHttpStatus: number | 'network';
@@ -143,7 +140,6 @@ function view(overrides: Partial<ComponentProps<typeof ProjectView>> = {}) {
   return <I18nProvider initial="en"><ProjectView project={project}
     initialProjectDetail={{ project, resolvedDir: '/workspace/history-verdict-fixture' }}
     routeConversationId={conversationId()} routeFileName={null} config={config}
-    workspaceContextOverride={context}
     agents={[{ id: 'opencode', name: 'OpenCode', bin: 'opencode', available: true, models: [] }]}
     skills={[]} designTemplates={[]} designSystems={[]} daemonLive
     onModeChange={vi.fn()} onAgentChange={vi.fn()} onAgentModelChange={vi.fn()}
@@ -187,7 +183,6 @@ async function expectDoneWithoutCard(id = assistantId()) {
   expect(errorCodesOnAssistant(id)).toEqual([]);
   expect(screen.queryByTestId('chat-run-error-card')).toBeNull();
   expect(screen.queryByTestId('chat-error-retry')).toBeNull();
-  expect(screen.queryByTestId('chat-error-switch-to-cloud')).toBeNull();
   expect(screen.getByTestId('recovered-files').textContent).toContain(RESULT.name);
 }
 
@@ -220,7 +215,6 @@ beforeEach(() => {
   project = { id: `history-verdict-${sequence}`, name: 'History verdict', workspaceId: context.workspaceId,
     workspaceVisibility: 'team', skillId: null, designSystemId: null, metadata: { kind: 'prototype' },
     createdAt: 1000, updatedAt: 2000 };
-  contexts = new Map([[context.workspaceMemberId, context]]);
   histories = new Map(); proofs = new Map([[runId(), runProof()]]);
   proofHttpStatus = 200; proofGate = null; releaseProof = () => {};
   reads = []; pendingProofReads = []; unexpectedWrites = [];
@@ -228,13 +222,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, 'http://localhost');
     const method = init?.method ?? 'GET';
-    const headers = new Headers(init?.headers);
-    const principal = headers.get('x-od-workspace-member-id') ?? context.workspaceMemberId;
-    const requestContext = contexts.get(principal) ?? context;
-    if (url.pathname.endsWith('/workspace-scope')) return Response.json({ scope: { kind: 'team',
-      projectId: project.id, workspaceId: requestContext.workspaceId, visibility: 'team', context: requestContext } });
-    if (url.pathname.endsWith('/collab/status')) return Response.json({ syncState: 'local_only',
-      ownerMemberId: requestContext.workspaceMemberId, publishedVersion: null, localVersion: null });
+    const principal = context.workspaceMemberId;
     if (url.pathname === `/api/projects/${project.id}/conversations`) {
       return Response.json({ conversations: [...new Set([...histories.keys()].map((key) => key.split('/')[1]))]
         .map((id) => ({ id, projectId: project.id, title: null, sessionMode: 'design', createdAt: 1000, updatedAt: 2000 })) });
@@ -246,10 +234,6 @@ beforeEach(() => {
       return Response.json({ messages: histories.get(key) ?? [] });
     }
     if (url.pathname.startsWith('/api/runs/') && method === 'GET') {
-      if (!contexts.has(headers.get('x-od-workspace-member-id') ?? '')
-        || headers.get('x-od-workspace-id') !== context.workspaceId) {
-        return Response.json({ error: 'Run unavailable' }, { status: 403 });
-      }
       // Capture at request time so switching identity/conversation cannot turn
       // the old response into the new principal's proof inside this fixture.
       const proof = structuredClone(proofs.get(decodeURIComponent(url.pathname.slice('/api/runs/'.length))));
@@ -352,7 +336,6 @@ describe('blocked task history hydration through real ProjectView and ChatPane (
     await settleExistingTaskProbe();
     await expectDisplayedStatus(en['chat.record.done']);
     expect(screen.queryByTestId('chat-error-retry')).toBeNull();
-    expect(screen.queryByTestId('chat-error-switch-to-cloud')).toBeNull();
   });
 
   it.each(['filesystem-valid', 'agent-declared'] as const)('keeps the existing %s physical-success exception', async (kind) => {
@@ -365,7 +348,6 @@ describe('blocked task history hydration through real ProjectView and ChatPane (
     await settleExistingTaskProbe();
     await expectDisplayedStatus(en['chat.record.done']);
     expect(screen.queryByTestId('chat-error-retry')).toBeNull();
-    expect(screen.queryByTestId('chat-error-switch-to-cloud')).toBeNull();
   });
 
   // The daemon's project-level delivery answer and this run's own response
@@ -408,7 +390,6 @@ describe('blocked task history hydration through real ProjectView and ChatPane (
     await expectDisplayedStatus(en['chat.record.done']);
     expect(errorCodesOnAssistant()).toEqual([]);
     expect(screen.queryByTestId('chat-error-retry')).toBeNull();
-    expect(screen.queryByTestId('chat-error-switch-to-cloud')).toBeNull();
     expect(histories.get(historyKey())).toEqual(original);
     expect(unexpectedWrites).toEqual([]);
   });
@@ -468,12 +449,10 @@ describe('blocked task history hydration through real ProjectView and ChatPane (
     expect(unexpectedWrites).toEqual([]);
   });
 
-  it.each(['conversation', 'principal'] as const)('ignores late old %s proof after switching to another visible history', async (boundary) => {
+  it.each(['conversation'] as const)('ignores late old %s proof after switching to another visible history', async () => {
     proofGate = new Promise<void>((resolve) => { releaseProof = resolve; });
-    const nextContext = boundary === 'principal'
-      ? { ...context, workspaceMemberId: 'next-history-member' } : context;
-    const nextConversation = boundary === 'conversation' ? 'next-conversation' : conversationId();
-    contexts.set(nextContext.workspaceMemberId, nextContext);
+    const nextContext = context;
+    const nextConversation = 'next-conversation';
     const nextMessage = persistedAssistant({ id: 'next-assistant', runId: 'next-run',
       content: 'Other authorized history remains visible.',
       events: [{ kind: 'thinking', text: 'Checking the next result.' },
@@ -492,14 +471,13 @@ describe('blocked task history hydration through real ProjectView and ChatPane (
     // UI assertion, not an expected new GET. Real clocks preserve the race.
     await waitFor(() => expect(reads).toContain(historyKey()));
     await waitFor(() => expect(pendingProofReads).toContain(`${context.workspaceMemberId}/${runId()}`));
-    mounted.rerender(view({ workspaceContextOverride: nextContext, routeConversationId: nextConversation }));
+    mounted.rerender(view({ routeConversationId: nextConversation }));
     await waitFor(() => expect(reads).toContain(historyKey(nextConversation, nextContext.workspaceMemberId)));
     await act(async () => { releaseProof(); });
     await expectDisplayedStatus(en['chat.record.done'], nextMessage.id);
     expect(screen.getByText(nextMessage.content)).toBeTruthy();
     expect(document.querySelector(`[data-assistant-message-id="${assistantId()}"]`)).toBeNull();
     expect(screen.queryByTestId('chat-error-retry')).toBeNull();
-    expect(screen.queryByTestId('chat-error-switch-to-cloud')).toBeNull();
     expect(unexpectedWrites).toEqual([]);
   });
 });

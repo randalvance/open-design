@@ -15,8 +15,6 @@
 // never execute script in the app's own origin.
 
 import type { Express, Request, Response } from 'express';
-
-import type { AuthorizeProjectRequest } from '../../collab/project-request-authority.js';
 import type { RouteDeps } from '../../server-context.js';
 import { createChatArtifactBlobStore } from '../../chat-artifacts/blob-store.js';
 import {
@@ -34,7 +32,6 @@ import type {
 
 export interface RegisterProjectChatArtifactRoutesDeps
   extends RouteDeps<'db' | 'http' | 'paths' | 'projectStore'> {
-  authorizeProjectRequest: AuthorizeProjectRequest;
 }
 
 /** Mime types safe to hand a browser inline from the app's own origin. */
@@ -44,7 +41,7 @@ export function registerProjectChatArtifactRoutes(
   app: Express,
   ctx: RegisterProjectChatArtifactRoutesDeps,
 ): void {
-  const { db, authorizeProjectRequest } = ctx;
+  const { db } = ctx;
   const { sendApiError } = ctx.http;
   const { RUNTIME_DATA_DIR } = ctx.paths;
   const { getProject } = ctx.projectStore;
@@ -62,14 +59,6 @@ export function registerProjectChatArtifactRoutes(
   ): Promise<boolean> {
     const project = getProject(db, projectId);
     if (!project) {
-      sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
-      return false;
-    }
-    if (!await authorizeProjectRequest(req, res, projectId, {
-      mode: 'read',
-      allowNavigationQuery: true,
-    })) return false;
-    if (project?.metadata?.teamMirrorRevokedAt) {
       sendApiError(res, 404, 'PROJECT_NOT_FOUND', 'project not found');
       return false;
     }

@@ -376,40 +376,6 @@
 .entry-nav-rail__footer .entry-rail-actions:empty {
   display: none;
 }
-/* Community/contact links (Discord / X / mail), the footer's last
-   row. They moved here out of the account menu so the rail's bottom strip
-   carries something instead of reading as a dead white band. */
-.entry-nav-rail__social {
-  order: 3;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: calc(100% - 18px);
-  margin: 0 auto;
-  padding: 2px 0 2px;
-}
-.entry-nav-rail__social-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 30px;
-  border-radius: var(--radius-md);
-  color: var(--text-soft);
-  text-decoration: none;
-  transition: background 200ms cubic-bezier(0.23, 1, 0.32, 1),
-    color 200ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.entry-nav-rail__social-btn:hover {
-  background: var(--vibrancy-fill-secondary);
-  color: var(--text);
-}
-.entry-nav-rail__social-btn svg,
-.entry-nav-rail__social-btn .od-icon { color: inherit; }
-.entry-nav-rail__social-btn .entry-nav-rail__menu-x {
-  flex: 0 0 auto;
-  color: inherit;
-}
 .entry-nav-rail__footer .entry-nav-rail__account {
   order: 2;
   width: calc(100% - 18px);
@@ -425,292 +391,13 @@
 .entry-rail-actions .use-everywhere-chip {
   justify-content: center;
 }
-.entry-local-mode-tip {
-  /* In flow, not absolute. It used to be anchored to the footer's bottom edge
-     (position: absolute; bottom: 3px; z-index: 2), which was harmless while
-     the footer had nothing else in it. The footer now ends with the social
-     row, and an opaque card pinned over that same bottom strip hid the
-     Discord, X and mail links from exactly the signed-out users this
-     card is shown to. Sitting in flow (order 2, above the social row's 3)
-     keeps both reachable and lets the footer size itself. */
-  order: 2;
-  display: grid;
-  gap: 8px;
-  width: calc(100% - var(--spacing-16, 16px));
-  /* Breathing room above the social row that follows in the footer. */
-  margin: 0 auto 6px;
-  padding: 8px;
-  box-sizing: border-box;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-panel);
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.4;
-  text-align: left;
-  cursor: pointer;
-  z-index: 2;
-  /* A mousedown→mouseup gesture that selects the label text (any hair of
-     drag, e.g. a real click made while screen-recording) makes the browser
-     suppress the click event entirely — this card would then silently never
-     call begin(), with no spinner, no browser tab, and no visible error. */
-  user-select: none;
-  transition: border-color 120ms, background 120ms, transform 120ms;
-}
-.entry-local-mode-tip:hover,
-.entry-local-mode-tip:focus-visible {
-  border-color: var(--border-strong);
-  background: var(--bg-subtle);
-  outline: none;
-  transform: translateY(-1px);
-}
-.entry-local-mode-tip__head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  color: var(--text-strong);
-}
-.entry-local-mode-tip__login-badge {
-  display: inline-flex;
-  flex: 1;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  min-height: 30px;
-  padding: 5px 12px;
-  box-sizing: border-box;
-  border-radius: var(--radius-pill, 999px);
-  background: var(--accent);
-  color: #00ff08;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.4;
-  /* Long localized labels (e.g. "Regisztráció / Bejelentkezés") wrap
-     instead of truncating the call to action. */
-  text-align: center;
-  overflow-wrap: anywhere;
-}
-/* A wrapped label hugs its icon instead of centering each line away from it;
-   a single-line label stays centered by the badge's justify-content. */
-.entry-local-mode-tip__login-badge > span {
-  min-width: 0;
-  text-align: start;
-}
-/* `--accent` is the user's accent color, written inline on the root and not
-   theme-aware; the default #353535 is exactly the dark panel color, so the
-   call to action vanished into the card in dark mode. */
-[data-theme="dark"] .entry-local-mode-tip__login-badge {
-  background: var(--bg);
-}
-@media (prefers-color-scheme: dark) {
-  html:not([data-theme]) .entry-local-mode-tip__login-badge {
-    background: var(--bg);
-  }
-}
-.entry-local-mode-tip p {
-  margin: 0;
-}
-/* Signed-out pitch: title + one supporting line, kept tight as one group.
-   The green icon chip reuses the onboarding welcome ribbon's colors so both
-   entry points read as the same free-credits offer. */
-.entry-local-mode-tip__pitch {
-  display: grid;
-  gap: 2px;
-  padding: 2px 2px 0;
-}
-.entry-local-mode-tip__title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-strong);
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.35;
-}
-.entry-local-mode-tip__title-icon {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: var(--radius-pill, 999px);
-  background: color-mix(in srgb, var(--brand) 40%, var(--brand-soft));
-  color: var(--brand-text);
-}
-/* While the vela device-auth flow is pending the card stops being a button:
-   the body swaps to a progress line + cancel, so the hover lift would lie. */
-.entry-local-mode-tip.is-signing {
-  cursor: default;
-}
-.entry-local-mode-tip.is-signing:hover {
-  transform: none;
-  border-color: var(--border);
-  background: var(--bg-panel);
-}
-.entry-local-mode-tip__login-badge.is-pending {
-  background: var(--bg-subtle);
-  color: var(--text-muted);
-}
-/* Sign-in fallback + cancel: quiet centered text lines under the pending
-   button, never a nested card (it jumped the rail card's height). */
-.entry-local-mode-tip__activation {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 2px 4px;
-  color: var(--text-muted);
-  font-size: 11px;
-  line-height: 1.45;
-  text-align: center;
-}
-.entry-local-mode-tip__activation-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  color: var(--text-strong);
-  font-weight: 600;
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
-  text-underline-offset: 2px;
-}
-.entry-local-mode-tip__activation-link:hover {
-  text-decoration-color: currentColor;
-}
-.entry-local-mode-tip__cancel {
-  justify-self: center;
-  /* Plain text link: opt out of the global button box (min-height). */
-  min-height: 0;
-  height: auto;
-  padding: 0 4px;
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.4;
-  cursor: pointer;
-  transition: color 160ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.entry-local-mode-tip__cancel:hover {
-  color: var(--text-strong);
-}
-.entry-local-mode-tip__error {
-  color: var(--red);
-}
-
-/* ---------- Rail account skeleton (RailAccountSyncTip) ----------
-   Stand-in for the account row (`.entry-nav-rail__account-trigger` below)
-   while the just-signed-in `GET /api/workspace/context` re-read is still in
-   flight. Unlike `.entry-local-mode-tip` (absolutely positioned with a fixed
-   `bottom` so its card shape never collides with the rail-actions row below
-   it), this is a normal flex child of `.entry-nav-rail__footer` — the same
-   flow `.entry-rail-actions` already uses (`width: calc(100% - 18px); margin:
-   0 auto;`). That keeps it clear of the actions row through ordinary flex
-   stacking instead of a guessed pixel offset, AND lands its bottom edge
-   close to the panel's bottom padding the same way the real account-trigger
-   does once it mounts in `.entry-nav-rail__group` — so the loading→loaded
-   swap reads as one row filling in, not a card jumping to a different slot
-   (recvqgpXSYFNTq follow-up, 2026-07-24 product feedback). */
-.entry-rail-account-skeleton {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: calc(100% - 18px);
-  margin: 0 auto;
-  min-height: 34px;
-  padding: 4px 6px;
-  box-sizing: border-box;
-}
-.entry-rail-account-skeleton__avatar,
-.entry-rail-account-skeleton__name {
-  display: block;
-  /* House skeleton sweep (matches DesignSystemsTab's `.skeletonBlock`): a
-     soft highlight passing over a muted base, timed with the repo's default
-     UI ease-out (AGENTS.md "UI animation philosophy") rather than a linear
-     or ease-in-out sweep. */
-  background:
-    linear-gradient(
-      110deg,
-      transparent 28%,
-      color-mix(in srgb, #fff 34%, transparent) 50%,
-      transparent 72%
-    ) 0 0 / 200% 100%,
-    color-mix(in srgb, var(--bg-muted) 84%, var(--bg-panel));
-  animation: entry-rail-account-skeleton-sheen 1.55s cubic-bezier(0.23, 1, 0.32, 1) infinite;
-}
-
-.entry-rail-account-recovery {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: calc(100% - 18px);
-  min-height: 34px;
-  margin: 0 auto;
-  padding: 4px 6px;
-  box-sizing: border-box;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.entry-rail-account-recovery__spinner {
-  width: 14px;
-  height: 14px;
-  flex: 0 0 14px;
-  border: 1.5px solid color-mix(in srgb, var(--text-muted) 30%, transparent);
-  border-top-color: var(--text-muted);
-  border-radius: 50%;
-  animation: entry-rail-account-recovery-spin 900ms linear infinite;
-}
 
 @keyframes entry-rail-account-recovery-spin {
   to { transform: rotate(360deg); }
 }
-
-.entry-rail-account-recovery__text {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-[data-theme="dark"] .entry-rail-account-skeleton__avatar,
-[data-theme="dark"] .entry-rail-account-skeleton__name {
-  background:
-    linear-gradient(
-      110deg,
-      transparent 28%,
-      color-mix(in srgb, #fff 13%, transparent) 50%,
-      transparent 72%
-    ) 0 0 / 200% 100%,
-    color-mix(in srgb, var(--bg-elevated) 68%, var(--bg-muted));
-}
-.entry-rail-account-skeleton__avatar {
-  /* Mirrors `.entry-nav-rail__account-avatar`'s 24×25 box. That box's own
-     `clip-path: url(#od-avatar-squircle)` currently has no matching SVG
-     `<clipPath>` in the tree, so the real avatar renders as a plain square —
-     this placeholder stays a plain rounded square too rather than chasing a
-     squircle the live row does not actually show. */
-  width: 24px;
-  height: 25px;
-  flex: 0 0 24px;
-  border-radius: 6px;
-}
-.entry-rail-account-skeleton__name {
-  /* A representative name-length bar, sized to the real row's 13px/500 text
-     (`.entry-nav-rail__account-name`) rather than stretching full width —
-     the real row's name is short and left-aligned, not a full-width line. */
-  width: 62px;
-  height: 13px;
-  border-radius: 4px;
-}
 @keyframes entry-rail-account-skeleton-sheen {
   to {
     background-position: -200% 0, 0 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .entry-rail-account-skeleton__avatar,
-  .entry-rail-account-skeleton__name {
-    animation: none;
   }
 }
 
@@ -1134,15 +821,6 @@
 .entry-nav-rail__recent-menu button:disabled {
   opacity: 0.45;
   cursor: default;
-}
-/* A failed move to the team space is reported inside the menu, under the item
-   that asked for it — the project cards keep theirs in the same place. */
-.entry-nav-rail__recent-menu-error {
-  padding: 4px 8px 6px;
-  max-width: 220px;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--red, #f04142);
 }
 /* The preview floats OUT of the rail, over the content column: the rail panel
    is only ~212px wide and a legible cover needs more than that. `left: 100%`
@@ -1592,61 +1270,6 @@
   padding-top: 10px;
   border-top: 1px solid color-mix(in srgb, var(--border) 42%, transparent);
 }
-.entry-nav-rail__team {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  /* Same box as the nav rows below (per product: 和社区一样的高度和圆角).
-     Pinned rather than derived: those rows are `height: auto` around an 18px
-     icon plus 10px of vertical padding, and this one carries a 24px avatar —
-     the same recipe would make it 44. 38 is their resolved height, and the
-     hover/selected fill both wear is the same, so the two now read as one
-     stack instead of a shorter, squarer control sitting above it. */
-  height: 38px;
-  margin: 2px 0 4px;
-  padding: 0 10px;
-  color: var(--text-strong);
-}
-.entry-nav-rail__team-avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-pill);
-  background: var(--bg-panel);
-  color: var(--text);
-  display: grid;
-  place-items: center;
-  font-size: 12px;
-  font-weight: 700;
-  flex: 0 0 24px;
-  overflow: hidden;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 78%, transparent);
-}
-.entry-nav-rail__team-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-.entry-nav-rail__team-name {
-  font-size: 13px;
-  font-weight: 600;
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.entry-nav-rail__team svg { color: var(--text-soft); }
-/* The caret's slot, copied from `.entry-nav-rail__recent-chevron` so the two
-   disclosures in this rail hold their glyph the same way: a fixed 14px box that
-   never shrinks, which is what keeps › and ⌄ — different advance widths — from
-   nudging the workspace name as the menu opens and closes. */
-.entry-nav-rail__team-chevron {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 14px;
-}
 
 /* Section label (e.g. 更多) */
 .entry-nav-rail__section {
@@ -1757,63 +1380,6 @@
 .entry-top-right-cluster,
 .entry-top-right-cluster * {
   -webkit-app-region: no-drag;
-}
-
-.entry-deepseek-campaign-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 26px;
-  padding: 4px 11px 4px 13px;
-  border: 1px solid color-mix(in srgb, var(--brand) 42%, var(--border));
-  border-radius: var(--radius-pill);
-  color: var(--brand-text);
-  background: color-mix(in srgb, var(--brand-soft) 82%, var(--bg-panel));
-  box-shadow: var(--shadow-xs);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  font-size: 12px;
-  font-weight: 700;
-  font-family: inherit;
-  line-height: 1;
-  text-decoration: none;
-  cursor: pointer;
-  pointer-events: auto;
-  -webkit-app-region: no-drag;
-  transition:
-    border-color 140ms cubic-bezier(0.23, 1, 0.32, 1),
-    background 140ms cubic-bezier(0.23, 1, 0.32, 1),
-    transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.entry-deepseek-campaign-badge::before {
-  width: 6px;
-  height: 6px;
-  flex: 0 0 auto;
-  border-radius: var(--radius-circular);
-  background: var(--brand-text);
-  content: '';
-}
-
-.entry-deepseek-campaign-badge svg {
-  color: var(--brand-text);
-}
-
-.entry-deepseek-campaign-badge:hover {
-  border-color: color-mix(in srgb, var(--brand) 70%, var(--border));
-  background: var(--brand-soft);
-  transform: translateY(-1px);
-}
-
-.entry-deepseek-campaign-badge:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-@media (max-width: 760px) {
-  .entry-deepseek-campaign-badge {
-    max-width: calc(100vw - 88px);
-  }
 }
 /* Frosted top edge: content scrolling up toward the (transparent) tab strip
    melts into a progressive blur instead of hard-clipping at the row
@@ -2471,18 +2037,6 @@
 .inline-switcher--compact .inline-switcher__chip-text {
   display: none;
 }
-.inline-switcher__amr-reminder-dot {
-  position: absolute;
-  z-index: 1;
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-pill);
-  background: var(--danger, #dc2626);
-  box-shadow:
-    0 0 0 2px var(--bg-panel),
-    0 0 0 4px color-mix(in srgb, var(--danger, #dc2626) 12%, transparent);
-  pointer-events: none;
-}
 /* Popover */
 .inline-switcher__popover {
   position: absolute;
@@ -2678,12 +2232,6 @@
   color: var(--text-muted);
   opacity: 0.6;
 }
-.inline-switcher__agent-lock {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  color: var(--text-muted);
-}
 /* Each row now leads with the provider logo, so the old leading selection dot
    is dropped — the active row reads from its tinted background alone. */
 /* Hovering an unselected model slides its label forward as a "reach". */
@@ -2699,10 +2247,6 @@
   .inline-switcher--compact .inline-switcher__agent-name {
     transition: none;
   }
-}
-.inline-switcher__amr-reminder-dot--agent {
-  top: 6px;
-  left: 26px;
 }
 .inline-switcher__agent-name {
   flex: 1 1 auto;
@@ -3015,29 +2559,6 @@
   gap: 4px;
   flex: 0 0 auto;
 }
-.model-select-searchable__option-lock-inline {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  vertical-align: middle;
-  transition:
-    color 160ms cubic-bezier(0.23, 1, 0.32, 1),
-    background 160ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.model-select-searchable__option-lock-inline:hover,
-.model-select-searchable__option-lock-inline:focus-visible {
-  color: var(--accent-strong);
-  background: var(--accent-tint);
-}
 .model-select-searchable__value-badge[data-tag='standard'],
 .model-select-searchable__option-badge[data-tag='standard'] {
   --model-tag-color: #90887a;
@@ -3055,7 +2576,6 @@
   font-size: 12px;
   color: var(--text-muted);
 }
-
 
 .inline-switcher__select {
   appearance: none;
@@ -3092,7 +2612,7 @@
   appearance: none;
   border: 0;
   /* Pinned to the bottom of the popover's scroll port: the model list can be
-     long (29 models on AMR), and this entry used to scroll away with it — the
+     long, and this entry used to scroll away with it — the
      one link out to where agent switching now lives. Opaque so rows scrolling
      underneath do not show through. */
   position: sticky;
@@ -3279,7 +2799,7 @@
    critically — its `align-content: start`, which stops the grid row at its
    content height instead of stretching it, leaving the art panel short with
    a blank gap. The extra specificity makes every override here unconditional. */
-.onboarding-view.onboarding-view--cloud {
+.onboarding-view.onboarding-view--welcome {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: stretch;
@@ -3299,7 +2819,7 @@
   gap: 0;
 }
 
-.onboarding-cloud__pane {
+.onboarding-welcome__pane {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -3316,14 +2836,14 @@
    track but never shrink it below that minimum, so the column (and the
    image) end up as tall as the image's natural aspect ratio at this column's
    width, overflowing past the section's actual height instead of matching it. */
-.onboarding-cloud__art {
+.onboarding-welcome__art {
   position: relative;
   min-width: 0;
   min-height: 0;
   padding: 8px 8px 8px 0;
 }
 
-.onboarding-cloud__art img {
+.onboarding-welcome__art img {
   display: block;
   width: 100%;
   height: 100%;
@@ -3332,41 +2852,40 @@
 }
 
 /* Below this width, the two-column grid can no longer give the text pane its
-   full designed width (.onboarding-cloud__center's 440px) alongside the art
+   full designed width (.onboarding-welcome__center's 440px) alongside the art
    panel — half the viewport minus the pane's 64px side padding drops under
    440px once the viewport is narrower than 2 * (440 + 64 + 64) = 1136px.
    Stack to a single column and hide the art before the text pane gets
    cramped, rather than waiting until it visibly wraps. */
 @media (max-width: 1136px) {
-  .onboarding-view.onboarding-view--cloud {
+  .onboarding-view.onboarding-view--welcome {
     grid-template-columns: 1fr;
   }
 
-  .onboarding-cloud__art {
+  .onboarding-welcome__art {
     display: none;
   }
 
-  .onboarding-cloud__pane {
+  .onboarding-welcome__pane {
     align-items: center;
     padding: 72px 24px 64px;
   }
 
-  .onboarding-cloud__center {
+  .onboarding-welcome__center {
     align-items: center;
     text-align: center;
   }
 
-  .onboarding-cloud__body,
-  .onboarding-cloud__alts,
-  .onboarding-cloud__error {
+  .onboarding-welcome__body,
+  .onboarding-welcome__alts {
     text-align: center;
   }
 
-  .onboarding-cloud__alts {
+  .onboarding-welcome__alts {
     justify-content: center;
   }
 
-  .onboarding-cloud__footer {
+  .onboarding-welcome__footer {
     left: 24px;
     justify-content: center;
     text-align: center;
@@ -3390,7 +2909,7 @@
   color: var(--text-strong);
 }
 
-.onboarding-cloud__center {
+.onboarding-welcome__center {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -3398,7 +2917,7 @@
   width: min(440px, 100%);
 }
 
-.onboarding-cloud__title {
+.onboarding-welcome__title {
   margin: 0;
   color: var(--text-strong);
   font-size: 32px;
@@ -3407,7 +2926,7 @@
   letter-spacing: -0.01em;
 }
 
-.onboarding-cloud__body {
+.onboarding-welcome__body {
   margin: 14px 0 0;
   max-width: 42ch;
   color: var(--text-muted);
@@ -3415,7 +2934,7 @@
   line-height: 1.6;
 }
 
-.onboarding-cloud__primary {
+.onboarding-welcome__primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3436,7 +2955,7 @@
     transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-.onboarding-cloud__primary:hover:not(:disabled) {
+.onboarding-welcome__primary:hover:not(:disabled) {
   /* Keep the dark fill on hover — the global `button:hover` rule in
      primitives.css would otherwise repaint the background to --bg-subtle and
      wash the white label away. Opacity alone carries the hover feedback. */
@@ -3445,77 +2964,23 @@
   opacity: 0.88;
 }
 
-.onboarding-cloud__primary:active:not(:disabled) {
+.onboarding-welcome__primary:active:not(:disabled) {
   transform: translateY(1px);
 }
 
-.onboarding-cloud__primary:disabled {
+.onboarding-welcome__primary:disabled {
   opacity: 0.55;
   cursor: default;
 }
 
-.onboarding-cloud__primary:focus-visible {
+.onboarding-welcome__primary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-}
-
-.onboarding-cloud__cancel {
-  margin-top: 22px;
-  border: 0;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: color 160ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.onboarding-cloud__cancel:hover {
-  color: var(--text-strong);
-}
-
-/* Sign-in fallback on the cloud landing: one quiet line under the primary
- * button rather than a card, so the pending state keeps a single focal CTA
- * and a single cancel. Settings/AmrLoginPill and CloudSignInTip keep their
- * own `.amr-login-activation` card (artifacts.css). */
-.onboarding-cloud__activation {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: center;
-  gap: 4px 6px;
-  margin: 14px 0 0;
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.5;
-  text-align: center;
-}
-
-.onboarding-cloud__activation-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  color: var(--text-strong);
-  font-weight: 600;
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
-  text-underline-offset: 3px;
-  transition: text-decoration-color 160ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-
-.onboarding-cloud__activation-link:hover {
-  text-decoration-color: currentColor;
-}
-
-.onboarding-cloud__activation-link:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 4px;
 }
 
 /* Two runtime-choice buttons ("local CLI" or "your own key") on one row,
    centered as a unit under the full-width primary CTA above. */
-.onboarding-cloud__alts {
+.onboarding-welcome__alts {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3526,30 +2991,23 @@
 
 /* Double-class selector to out-specificity the shared Button module's
    `.button`/`.subtle` rules (same 0-1-0 specificity) without `!important`. */
-.onboarding-cloud__alts .onboarding-cloud__alt-btn {
+.onboarding-welcome__alts .onboarding-welcome__alt-btn {
   border-radius: var(--radius-pill);
   color: var(--text-muted);
   font-size: 14px;
 }
 
-.onboarding-cloud__alts-or {
+.onboarding-welcome__alts-or {
   color: var(--text-muted);
   font-size: 14px;
 }
 
-.onboarding-cloud__error {
-  margin-top: 16px;
-  color: var(--danger-text, #991b1b);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.onboarding-cloud__footer {
+.onboarding-welcome__footer {
   position: absolute;
   left: 64px;
   right: 24px;
   /* An absolutely positioned child's containing block is the ancestor's
-     padding box, so this offset is NOT added on top of .onboarding-cloud__pane's
+     padding box, so this offset is NOT added on top of .onboarding-welcome__pane's
      own 64px bottom padding — it replaces it. Match that 64px directly so the
      footer's bottom edge lines up with the padding boundary the rest of the
      pane's content already respects, instead of sitting almost flush with
@@ -3567,9 +3025,9 @@
 /* Dim the copyright line only — NOT the whole footer, since the language
    switcher's popover is a DOM descendant here (position: absolute doesn't
    exempt it from an ancestor's opacity). A blanket opacity on
-   .onboarding-cloud__footer would wash the open dropdown out to match, so
+   .onboarding-welcome__footer would wash the open dropdown out to match, so
    the copyright text and the closed pill get their own opacity instead. */
-.onboarding-cloud__footer > span {
+.onboarding-welcome__footer > span {
   opacity: 0.8;
 }
 
@@ -3577,7 +3035,7 @@
    sidebar's `.entry-side-foot .foot-pill` look, scoped locally since this
    footer sits outside that sidebar. Non-compact: shows the current
    language label, not just the icon. */
-.onboarding-cloud__footer .foot-pill {
+.onboarding-welcome__footer .foot-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -3592,7 +3050,7 @@
   opacity: 0.8;
 }
 
-.onboarding-cloud__footer .foot-pill:hover {
+.onboarding-welcome__footer .foot-pill:hover {
   background: var(--bg-panel);
   border-color: var(--border-strong);
   color: var(--text);
@@ -3891,17 +3349,6 @@
   align-items: center;
   justify-content: flex-end;
   margin-top: 4px;
-}
-
-.onboarding-view__action-status {
-  margin-right: auto;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.3;
-}
-
-.onboarding-view__action-status.is-error {
-  color: var(--danger-text, #991b1b);
 }
 
 .onboarding-view__primary,
@@ -4350,19 +3797,6 @@
   box-shadow: 0 18px 40px color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
-.onboarding-view__card--featured.onboarding-view__card--amr {
-  grid-template-columns: max-content minmax(0, 1fr);
-  grid-template-rows: auto auto;
-  column-gap: 22px;
-  row-gap: 18px;
-  align-items: center;
-  min-height: 246px;
-  padding: 40px 34px 36px;
-  overflow: visible;
-  position: relative;
-  z-index: 3;
-}
-
 .onboarding-view__card.is-selected {
   border-color: color-mix(in srgb, var(--accent) 52%, var(--border));
   background: color-mix(in srgb, var(--bg-panel) 94%, var(--accent) 6%);
@@ -4429,11 +3863,6 @@
   border-radius: inherit;
 }
 
-.onboarding-view__card--amr > .onboarding-view__icon {
-  grid-column: 1;
-  grid-row: 1;
-}
-
 .onboarding-view__badge {
   display: inline-flex;
   align-items: center;
@@ -4469,11 +3898,6 @@
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg-panel) 98%, var(--text-muted) 2%);
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
-}
-
-.onboarding-view__card--amr.is-selected .onboarding-view__identity {
-  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
-  background: color-mix(in srgb, var(--bg-panel) 96%, var(--accent) 4%);
 }
 
 .onboarding-view__identity .onboarding-view__card-copy {
@@ -4550,10 +3974,6 @@
 
 .onboarding-view__card-model .onboarding-view__model-picker {
   width: min(260px, 100%);
-}
-
-.onboarding-view__card--amr .onboarding-view__model-picker {
-  width: 100%;
 }
 
 .onboarding-view__alternatives .onboarding-view__model-picker {
@@ -4766,65 +4186,6 @@
   max-width: min(260px, calc(100% - 72px));
   color: var(--text-muted);
   pointer-events: none;
-}
-
-.onboarding-view__card-status .amr-account-control {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  max-width: 100%;
-  min-height: 20px;
-  gap: 6px;
-  padding: 0 8px;
-  border: 1px solid color-mix(in srgb, var(--accent) 14%, var(--border));
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--bg-panel) 90%, var(--accent) 10%);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent);
-  color: currentColor;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-}
-
-.onboarding-view__card-status .amr-account-control__status {
-  display: inline-flex;
-  align-items: center;
-  min-width: 0;
-  gap: 6px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.onboarding-view__card-status .amr-account-control__status::before {
-  content: '';
-  flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-pill);
-  background: currentColor;
-  opacity: 0.7;
-}
-
-.onboarding-view__card-status .amr-account-control--signed-in {
-  color: var(--success-text, #15803d);
-  border-color: color-mix(in srgb, var(--success-text, #15803d) 18%, var(--border));
-  background: color-mix(in srgb, var(--bg-panel) 88%, var(--success-text, #15803d) 12%);
-}
-
-.onboarding-view__card-status .amr-account-control--signing-in {
-  color: var(--accent-strong);
-}
-
-.onboarding-view__card-status .amr-account-control--error {
-  color: var(--danger-text, #991b1b);
-  border-color: color-mix(in srgb, var(--danger-text, #991b1b) 18%, var(--border));
-  background: color-mix(in srgb, var(--bg-panel) 88%, var(--danger-text, #991b1b) 12%);
-}
-
-.onboarding-view__card-status .amr-account-control__error {
-  display: none;
 }
 
 .onboarding-view__card-action {
@@ -5043,10 +4404,6 @@
 
 .onboarding-view__brand-action-statuses:empty {
   display: none;
-}
-
-.onboarding-view__brand-action-statuses .onboarding-view__action-status {
-  margin-right: 0;
 }
 
 .onboarding-view__brand-action-group {
@@ -5625,8 +4982,6 @@
   margin-inline-end: auto;
 }
 
-
-
 /* ============================================================
    GitHub star pill — sticky top-bar CTA.
 
@@ -6070,21 +5425,10 @@
 }
 
 @media (max-width: 760px) {
-  .onboarding-view__card--featured.onboarding-view__card--amr {
-    grid-template-columns: 1fr;
-    gap: 14px;
-    align-items: center;
-    min-height: 190px;
-    padding: 28px 18px 32px;
-  }
 
   .onboarding-view__identity {
     grid-column: 1 / -1;
     width: 100%;
-  }
-
-  .onboarding-view__card--amr .onboarding-view__card-model {
-    grid-column: 1 / -1;
   }
 
   .onboarding-view__card--benefit-aside .onboarding-view__benefit-aside {
@@ -6108,10 +5452,7 @@
 }
 
 /* ============================================================
-   AMR cloud card — detecting / skeleton state
-   Shown while AMR availability is still being probed. Reuses the
-   featured/amr card classes (so min-height: 246px and the responsive
-   grid are inherited — no layout jump when the real card resolves).
+   Onboarding card — detecting / skeleton state
    Only the probe-dependent parts shimmer; the brand stays solid.
    ============================================================ */
 .onboarding-view__card--skeleton {
@@ -6163,7 +5504,7 @@
     color-mix(in srgb, var(--bg-elevated) 70%, var(--bg-muted));
 }
 
-/* Version meta placeholder (sits where "AMR v0.1.0" renders). */
+/* Version meta placeholder. */
 .onboarding-view__skeleton-line--meta {
   width: 116px;
   height: 11px;
@@ -6189,14 +5530,11 @@
 .onboarding-view__benefit-stack--skeleton
   .onboarding-view__skeleton-line--benefit:nth-child(4) { width: 58%; }
 
-/* Model picker placeholder (sits where the AMR model select renders). */
+/* Model picker placeholder. */
 .onboarding-view__skeleton-model {
   display: grid;
   gap: 8px;
   width: min(260px, 100%);
-}
-.onboarding-view__card--amr .onboarding-view__skeleton-model {
-  width: 100%;
 }
 .onboarding-view__skeleton-model-label {
   width: 96px;
@@ -6296,16 +5634,9 @@
 }
 
 /* ---- Account dock (foot of the nav column) ---- */
-/* Portal host for the account module (owned by `EntryTopRightCluster`).
-   Transparent to layout so the account block below behaves as a direct flex
-   child of `.entry-nav-rail__group`. */
-.entry-nav-rail__account-host {
-  display: contents;
-}
 
-/* Bottom dock: the social links stack directly above the identity row, and the
-   pair sinks to the foot of the nav column together. The auto margin lives
-   here, so `.entry-nav-rail__account` inside it gives up its own. */
+/* Bottom dock: sinks the identity row to the foot of the nav column. The auto
+   margin lives here, so `.entry-nav-rail__account` inside it gives up its own. */
 .entry-nav-rail__account-dock {
   order: 99;
   margin-top: auto;
@@ -6319,17 +5650,6 @@
   order: 0;
   margin: 0;
   padding-top: 0;
-}
-
-.entry-nav-rail__account-dock .entry-nav-rail__menu-social {
-  /* Icon only (OPEND-3180): the three squares sit left-aligned on the
-     identity row's edge at one equal gap, rather than spreading across the
-     dock the way the labelled links did. No side inset, so the first square
-     starts where the account trigger starts and its glyph lands on the
-     avatar's own left edge (28px square, 16px glyph → 6px in, the trigger's
-     6px side padding). */
-  padding: 0;
-  justify-content: flex-start;
 }
 
 .entry-nav-rail__account {
@@ -6346,41 +5666,6 @@
   order: 99;
   margin: auto 0 0;
   padding-top: var(--spacing-10);
-}
-
-/* Message centre: a fixed square slot beside the identity, matching the rail
-   nav items' quiet icon treatment. */
-.entry-nav-rail__account-bell {
-  position: relative;
-  flex: 0 0 auto;
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.entry-nav-rail__account-bell:hover,
-.entry-nav-rail__account-bell:focus-visible {
-  outline: none;
-  background: color-mix(in srgb, var(--text) 5%, transparent);
-  color: var(--text-strong);
-}
-
-/* The shared dot is authored for menu ROWS, where `margin-left: auto` pushes it
-   to the trailing edge. On the square bell it has to pin to the glyph instead. */
-.entry-nav-rail__account-bell .entry-nav-rail__menu-item-dot {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  margin-left: 0;
 }
 /* Local account dock (OPEND-3140): the signed-out rail renders the same dock
    in its FOOTER, under the sign-in card, so the identity row is the rail's
@@ -6442,15 +5727,6 @@
   /* Panel-colored ring separates the dot from the avatar artwork. */
   box-shadow: 0 0 0 2px var(--bg-panel);
 }
-/* Matching dot on the account menu's 消息中心 row, pushed to the far edge. */
-.entry-nav-rail__menu-item-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--red);
-  margin-left: auto;
-  flex: 0 0 auto;
-}
 .entry-nav-rail__account-trigger {
   appearance: none;
   border: 0;
@@ -6506,250 +5782,6 @@
 .entry-nav-rail__account-trigger svg { color: var(--text-soft); }
 /* The membership wordmark reads as a solid black mark, not a muted glyph. */
 .entry-nav-rail__account-trigger .plan-badge { color: var(--text-strong); }
-
-/* ── Credits chip (✨ N) — separate region from the account dropdown ── */
-.entry-nav-rail__credits-chip {
-  flex: 0 0 auto;
-  /* Sits above the avatar row, aligned with the trigger's inner padding. */
-  order: -1;
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-4);
-  min-height: 28px;
-  padding: var(--spacing-2) var(--spacing-8);
-  margin-left: 0;
-  border-radius: var(--radius-pill);
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  font-size: var(--font-size-12);
-  font-weight: 500;
-  line-height: 125%;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  transition:
-    background-color var(--duration-faster) var(--curve-easy-ease),
-    box-shadow var(--duration-faster) var(--curve-easy-ease);
-}
-.entry-nav-rail__credits-chip:hover,
-.entry-nav-rail__credits-chip[aria-expanded='true'] {
-  background: var(--bg-subtle);
-}
-.entry-nav-rail__credits-chip:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 var(--stroke-thick) var(--border);
-}
-.entry-nav-rail__credits-chip .od-icon { color: var(--brand-text); }
-.entry-nav-rail__credits-tier { font-weight: 600; }
-.entry-nav-rail__credits-sep { color: var(--text-faint); }
-
-/* ── Credits popover ── */
-.credits-panel {
-  position: absolute;
-  top: auto;
-  bottom: calc(100% + var(--spacing-8));
-  left: 0;
-  right: 0;
-  z-index: 60;
-  display: flex;
-  flex-direction: column;
-  padding: var(--spacing-16);
-  border-radius: var(--radius-xlarge);
-  /* Solid, not material: the nav-rail panel's own backdrop-filter makes it
-     a backdrop root, so descendants' blur cannot sample through it in
-     Chromium — any translucency here reads as sharp bleed-through of the
-     nav items behind the popover. */
-  background: var(--bg-elevated);
-  border: var(--stroke-thin) solid var(--border);
-  box-shadow: var(--shadow-sm);
-  animation: entry-invite-in var(--duration-fast) var(--curve-decelerate-mid);
-}
-.credits-panel__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-12);
-  margin-bottom: var(--spacing-12);
-}
-.credits-panel__plan {
-  font-size: var(--font-size-18);
-  line-height: 125%;
-  font-weight: 600;
-  color: var(--text-strong);
-}
-.credits-panel__upgrade {
-  padding: var(--spacing-6) var(--spacing-18);
-  border: var(--stroke-thin) solid var(--text-strong);
-  border-radius: var(--radius-large);
-  background: var(--text-strong);
-  color: var(--bg);
-  font-size: var(--font-size-13);
-  line-height: 125%;
-  font-weight: 500;
-  cursor: pointer;
-  transition:
-    background-color var(--duration-faster) var(--curve-easy-ease),
-    border-color var(--duration-faster) var(--curve-easy-ease);
-}
-.credits-panel__upgrade:hover {
-  background: var(--text);
-  border-color: var(--text);
-}
-.credits-panel__divider {
-  height: 0;
-  border-top: var(--stroke-thin) solid var(--border);
-  margin: 0 0 var(--spacing-12);
-}
-.credits-panel__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-12);
-}
-.credits-panel__row--refresh { margin-top: var(--spacing-16); }
-.credits-panel__row-label {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-8);
-  font-size: var(--font-size-16);
-  line-height: 125%;
-  font-weight: 500;
-  color: var(--text-strong);
-}
-.credits-panel__row-label > .od-icon {
-  color: var(--brand-text);
-}
-.credits-panel__row-value {
-  font-family: var(--mono);
-  font-size: var(--font-size-20);
-  line-height: 125%;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-strong);
-}
-.credits-panel__help {
-  display: inline-flex;
-  color: var(--text-faint);
-  cursor: help;
-}
-.credits-panel__sub {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-12);
-  margin-top: var(--spacing-6);
-  font-size: var(--font-size-13);
-  line-height: 125%;
-  color: var(--text-muted);
-}
-.credits-panel__sub--muted { color: var(--text-faint); }
-.credits-panel__sub span { display: inline-flex; align-items: center; gap: var(--spacing-4); }
-.credits-panel__usage {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-4);
-  align-self: flex-start;
-  margin-top: var(--spacing-16);
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-strong);
-  font-size: var(--font-size-14);
-  line-height: 125%;
-  font-weight: 500;
-  cursor: pointer;
-}
-.credits-panel__usage:hover { color: var(--text-strong); }
-.credits-panel__member-notice {
-  display: grid;
-  gap: var(--spacing-8);
-  margin-top: var(--spacing-16);
-  padding: var(--spacing-12);
-  border: var(--stroke-thin) solid var(--border);
-  border-radius: var(--radius-xlarge);
-  background: var(--bg-subtle);
-}
-.credits-panel__member-notice strong {
-  color: var(--text-strong);
-  font-size: var(--font-size-13);
-  line-height: 125%;
-}
-.credits-panel__member-notice p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-12);
-  line-height: 125%;
-}
-.credits-panel__member-notice button {
-  justify-self: flex-start;
-  height: 30px;
-  padding: 0 var(--spacing-12);
-  border: var(--stroke-thin) solid var(--border-strong);
-  border-radius: var(--radius-large);
-  background: var(--text-strong);
-  color: var(--bg);
-  font: inherit;
-  font-size: var(--font-size-12);
-  line-height: 125%;
-  font-weight: 700;
-}
-.credits-panel__console {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-4);
-  align-self: flex-start;
-  margin-top: var(--spacing-10);
-  padding: 0;
-  color: var(--text-muted);
-  font-size: var(--font-size-13);
-  line-height: 125%;
-  font-weight: 600;
-  text-decoration: none;
-  transition: color var(--duration-faster) var(--curve-easy-ease);
-}
-.credits-panel__console:hover {
-  color: var(--text-strong);
-}
-.entry-nav-rail__account-bell {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius);
-  color: var(--text-muted);
-  flex: 0 0 28px;
-}
-.entry-nav-rail__account-bell:hover { background: var(--bg-subtle); color: var(--text); }
-
-/* ---- Dropdown menus (account + team) ---- */
-.entry-nav-rail__menu-backdrop { position: fixed; inset: 0; z-index: 40; }
-.entry-nav-rail__account-menu,
-.entry-nav-rail__team-menu {
-  position: absolute;
-  z-index: 41;
-  top: calc(100% + 4px);
-  padding: 6px;
-  /* Solid, not material: the nav-rail panel's own backdrop-filter makes it
-     a backdrop root, so descendants' blur cannot sample through it in
-     Chromium — any translucency here reads as sharp bleed-through of the
-     nav items behind the popover. */
-  background: var(--bg-elevated);
-  border: 1px solid var(--material-separator);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-}
-.entry-nav-rail__account-menu {
-  left: 0;
-}
-.entry-nav-rail__account .entry-nav-rail__account-menu {
-  top: auto;
-  bottom: calc(100% + 4px);
-}
 /* Floating account module inside the credits/avatar capsule: compact trigger
    with a downward, right-aligned menu instead of the rail-bottom upward one. */
 .entry-nav-rail__account--floating {
@@ -6799,84 +5831,6 @@
 .entry-top-right-github:hover {
   border-color: var(--border-strong);
 }
-
-/* Hover region + positioning context for the billing panel that hangs under
-   the credits / 升级 pill (per product: 黑色卡片在右上角的升级下边显示). The
-   anchor wraps the pill AND the panel, so the pointer crossing from one to the
-   other never leaves it. */
-.entry-top-right-credits-anchor {
-  position: relative;
-  display: inline-flex;
-  /* The cluster lays its children out in a row; this wrapper must not change
-     the pill's own box, only give it a parent. */
-  align-items: center;
-}
-
-.entry-top-right-credits-panel {
-  position: absolute;
-  z-index: 30;
-  top: 100%;
-  /* Right-aligned with the pill: the cluster sits in the window's top-right
-     corner, so a left-aligned or centred panel would hang off the edge. */
-  right: 0;
-  /* The card's own width, not the pill's — the pill is as narrow as "升级" and
-     the plan row inside needs room for the tier label plus its wordmark. */
-  width: 232px;
-  /* 6px of visual gap, paid as PADDING rather than margin/offset so the strip
-     between pill and panel is still inside the anchor and the pointer can
-     cross it without arming the close timer. */
-  padding-top: 6px;
-}
-
-/* The card carries its own ink-black ground; inside the menu it also kept a
-   6px tail before the rows under it, which out here is a stray gap under a
-   floating panel. */
-.entry-top-right-credits-panel .entry-nav-rail__menu-credits {
-  margin-bottom: 0;
-  box-shadow: var(--shadow-lg);
-}
-
-.entry-top-right-account-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  /* The capsule holds the credits segment alone now — the avatar moved to the
-     rail — so it no longer keeps the 3px right inset that used to hug the
-     avatar circle. Padded evenly instead: 10px of ink gutter on the sides
-     (plus the 1px border); vertically the shared row height does the work, so
-     the vertical inset is 0 — a 24px credits segment plus the 1px borders
-     already fits inside 28px, and any padding here would push the capsule
-     taller than the chips beside it. */
-  /* Design `.trigger` (docs/ui-previews/plan-panels/index.html). Literal
-     values rather than the cluster's material tokens: the capsule is the
-     design's own object and the standalone HTML is the pixel authority. Note
-     this makes it 2px taller than the GitHub chip beside it, which the
-     design's electron-panel.png draws matched — flagged in the PR. */
-  min-width: 62px;
-  min-height: 30px;
-  padding: 5px 13px;
-  border: 1px solid #d9d9d6;
-  border-radius: 30px;
-  background: #fafafa;
-  color: #666;
-  font-size: 13px;
-  font-weight: 600;
-  transition: background-color 160ms cubic-bezier(0.23, 1, 0.32, 1),
-    color 160ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-/* Hover and expanded read the same: the capsule brightens and the mark goes
-   to full ink (design `.trigger:hover, .trigger[aria-expanded=true]`).
-   `:not(--upgrade)` is load-bearing: the free capsule paints its own green
-   CTA ground at a LOWER specificity than this pair, so without the exclusion
-   opening the panel would bleach the green pill white. */
-.entry-top-right-account-pill:not(.entry-top-right-account-pill--upgrade):hover,
-.entry-top-right-account-pill:not(.entry-top-right-account-pill--upgrade):has(
-    .entry-top-right-credits[aria-expanded='true']
-  ) {
-  background: #fff;
-  color: #202020;
-}
 /* Avatar-only trigger at the capsule's right end: a circle sized to the
    capsule's inner height — the name/email/plan all live in the hover menu. */
 .entry-nav-rail__account--floating .entry-nav-rail__account-trigger {
@@ -6898,157 +5852,12 @@
   border-radius: 50%;
   font-size: 11px;
 }
-/* Credits segment, left of the avatar inside the capsule. */
-.entry-top-right-credits {
-  appearance: none;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  /* Chrome-free segment inside the shared capsule — the wrapper
-     (.entry-top-right-account-pill) owns the pill material, including its
-     30px design height. A fixed 24px here (plus the capsule's 5px insets and
-     1px border) forced the capsule to 36px instead. */
-  height: auto;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-pill);
-  background: transparent;
-  box-shadow: none;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1;
-  /* The capsule owns the ink (design `.triggerLogo` draws the mark at
-     brightness(0)/opacity .65, i.e. #666 on #fafafa, and full ink on hover);
-     the segment and its wordmark follow it rather than a page token. */
-  color: inherit;
-  white-space: nowrap;
-}
-.entry-top-right-credits svg {
-  color: inherit;
-}
-/* No hover fill on the credits segment — the shared capsule stays calm;
-   the pointer cursor alone signals clickability. Needs an explicit :hover
-   override: the primitives.css `button:hover:not(:disabled)` gray fill
-   outranks the bare class rule above. */
-.entry-top-right-credits:hover:not(:disabled) {
-  background: transparent;
-  border-color: transparent;
-}
-
-/* Free plan: the capsule stops reporting a balance and becomes the upgrade
-   CTA — saturated green ground, near-black ink and spark mark on it (per
-   product). The ground goes on the WRAPPER because that is what owns the pill
-   material; the segment inside stays chrome-free. The frosted translucency
-   goes with it: it exists to let the wash through a near-white capsule, and
-   over an opaque green it only muddies the colour. */
-.entry-top-right-account-pill--upgrade {
-  background: var(--upgrade-ground);
-  border-color: transparent;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-/* The svg rule needs the extra class: `.entry-top-right-credits svg` above
-   paints every glyph in this segment --text-soft at (0,2,0). */
-.entry-top-right-account-pill--upgrade .entry-top-right-credits,
-.entry-top-right-account-pill--upgrade .entry-top-right-credits svg {
-  color: var(--upgrade-ink);
-}
-
-.entry-top-right-account-pill--upgrade .entry-top-right-credits:hover:not(:disabled) {
-  background: transparent;
-  color: var(--upgrade-ink);
-}
-/* Doubled class on the container: the rail-era
-   `.entry-nav-rail__account .entry-nav-rail__account-menu` sizing rule
-   (left/right: 0, min-width: 0) sits LATER in this file at equal
-   specificity, so the floating variant needs one extra class to win. */
-.entry-nav-rail__account.entry-nav-rail__account--floating .entry-nav-rail__account-menu {
-  /* 100% is the 24px trigger row nested flush inside the capsule (1px
-     border only) — +7px keeps a ~6px visible gap below the capsule edge. */
-  top: calc(100% + 7px);
-  bottom: auto;
-  left: auto;
-  right: 0;
-  /* The containing block is now just the pill (~100px), so shrink-to-fit
-     would crush the menu into a one-word-per-line column. max-content frees
-     the width from that cap; the viewport clamp keeps it on screen. */
-  width: max-content;
-  min-width: 200px;
-  max-width: min(232px, calc(100vw - 44px));
-}
-/* Narrow floating menu: the head name must truncate instead of driving the
-   menu width (the email row below it already does). */
-.entry-nav-rail__account.entry-nav-rail__account--floating .entry-nav-rail__account-head-name {
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* The hover bridge spans the float gap. The rail menu opened UPWARD (bridge
-   below, top: 100%); the floating menu opens DOWNWARD, so the 6px gap to
-   cover sits ABOVE the menu. */
-.entry-nav-rail__account.entry-nav-rail__account--floating .entry-nav-rail__account-menu::before {
-  content: '';
-  position: absolute;
-  top: auto;
-  bottom: 100%;
-  left: 0;
-  right: 0;
-  height: 8px;
-}
-.entry-nav-rail__team-menu {
-  left: 0;
-  right: 0;
-  width: auto;
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  max-height: min(306px, 45vh);
-  overflow: hidden;
-}
-.entry-nav-rail__account-menu {
-  padding: 6px;
-  border-radius: var(--radius-lg);
-}
 /* Sequential top-to-bottom entrance: each row fades + rises in with a small
    stagger, so the menu content "loads in" instead of appearing all at once.
    The menu mounts on open, so this replays every time it opens. */
 @keyframes entry-account-row-in {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
-}
-.entry-nav-rail__account-menu > * {
-  animation: entry-account-row-in 150ms var(--ease-out) both;
-}
-.entry-nav-rail__account-menu > *:nth-child(1) { animation-delay: 0ms; }
-.entry-nav-rail__account-menu > *:nth-child(2) { animation-delay: 15ms; }
-.entry-nav-rail__account-menu > *:nth-child(3) { animation-delay: 30ms; }
-.entry-nav-rail__account-menu > *:nth-child(4) { animation-delay: 45ms; }
-.entry-nav-rail__account-menu > *:nth-child(5) { animation-delay: 60ms; }
-.entry-nav-rail__account-menu > *:nth-child(6) { animation-delay: 75ms; }
-.entry-nav-rail__account-menu > *:nth-child(7) { animation-delay: 90ms; }
-.entry-nav-rail__account-menu > *:nth-child(8) { animation-delay: 105ms; }
-.entry-nav-rail__account-menu > *:nth-child(n+9) { animation-delay: 120ms; }
-@media (prefers-reduced-motion: reduce) {
-  .entry-nav-rail__account-menu > * { animation: none; }
-}
-/* Same width as the avatar trigger row: span the account container. */
-.entry-nav-rail__account .entry-nav-rail__account-menu {
-  left: 0;
-  right: 0;
-  width: auto;
-  min-width: 0;
-  box-sizing: border-box;
-  /* EntryNavRail measures the room left inside the rail card and sets
-     `max-height` inline (a CSS length cannot name that height). Scroll the
-     overflow rather than letting the menu run past the card's top edge. */
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
 }
 /* Invisible hover bridge over the 4px float gap, so moving the pointer from
    the avatar row up into the menu never leaves the hover region.
@@ -7069,104 +5878,6 @@
   right: 0;
   height: 8px;
 }
-.entry-nav-rail__team-menu { min-width: 0; }
-.entry-nav-rail__workspace-list {
-  min-height: 0;
-  max-height: 170px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-}
-.entry-nav-rail__workspace-actions {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  flex: 0 0 auto;
-  background: var(--bg-elevated);
-}
-/* Avatar over the name (per product: 头像和名称上下结构) rather than beside it,
-   and the stack centred on the menu card it sits in (per product: 和外边的白色
-   的卡片居中对齐) rather than ragged left. A single column, so the name and the
-   email below it keep the full menu width instead of the ~34px-narrower track
-   the avatar used to reserve — the email is the long one and it stops
-   truncating as early. */
-.entry-nav-rail__account-head {
-  /* The identity block is its own tinted card inset in the menu (per product:
-     头像那个模块下边是一个灰色的底, Chrome's profile menu as the reference) —
-     the grey sits UNDER the avatar/name/email, and the rows below stay on the
-     menu's plain ground. Inset, so it reads as a card rather than a banner: it
-     sits inside the menu's 6px padding on every side, with a radius one step
-     down from the menu's 12 so the two corners nest.
-     #EDEDED per product (was #F7F7F7, which at 3 steps off the menu's own
-     #fafafa was too close to read as a separate surface). Through the token
-     rather than the literal: --bg-subtle IS #ededed in light and steps to
-     #494949 in dark, so the card stays a lighter block on the darker menu
-     there instead of shipping a near-white slab. */
-  background: var(--bg-subtle);
-  margin-bottom: 6px;
-  border-radius: var(--radius-md);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  /* The rows BELOW this block stay left-aligned — they are icon + label lines,
-     and centring them would leave their glyphs on a ragged column. Only the
-     identity block centres. */
-  text-align: center;
-  gap: 2px;
-  /* Enough air around the stack that the fill reads as a card rather than a
-     highlight bar, no more: 16/18 was the tallest thing in the menu, and the
-     menu is bounded by the rail's height (OPEND-3153 — every row has to stay
-     on screen without scrolling in a regular window; OPEND-3141 owns the
-     larger redesign of this block). */
-  padding: 12px 12px 14px;
-  /* No dashed rule any more — the card's own fill is what separates the block
-     from the rows, and a hairline along the bottom edge of a filled card reads
-     as a seam in it. */
-}
-.entry-nav-rail__account-head-avatar {
-  /* Its own row now; the 6px separates it from the name under it (the flex
-     gap above carries the name→email 2px). */
-  margin-bottom: 6px;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #87ea5c, #0d5400);
-  color: #fff;
-  display: grid;
-  place-items: center;
-  font-size: 14px;
-  font-weight: 700;
-}
-.entry-nav-rail__account-head-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-strong);
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.entry-nav-rail__account-head-email {
-  font-size: 12px;
-  color: var(--text-muted);
-  max-width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.entry-nav-rail__account-menu .entry-nav-rail__menu-item {
-  height: 34px;
-  gap: 9px;
-  padding: 0 8px;
-  /* 13px + nowrap: the longest item (GitHub help) must hold one line at the
-     trigger-row width the menu now matches. */
-  font-size: 13px;
-  white-space: nowrap;
-  border-radius: var(--radius-md);
-}
 .entry-nav-rail__menu-meta {
   margin-left: auto;
   color: var(--text-muted);
@@ -7180,196 +5891,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* X's own mark (inline SVG — it is not in the Remix set the Icon component
-   draws from). Sized in the markup like its Discord / mail neighbours; the
-   colour rides the link so hover moves all three together. */
-.entry-nav-rail__menu-x {
-  flex: 0 0 auto;
-  display: block;
-  color: inherit;
-}
-/* Icon-only social row (Discord / X / mail, OPEND-3180): the labels are gone
-   and the three links sit side by side as equal square icon targets, one gap
-   apart. Zero side padding keeps the first icon on the same column as the
-   avatar in the identity row below. */
-.entry-nav-rail__menu-social {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.entry-nav-rail__menu-social-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  /* The same square the message-centre bell occupies on the identity row,
-     so the two rows share one rhythm and the 16px glyph sits 6px in — on the
-     avatar's left edge. */
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border-radius: var(--radius-md);
-  color: var(--text-soft);
-  text-decoration: none;
-  transition: background 200ms cubic-bezier(0.23, 1, 0.32, 1),
-    color 200ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.entry-nav-rail__menu-social-btn:hover {
-  background: var(--vibrancy-fill-secondary);
-  color: var(--text);
-}
-/* All three marks at 16 (per product), pinned here rather than left to the
-   markup: `<Icon>` writes width/height as HTML ATTRIBUTES, which are
-   presentational hints and lose to any rule at all — so the size only holds as
-   long as nothing else in the cascade reaches these glyphs. */
-.entry-nav-rail__menu-social-btn svg,
-.entry-nav-rail__menu-social-btn .od-icon {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
-  color: inherit;
-}
-/* GitHub 按钮附带实时 star 数时放开固定宽度，图标 + 数字并排 */
-.entry-nav-rail__menu-social-btn:has(.entry-nav-rail__menu-social-count) {
-  width: auto;
-  padding: 0 9px;
-  gap: 5px;
-}
-.entry-nav-rail__menu-social-count {
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  color: inherit;
-  font-variant-numeric: tabular-nums;
-}
-.entry-nav-rail__menu-social-btn .entry-nav-rail__menu-x {
-  flex: 0 0 auto;
-  color: inherit;
-}
 /* Plan + credits block under the identity header (upgrade CTA on the plan
    row, then remaining/bonus credit rows), mirroring the reference card. */
-/* Panel box, 1:1 with the design (docs/ui-previews/plan-panels/index.html):
-   ink ground, 16px radius, 16px padding, and ONE typographic system —
-   12px / 500 / 18px — that the allowance row, the wallet row and the quota
-   block all inherit. The design's own rule: 「钱包余额与额度文字统一字号、字重、
-   颜色」. Row spacing is explicit per row rather than a column gap, because the
-   design spaces the head (20px), the track (6px) and the wallet separator
-   (14px + 12px) differently. */
-.entry-nav-rail__menu-credits {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
-  border-radius: var(--radius-md);
-  /* Inverted card: ink-black ground, white-tier text (颜色规范 #202020 /
-     #fafafa 反白文字). */
-  background: #202020;
-  color: #fafafa;
-  margin-bottom: 6px;
-}
-.entry-nav-rail__menu-credits-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 2px 0 6px;
-}
-.entry-nav-rail__menu-credits-plan {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  font-weight: 700;
-  color: #fafafa;
-}
-.entry-nav-rail__menu-credits-upgrade {
-  appearance: none;
-  border: 0;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 10px;
-  border-radius: var(--radius-pill);
-  /* Light pill on the inverted black card (浅底深字 per 按钮规范). */
-  background: #fafafa;
-  color: #202020;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-}
-/* :not(:disabled) lifts specificity above the global button:hover reset. */
-.entry-nav-rail__menu-credits-upgrade:hover:not(:disabled),
-.entry-nav-rail__menu-credits-upgrade:focus-visible {
-  background: #fff;
-  color: #202020;
-}
-.entry-nav-rail__menu-credits-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 26px;
-  font-size: 13px;
-  color: #fafafa;
-}
-/* The 积分 row is a button (opens the credits panel) — reset the primitives
-   button chrome so it reads as the same flat row as the static bonus line
-   (#5517), not an inset pill. */
-button.entry-nav-rail__menu-credits-row {
-  width: 100%;
-  border: 0;
-  background: none;
-  padding: 0;
-  border-radius: 6px;
-  font: inherit;
-  box-shadow: none;
-  cursor: pointer;
-}
-button.entry-nav-rail__menu-credits-row:hover:not(:disabled) {
-  background: color-mix(in srgb, #fafafa 8%, transparent);
-  border-color: transparent;
-}
-button.entry-nav-rail__menu-credits-row:active:not(:disabled) {
-  transform: none;
-}
-.entry-nav-rail__menu-credits-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.entry-nav-rail__menu-credits-label .od-icon { color: rgba(250, 250, 250, 0.72); }
-.entry-nav-rail__menu-credits-value {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  font-variant-numeric: tabular-nums;
-}
-.entry-nav-rail__menu-credits-value .od-icon { color: rgba(250, 250, 250, 0.72); }
-.entry-nav-rail__menu-item {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 9px;
-  width: 100%;
-  height: 34px;
-  padding: 0 9px;
-  border-radius: var(--radius-sm);
-  font: inherit;
-  font-size: 13px;
-  color: var(--text);
-  text-align: left;
-  text-decoration: none;
-  /* Ease the hover fill in/out so it doesn't snap on/off. */
-  transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out);
-}
-.entry-nav-rail__menu-item:hover { background: var(--vibrancy-fill-secondary); }
-.entry-nav-rail__menu-item svg,
-.entry-nav-rail__menu-item .od-icon { color: var(--text-soft); flex: 0 0 auto; }
-.entry-nav-rail__menu-item > svg:first-child,
-.entry-nav-rail__menu-item > .od-icon:first-child { flex-basis: 19px; }
+
 .entry-nav-rail__menu-section {
   padding: 8px 9px 2px;
   font-size: 12px;
@@ -7377,36 +5901,6 @@ button.entry-nav-rail__menu-credits-row:active:not(:disabled) {
   color: var(--text-faint);
   letter-spacing: 0.03em;
 }
-.entry-nav-rail__menu-divider { height: 1px; background: var(--material-separator); margin: 5px 4px; }
-
-/* ---- Team switcher button + menu ---- */
-.entry-nav-rail__team-wrap { position: relative; }
-.entry-nav-rail__team {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  width: 100%;
-  text-align: left;
-}
-/* Same fill 首页 wears as the selected destination (OPEND-3113): the ink at
-   10%, not --bg-subtle — see `.entry-nav-rail__btn.is-active`. The switcher
-   sits directly above that row, and a flat grey next to the ink veil read as
-   two different controls in one column. */
-.entry-nav-rail__team:hover {
-  background: color-mix(in srgb, var(--text-strong) 10%, transparent);
-  border-radius: var(--radius);
-}
-.entry-nav-rail__team-avatar--alt { background: #6c3aa6; }
-.entry-nav-rail__team-plan {
-  margin-left: auto;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-faint);
-}
-.entry-nav-rail__menu-item.is-current { font-weight: 600; }
-.entry-nav-rail__menu-item.is-current svg,
-.entry-nav-rail__menu-item.is-current .od-icon { color: var(--accent); margin-left: auto; }
 
 /* Design-systems scope tabs lifted into the title area (你的 / 团队 / 官方). */
 .ds-top-scopes {
@@ -7992,417 +6486,9 @@ button.entry-nav-rail__menu-credits-row:active:not(:disabled) {
   max-height: 40px;
   object-fit: contain;
 }
-
-/* ============================================================
-   Invite-colleagues dialog (team space). Opened from the team
-   switcher's "邀请同事" item. Demo-only: email + role + share link
-   + current member list. Centered modal over a dimmed backdrop.
-   ============================================================ */
-.entry-invite {
-  position: fixed;
-  inset: 0;
-  z-index: 200;
-  display: grid;
-  place-items: center;
-  padding: var(--spacing-24);
-}
-.entry-invite__backdrop {
-  position: absolute;
-  inset: 0;
-  background: var(--scrim-tint);
-  -webkit-backdrop-filter: var(--scrim-backdrop);
-  backdrop-filter: var(--scrim-backdrop);
-}
-.entry-invite__panel {
-  position: relative;
-  width: 100%;
-  max-width: 460px;
-  max-height: calc(100vh - 48px);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-16);
-  padding: var(--spacing-24);
-  border-radius: var(--radius-xlarge);
-  background: var(--bg-panel);
-  border: var(--stroke-thin) solid var(--border);
-  box-shadow: var(--shadow-lg);
-  animation: entry-invite-in var(--duration-normal) var(--curve-decelerate-mid);
-}
 @keyframes entry-invite-in {
   from { opacity: 0; transform: translateY(8px) scale(0.97); }
   to { opacity: 1; transform: translateY(0) scale(1); }
-}
-.entry-invite__head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.entry-invite__team-avatar {
-  flex: 0 0 38px;
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--radius-large, 8px);
-  background: #1f1f1f;
-  color: #fff;
-  font-weight: 700;
-  font-size: 16px;
-}
-.entry-invite__head-text { min-width: 0; }
-.entry-invite__title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-strong);
-}
-.entry-invite__subtitle {
-  margin: 2px 0 0;
-  font-size: 13px;
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-.entry-invite__label {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-muted);
-  margin-bottom: -6px;
-}
-.entry-invite__row {
-  display: flex;
-  gap: 8px;
-  align-items: stretch;
-}
-.entry-invite__input {
-  flex: 1;
-  min-width: 0;
-  resize: none;
-  padding: 9px 11px;
-  font: inherit;
-  font-size: 13px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 8px);
-  background: var(--bg);
-  color: var(--text);
-}
-.entry-invite__input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-.entry-invite__role {
-  flex: 0 0 96px;
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-8);
-  padding: var(--spacing-10) var(--spacing-12);
-  font: inherit;
-  font-size: var(--font-size-14);
-  line-height: 1.25;
-  border: var(--stroke-thin) solid var(--border);
-  border-radius: var(--radius-medium);
-  background: var(--bg);
-  color: var(--text);
-  cursor: pointer;
-  transition:
-    background-color var(--duration-faster) var(--curve-easy-ease),
-    border-color var(--duration-faster) var(--curve-easy-ease),
-    box-shadow var(--duration-faster) var(--curve-easy-ease);
-}
-.entry-invite__role:hover {
-  background: var(--bg-subtle);
-  border-color: var(--border-strong);
-}
-.entry-invite__role:focus-visible,
-.entry-invite__role[aria-expanded='true'] {
-  outline: none;
-  border-color: var(--text);
-  box-shadow: 0 0 0 var(--stroke-thick) color-mix(in srgb, var(--text-strong) 16%, transparent);
-}
-.entry-invite__role:disabled {
-  cursor: default;
-  color: var(--text-faint);
-  background: var(--bg-subtle);
-}
-.entry-invite__role > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.entry-invite__role svg {
-  flex: 0 0 auto;
-}
-.entry-invite__link-block {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-sm, 8px);
-  background: var(--bg-subtle);
-}
-.entry-invite__link-icon { color: var(--text-muted); flex: 0 0 auto; }
-.entry-invite__link-text {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.entry-invite__link-text strong { font-size: 13px; color: var(--text-strong); }
-.entry-invite__link-text span {
-  font-size: 12px;
-  color: var(--text-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.entry-invite__copy {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 10px;
-  font-size: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  background: var(--bg-panel);
-  color: var(--text);
-  cursor: pointer;
-}
-.entry-invite__copy:hover { border-color: var(--border-strong); }
-.entry-invite__members {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  border-top: 1px solid var(--border-soft);
-  padding-top: 12px;
-}
-.entry-invite__members-title {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  margin-bottom: 4px;
-}
-.entry-invite__member {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 5px 0;
-}
-.entry-invite__member-avatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  object-fit: cover;
-  flex: 0 0 26px;
-}
-.entry-invite__member-name {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.entry-invite__member-role {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-.entry-invite__foot {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 2px;
-}
-.entry-invite__btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 500;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm, 8px);
-  background: var(--bg-panel);
-  color: var(--text);
-  cursor: pointer;
-}
-.entry-invite__btn:hover { border-color: var(--border-strong); }
-.entry-invite__btn.is-primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-/* Re-assert the accent fill + white label on hover — the global
-   `button:hover` rule in primitives.css otherwise repaints the background to
-   --bg-subtle, washing the white text away. */
-.entry-invite__btn.is-primary:hover:not(:disabled) {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-  filter: brightness(1.05);
-}
-
-/* ── Split invite dialog ── */
-.entry-invite__panel--split {
-  max-width: 880px;
-  flex-direction: row;
-  align-items: stretch;
-  gap: 0;
-  padding: 0;
-  overflow: hidden;
-}
-.entry-invite__close {
-  position: absolute;
-  top: var(--spacing-16);
-  right: var(--spacing-16);
-  z-index: 3;
-  width: var(--spacing-32);
-  height: var(--spacing-32);
-  display: grid;
-  place-items: center;
-  padding: 0;
-  border-radius: var(--radius-circular);
-  border: var(--stroke-thin) solid var(--border);
-  background: var(--bg-panel);
-  color: var(--text);
-  cursor: pointer;
-  transition:
-    background-color var(--duration-faster) var(--curve-easy-ease),
-    border-color var(--duration-faster) var(--curve-easy-ease),
-    color var(--duration-faster) var(--curve-easy-ease);
-}
-.entry-invite__close:hover {
-  background: var(--bg-subtle);
-  border-color: var(--border-strong);
-  color: var(--text-strong);
-}
-.entry-invite__form {
-  flex: 1 1 0;
-  min-width: 0;
-  /* min-height:0 lets the form shrink inside the height-capped panel so its
-     inner scroll regions take over instead of the dialog growing unbounded. */
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-18);
-  padding: var(--spacing-36) var(--spacing-42);
-}
-.entry-invite__teamsize {
-  margin: -8px 0 0;
-  font-size: 14px;
-  color: var(--text);
-}
-.entry-invite__teamsize-link {
-  color: var(--accent);
-  text-decoration: underline;
-  cursor: pointer;
-}
-.entry-invite__divider {
-  display: flex;
-  align-items: center;
-  text-align: center;
-  color: var(--text-faint);
-  font-size: 13px;
-}
-.entry-invite__divider::before,
-.entry-invite__divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--border-soft);
-}
-.entry-invite__divider span { padding: 0 12px; }
-.entry-invite__fields {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-.entry-invite__field {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-.entry-invite__field--role { flex: 0 0 150px; }
-.entry-invite__field-labels {
-  display: flex;
-  gap: 12px;
-  margin-bottom: -4px;
-}
-.entry-invite__field-labels .entry-invite__label { flex: 1 1 0; }
-.entry-invite__field-labels .entry-invite__label--role { flex: 0 0 150px; }
-.entry-invite__fields .entry-invite__input { flex: 1 1 0; }
-.entry-invite__fields .entry-invite__role-picker { flex: 0 0 150px; }
-.entry-invite__role-picker {
-  position: relative;
-  min-width: 0;
-}
-.entry-invite__role-picker .entry-invite__role {
-  width: 100%;
-  flex: none;
-}
-.entry-invite__role-menu {
-  /* Portaled to <body> and anchored to its trigger with inline left/top/width
-     (InviteDialog.tsx): the invite rows list is an overflow-y:auto scroll
-     container, so a menu positioned inside it is clipped invisible. Fixed
-     positioning in the viewport layer escapes that clip; z-index must clear
-     the dialog itself (.entry-invite is z-index 200). */
-  position: fixed;
-  z-index: 210;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2);
-  padding: var(--spacing-6);
-  border: var(--stroke-thin) solid var(--border);
-  border-radius: var(--radius-xlarge);
-  background: var(--bg-panel);
-  box-shadow: var(--shadow-lg);
-  transform-origin: top center;
-  animation: entryInviteRoleMenuIn var(--duration-fast) var(--curve-decelerate-mid);
-}
-.entry-invite__role-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--spacing-8);
-  width: 100%;
-  min-height: var(--spacing-36);
-  padding: var(--spacing-8) var(--spacing-10);
-  border: 0;
-  border-radius: var(--radius-medium);
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: var(--font-size-14);
-  font-weight: 500;
-  line-height: 1.25;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background-color var(--duration-faster) var(--curve-easy-ease),
-    color var(--duration-faster) var(--curve-easy-ease);
-}
-.entry-invite__role-option:hover,
-.entry-invite__role-option:focus-visible {
-  outline: none;
-  background: var(--bg-subtle);
-  color: var(--text-strong);
-}
-.entry-invite__role-option.is-selected {
-  background: color-mix(in srgb, var(--text-strong) 8%, var(--bg-panel));
-  color: var(--text-strong);
-}
-.entry-invite__role-option svg {
-  flex: 0 0 auto;
-  color: var(--brand-text);
 }
 @keyframes entryInviteRoleMenuIn {
   from {
@@ -8413,166 +6499,6 @@ button.entry-nav-rail__menu-credits-row:active:not(:disabled) {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
-}
-.entry-invite__row-remove {
-  flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: var(--radius-sm, 8px);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: background 120ms, color 120ms;
-}
-.entry-invite__row-remove:hover { background: var(--bg-subtle); color: var(--text); }
-.entry-invite__add-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: flex-start;
-  padding: 8px 14px;
-  /* Ghost button: dashed accent border makes "add member" stand out as the
-     clear next action instead of reading as plain link text. */
-  border: 1px dashed color-mix(in srgb, var(--accent) 50%, var(--border));
-  background: transparent;
-  color: var(--accent);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  border-radius: var(--radius-sm, 8px);
-  transition: background 120ms var(--ease-out), border-color 120ms var(--ease-out);
-}
-.entry-invite__add-row:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  border-color: var(--accent);
-}
-.entry-invite__panel--split .entry-invite__label { margin-bottom: 0; }
-.entry-invite__panel--split .entry-invite__input {
-  flex: 1 1 0;
-  min-width: 0;
-  padding: 11px 13px;
-}
-/* Same-row email + role layout (our merged dialog): the role select keeps a
-   fixed column so the email input owns the remaining width. #5517's variant
-   stacked the role full-width on its own row — its 100%-width rule squashed
-   the email input to min-content when both landed in one flex row. */
-.entry-invite__panel--split .entry-invite__role {
-  flex: 0 0 150px;
-  width: auto;
-  padding: 11px 34px 11px 13px;
-}
-.entry-invite__collapse {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 4px 0;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-}
-.entry-invite__collapse-body {
-  margin: -8px 0 0;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--text-muted);
-}
-.entry-invite__submit {
-  width: 100%;
-  padding: 13px;
-  border: 0;
-  border-radius: var(--radius-sm, 8px);
-  background: var(--accent);
-  color: var(--accent-contrast, #fff);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: filter 120ms, background 120ms, color 120ms;
-}
-.entry-invite__submit:hover:not(:disabled) {
-  /* Hold the accent fill — the global button:hover rule would repaint it to
-     --bg-subtle and hide the white label. */
-  background: var(--accent);
-  color: var(--accent-contrast, #fff);
-  filter: brightness(1.05);
-}
-.entry-invite__submit:disabled {
-  background: var(--bg-subtle);
-  color: var(--text-faint);
-  cursor: default;
-}
-/* Right column: a cluster of overlapping teammate avatars ending in a
-   dashed "+" — reads as "bring people together" instead of the previous
-   abstract blobs. */
-.entry-invite__art {
-  position: relative;
-  flex: 0 0 360px;
-  overflow: hidden;
-  /* grid + place-items keeps the avatar cluster centered in the art column
-     (it drifted top-left as display:block). */
-  display: grid;
-  place-items: center;
-  background: var(--bg-subtle);
-  border-left: var(--stroke-thin) solid var(--border);
-}
-.entry-invite__art-glow {
-  position: absolute;
-  width: 300px;
-  height: 300px;
-  border-radius: 50%;
-}
-.entry-invite__art-blob--a {
-  width: 220px;
-  height: 220px;
-  right: -56px;
-  bottom: -64px;
-  background: color-mix(in srgb, var(--text-soft) 22%, transparent);
-}
-.entry-invite__art-blob--b {
-  width: 120px;
-  height: 120px;
-  right: var(--spacing-36);
-  bottom: var(--spacing-32);
-  background: color-mix(in srgb, var(--brand) 24%, transparent);
-}
-.entry-invite__art-card {
-  position: absolute;
-  border-radius: var(--radius-large);
-  background: var(--bg-panel);
-  border: var(--stroke-thin) solid var(--border);
-  box-shadow: var(--shadow-sm);
-}
-.entry-invite__art-card--1 {
-  width: 120px;
-  height: 150px;
-  left: var(--spacing-36);
-  top: var(--spacing-68);
-  background: var(--bg-panel);
-}
-.entry-invite__art-card--2 {
-  width: 150px;
-  height: 200px;
-  left: calc(var(--spacing-68) + var(--spacing-48));
-  top: calc(var(--spacing-68) + var(--spacing-38));
-  background: var(--text-strong);
-  border-color: var(--text-strong);
-}
-.entry-invite__art-card--3 {
-  width: 86px;
-  height: 130px;
-  right: var(--spacing-52);
-  bottom: calc(var(--spacing-52) + var(--spacing-38));
-  background: var(--bg-panel);
-}
-@media (max-width: 720px) {
-  .entry-invite__panel--split { flex-direction: column; max-width: 460px; }
-  .entry-invite__art { display: none; }
 }
 
 /* ── Create-team dialog ── */
@@ -8671,24 +6597,6 @@ button.entry-nav-rail__menu-credits-row:active:not(:disabled) {
   0% { opacity: 0; transform: translateY(0) rotate(0deg); }
   10% { opacity: 1; }
   100% { opacity: 0; transform: translateY(105vh) rotate(720deg); }
-}
-
-/* ── Upgrade-to-team dialog ── */
-.upgrade-team {
-  position: relative;
-  width: 100%;
-  max-width: 620px;
-  max-height: calc(100vh - 48px);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 32px 32px 26px;
-  border-radius: var(--radius-lg, 16px);
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
-  animation: entry-invite-in 200ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .upgrade-team__head {
   padding-right: 28px;
@@ -8890,10 +6798,6 @@ button.entry-nav-rail__menu-credits-row:active:not(:disabled) {
 }
 
 @media (max-width: 760px) {
-  .upgrade-team {
-    max-width: calc(100vw - 24px);
-    padding: 28px 22px 22px;
-  }
   .upgrade-team__plans {
     grid-template-columns: 1fr;
   }
@@ -8911,199 +6815,10 @@ button.entry-nav-rail__menu-credits-row:active:not(:disabled) {
   }
 }
 
-
 /* ---- Restored: branch-local styles clobbered by the #5517 whole-file
    entry-layout.css replacement (2567c3e6f) — language submenu, menu chevron,
    workspace menu meta, InviteDialog art, InlineModelSwitcher account block.
    Sourced verbatim from pre-integration 37f7510f4. ---- */
-
-/* Account row: OpenDesign login/plan, lifted out of the agent card so the
-   agent name is never truncated. */
-.inline-switcher__account {
-  order: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 7px 10px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  background: var(--bg-subtle);
-  transition: background-color 120ms var(--ease-out),
-    border-color 120ms var(--ease-out);
-}
-
-/* The OpenDesign entry is also the agent selector now: hovering the clickable
-   area previews selectability, and the active agent gets the same accent
-   highlight the grid rows use. */
-.inline-switcher__account:has(.inline-switcher__account-select:hover):not(.is-active) {
-  background: var(--bg-panel);
-  border-color: var(--border);
-}
-
-.inline-switcher__account.is-active {
-  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
-  background: color-mix(in srgb, var(--bg-subtle) 82%, var(--accent-tint));
-}
-
-.inline-switcher__account.is-active:has(.inline-switcher__account-select:hover) {
-  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
-  background: color-mix(in srgb, var(--bg-panel) 74%, var(--accent-tint));
-}
-
-.inline-switcher__account-id {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-strong);
-}
-
-/* The icon+name+plan+balance block is the radio control that selects Open
-   Design; the upgrade / sign-in buttons stay siblings so they never nest in
-   this button. */
-.inline-switcher__account-select {
-  flex: 1 1 auto;
-  appearance: none;
-  border: none;
-  background: none;
-  padding: 0;
-  margin: 0;
-  text-align: left;
-  cursor: pointer;
-}
-
-.inline-switcher__account-id-icon {
-  position: relative;
-  flex: 0 0 auto;
-  display: inline-flex;
-}
-
-.inline-switcher__amr-reminder-dot--account {
-  top: -1px;
-  right: -1px;
-}
-
-.inline-switcher__account-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.inline-switcher__account-text {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.inline-switcher__account-name-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-}
-
-/* Balance shown as a muted subtitle line under the OpenDesign name. Each
-   stat is "label value"; the gap (not a literal separator) keeps them apart. */
-.inline-switcher__account-subtitle {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 2px 14px;
-  min-width: 0;
-}
-
-.inline-switcher__account-stat {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-}
-
-.inline-switcher__account-stat-label {
-  flex: 0 0 auto;
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--text-muted);
-}
-
-.inline-switcher__account-stat-value {
-  flex: 0 0 auto;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-strong);
-  font-variant-numeric: tabular-nums;
-  text-transform: capitalize;
-}
-
-.inline-switcher__account-upgrade {
-  flex: 0 0 auto;
-  appearance: none;
-  display: inline-flex;
-  align-items: center;
-  height: 22px;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  box-shadow:
-    0 1px 2px color-mix(in srgb, var(--accent) 45%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #fff 20%, transparent);
-  transition:
-    transform 150ms cubic-bezier(0.23, 1, 0.32, 1),
-    background-color 150ms ease,
-    box-shadow 150ms ease;
-}
-
-.inline-switcher__account-upgrade:active {
-  transform: scale(0.96);
-}
-
-.inline-switcher__account-upgrade:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  outline-offset: 2px;
-}
-
-.inline-switcher__account-status.is-error {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: var(--danger);
-}
-
-.inline-switcher__account-action {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
-  padding: 2px 6px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--accent-strong);
-  cursor: pointer;
-  border-radius: var(--radius);
-}
-
-.inline-switcher__account-action:hover {
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-}
-
-.inline-switcher__account-action svg {
-  animation: spin 0.8s linear infinite;
-}
 
 .entry-nav-rail__menu-chevron { margin-left: auto; display: inline-flex; }
 
@@ -9176,67 +6891,6 @@ button.entry-nav-rail__menu-credits-row:active:not(:disabled) {
 
 .entry-nav-rail__language-option svg {
   color: var(--accent);
-}
-
-.entry-nav-rail__workspace-menu-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-
-/* The invite rows scroll within a capped region so adding many members can't
-   grow the dialog past the viewport; the header labels and submit stay put. */
-.entry-invite__rows {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-height: min(42vh, 320px);
-  overflow-y: auto;
-  /* Negative margin + padding give the input focus ring room so overflow
-     clipping doesn't shave it. Extra right padding keeps the overlay
-     scrollbar clear of each row's remove (×) button. */
-  margin: 0 -4px;
-  padding: 2px 16px 2px 4px;
-}
-
-.entry-invite__art-cluster {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.entry-invite__art-avatar {
-  width: 72px;
-  height: 72px;
-  margin-left: -20px;
-  border-radius: 50%;
-  border: 3px solid #fff;
-  background: #fff;
-  overflow: hidden;
-  display: grid;
-  place-items: center;
-  box-shadow: 0 10px 24px rgba(76, 29, 149, 0.16);
-}
-
-.entry-invite__art-avatar:first-child { margin-left: 0; }
-
-.entry-invite__art-avatar:nth-child(odd) { transform: translateY(-12px); }
-
-.entry-invite__art-avatar:nth-child(even) { transform: translateY(12px); }
-
-.entry-invite__art-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.entry-invite__art-avatar--invite {
-  border: 2px dashed color-mix(in srgb, var(--accent) 60%, #fff);
-  background: color-mix(in srgb, var(--accent) 12%, #fff);
-  color: var(--accent);
-  box-shadow: none;
 }
 
 /* ── Project search palette ─────────────────────────────────────────────────

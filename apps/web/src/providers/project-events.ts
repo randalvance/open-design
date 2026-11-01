@@ -3,19 +3,12 @@ import { BackoffController } from '../lib/backoff';
 import { bindStreamVisibility } from '../lib/stream-visibility';
 import {
   COLLAB_PROJECT_INVALIDATION_EVENTS,
-  PROJECT_CONTENT_TRANSFER_STATE_EVENT,
   type ChatArtifactRefsChangedSsePayload,
   type CollabProjectInvalidationSsePayload,
   type LiveArtifactRefreshSsePayload,
   type LiveArtifactSsePayload,
   type ProjectConversationCreatedSsePayload,
-  type ProjectContentTransferStateSsePayload,
-  type WorkspaceCollabContext,
 } from '@open-design/contracts';
-import {
-  workspaceIdentityCacheKey,
-  workspaceResourceUrl,
-} from '../collab/workspace-identity';
 export interface ProjectFileChangeEvent {
   type: 'file-changed';
   path: string;
@@ -30,7 +23,7 @@ export type ProjectConversationCreatedEvent = ProjectConversationCreatedSsePaylo
 
 export type ProjectLiveArtifactEvent = LiveArtifactSsePayload | LiveArtifactRefreshSsePayload;
 
-// Collab realtime hop-2: project-scoped thin invalidation events multiplexed
+// Project-scoped thin invalidation events multiplexed
 // onto this same stream (`comment-changed`, `presence-changed`,
 // `project-metadata-changed`). The consumer re-fetches the affected resource on
 // receipt — the event carries no body.
@@ -50,8 +43,7 @@ export type ProjectEvent =
   | ProjectConversationCreatedEvent
   | ProjectLiveArtifactEvent
   | ProjectCollabInvalidationEvent
-  | ProjectChatArtifactRefsChangedEvent
-  | ProjectContentTransferStateSsePayload;
+  | ProjectChatArtifactRefsChangedEvent;
 
 export interface ProjectEventsConnectionOptions {
   /** Test seam: substitute a mock EventSource constructor. */
@@ -66,7 +58,7 @@ export interface ProjectEventsConnectionOptions {
   /** Test seam: deterministic jitter source for the reconnect backoff. */
   randomFn?: () => number;
   /**
-   * Collab realtime hop-2 poll-as-floor signal. Fires `true` when the stream is
+   * Poll-as-floor signal. Fires `true` when the stream is
    * live (the daemon's `ready` handshake) and `false` on error/disconnect, so a
    * consumer can slow its fallback poll while the SSE is delivering and resume
    * full-cadence polling when it drops.
@@ -85,12 +77,8 @@ const DEFAULT_MAX_BACKOFF = 30_000;
 
 export function projectEventsUrl(
   projectId: string,
-  workspaceContext?: WorkspaceCollabContext | null,
 ): string {
-  return workspaceResourceUrl(
-    `/api/projects/${encodeURIComponent(projectId)}/events`,
-    workspaceContext,
-  );
+  return `/api/projects/${encodeURIComponent(projectId)}/events`;
 }
 
 export interface ProjectEventsConnection {
@@ -110,7 +98,6 @@ export function createProjectEventsConnection(
   projectId: string,
   onChange: (evt: ProjectEvent) => void,
   options: ProjectEventsConnectionOptions = {},
-  workspaceContext?: WorkspaceCollabContext | null,
 ): ProjectEventsConnection {
   const Ctor = options.EventSourceCtor
     ?? (typeof EventSource === 'undefined' ? null : EventSource);
@@ -136,7 +123,7 @@ export function createProjectEventsConnection(
   const connect = (): void => {
     if (cancelled) return;
     if (source) return;
-    const es = new Ctor(projectEventsUrl(projectId, workspaceContext));
+    const es = new Ctor(projectEventsUrl(projectId));
     source = es;
     es.addEventListener('ready', () => {
       backoff.reset();
@@ -191,7 +178,7 @@ export function createProjectEventsConnection(
         }
       }
     });
-    // Collab realtime hop-2: forward the project-scoped thin invalidation events
+    // Forward the project-scoped thin invalidation events
     // (`comment-changed`, `presence-changed`, `project-metadata-changed`). The
     // consumer re-fetches the affected resource — this only signals what changed.
     for (const eventName of COLLAB_PROJECT_INVALIDATION_EVENTS) {
@@ -227,27 +214,6 @@ export function createProjectEventsConnection(
         ) {
           // eslint-disable-next-line no-console
           console.warn('[project-events] malformed chat-artifact-refs-changed payload', err);
-        }
-      }
-    });
-    es.addEventListener(PROJECT_CONTENT_TRANSFER_STATE_EVENT, (evt) => {
-      try {
-        // Thin invalidation only. The consumer must re-read exact-scoped
-        // collab status; this project stream is not workspace/owner scoped.
-        const data = JSON.parse(
-          (evt as MessageEvent).data,
-        ) as ProjectContentTransferStateSsePayload;
-        onChange(data);
-      } catch (err) {
-        if (
-          typeof process !== 'undefined'
-          && process.env?.NODE_ENV === 'development'
-        ) {
-          // eslint-disable-next-line no-console
-          console.warn(
-            `[project-events] malformed ${PROJECT_CONTENT_TRANSFER_STATE_EVENT} payload`,
-            err,
-          );
         }
       }
     });
@@ -320,7 +286,6 @@ export function useProjectFileEvents(
   enabled: boolean,
   onChange: (evt: ProjectEvent) => void,
   options: ProjectEventsConnectionOptions = {},
-  workspaceContext?: WorkspaceCollabContext | null,
 ): void {
   const onChangeRef = useRef(onChange);
   useEffect(() => {
@@ -352,7 +317,6 @@ export function useProjectFileEvents(
         onConnectedChange: (connected) => onConnectedChangeRef.current?.(connected),
         onReady: () => onReadyRef.current?.(),
       },
-      workspaceContext,
     );
     return () => {
       conn.close();
@@ -364,7 +328,6 @@ export function useProjectFileEvents(
   }, [
     projectId,
     enabled,
-    workspaceIdentityCacheKey(workspaceContext),
     options.EventSourceCtor,
     options.initialBackoffMs,
     options.maxBackoffMs,

@@ -100,7 +100,6 @@ describe('app scrim material (styles/material.css)', () => {
       '../../src/components/FigmaHelpModal.module.css',
       '../../src/components/LibraryPreviewModal.module.css',
       '../../src/components/LibraryUploadModal.module.css',
-      '../../src/components/MessageCenter.module.css',
       '../../src/components/NewBrandModal.module.css',
       '../../src/components/ProjectReferenceModal.module.css',
       '../../src/components/UpdateDialog.module.css',
@@ -138,10 +137,6 @@ describe('entry layout materials (styles/home/entry-layout.css)', () => {
     expect(panel).not.toMatch(/box-shadow/);
     expect(entryLayoutCss).not.toContain('.entry-nav-rail__panel::after');
     expect(declarations(entryLayoutCss, '.entry-nav-rail__group')).toMatch(/padding:\s*0;/);
-    // …but it stays a containing block for the fixed menu click-catchers, so
-    // an open workspace switcher never swallows clicks on the content column.
-    expect(panel).toMatch(/transform:\s*translateZ\(0\)/);
-    expect(declarations(entryLayoutCss, '.entry-nav-rail__menu-backdrop')).toMatch(/position:\s*fixed/);
   });
 
   it('makes the content column the one base card: 85% white frost, 16px corner, inset ring, 12px inset', () => {
@@ -212,14 +207,6 @@ describe('entry layout materials (styles/home/entry-layout.css)', () => {
     // Same box, same corner.
     expect(declarations(entryLayoutCss, '.entry-nav-rail__recent-head')).toMatch(/border-radius:\s*12px/);
     expect(declarations(entryLayoutCss, '.entry-nav-rail__recent-head')).toMatch(/min-height:\s*38px/);
-  });
-
-  it('gives the workspace switcher row the same 38px box, with a 24px avatar', () => {
-    expect(declarations(entryLayoutCss, '.entry-nav-rail__team')).toMatch(/height:\s*38px/);
-    const avatar = declarations(entryLayoutCss, '.entry-nav-rail__team-avatar');
-    expect(avatar).toMatch(/width:\s*24px/);
-    expect(avatar).toMatch(/flex:\s*0 0 24px/);
-    expect(declarations(entryLayoutCss, '.entry-nav-rail__team-chevron')).toMatch(/flex:\s*0 0 14px/);
   });
 
   it('lists every recent project and scrolls the LIST past ~11 rows, shrinking with the window (OPEND-2757)', () => {

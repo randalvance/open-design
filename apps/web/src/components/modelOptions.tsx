@@ -2,7 +2,6 @@ import { createPortal } from 'react-dom';
 import { forwardRef, useEffect, useLayoutEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { AgentModelOption } from '../types';
 import { useT } from '../i18n';
-import { Icon } from './Icon';
 import { modelProviderIconSrc } from './modelProviderIcon';
 import { anchorSelectionInView } from './pickerSelectionAnchor';
 import {
@@ -60,18 +59,6 @@ export function renderModelOptions(models: AgentModelOption[]) {
   );
 }
 
-export function orderModelOptionsByAvailability(
-  models: AgentModelOption[],
-): AgentModelOption[] {
-  const enabled: AgentModelOption[] = [];
-  const disabled: AgentModelOption[] = [];
-  for (const model of models) {
-    if (model.enabled === false) disabled.push(model);
-    else enabled.push(model);
-  }
-  return [...enabled, ...disabled];
-}
-
 // Canonical company/provider display names for the two-level model picker.
 // Keyed by the model id's leading token (before the first `-`, or before a
 // BYOK `provider/model` slash).
@@ -127,29 +114,6 @@ export function modelVersionLabel(
   return /^[A-Za-z]/.test(rest) ? rest : text;
 }
 
-interface ModelCompanyGroup {
-  key: string;
-  name: string;
-  options: AgentModelOption[];
-}
-
-/** Group model options by company, preserving first-seen order. */
-export function groupModelsByCompany(options: AgentModelOption[]): ModelCompanyGroup[] {
-  const groups: ModelCompanyGroup[] = [];
-  const byKey = new Map<string, ModelCompanyGroup>();
-  for (const option of options) {
-    const { key, name } = modelCompany(option.id);
-    let group = byKey.get(key);
-    if (!group) {
-      group = { key, name, options: [] };
-      byKey.set(key, group);
-      groups.push(group);
-    }
-    group.options.push(option);
-  }
-  return groups;
-}
-
 function matchesModelSearch(model: AgentModelOption, query: string): boolean {
   const haystack = `${model.id}\n${model.label}`.toLowerCase();
   return haystack.includes(query);
@@ -165,26 +129,6 @@ interface SearchableModelSelectProps
   popoverTestId?: string;
   popoverClassName?: string;
   additionalOptions?: Array<{ value: string; label: string }>;
-  disabledOptionHint?: (option: AgentModelOption) => string | null | undefined;
-  /**
-   * When provided together with a `disabledOptionHint`, a disabled option
-   * renders a Lock icon at its trailing edge instead of the inline hint text.
-   * Hovering the lock surfaces the hint; clicking it invokes this callback
-   * (e.g. open the AMR console upgrade destination). Available models are
-   * unaffected. Shared by InlineModelSwitcher, SettingsDialog, and AvatarMenu.
-   */
-  onDisabledOptionUpgrade?: (option: AgentModelOption) => void;
-  /**
-   * Opts into the two-level company/model browse (companies on the left,
-   * models on the right) once the list is long enough to benefit from it.
-   * Explicit opt-in rather than always-on: company identity is derived from
-   * the model id's leading token, which only carries real vendor meaning for
-   * a genuinely cross-provider catalog (AMR's). A single provider's own raw
-   * model ids (e.g. Codex's `o1`/`o3`/`o4-mini` alongside `gpt-*`) would
-   * otherwise get split into misleading fake "companies". Callers pass
-   * `groupByCompany={agent.id === 'amr'}` or similar.
-   */
-  groupByCompany?: boolean;
   minSearchableOptions?: number;
   popoverMinWidth?: number;
   getPopoverBoundary?: () => {
@@ -208,9 +152,6 @@ export const SearchableModelSelect = forwardRef<
     popoverTestId,
     popoverClassName,
     additionalOptions,
-    disabledOptionHint,
-    onDisabledOptionUpgrade,
-    groupByCompany = false,
     minSearchableOptions = 8,
     popoverMinWidth,
     getPopoverBoundary,
@@ -275,30 +216,6 @@ export const SearchableModelSelect = forwardRef<
     );
   }, [allOptions, normalizedQuery, value]);
   const shouldShowSearch = allOptions.length >= minSearchableOptions;
-  // Two-level browse (companies left, models right) only pays off for a long
-  // cross-company list — the case worth "distinguishing companies". Small
-  // pickers (a couple of models, or a single provider) stay a flat list, and
-  // callers that didn't opt in via `groupByCompany` always stay flat too.
-  const allCompanyCount = useMemo(() => groupModelsByCompany(allOptions).length, [allOptions]);
-  const useTwoLevel =
-    groupByCompany && allOptions.length >= minSearchableOptions && allCompanyCount >= 2;
-  // Grouped from the (search-)filtered options.
-  const companyGroups = useMemo(() => groupModelsByCompany(filteredOptions), [filteredOptions]);
-  const selectedCompanyKey = value ? modelCompany(value).key : companyGroups[0]?.key ?? null;
-  const [hoverCompany, setHoverCompany] = useState<string | null>(null);
-  // Default the open flyout to the selected model's company (or the first),
-  // and keep it valid as the filtered group set changes.
-  const activeCompanyKey =
-    hoverCompany && companyGroups.some((g) => g.key === hoverCompany)
-      ? hoverCompany
-      : companyGroups.some((g) => g.key === selectedCompanyKey)
-        ? selectedCompanyKey
-        : companyGroups[0]?.key ?? null;
-  const activeCompany = companyGroups.find((g) => g.key === activeCompanyKey) ?? null;
-  useEffect(() => {
-    if (!open) setHoverCompany(null);
-  }, [open]);
-
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event: MouseEvent) => {
@@ -471,15 +388,9 @@ export const SearchableModelSelect = forwardRef<
     anchorSelectionInView(popoverRef.current, '[data-selected="true"]');
   }, [open, popoverStyle]);
 
-  /** One option row — shared by the flat list and the two-level browse's
-   *  models pane, so cost-tier / capability-tag / upgrade-lock affordances
-   *  render identically in either layout. `index` only needs to be unique
-   *  within whichever list is currently mounted. */
   function renderModelOption(option: AgentModelOption, index: number) {
     const active = option.id === value;
     const disabled = option.enabled === false;
-    const disabledHint = disabled ? disabledOptionHint?.(option) : null;
-    const showUpgradeLock = disabled && !!disabledHint && !!onDisabledOptionUpgrade;
     const tag = getModelCapabilityTag(option);
     const tagLabel = tag ? t(MODEL_CAPABILITY_TAG_LABEL_KEYS[tag]) : null;
     const costTier = getModelCostTier(option);
@@ -488,8 +399,7 @@ export const SearchableModelSelect = forwardRef<
     const optionLabelId = `${optionId}-label`;
     const optionCostId = costLabel ? `${optionId}-cost` : undefined;
     const optionTagId = tagLabel ? `${optionId}-tag` : undefined;
-    const optionDisabledId = disabledHint ? `${optionId}-disabled` : undefined;
-    const optionDescriptionIds = [optionCostId, optionTagId, optionDisabledId]
+    const optionDescriptionIds = [optionCostId, optionTagId]
       .filter(Boolean)
       .join(' ') || undefined;
     const optionLogoSrc = modelProviderIconSrc(option.id);
@@ -503,7 +413,7 @@ export const SearchableModelSelect = forwardRef<
         <span className="model-select-searchable__option-copy">
           <span className="model-select-searchable__option-label">
             <span id={optionLabelId}>
-              {groupByCompany ? modelVersionLabel(option.id, option.label) : option.label}
+              {option.label}
             </span>
           </span>
           {costLabel ? (
@@ -511,65 +421,20 @@ export const SearchableModelSelect = forwardRef<
               {costLabel}
             </span>
           ) : null}
-          {disabledHint && !showUpgradeLock ? (
-            <span className="model-select-searchable__option-meta" id={optionDisabledId}>
-              {disabledHint}
-            </span>
-          ) : null}
         </span>
-        {showUpgradeLock || tagLabel ? (
+        {tagLabel ? (
           <span className="model-select-searchable__option-affordances">
-            {showUpgradeLock ? (
-              <button
-                type="button"
-                className="model-select-searchable__option-lock-inline od-tooltip"
-                data-testid="model-option-upgrade-lock"
-                id={optionDisabledId}
-                data-tooltip={disabledHint ?? undefined}
-                data-tooltip-placement="top"
-                title={disabledHint ?? undefined}
-                aria-label={disabledHint ?? undefined}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onDisabledOptionUpgrade?.(option);
-                }}
-              >
-                <Icon name="lock" size={13} />
-              </button>
-            ) : null}
-            {tagLabel ? (
-              <span
-                className="model-select-searchable__option-badge"
-                data-tag={tag}
-                id={optionTagId}
-              >
-                {tagLabel}
-              </span>
-            ) : null}
+            <span
+              className="model-select-searchable__option-badge"
+              data-tag={tag}
+              id={optionTagId}
+            >
+              {tagLabel}
+            </span>
           </span>
         ) : null}
       </span>
     );
-    if (showUpgradeLock) {
-      return (
-        <div
-          key={option.id}
-          role="option"
-          tabIndex={-1}
-          aria-selected={active}
-          aria-disabled="true"
-          aria-labelledby={optionLabelId}
-          aria-describedby={optionDescriptionIds}
-          /* The row label is ellipsised, and a long catalog can share a prefix
-             across many rows, so the full name must survive on hover. */
-          title={option.label}
-          className={`model-select-searchable__option${active ? ' is-active' : ''} is-disabled`}
-          data-selected={active ? 'true' : undefined}
-        >
-          {optionContent}
-        </div>
-      );
-    }
     return (
       <button
         key={option.id}
@@ -620,15 +485,8 @@ export const SearchableModelSelect = forwardRef<
       >
         <span className="model-select-searchable__value">
           <span className="model-select-searchable__value-label">
-            {/* Same name the option rows show, so the readout cannot say
-                `deepseek-v4-pro` about a row that called itself `v4-pro`.
-                Outside the company-grouped catalog the label IS the id the
-                request will carry (BYOK), so it stays verbatim. */}
-            {selectedOption
-              ? groupByCompany
-                ? modelVersionLabel(selectedOption.id, selectedOption.label)
-                : selectedOption.label
-              : ''}
+            {/* Same name the option rows show. */}
+            {selectedOption ? selectedOption.label : ''}
           </span>
           {selectedTagLabel ? (
             <span
@@ -681,84 +539,19 @@ export const SearchableModelSelect = forwardRef<
                   />
                 </div>
               ) : null}
-              {useTwoLevel ? (
-                /* Two-level browse: companies on the left, the hovered/selected
-                   company's models on the right. Each model keeps the same
-                   cost-tier / capability-tag / upgrade-lock affordances the
-                   flat list below renders. */
-                <div
-                  className="model-select-searchable__body"
-                  id={listboxId}
-                  role="listbox"
-                  style={{
-                    maxHeight: `${Math.max(96, popoverStyle.maxHeight - (shouldShowSearch ? 68 : 16))}px`,
-                  }}
-                >
-                  {companyGroups.length === 0 ? (
-                    <div className="model-select-searchable__empty">No matching models</div>
-                  ) : (
-                    <>
-                      <div className="model-select-searchable__companies">
-                        {companyGroups.map((group) => {
-                          const isActive = group.key === activeCompanyKey;
-                          const hasSelected = group.options.some((o) => o.id === value);
-                          const companyLogoSrc = modelProviderIconSrc(
-                            group.options[0]?.id ?? group.key,
-                          );
-                          return (
-                            <button
-                              key={group.key}
-                              type="button"
-                              className={`model-select-searchable__company${isActive ? ' is-active' : ''}${hasSelected ? ' has-selected' : ''}`}
-                              data-testid={`model-company-${group.key}`}
-                              /* The company rail scrolls too — mark the one
-                                 holding the selection so opening anchors both
-                                 panes on it, not just the models pane. */
-                              data-selected={hasSelected ? 'true' : undefined}
-                              onMouseEnter={() => setHoverCompany(group.key)}
-                              onFocus={() => setHoverCompany(group.key)}
-                              onClick={() => setHoverCompany(group.key)}
-                            >
-                              <span className="model-select-searchable__company-name">
-                                {companyLogoSrc ? (
-                                  <img
-                                    className="model-select-searchable__company-logo"
-                                    src={companyLogoSrc}
-                                    alt=""
-                                    width={16}
-                                    height={16}
-                                  />
-                                ) : null}
-                                {group.name}
-                              </span>
-                              <span className="model-select-searchable__company-count" aria-hidden>{group.options.length}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div className="model-select-searchable__models" role="group">
-                        {(activeCompany?.options ?? []).map((option, index) =>
-                          renderModelOption(option, index),
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-              ) : (
-                <div
-                  className="model-select-searchable__list"
-                  id={listboxId}
-                  role="listbox"
-                  style={{
-                    maxHeight: `${Math.max(0, popoverStyle.maxHeight - (shouldShowSearch ? 68 : 16))}px`,
-                  }}
-                >
-                  {filteredOptions.map((option, index) => renderModelOption(option, index))}
-                  {filteredOptions.length === 0 ? (
-                    <div className="model-select-searchable__empty">No matching models</div>
-                  ) : null}
-                </div>
-              )}
+              <div
+                className="model-select-searchable__list"
+                id={listboxId}
+                role="listbox"
+                style={{
+                  maxHeight: `${Math.max(0, popoverStyle.maxHeight - (shouldShowSearch ? 68 : 16))}px`,
+                }}
+              >
+                {filteredOptions.map((option, index) => renderModelOption(option, index))}
+                {filteredOptions.length === 0 ? (
+                  <div className="model-select-searchable__empty">No matching models</div>
+                ) : null}
+              </div>
             </div>,
             document.body,
           )

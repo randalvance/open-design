@@ -38,7 +38,7 @@ afterEach(() => {
 });
 
 describe('SideChatTab', () => {
-  it('passes the live config through to ChatPane', () => {
+  it('passes the conversation state through to ChatPane', () => {
     const config = {
       mode: 'daemon',
       agentCliEnv: {
@@ -75,7 +75,6 @@ describe('SideChatTab', () => {
     const firstCall = chatPaneMock.mock.calls[0];
     expect(firstCall?.[0]).toEqual(
       expect.objectContaining({
-        config,
         sendDisabled: true,
       }),
     );

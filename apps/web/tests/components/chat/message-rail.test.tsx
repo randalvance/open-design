@@ -12,7 +12,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import { ChatPane } from '../../../src/components/ChatPane';
 import { I18nProvider } from '../../../src/i18n';
-import type { AppConfig, ChatMessage } from '../../../src/types';
+import type { ChatMessage } from '../../../src/types';
 
 vi.mock('../../../src/components/ChatComposer', () => ({
   ChatComposer: forwardRef(() => <div />),
@@ -37,7 +37,6 @@ function chat(messages: ChatMessage[], conversationId = 'one') {
         conversations={[]}
         onSelectConversation={vi.fn()}
         onDeleteConversation={vi.fn()}
-        config={{ agentId: 'amr', agentCliEnv: {} } as unknown as AppConfig}
       />
     </I18nProvider>
   );

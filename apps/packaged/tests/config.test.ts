@@ -1,10 +1,17 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('electron', () => ({
+  app: { getAppPath: () => '/app', getPath: () => '/user-data' },
+}));
 
 import {
+  PACKAGED_CONFIG_PATH_ENV,
   PACKAGED_NAMESPACE_BASE_ROOT_ENV,
-  resolvePackagedAmrProfile,
+  readPackagedConfig,
   resolvePackagedNamespaceBaseRoot,
 } from '../src/config.js';
 
@@ -29,19 +36,43 @@ describe('resolvePackagedNamespaceBaseRoot', () => {
   });
 });
 
-describe('resolvePackagedAmrProfile', () => {
-  it('accepts a whitespace-trimmed feature-test profile', () => {
-    expect(resolvePackagedAmrProfile(' feature-test ')).toBe('feature-test');
-  });
+describe('readPackagedConfig', () => {
+  it('still loads a config file that carries retired keys, and ignores them', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'od-packaged-legacy-config-'));
+    const configPath = join(root, 'open-design-config.json');
+    const savedResourcesPath = process.resourcesPath;
+    vi.stubEnv(PACKAGED_CONFIG_PATH_ENV, configPath);
+    Object.defineProperty(process, 'resourcesPath', { configurable: true, value: root });
+    try {
+      await writeFile(configPath, JSON.stringify({
+        amrProfile: 'not-a-known-profile',
+        appVersion: '1.2.3',
+        namespace: 'legacy',
+        posthogHost: 'https://ingest.example',
+        posthogKey: 'legacy-key',
+        telemetryRelayUrl: 'https://relay.example/v1',
+        updateMetadataUrl: 'https://updates.example/latest.json',
+        velaWebUrl: 'https://vela.example',
+        velaWebUrls: { prod: 'https://vela.example' },
+      }));
 
-  it('maps empty values to null', () => {
-    expect(resolvePackagedAmrProfile(undefined)).toBeNull();
-    expect(resolvePackagedAmrProfile('   ')).toBeNull();
-  });
+      const config = await readPackagedConfig();
 
-  it('rejects unsupported profiles', () => {
-    expect(() => resolvePackagedAmrProfile('staging')).toThrow(
-      'unsupported packaged AMR profile; expected prod, test, feature-test, or local: staging',
-    );
+      expect(config).toMatchObject({
+        appVersion: '1.2.3',
+        namespace: 'legacy',
+        updateMetadataUrl: 'https://updates.example/latest.json',
+      });
+      expect(config).not.toHaveProperty('telemetryRelayUrl');
+      expect(config).not.toHaveProperty('posthogKey');
+      expect(config).not.toHaveProperty('posthogHost');
+      expect(config).not.toHaveProperty('amrProfile');
+      expect(config).not.toHaveProperty('velaWebUrl');
+      expect(config).not.toHaveProperty('velaWebUrls');
+    } finally {
+      vi.unstubAllEnvs();
+      Object.defineProperty(process, 'resourcesPath', { configurable: true, value: savedResourcesPath });
+      await rm(root, { force: true, recursive: true });
+    }
   });
 });

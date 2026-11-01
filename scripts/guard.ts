@@ -36,8 +36,6 @@ const allowedE2eScripts = new Set([
   // Explicit opt-in local daemon acceptance; not part of hermetic CI test discovery.
   "e2e/scripts/syntax-acceptance.ts",
   "e2e/scripts/visual-report.ts",
-  // Cross-version real Vela / synthetic OpenCode protocol acceptance.
-  "e2e/scripts/vela-contract.ts",
 ]);
 
 function toRepositoryPath(filePath: string): string {
@@ -113,13 +111,9 @@ const residualAllowedExactPaths = new Set([
   "scripts/scaffold-html-ppt-skills.mjs",
   "scripts/sync-hyperframes-skill.mjs",
   "scripts/verify-media-models.mjs",
-  // AMR (vela) verifier: ad-hoc dev runner that imports the daemon's compiled
-  // `dist/acp.js` and drives a real `vela agent run` against a live model.
-  // Kept as .mjs so it can be invoked directly via Node without any transform.
-  "apps/daemon/scripts/verify-amr-real-vela.mjs",
-  // Fake `vela agent run` ACP stdio stub used by the AMR
-  // integration tests. The Vitest test spawns it via `child_process.spawn`,
-  // which needs a directly-executable file (shebang + .mjs).
+  // Fake generic ACP stdio peer used by the ACP integration tests. The Vitest
+  // test spawns it via `child_process.spawn`, which needs a directly-executable
+  // file (shebang + .mjs).
   "apps/daemon/tests/fixtures/fake-vela.mjs",
   // Fake ACP agent CLI that answers `initialize` and then rejects
   // `session/new`, used by the ACP handshake-rejection wiring tests. Same

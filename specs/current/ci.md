@@ -385,9 +385,9 @@ P0 remains the critical path.
 ### Daemon UI P0 capability shadow
 
 The `daemon-runtime-definition` capability is evidence-only. The applied
-`ui_p0` matrix remains all six current shards in PR and merge-queue plans:
+`ui_p0` matrix remains all five current shards in PR and merge-queue plans:
 `entry-settings`, `project-workspace`, `project-workspace-editor`,
-`project-collab`, `project-runtime`, and `workspace-restoration`. No job reads
+`project-runtime`, and `workspace-restoration`. No job reads
 the shadow candidate as an execution input.
 
 The capability matches changes confined to:
@@ -397,11 +397,11 @@ The capability matches changes confined to:
   directly under `apps/daemon/src/runtimes/`;
 - the explicit companion-test list in `.github/config/scopes.json`.
 
-Its four-shard candidate keeps `entry-settings`, `project-workspace`,
-`project-collab`, and `project-runtime`; it would omit
+Its three-shard candidate keeps `entry-settings`, `project-workspace`, and
+`project-runtime`; it would omit
 `project-workspace-editor` and `workspace-restoration`. Any empty, unresolved,
 mixed, unknown, or out-of-surface change records a full-fallback shadow. Direct
-planner tests pin both the applied six-shard matrix and the four-shard
+planner tests pin both the applied five-shard matrix and the three-shard
 candidate. `project-workspace` remains because its P0 coverage contains the
 local-agent and model selector.
 

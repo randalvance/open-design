@@ -30,47 +30,9 @@
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ReactNode } from 'react';
-import { CollabProvider, type CollabContextValue } from '../../src/collab/collab-context';
 import { FileViewer } from '../../src/components/FileViewer';
 import { resetSharedCancellableGet } from '../../src/lib/shared-cancellable-get';
 import type { ProjectFile } from '../../src/types';
-import { workspaceContextFixture } from '../helpers/workspace-context';
-
-const WORKSPACE_CONTEXT = workspaceContextFixture({
-  workspaceId: 'ws-deck-hidden-mount',
-  workspaceMemberId: 'member-deck-hidden-mount',
-});
-
-function collabValue(): CollabContextValue {
-  return {
-    workspaceContext: WORKSPACE_CONTEXT,
-    workspaceContextLoading: false,
-    projectResourceAuthority: 'workspace',
-    enabled: false,
-    member: null,
-    present: [],
-    publishedVersion: null,
-    syncState: null,
-    viewerOnly: false,
-    writerAuthority: 'pending',
-    isOwner: false,
-    isEffectiveOwner: false,
-    isSharedNonOwner: false,
-    ownerDisplayName: null,
-    ownerRole: null,
-    downloadPending: false,
-    reportChange: () => {},
-    requestPublish: () => {},
-    refreshPresence: () => {},
-    checkStatusNow: () => {},
-  };
-}
-
-function Wrap({ children }: { children: ReactNode }) {
-  return <CollabProvider value={collabValue()}>{children}</CollabProvider>;
-}
-
 function deckFile(overrides: Partial<ProjectFile> = {}): ProjectFile {
   return {
     name: 'deck.html',
@@ -92,9 +54,8 @@ function deckFile(overrides: Partial<ProjectFile> = {}): ProjectFile {
   };
 }
 
-// Two-slide deck with NO relative project asset refs, so the #6142
-// scoped-asset preview hold never arms and the srcdoc fills as soon as the
-// raw source resolves. This spec is about visibility, not the hold (#6519).
+// Two-slide deck whose srcdoc fills as soon as the raw source resolves. This
+// spec is about visibility.
 const DECK_HTML =
   '<html><body>'
   + '<section class="slide"><h1>slide-one</h1></section>'
@@ -102,7 +63,7 @@ const DECK_HTML =
   + '</body></html>';
 
 /**
- * Fetch mock for one workspace-scoped deck project where every request
+ * Fetch mock for one deck project where every request
  * settles immediately: the file list and raw deck HTML resolve, everything
  * else 404s (preview-url probe, etc. — all null-safe).
  */
@@ -165,9 +126,7 @@ describe('deck preview mounted while the browser tab is hidden (#6583)', () => {
     setDocumentVisibility('hidden');
 
     render(
-      <Wrap>
-        <FileViewer projectId={projectId} projectKind="prototype" file={deckFile()} isDeck />
-      </Wrap>,
+      <FileViewer projectId={projectId} projectKind="prototype" file={deckFile()} isDeck />
     );
 
     // The deck parses into the srcdoc iframe while the tab is hidden…
@@ -200,9 +159,7 @@ describe('deck preview mounted while the browser tab is hidden (#6583)', () => {
     installFetchMock(projectId);
 
     render(
-      <Wrap>
-        <FileViewer projectId={projectId} projectKind="prototype" file={deckFile()} isDeck />
-      </Wrap>,
+      <FileViewer projectId={projectId} projectKind="prototype" file={deckFile()} isDeck />
     );
 
     await waitFor(() => {
@@ -231,9 +188,7 @@ describe('deck preview mounted while the browser tab is hidden (#6583)', () => {
     // A viewer becomes retained after being active: mount active first so the
     // deck parses into the srcdoc iframe, then park it offscreen.
     const view = render(
-      <Wrap>
-        <FileViewer projectId={projectId} projectKind="prototype" file={deckFile()} isDeck />
-      </Wrap>,
+      <FileViewer projectId={projectId} projectKind="prototype" file={deckFile()} isDeck />
     );
 
     await waitFor(() => {
@@ -241,15 +196,13 @@ describe('deck preview mounted while the browser tab is hidden (#6583)', () => {
     });
 
     view.rerender(
-      <Wrap>
-        <FileViewer
+      <FileViewer
           projectId={projectId}
           projectKind="prototype"
           file={deckFile()}
           isDeck
           workspaceActive={false}
         />
-      </Wrap>,
     );
 
     // The retained srcdoc iframe's load completes while the document is
@@ -278,9 +231,7 @@ describe('deck preview mounted while the browser tab is hidden (#6583)', () => {
     installFetchMock(projectId);
 
     const view = render(
-      <Wrap>
-        <FileViewer projectId={projectId} projectKind="prototype" file={deckFile()} isDeck />
-      </Wrap>,
+      <FileViewer projectId={projectId} projectKind="prototype" file={deckFile()} isDeck />
     );
 
     await waitFor(() => {
@@ -288,15 +239,13 @@ describe('deck preview mounted while the browser tab is hidden (#6583)', () => {
     });
 
     view.rerender(
-      <Wrap>
-        <FileViewer
+      <FileViewer
           projectId={projectId}
           projectKind="prototype"
           file={deckFile()}
           isDeck
           workspaceActive={false}
         />
-      </Wrap>,
     );
 
     // Hidden-tab load while retained: the latch arms (0x0 layout, scale(0)).
@@ -314,9 +263,7 @@ describe('deck preview mounted while the browser tab is hidden (#6583)', () => {
     // flip. The host must notice the dangling latch now and give the deck a
     // fresh srcdoc parse — a NEW iframe DOM node still carrying the deck.
     view.rerender(
-      <Wrap>
-        <FileViewer projectId={projectId} projectKind="prototype" file={deckFile()} isDeck />
-      </Wrap>,
+      <FileViewer projectId={projectId} projectKind="prototype" file={deckFile()} isDeck />
     );
 
     await waitFor(() => {
@@ -346,9 +293,7 @@ describe('deck preview mounted while the browser tab is hidden (#6583)', () => {
     installFetchMock(projectId);
 
     const view = render(
-      <Wrap>
-        <FileViewer projectId={projectId} projectKind="prototype" file={deckFile()} isDeck />
-      </Wrap>,
+      <FileViewer projectId={projectId} projectKind="prototype" file={deckFile()} isDeck />
     );
 
     await waitFor(() => {
@@ -356,15 +301,13 @@ describe('deck preview mounted while the browser tab is hidden (#6583)', () => {
     });
 
     view.rerender(
-      <Wrap>
-        <FileViewer
+      <FileViewer
           projectId={projectId}
           projectKind="prototype"
           file={deckFile()}
           isDeck
           workspaceActive={false}
         />
-      </Wrap>,
     );
 
     // Load completes while the document is VISIBLE: layout was real, no latch.
@@ -379,9 +322,7 @@ describe('deck preview mounted while the browser tab is hidden (#6583)', () => {
 
     // Activation must keep the same iframe DOM node.
     view.rerender(
-      <Wrap>
-        <FileViewer projectId={projectId} projectKind="prototype" file={deckFile()} isDeck />
-      </Wrap>,
+      <FileViewer projectId={projectId} projectKind="prototype" file={deckFile()} isDeck />
     );
 
     await waitFor(() => {

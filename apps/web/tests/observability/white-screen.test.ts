@@ -2,11 +2,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  clearExceptionTrackingContext,
-  setExceptionTrackingContext,
-} from '../../src/analytics/error-tracking';
 import { installWhiteScreenDetector } from '../../src/observability/white-screen';
+import { type ReportedSafetyEvent, reportedSafetyEvents, watchSafetyEvents } from '../helpers/safety-events';
+
 
 /**
  * The detector is allowed to be conservative on the false-negative side
@@ -19,21 +17,8 @@ import { installWhiteScreenDetector } from '../../src/observability/white-screen
  * treat the loading sentinel as a successful mount and cancel the timer.
  */
 
-const fetchMock = vi.fn();
-const ORIGINAL_FETCH = globalThis.fetch;
-
 beforeEach(() => {
-  fetchMock.mockReset();
-  fetchMock.mockResolvedValue(new Response('', { status: 200 }));
-  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
-  // Pre-arm the transport so the buffered event flushes immediately.
-  setExceptionTrackingContext({
-    apiKey: 'phc_test',
-    host: 'https://us.i.posthog.com',
-    distinctId: 'white-screen-test',
-    clientType: 'web',
-    osName: 'Mac OS X',
-  });
+  watchSafetyEvents();
   vi.useFakeTimers({ shouldAdvanceTime: false });
   document.body.innerHTML = '';
   document.documentElement.removeAttribute('data-od-app-mounted');
@@ -41,17 +26,12 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
-  clearExceptionTrackingContext();
-  globalThis.fetch = ORIGINAL_FETCH;
   document.body.innerHTML = '';
   document.documentElement.removeAttribute('data-od-app-mounted');
 });
 
-function lastSentEvent(): { event: string; properties: Record<string, unknown> } | null {
-  const lastCall = fetchMock.mock.calls.at(-1);
-  if (!lastCall) return null;
-  const init = lastCall[1] as RequestInit;
-  return JSON.parse(init.body as string) as { event: string; properties: Record<string, unknown> };
+function lastSentEvent(): ReportedSafetyEvent | null {
+  return reportedSafetyEvents().at(-1) ?? null;
 }
 
 describe('observability/white-screen', () => {
@@ -68,7 +48,7 @@ describe('observability/white-screen', () => {
     // timer-aware via vi.useFakeTimers above.
     vi.advanceTimersByTime(6000);
 
-    expect(fetchMock).toHaveBeenCalled();
+    expect(reportedSafetyEvents()).not.toHaveLength(0);
     const sent = lastSentEvent();
     expect(sent?.event).toBe('client_white_screen');
     expect(sent?.properties).toMatchObject({
@@ -84,7 +64,7 @@ describe('observability/white-screen', () => {
     installWhiteScreenDetector();
     vi.advanceTimersByTime(6000);
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(reportedSafetyEvents()).toHaveLength(0);
   });
 
   it('cancels the timer the moment a non-loading-shell child appears with real content', () => {
@@ -97,7 +77,7 @@ describe('observability/white-screen', () => {
     installWhiteScreenDetector();
     // Wait halfway through the timeout window — still only loading shell.
     vi.advanceTimersByTime(2500);
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(reportedSafetyEvents()).toHaveLength(0);
 
     // Now the real App mounts — adds a meaningful child alongside the shell.
     const real = document.createElement('div');
@@ -109,7 +89,7 @@ describe('observability/white-screen', () => {
     // scheduled idle/timer queue.
     return Promise.resolve().then(() => {
       vi.advanceTimersByTime(3500);
-      expect(fetchMock).not.toHaveBeenCalled();
+      expect(reportedSafetyEvents()).toHaveLength(0);
     });
   });
 
@@ -121,7 +101,7 @@ describe('observability/white-screen', () => {
     installWhiteScreenDetector();
     vi.advanceTimersByTime(6000);
 
-    expect(fetchMock).toHaveBeenCalled();
+    expect(reportedSafetyEvents()).not.toHaveLength(0);
     const sent = lastSentEvent();
     expect(sent?.event).toBe('client_white_screen');
   });

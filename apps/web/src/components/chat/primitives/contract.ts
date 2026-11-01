@@ -95,7 +95,7 @@ export interface ToolRowProps {
   failed?: boolean;
   /** 有原因写原因,无则仅「失败」 */
   failReason?: string;
-  /** 跑命令:终端输出作为可折叠内容。undefined = 不可展开(如 AMR 打码) */
+  /** 跑命令:终端输出作为可折叠内容。undefined = 不可展开(如被打码) */
   terminal?: string;
   onOpenFile?: (path: string) => void;
 }

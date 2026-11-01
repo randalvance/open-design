@@ -6,21 +6,18 @@ import {
   captureVisualTarget,
   configureVisualPage,
   gotoVisualHome,
-  mockSignedInVelaAccount,
   scrollVisualLocatorIntoStableView,
-  VISUAL_AMR_AGENT,
   VISUAL_CLI_AGENTS,
   waitForVisualFonts,
   waitForVisualProjects,
 } from '@/playwright/visual';
 
-test('[P2] captures the onboarding cloud sign-in surface', async ({ page }) => {
+test('[P2] captures the onboarding welcome surface', async ({ page }) => {
   test.setTimeout(T.xlong);
 
   await configureVisualPage(page, {
     projects: [],
-    agents: [VISUAL_AMR_AGENT, ...VISUAL_CLI_AGENTS],
-    velaLoggedIn: false,
+    agents: [...VISUAL_CLI_AGENTS],
     config: {
       onboardingCompleted: false,
     },
@@ -28,14 +25,10 @@ test('[P2] captures the onboarding cloud sign-in surface', async ({ page }) => {
 
   await page.goto('/onboarding', { waitUntil: 'domcontentloaded' });
   await page.getByText('Loading OpenDesign…').waitFor({ state: 'hidden', timeout: T.long });
-  // Cloud stays primary while identity-independent Local Agent and BYOK setup
-  // remain available directly from the signed-out landing.
+  // Local Agent and BYOK setup are both available directly from the landing.
   await expect(
     page.getByRole('heading', { name: /Welcome to OpenDesign|欢迎使用 OpenDesign/i }),
   ).toBeVisible({ timeout: T.medium });
-  await expect(
-    page.getByRole('button', { name: /Sign in \/ Sign up|登录 \/ 注册/i }),
-  ).toBeVisible();
   await expect(
     page.getByRole('button', { name: /Local AI|本地 AI/i }),
   ).toBeVisible();
@@ -44,10 +37,10 @@ test('[P2] captures the onboarding cloud sign-in surface', async ({ page }) => {
   ).toBeVisible();
   await waitForVisualFonts(page);
 
-  await captureVisual(page, 'visual-onboarding-cloud');
+  await captureVisual(page, 'visual-onboarding-welcome');
 });
 
-// The step past sign-in had no baseline at all, so the one surface whose whole
+// The step past the welcome page had no baseline at all, so the one surface whose whole
 // job is to line up a two-column grid of detected CLIs was invisible to the
 // visual suite. `visual-avatar-local-agent-list` covers the avatar menu's agent
 // list — a different component — and stayed 0px through an alignment change to
@@ -57,19 +50,15 @@ test('[P2] captures the onboarding Local Agent CLI list surface', async ({ page 
 
   await configureVisualPage(page, {
     projects: [],
-    agents: [VISUAL_AMR_AGENT, ...VISUAL_CLI_AGENTS],
+    agents: [...VISUAL_CLI_AGENTS],
     config: {
       onboardingCompleted: false,
     },
   });
-  await mockSignedInVelaAccount(page);
 
   await page.goto('/onboarding', { waitUntil: 'domcontentloaded' });
   await page.getByText('Loading OpenDesign…').waitFor({ state: 'hidden', timeout: T.long });
 
-  await expect(
-    page.getByRole('button', { name: /Continue \(signed in\)|继续（已登录）/i }),
-  ).toBeVisible({ timeout: T.medium });
   await page.getByRole('button', { name: /Local AI|本地 AI/i }).click();
 
   const panel = page.locator('.onboarding-view__setup-panel');
@@ -100,53 +89,6 @@ test('[P2] captures the visual home harness', async ({ page }) => {
   await waitForVisualProjects(page, []);
 
   await captureVisual(page, 'visual-home');
-});
-
-test('[P2] captures the unpaid DeepSeek campaign at narrow and short viewport boundaries', async ({ page }) => {
-  test.setTimeout(T.xlong);
-
-  await page.clock.setFixedTime('2026-08-21T00:00:00+08:00');
-  await page.setViewportSize({ width: 600, height: 720 });
-  await configureVisualPage(page, { projects: [] });
-  await mockSignedInVelaAccount(page, { plan: 'free' });
-  await gotoVisualHome(page);
-  // Functional specs seed campaign dismissals globally so marketing surfaces
-  // cannot interrupt unrelated flows. This visual contract deliberately opts
-  // back into the DeepSeek modal after establishing same-origin storage.
-  await page.evaluate(() => {
-    window.localStorage.removeItem('open-design:campaign-seen:deepseek-v4-dual-unlimited-2026');
-  });
-  await ensureRailOpen(page);
-  await page.getByTestId('entry-nav-community').evaluate((element: HTMLButtonElement) => {
-    element.click();
-  });
-  await expect(page.getByTestId('entry-view-home')).toHaveAttribute('data-active', 'false');
-  await page.getByTestId('entry-nav-home').evaluate((element: HTMLButtonElement) => {
-    element.click();
-  });
-
-  const dialog = page.getByTestId('deepseek-v4-flash-campaign-dialog');
-  const close = page.getByRole('button', { name: 'Close' });
-  const cta = page.getByRole('button', { name: 'Upgrade and use' });
-  await expect(dialog).toBeVisible();
-  await expect(close).toBeVisible();
-  await expect(cta).toBeVisible();
-  await expectInsideViewport(page, dialog);
-  await expectInsideViewport(page, close);
-  await expectInsideViewport(page, cta);
-  await captureVisual(page, 'visual-deepseek-unpaid-campaign-600');
-
-  await page.setViewportSize({ width: 760, height: 400 });
-  await expect(close).toBeVisible();
-  await expectInsideViewport(page, dialog);
-  await expectInsideViewport(page, close);
-  await expect.poll(async () => dialog.evaluate((element) => (
-    element.scrollHeight > element.clientHeight
-  ))).toBe(true);
-  await captureVisual(page, 'visual-deepseek-unpaid-campaign-short-height');
-  await cta.scrollIntoViewIfNeeded();
-  await expect(cta).toBeVisible();
-  await expectInsideViewport(page, cta);
 });
 
 test('[P2] captures the home plugin catalog surface', async ({ page }) => {

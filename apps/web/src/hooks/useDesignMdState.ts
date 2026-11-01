@@ -10,15 +10,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   Conversation,
   ProjectFile,
-  WorkspaceCollabContext,
 } from '@open-design/contracts';
 import { parseProvenance } from '../lib/parse-provenance';
 import { fetchProjectFiles } from '../providers/registry';
 import { listConversations } from '../state/projects';
-import {
-  workspaceIdentityCacheKey,
-  workspaceProjectHeaders,
-} from '../collab/workspace-identity';
 
 const DESIGN_MD = 'DESIGN.md';
 
@@ -75,7 +70,6 @@ const INITIAL: Omit<DesignMdState, 'refresh'> = {
 export function useDesignMdState(
   projectId: string,
   refreshKey: number = 0,
-  workspaceContext?: WorkspaceCollabContext | null,
   /** False while the project row does not exist on the daemon yet (OPEND-3334). */
   enabled = true,
 ): DesignMdState {
@@ -96,7 +90,7 @@ export function useDesignMdState(
       setState((prev) => ({ ...prev, loading: true, error: null }));
       try {
         // `fetchProjectFiles` is the single owner of this URL — its key
-        // (project + Workspace identity), its invalidation fence, and its
+        // (project), its invalidation fence, and its
         // shared cancellation all live there. Reading it with a private
         // `fetch` put this hook outside that reader, so its own effect replay
         // was a second request and neither of them could join the one
@@ -114,7 +108,6 @@ export function useDesignMdState(
         // daemon. A plain mount read has nothing to supersede and joins.
         const files = await fetchProjectFiles(projectId, {
           ...(signal ? { signal } : {}),
-          ...(workspaceContext ? { workspaceContext } : {}),
           ...(options?.revalidate ? { fresh: true } : {}),
           requireAuthoritative: true,
         });
@@ -133,9 +126,6 @@ export function useDesignMdState(
           `/api/projects/${projectIdEnc}/files/${encodeURIComponent(DESIGN_MD)}`,
           {
             signal,
-            ...(workspaceContext
-              ? { headers: workspaceProjectHeaders(workspaceContext) }
-              : {}),
           },
         );
         if (!designResp.ok) {
@@ -148,7 +138,6 @@ export function useDesignMdState(
         // Shared single-flight conversations read (Batch A §4.3); the local
         // abort only detaches this consumer.
         const conversations = await listConversations(projectId, {
-          workspaceContext,
         });
         const convsBody: ConversationsResponseShape = { conversations };
         if (signal?.aborted) return;
@@ -188,7 +177,7 @@ export function useDesignMdState(
     // (file-changed events, chat-turn completion) re-runs compute without
     // forcing the caller to drill `refresh()` through props. Round 7
     // (mrcfps @ useDesignMdState.ts:131).
-    [projectId, refreshKey, workspaceIdentityCacheKey(workspaceContext)],
+    [projectId, refreshKey],
   );
 
   useEffect(() => {

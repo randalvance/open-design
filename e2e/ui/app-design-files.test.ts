@@ -7,18 +7,12 @@ import { automatedUiScenarios } from '@/playwright/resources';
 import type { UiScenario } from '@/playwright/resources';
 import { T } from '@/timeouts';
 import {
-  PREVIEW_WHITE_SCREEN_CONFIRMATION_MS,
   PREVIEW_WHITE_SCREEN_TIMEOUT_MS,
 } from '@open-design/contracts/runtime/preview-observability';
 
 const STORAGE_KEY = 'open-design:config';
 const TINY_PNG_B64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5W6McAAAAASUVORK5CYII=';
-
-interface CapturedSafetyEvent {
-  event?: string;
-  properties?: Record<string, unknown>;
-}
 
 test.describe.configure({ timeout: T.xlong });
 
@@ -50,78 +44,6 @@ async function routeMockAgents(page: Page) {
       models: [{ id: 'default', label: 'Default' }],
     },
   ]);
-}
-
-async function captureSafetyTelemetry(page: Page): Promise<CapturedSafetyEvent[]> {
-  const events: CapturedSafetyEvent[] = [];
-  await page.unroute('**/api/app-config').catch(() => {});
-  await page.addInitScript((key) => {
-    window.localStorage.setItem(
-      key,
-      JSON.stringify({
-        mode: 'daemon',
-        apiKey: '',
-        baseUrl: 'https://api.anthropic.com',
-        model: 'claude-sonnet-4-5',
-        agentId: 'mock',
-        skillId: null,
-        designSystemId: null,
-        onboardingCompleted: true,
-        agentModels: {},
-        privacyDecisionAt: 1,
-        telemetry: { metrics: true, content: false, artifactManifest: false },
-      }),
-    );
-  }, STORAGE_KEY);
-  await page.route('**/api/app-config', async (route) => {
-    if (route.request().method() !== 'GET') {
-      await route.continue();
-      return;
-    }
-    await route.fulfill({
-      json: {
-        config: {
-          onboardingCompleted: true,
-          agentId: 'mock',
-          skillId: null,
-          designSystemId: null,
-          agentModels: {},
-          privacyDecisionAt: 1,
-          telemetry: { metrics: true, content: false, artifactManifest: false },
-        },
-      },
-    });
-  });
-  await page.route('**/api/analytics/config', async (route) => {
-    await route.fulfill({
-      json: {
-        enabled: true,
-        env: 'e2e',
-        key: 'phc_e2e',
-        host: 'https://analytics.open-design.test',
-        installationId: 'e2e-installation',
-      },
-    });
-  });
-  await page.route('https://analytics.open-design.test/**', async (route) => {
-    const body = route.request().postData();
-    if (body) {
-      try {
-        events.push(JSON.parse(body) as CapturedSafetyEvent);
-      } catch {
-        // posthog-js can use non-JSON batch encodings; this witness owns only
-        // the direct JSON safety-telemetry transport.
-      }
-    }
-    await route.fulfill({ status: 200, json: { status: 1 } });
-  });
-  return events;
-}
-
-function capturedWhiteScreenEvents(
-  events: CapturedSafetyEvent[],
-): CapturedSafetyEvent[] {
-  return events.filter((event) => event.event === 'client_preview_white_screen');
 }
 
 for (const entry of automatedUiScenarios().filter((scenario) => designFileFlows.has(scenario.flow ?? ''))) {
@@ -186,11 +108,6 @@ async function createProjectNameOnly(page: Page, entry: UiScenario) {
 async function gotoEntryHome(page: Page) {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await waitForLoadingToClear(page);
-  const privacyDialog = page.getByRole('dialog').filter({ hasText: 'Help us improve OpenDesign' });
-  if (await privacyDialog.isVisible()) {
-    await privacyDialog.getByRole('button', { name: /I get it|not now|got it|don't share/i }).click();
-    await expect(privacyDialog).toHaveCount(0);
-  }
   await expect(page.getByTestId('home-hero')).toBeVisible();
   await expect(page.getByTestId('home-hero-input')).toBeVisible();
 }
@@ -699,9 +616,8 @@ test('[P1] design files tab launcher creates a sketch and exposes editor menu ac
   await expect(page.getByTestId('sketch-menu-clear')).toBeDisabled();
 });
 
-test('[P1] new Excalidraw sketch emits analytics dimensions', async ({ page }) => {
+test('[P1] new Excalidraw sketch creates an Excalidraw project file', async ({ page }) => {
   test.setTimeout(90_000);
-  const analyticsBodies: string[] = [];
   await page.unroute('**/api/app-config').catch(() => {});
   await page.addInitScript((key) => {
     window.localStorage.setItem(
@@ -735,34 +651,16 @@ test('[P1] new Excalidraw sketch emits analytics dimensions', async ({ page }) =
           designSystemId: null,
           agentModels: {},
           privacyDecisionAt: 1,
-          telemetry: { metrics: true, content: false, artifactManifest: false },
         },
       },
     });
   });
-  await page.route('**/api/analytics/config', async (route) => {
-    await route.fulfill({
-      json: {
-        enabled: true,
-        env: 'e2e',
-        key: 'phc_e2e',
-        host: 'https://analytics.open-design.test',
-        installationId: 'e2e-installation',
-      },
-    });
-  });
-  await page.route('https://analytics.open-design.test/**', async (route) => {
-    analyticsBodies.push(route.request().postData() ?? '');
-    await route.fulfill({ status: 200, json: { status: 1 } });
-  });
   await routeMockAgents(page);
 
-  const projectId = await createProjectViaApi(page, 'Sketch analytics');
+  const projectId = await createProjectViaApi(page, 'Sketch file');
   await page.goto(`/projects/${projectId}`, { waitUntil: 'domcontentloaded' });
   await expectWorkspaceReady(page);
-  // The session-mode picker left the composer (#7635), so `session_mode_toggle`
-  // can no longer be produced from here; the sketch action is the analytics
-  // under test.
+  // The session-mode picker left the composer (#7635).
   await expect(page.getByTestId('chat-composer').getByTestId('composer-mode-trigger')).toHaveCount(0);
   await openAllProjectFiles(page);
   await page.getByTestId('design-files-empty-new-sketch').click();
@@ -770,11 +668,6 @@ test('[P1] new Excalidraw sketch emits analytics dimensions', async ({ page }) =
   const sketchName = await waitForSingleSketchFile(page, projectId);
   await expect(page.getByTestId('sketch-excalidraw-editor')).toBeVisible();
   await expectProjectFileToContain(page, projectId, sketchName, '"type": "excalidraw"');
-
-  await expect.poll(() => analyticsBodies.join('\n'), { timeout: T.medium }).toContain('new_sketch');
-  const raw = analyticsBodies.join('\n');
-  expect(raw).not.toContain('session_mode_toggle');
-  expect(raw).toContain(projectId);
 });
 
 test('[P1] markdown plan documents support code, split, preview, and autosaved edits', async ({ page }) => {
@@ -1121,8 +1014,7 @@ test('[P0] @critical storage-backed HTML keeps project state isolated across pre
   expect(blockedRoutes.map((route) => route.readable)).toEqual([false, false]);
 });
 
-test('[P0] @critical white-screen monitoring recovers layout stalls and confirms persistent blanks', async ({ page }) => {
-  const safetyEvents = await captureSafetyTelemetry(page);
+test('[P0] @critical HTML previews recover layout stalls and keep a persistent blank mounted', async ({ page }) => {
   await routeMockAgents(page);
 
   const projectId = await createProjectViaApi(page, 'Preview white-screen monitoring');
@@ -1172,8 +1064,6 @@ test('[P0] @critical white-screen monitoring recovers layout stalls and confirms
   await expect(recoverableMain).toHaveCSS('display', 'block', {
     timeout: PREVIEW_WHITE_SCREEN_TIMEOUT_MS + T.short,
   });
-  await page.waitForTimeout(PREVIEW_WHITE_SCREEN_CONFIRMATION_MS + 100);
-  expect(capturedWhiteScreenEvents(safetyEvents)).toEqual([]);
 
   await openAllProjectFiles(page);
   const persistentRow = await revealDesignFileRow(page, 'persistent-blank.html');
@@ -1182,21 +1072,6 @@ test('[P0] @critical white-screen monitoring recovers layout stalls and confirms
     .toHaveAttribute('aria-selected', 'true');
   const persistentBody = activePreview.locator('body[data-monitor-fixture="persistent"]');
   await expect(persistentBody).toBeAttached();
-
-  await page.waitForTimeout(PREVIEW_WHITE_SCREEN_TIMEOUT_MS - 500);
-  expect(capturedWhiteScreenEvents(safetyEvents)).toEqual([]);
-
-  await expect.poll(
-    () => capturedWhiteScreenEvents(safetyEvents).length,
-    { timeout: PREVIEW_WHITE_SCREEN_CONFIRMATION_MS + T.short },
-  ).toBe(1);
-  const [whiteScreen] = capturedWhiteScreenEvents(safetyEvents);
-  expect(whiteScreen?.properties).toMatchObject({
-    blank_observation_count: 2,
-    sample_interval_ms: PREVIEW_WHITE_SCREEN_CONFIRMATION_MS,
-    visible_element_count: 0,
-    visibility_state: 'visible',
-  });
 });
 
 test('[P0] @critical HTML file list and previews stay stable across repeated switches', async ({ page }) => {

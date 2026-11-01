@@ -895,12 +895,6 @@ test('antigravity persists model selection to agy settings.json', () => {
 // antigravity — the declarative `supportsCustomModel: false` on the
 // def is the single source of truth the settings UI consults, and the
 // fallback "Custom" item should not appear in the model picker.
-test('amr opts out of the Custom-model picker option', () => {
-  const amr = AGENT_DEFS.find((a) => a.id === 'amr');
-  assert.ok(amr, 'amr def must remain registered');
-  assert.equal(amr.supportsCustomModel, false);
-});
-
 test('kiro fetchModels falls back to fallbackModels when detection fails', async () => {
   // fetchModels rejects when the binary doesn't exist; the daemon's
   // probe() catches this and uses fallbackModels instead.

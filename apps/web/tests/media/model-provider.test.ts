@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { mediaModelProviderId } from '../../src/media/models';
+import { canonicalMediaModelId, DEFAULT_IMAGE_MODEL, DEFAULT_VIDEO_MODEL, mediaModelProviderId } from '../../src/media/models';
 
 // mediaModelProviderId is the decision core of ProjectView's BYOK seed guard
 // (byokModelSeedForProtocol): the project's creation-time model is only carried
@@ -20,10 +20,9 @@ describe('mediaModelProviderId', () => {
   });
 
   it('resolves static models to their registry provider', () => {
-    // vela/gpt-image-2 is the New Project dialog default → provider vela. On a
+    // gpt-image-2 is the New Project dialog default → provider openai. On a
     // SenseAudio run this !== 'senseaudio', so the guard drops the seed and the
     // user's Settings default is kept.
-    expect(mediaModelProviderId('vela/gpt-image-2')).toBe('vela');
     expect(mediaModelProviderId('gpt-image-2')).toBe('openai');
     expect(mediaModelProviderId('senseaudio-image-2.0-260319')).toBe('senseaudio');
     expect(mediaModelProviderId('senseaudio-tts')).toBe('senseaudio');
@@ -42,11 +41,23 @@ describe('mediaModelProviderId', () => {
 
     // AIHubMix run + AIHubMix pick → carried.
     expect(carries('aihubmix-qwen-image-2-pro', 'aihubmix')).toBe(true);
-    // SenseAudio run + dialog-default Vela model → NOT carried (keeps Settings default).
-    expect(carries('vela/gpt-image-2', 'senseaudio')).toBe(false);
+    // SenseAudio run + dialog-default OpenAI model → NOT carried (keeps Settings default).
+    expect(carries('gpt-image-2', 'senseaudio')).toBe(false);
     // SenseAudio run + SenseAudio pick → carried.
     expect(carries('senseaudio-image-2.0-260319', 'senseaudio')).toBe(true);
     // Non-BYOK run never matches (byokImageModel is ignored daemon-side anyway).
-    expect(carries('vela/gpt-image-2', 'official')).toBe(false);
+    expect(carries('gpt-image-2', 'official')).toBe(false);
+  });
+});
+
+describe('canonicalMediaModelId', () => {
+  it('falls saved managed vela models back to a usable default, never a blank picker', () => {
+    expect(canonicalMediaModelId('vela/gpt-image-2')).toBe(DEFAULT_IMAGE_MODEL);
+    expect(canonicalMediaModelId('vela/nano-banana-2')).toBe(DEFAULT_IMAGE_MODEL);
+    expect(canonicalMediaModelId('vela/doubao-seedance-2-0-260128')).toBe(DEFAULT_VIDEO_MODEL);
+  });
+
+  it('leaves other model ids alone', () => {
+    expect(canonicalMediaModelId('gpt-image-2')).toBe('gpt-image-2');
   });
 });

@@ -192,9 +192,7 @@ function renderProjectView(props?: {
     useLayoutEffect(() => navigationTiming.observeRoute(route), [route]);
     return <ProjectView
       project={props?.project ?? project}
-      initialMaterializationPending={props?.materializationPending}
       initialProjectDetail={{ project: props?.project ?? project, resolvedDir: null }}
-      initialWorkspaceScope={{ kind: 'unbound', projectId: (props?.project ?? project).id, workspaceId: null, context: null }}
       routeFileName={props?.routeFileName ?? null}
       routeConversationId={props?.routeConversationId ?? (route.kind === 'project' ? route.conversationId : null)}
       config={config}
@@ -304,14 +302,6 @@ describe('ProjectView business Ready wiring', () => {
     expect(results().at(-1)?.navigation_type).toBe('conversation_switch');
   });
 
-  it('does not call a mounted but still materializing project actionable Ready', async () => {
-    navigationTiming.begin({ kind: 'home' }, { projectId: project.id });
-    renderProjectView({ materializationPending: true });
-    await waitFor(() => expect(mockedListMessages).toHaveBeenCalled());
-    await act(async () => { await new Promise<void>((resolve) => requestAnimationFrame(() => resolve())); });
-    expect(results().map((e) => e?.status)).toEqual(['started', 'first_visible']);
-    expect(results().some(e => e?.result === 'ready')).toBe(false);
-  });
 
   it('does not turn a failed transcript read into Ready', async () => {
     mockedListMessages.mockRejectedValue(new Error('private upstream text'));

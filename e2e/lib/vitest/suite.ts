@@ -20,7 +20,6 @@ import { assertRelativeReportPath, createReport, type E2eReport } from './report
 export { e2eWorkspaceRoot } from '../tools-dev/runtime.ts';
 
 export type SmokeSuite = {
-  amr: SmokeSuiteAmr;
   codexHomeDir: string;
   dataDir: string;
   namespace: string;
@@ -54,12 +53,6 @@ export type SmokeSuiteWith = {
 };
 
 export type EnvPatch = Record<string, string | null | undefined>;
-
-export type SmokeSuiteAmr = {
-  apiUrl: string;
-  linkUrl: string;
-  runtimeEnv: (overrides?: EnvPatch) => Record<string, string>;
-};
 
 export type ToolsDevSuiteContext = {
   check: () => Promise<ToolsDevCheckResult>;
@@ -105,7 +98,6 @@ export async function createSmokeSuite(
   const codexHomeDir = join(scratchDir, 'codex-home');
   const toolsDevRoot = join(scratchDir, 'tools-dev');
   const dataDir = options.dataDir ?? join(scratchDir, 'data');
-  const [amrApiPort, amrLinkPort] = await allocateDistinctPorts(2);
 
   await mkdir(reportDir, { recursive: true });
   await mkdir(scratchDir, { recursive: true });
@@ -120,17 +112,6 @@ export async function createSmokeSuite(
   }
 
   const suite: SmokeSuite = {
-    amr: {
-      apiUrl: `http://127.0.0.1:${amrApiPort}`,
-      linkUrl: `http://127.0.0.1:${amrLinkPort}`,
-      runtimeEnv(overrides = {}) {
-        return normalizeDefinedEnv({
-          VELA_LINK_URL: `http://127.0.0.1:${amrLinkPort}`,
-          VELA_RUNTIME_KEY: 'fake-runtime-key',
-          ...overrides,
-        });
-      },
-    },
     codexHomeDir,
     dataDir,
     namespace,
@@ -167,14 +148,6 @@ export async function createSmokeSuite(
     },
   };
   return suite;
-}
-
-async function allocateDistinctPorts(count: number): Promise<number[]> {
-  const ports = new Set<number>();
-  while (ports.size < count) {
-    ports.add(await reserveFreePort());
-  }
-  return [...ports];
 }
 
 async function reserveFreePort(): Promise<number> {

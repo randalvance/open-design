@@ -243,7 +243,7 @@ function summarizeModelStepEvents(events) {
     cancelled,
     incomplete,
     retryCount,
-    // AMR/OpenCode reports provider usage per model step. Summing the unique
+    // OpenCode reports provider usage per model step. Summing the unique
     // step records recovers the turn total without treating the values as
     // cumulative snapshots or double-counting repeated lifecycle frames.
     reasoningTokens: reasoningTokenSampleCount > 0 ? reasoningTokens : undefined,
@@ -618,7 +618,6 @@ function durableRunState(run) {
       ? { designSystemSelectionSource: run.designSystemSelectionSource }
       : {}),
     ...(typeof run.clientType === 'string' ? { clientType: run.clientType } : {}),
-    ...(run.workspaceScope !== undefined ? { workspaceScope: run.workspaceScope } : {}),
     ...(run.analyticsTelemetry ? { analyticsTelemetry: run.analyticsTelemetry } : {}),
     ...(run.promptTelemetry ? { promptTelemetry: run.promptTelemetry } : {}),
     ...(run.promptCache ? { promptCache: run.promptCache } : {}),
@@ -1112,9 +1111,6 @@ export function createChatRunService({
       && !Array.isArray(meta.odNextTaskInputSnapshot)
     ) {
       run.odNextTaskInputSnapshot = meta.odNextTaskInputSnapshot;
-    }
-    if (Object.prototype.hasOwnProperty.call(meta, 'workspaceScope')) {
-      run.workspaceScope = meta.workspaceScope ?? null;
     }
     runs.set(run.id, run);
     indexRunProject(run.projectId, run.id);

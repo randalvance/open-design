@@ -96,33 +96,26 @@ describe("resolveWinInstallIdentity", () => {
     );
   });
 
-  it("removes an Electron-refreshed invite protocol while this install still owns it", () => {
+  it("stops registering the retired opendesign scheme but still removes one this install owns", () => {
     const source = winCustomInstallerSource;
-    expect(source).toContain('const inviteProtocolKey = "Software\\\\Classes\\\\opendesign"');
-    expect(source).toContain('WriteRegStr HKCU "${inviteProtocolKey}" "URL Protocol" ""');
+    expect(source).toContain('const legacyInviteProtocolKey = "Software\\\\Classes\\\\opendesign"');
+    expect(source).not.toContain('WriteRegStr HKCU "${legacyInviteProtocolKey}');
     expect(source).toContain(
-      'WriteRegStr HKCU "${inviteProtocolKey}\\\\shell\\\\open\\\\command" "" ${inviteProtocolCommand}',
-    );
-    expect(source).toContain('$INSTDIR\\\\${exeName}');
-    expect(source).toContain(
-      'ReadRegStr $0 HKCU "${inviteProtocolKey}\\\\shell\\\\open\\\\command" ""',
+      'ReadRegStr $0 HKCU "${legacyInviteProtocolKey}\\\\shell\\\\open\\\\command" ""',
     );
     expect(source).toContain(
-      "const inviteProtocolExecutablePrefix = createNsisQuotedCommandLiteral([`$INSTDIR\\\\${exeName}`])",
+      "const legacyInviteProtocolExecutablePrefix = createNsisQuotedCommandLiteral([`$INSTDIR\\\\${exeName}`])",
     );
-    expect(source).toContain("StrCpy $1 ${inviteProtocolExecutablePrefix}");
+    expect(source).toContain("StrCpy $1 ${legacyInviteProtocolExecutablePrefix}");
     expect(source).toContain("StrLen $2 $1");
     expect(source).toContain("StrCpy $3 $0 $2");
     expect(source).toContain("StrCmp $3 $1 0 preserve_invite_protocol");
-    expect(source).not.toContain(
-      "StrCmp $0 ${inviteProtocolCommand} 0 preserve_invite_protocol",
-    );
-    expect(source).toContain('DeleteRegKey HKCU "${inviteProtocolKey}"');
+    expect(source).toContain('DeleteRegKey HKCU "${legacyInviteProtocolKey}"');
     expect(source).toContain("preserve_invite_protocol:");
     expect(source.indexOf("StrCmp $3 $1")).toBeLessThan(
-      source.indexOf('DeleteRegKey HKCU "${inviteProtocolKey}"'),
+      source.indexOf('DeleteRegKey HKCU "${legacyInviteProtocolKey}"'),
     );
-    expect(source.indexOf('DeleteRegKey HKCU "${inviteProtocolKey}"')).toBeLessThan(
+    expect(source.indexOf('DeleteRegKey HKCU "${legacyInviteProtocolKey}"')).toBeLessThan(
       source.indexOf("preserve_invite_protocol:"),
     );
   });

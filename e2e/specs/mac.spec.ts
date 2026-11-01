@@ -62,8 +62,6 @@ const updateMetadataUrl = normalizeOptionalEnv(process.env.OD_PACKAGED_E2E_MAC_U
 const updateVersion = normalizeOptionalEnv(process.env.OD_PACKAGED_E2E_MAC_UPDATE_VERSION);
 const updateBuildJsonPath = normalizeOptionalEnv(process.env.OD_PACKAGED_E2E_MAC_UPDATE_BUILD_JSON_PATH);
 const updateFixture = normalizeOptionalEnv(process.env.OD_PACKAGED_E2E_MAC_UPDATE_FIXTURE);
-const packagedInviteDeeplink =
-  'opendesign://workspace/invite/continue?workspace_id=packaged-smoke-workspace&member_id=packaged-smoke-member&invite_id=packaged-smoke-invite&nonce=packaged-smoke-nonce';
 
 const outputNamespaceRoot = join(toolsPackDir, 'out', 'mac', 'namespaces', namespace);
 const runtimeNamespaceRoot = join(toolsPackDir, 'runtime', 'mac', 'namespaces', namespace);
@@ -216,11 +214,11 @@ const packagedOnboardingExpression = `
   (() => {
     const onboardingShell = document.querySelector('.entry-shell--onboarding');
     const onboardingModal = document.querySelector('.entry-onboarding-modal');
-    // Identity is the first gate; runtime selection follows Cloud sign-in.
-    const cloudSignIn = document.querySelector('.onboarding-cloud__primary');
+    // The welcome landing is the first-run surface.
+    const welcomeLanding = document.querySelector('.onboarding-welcome__primary');
 
     return {
-      cloudSignInVisible: cloudSignIn instanceof HTMLElement,
+      welcomeLandingVisible: welcomeLanding instanceof HTMLElement,
       href: location.href,
       onboardingVisible: onboardingShell instanceof HTMLElement && onboardingModal instanceof HTMLElement,
       text: onboardingModal?.textContent?.trim().slice(0, 2000) ?? null,
@@ -416,7 +414,7 @@ type UpdaterRecoverySummary = {
 };
 
 type PackagedOnboardingEvalValue = {
-  cloudSignInVisible: boolean;
+  welcomeLandingVisible: boolean;
   href: string;
   onboardingVisible: boolean;
   text: string | null;
@@ -573,7 +571,6 @@ macDescribe('packaged mac runtime smoke', () => {
       expect(install.detached).toBe(true);
       expectPathInside(install.dmgPath, join(outputNamespaceRoot, 'dmg'));
       expectPathInside(install.installedAppPath, join(outputNamespaceRoot, 'install', 'Applications'));
-      await assertMacInviteProtocolRegistration(install.installedAppPath);
 
       await seedPackagedOnboardingComplete();
 
@@ -643,24 +640,6 @@ macDescribe('packaged mac runtime smoke', () => {
       expect(pty.cleanup.projectStatus).toBe(200);
       assertLauncherPointer(inspect.launcher.active, updateScenario.expectedCurrentVersion, 0, 'initial active');
       assertLauncherPointer(inspect.launcher.lastSuccessful, updateScenario.expectedCurrentVersion, 0, 'initial lastSuccessful');
-
-      const protocolHotPid = inspect.status?.pid ?? start.pid;
-      await invokeMacInviteDeeplink(install.installedAppPath);
-      const protocolHotInspect = await waitForHealthyDesktop();
-      expect(protocolHotInspect.status?.pid).toBe(protocolHotPid);
-
-      if (verifyCoreOnly) {
-        const protocolStop = await runToolsPackJson<MacStopResult>('stop');
-        started = false;
-        expect(protocolStop.status).not.toBe('partial');
-        expect(protocolStop.remainingPids).toEqual([]);
-
-        await invokeMacInviteDeeplink(install.installedAppPath);
-        started = true;
-        const protocolColdInspect = await waitForHealthyDesktop();
-        expect(protocolColdInspect.status?.state).toBe('running');
-        expect(protocolColdInspect.status?.pid).not.toBe(protocolHotPid);
-      }
 
       if (!verifyCoreOnly) {
         const updaterVersion = expectedPayloadUpdateVersion;
@@ -1205,11 +1184,11 @@ macDescribe('packaged mac runtime smoke', () => {
   }, 360_000);
 });
 
-macOnboardingDescribe('packaged mac onboarding AMR smoke', () => {
+macOnboardingDescribe('packaged mac onboarding smoke', () => {
   let installedAppPath: string | null = null;
   let started = false;
 
-  test('[P0] @electron-smoke starts a fresh packaged app on the Cloud identity gate', async () => {
+  test('[P0] @electron-smoke starts a fresh packaged app on the onboarding welcome landing', async () => {
     const report = await createPackagedSmokeReport('mac');
     let passed = false;
     try {
@@ -1235,11 +1214,11 @@ macOnboardingDescribe('packaged mac onboarding AMR smoke', () => {
       expect(health.health.ok).toBe(true);
 
       const initial = await waitForPackagedOnboarding((snapshot) =>
-        snapshot.onboardingVisible && snapshot.cloudSignInVisible,
-        'fresh packaged onboarding Cloud identity gate',
+        snapshot.onboardingVisible && snapshot.welcomeLandingVisible,
+        'fresh packaged onboarding welcome landing',
       );
       expect(initial.href).toMatch(/^(od:\/\/app\/|http:\/\/127\.0\.0\.1:\d+\/)/);
-      expect(initial.cloudSignInVisible).toBe(true);
+      expect(initial.welcomeLandingVisible).toBe(true);
 
       const onboardingScreenshotPath = join(toolsPackDir, 'screenshots', `${namespace}-onboarding.png`);
       await mkdir(dirname(onboardingScreenshotPath), { recursive: true });
@@ -2903,7 +2882,7 @@ function asHealthEvalValue(value: unknown): HealthEvalValue | null {
 
 function asPackagedOnboardingEvalValue(value: unknown): PackagedOnboardingEvalValue | null {
   if (!isRecord(value)) return null;
-  if (typeof value.cloudSignInVisible !== 'boolean') return null;
+  if (typeof value.welcomeLandingVisible !== 'boolean') return null;
   if (typeof value.href !== 'string') return null;
   if (typeof value.onboardingVisible !== 'boolean') return null;
   if (value.text != null && typeof value.text !== 'string') return null;
@@ -2937,30 +2916,6 @@ function expectPathInside(filePath: string, expectedRoot: string): void {
   ).toBe(true);
 }
 
-async function assertMacInviteProtocolRegistration(installedAppPath: string): Promise<void> {
-  const plistPath = join(installedAppPath, 'Contents', 'Info.plist');
-  const { stdout } = await execFileAsync('/usr/bin/plutil', [
-    '-convert',
-    'json',
-    '-o',
-    '-',
-    plistPath,
-  ]);
-  const plist = JSON.parse(stdout) as {
-    CFBundleURLTypes?: Array<{ CFBundleURLSchemes?: string[] }>;
-  };
-  const schemes = (plist.CFBundleURLTypes ?? []).flatMap(
-    (entry) => entry.CFBundleURLSchemes ?? [],
-  );
-  expect(schemes).toContain('opendesign');
-}
-
-async function invokeMacInviteDeeplink(installedAppPath: string): Promise<void> {
-  // `-a` pins delivery to this namespace's installed test bundle instead of a
-  // developer's stable OpenDesign app that may own the same global scheme.
-  await execFileAsync('/usr/bin/open', ['-a', installedAppPath, packagedInviteDeeplink]);
-}
-
 async function pathExists(filePath: string): Promise<boolean> {
   try {
     await access(filePath);
@@ -2975,11 +2930,8 @@ async function fileSizeBytes(filePath: string): Promise<number> {
 }
 
 async function seedPackagedOnboardingComplete(): Promise<void> {
-  // Updater flows need the ordinary signed-out Home shell. Completion alone
-  // is insufficient when the daemon default selects the AMR cloud agent: the
-  // product correctly routes that signed-out identity back to Connect even
-  // though first-run onboarding was completed. Pin a local agent so this
-  // fixture models the actual post-onboarding state it claims to create.
+  // Updater flows need the ordinary Home shell. Pin a local agent so this fixture
+  // models the actual post-onboarding state it claims to create.
   await seedPackagedAppConfig({ agentId: 'codex', onboardingCompleted: true });
 }
 

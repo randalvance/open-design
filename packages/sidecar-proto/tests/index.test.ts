@@ -151,17 +151,15 @@ describe("open-design sidecar contract", () => {
 
   it("validates desktop IPC message inputs", () => {
     expect(normalizeDesktopSidecarMessage({ type: SIDECAR_MESSAGES.SHOW })).toEqual({ type: "show" });
+    // An outer launcher from an older build can still attach this key to SHOW.
     expect(normalizeDesktopSidecarMessage({
-      input: { deeplinkUrl: "opendesign://workspace/invite/continue?nonce=hot" },
+      input: { deeplinkUrl: "opendesign://workspace/open" },
       type: SIDECAR_MESSAGES.SHOW,
-    })).toEqual({
-      input: { deeplinkUrl: "opendesign://workspace/invite/continue?nonce=hot" },
-      type: "show",
-    });
+    })).toEqual({ input: {}, type: "show" });
     expect(() => normalizeDesktopSidecarMessage({
-      input: { deeplinkUrl: "https://example.com/invite" },
+      input: { somethingElse: true },
       type: SIDECAR_MESSAGES.SHOW,
-    })).toThrow(/opendesign scheme/);
+    })).toThrow();
     expect(normalizeDesktopSidecarMessage({ input: { expression: "location.href" }, type: SIDECAR_MESSAGES.EVAL })).toEqual({
       input: { expression: "location.href" },
       type: "eval",

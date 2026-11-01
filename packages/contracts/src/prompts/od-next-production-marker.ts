@@ -41,12 +41,9 @@ An ended turn is not proof of delivered files: never claim unwritten work is com
 export function renderOdNextProductionReadyInstructions(key: string): string {
   if (!/^[a-f0-9]+$/.test(key)) return '';
   return `Plan-to-production continuation:
-For cloud video generation, verify current account/workspace availability with
-\`"$OD_NODE_BIN" "$OD_BIN" media models --cloud --json\` before choosing a default.
-A static model ID is not proof of availability. Empty catalogue means unavailable;
-a failed lookup means unknown. Preserve explicit model/provider choices and report
-an unavailable choice without switching billing channels. Configured BYOK and
-local Motion are independent of this cloud catalogue.
+For video generation, a static model ID is not proof of availability: use a
+configured BYOK provider or local Motion. Preserve explicit model/provider choices
+and report an unavailable choice without switching providers.
 A plan requested as the answer (travel/study/work plan, or only listing a plan)
 is complete in itself: no added artifact and no marker, even without "do not execute".
 Saving a requested plan file does not authorize executing it. Scenario defaults

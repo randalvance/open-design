@@ -2,10 +2,8 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 /**
- * A run's abnormal exit, carried across launches until its telemetry has been
- * acked. Persisting these (rather than holding them only in memory) means a
- * failed report — e.g. the daemon isn't reachable yet — retries on the next
- * launch instead of losing the signal this mechanism exists to catch.
+ * A run's abnormal exit, carried in the next run's marker until it has been
+ * logged and cleared with `clearReportedCrash`.
  */
 export interface DesktopCrashSummary {
   sessionId: string;
@@ -39,22 +37,21 @@ export interface DesktopHostEventRecord {
 // The last few events are enough to tell how a run ended; older ones are dropped.
 const MAX_HOST_EVENTS = 8;
 
-// Bound how many un-acked crashes we carry, so a device that crashes AND fails
-// to report repeatedly can't grow the marker without limit. Oldest are dropped.
+// Bound how many uncleared crashes we carry, so the marker can't grow without
+// limit. Oldest are dropped.
 const MAX_UNREPORTED_CRASHES = 20;
 
 /**
  * Persisted marker for one desktop run.
  *
  *  - `reachedRunning` flips true once the window is actually revealed, so a
- *    bootstrap failure BEFORE that (already covered by `packaged_runtime_failed`)
- *    isn't mistaken for a runtime crash.
+ *    bootstrap failure BEFORE that isn't mistaken for a runtime crash.
  *  - `clean` flips true on a graceful quit.
- *  - `unreportedCrashes` is the queue of prior abnormal exits awaiting an ack.
+ *  - `unreportedCrashes` is the queue of prior abnormal exits not yet cleared.
  *
  * A run counts as an abnormal "runtime 闪退" when it `reachedRunning` but never
  * went `clean` — the app was up, then the process died without a graceful
- * shutdown. That class reaches no other telemetry.
+ * shutdown.
  */
 export interface DesktopSessionState {
   sessionId: string;
@@ -137,9 +134,8 @@ export interface BeginDesktopSessionDeps {
 /**
  * Read the previous run's marker, carry forward every not-yet-reported abnormal
  * exit (plus the previous run itself if it crashed), then write a fresh marker
- * for this run. Returns the full queue of crashes to report. Each is persisted
- * in the new marker's `unreportedCrashes` so it survives a failed report and is
- * retried next launch; `clearReportedCrash(id)` removes one once acked. The
+ * for this run. Returns the full queue of crashes. Each is persisted in the new
+ * marker's `unreportedCrashes` until `clearReportedCrash(id)` removes it. The
  * queue is capped (oldest dropped) so it can't grow without bound. Best-effort —
  * never throws.
  */
@@ -232,8 +228,8 @@ export function endDesktopSessionCleanly(deps: {
 }
 
 /**
- * Remove one crash from the queue once its telemetry has been acked, so it isn't
- * reported again. Keyed by sessionId so acks land independently.
+ * Remove one crash from the queue so a later launch doesn't surface it again.
+ * Keyed by sessionId.
  */
 export function clearReportedCrash(
   deps: {

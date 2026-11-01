@@ -46,21 +46,12 @@ const CHIP_KEYS = [
   'homeHero.chip.createBrandKitDesc',
 ] as const;
 
-const ACCOUNT_MENU_KEYS = [
-  'entry.creditsUpgrade',
-  'entry.creditsUsage',
-  'entry.accountToggleTheme',
-  'entry.accountSwitchLanguage',
-  'entry.accountAddAccount',
-  'entry.accountSignOut',
-] as const;
-
-const TARGET_KEYS = [...WORKING_DIR_KEYS, ...CHIP_KEYS, ...ACCOUNT_MENU_KEYS] as const;
+const TARGET_KEYS = [...WORKING_DIR_KEYS, ...CHIP_KEYS] as const;
 type TargetKey = (typeof TARGET_KEYS)[number];
 
-/** 该语言里与英文同形的词，以该 locale 已有译法为准（如 de `settings.amrUpgrade` = "Upgrade"）。 */
+/** 该语言里与英文同形的词，以该 locale 已有译法为准。 */
 const SAME_WORD: Partial<Record<Locale, readonly TargetKey[]>> = {
-  de: ['homeHero.chip.video', 'homeHero.chip.audio', 'homeHero.chip.wireframe', 'entry.creditsUpgrade'],
+  de: ['homeHero.chip.video', 'homeHero.chip.audio', 'homeHero.chip.wireframe'],
   'es-ES': ['homeHero.chip.audio', 'homeHero.chip.wireframe'],
   fr: ['homeHero.chip.prototype', 'homeHero.chip.image', 'homeHero.chip.audio', 'homeHero.chip.document'],
   id: ['homeHero.chip.video', 'homeHero.chip.audio', 'homeHero.chip.wireframe'],

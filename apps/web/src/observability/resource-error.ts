@@ -36,12 +36,9 @@ const PRODUCT_ASSET_ROOTS = new Set([
   'community-templates',
   'editor-icons',
   'fonts',
-  'go-plan',
   'mock-covers',
   'model-icons',
   'onboarding',
-  'team-avatars',
-  'upgrade',
 ]);
 
 const PRODUCT_ROOT_FILES = new Set([

@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -10,17 +10,6 @@ import { prepareResourceTree } from "@/win/resources.js";
 import type { WinPaths } from "@/win/types.js";
 
 const RESOURCE_TREE_CACHE_TEST_TIMEOUT_MS = 15_000;
-
-async function writeFakeOpenCodeCompanion(
-  source: string,
-  content = "#!/bin/sh\nexit 0\n",
-): Promise<string> {
-  const companion = join(dirname(source), "libexec", "opencode", "opencode");
-  await mkdir(dirname(companion), { recursive: true });
-  await writeFile(companion, content, "utf8");
-  await chmod(companion, 0o755);
-  return companion;
-}
 
 async function createWorkspaceFixture(workspaceRoot: string): Promise<void> {
   await mkdir(join(workspaceRoot, "skills", "sample"), { recursive: true });
@@ -225,106 +214,32 @@ describe("prepareResourceTree", () => {
     }
   }, RESOURCE_TREE_CACHE_TEST_TIMEOUT_MS);
 
-  it("copies a configured Vela CLI binary into the Windows resource tree", async () => {
-    const root = await mkdtemp(join(tmpdir(), "open-design-win-vela-"));
+  it("ignores a configured agent binary env, which is neither an input nor an output of the tree", async () => {
+    const root = await mkdtemp(join(tmpdir(), "open-design-win-resource-non-input-"));
     const workspaceRoot = join(root, "workspace");
     const resourceRoot = join(root, "materialized", "open-design");
-    const source = join(root, "source", "vela.exe");
+    const retiredBinary = join(root, "source", "vela.exe");
     const cache = new ToolPackCache(join(root, "cache"));
     const config = { workspaceRoot } as ToolPackConfig;
     const paths = { resourceRoot } as WinPaths;
-    const originalVelaBin = process.env.OPEN_DESIGN_VELA_CLI_BIN;
+    const original = process.env.OPEN_DESIGN_VELA_CLI_BIN;
 
     try {
       await createWorkspaceFixture(workspaceRoot);
-      await mkdir(join(root, "source"), { recursive: true });
-      await writeFile(source, "fake vela exe\n", "utf8");
-      await writeFakeOpenCodeCompanion(source, "fake opencode\n");
-      process.env.OPEN_DESIGN_VELA_CLI_BIN = source;
+      await mkdir(dirname(retiredBinary), { recursive: true });
+      await writeFile(retiredBinary, "retired binary\n", "utf8");
 
-      await prepareResourceTree(config, paths, cache, { materialize: true });
+      delete process.env.OPEN_DESIGN_VELA_CLI_BIN;
+      const without = await prepareResourceTree(config, paths, cache, { materialize: true });
+      process.env.OPEN_DESIGN_VELA_CLI_BIN = retiredBinary;
+      const withEnv = await prepareResourceTree(config, paths, cache, { materialize: true });
 
-      await expect(readFile(join(resourceRoot, "bin", "vela.exe"), "utf8")).resolves.toBe(
-        "fake vela exe\n",
-      );
-      await expect(
-        readFile(join(resourceRoot, "bin", "libexec", "opencode", "opencode"), "utf8"),
-      ).resolves.toBe("fake opencode\n");
+      expect(withEnv.key).toBe(without.key);
+      expect(cache.report().entries.map((entry) => entry.status)).toEqual(["miss", "hit"]);
+      expect(await readdir(join(resourceRoot, "bin"))).not.toContain("vela.exe");
     } finally {
-      if (originalVelaBin == null) delete process.env.OPEN_DESIGN_VELA_CLI_BIN;
-      else process.env.OPEN_DESIGN_VELA_CLI_BIN = originalVelaBin;
-      await rm(root, { force: true, recursive: true });
-    }
-  });
-
-  it("fails strict Windows resource preparation when configured Vela CLI is missing", async () => {
-    const root = await mkdtemp(join(tmpdir(), "open-design-win-vela-strict-"));
-    const workspaceRoot = join(root, "workspace");
-    const resourceRoot = join(root, "materialized", "open-design");
-    const cache = new ToolPackCache(join(root, "cache"));
-    const config = {
-      workspaceRoot,
-      requireVelaCli: true,
-    } as ToolPackConfig;
-    const paths = { resourceRoot } as WinPaths;
-    const originalVelaBin = process.env.OPEN_DESIGN_VELA_CLI_BIN;
-
-    try {
-      await createWorkspaceFixture(workspaceRoot);
-      process.env.OPEN_DESIGN_VELA_CLI_BIN = join(root, "missing", "vela.exe");
-      await expect(
-        prepareResourceTree(config, paths, cache, { materialize: true }),
-      ).rejects.toThrow();
-    } finally {
-      if (originalVelaBin == null) delete process.env.OPEN_DESIGN_VELA_CLI_BIN;
-      else process.env.OPEN_DESIGN_VELA_CLI_BIN = originalVelaBin;
-      await rm(root, { force: true, recursive: true });
-    }
-  });
-
-  it("invalidates the Windows resource tree cache when the Vela companion changes", async () => {
-    const root = await mkdtemp(join(tmpdir(), "open-design-win-vela-companion-"));
-    const workspaceRoot = join(root, "workspace");
-    const resourceRoot = join(root, "materialized", "open-design");
-    const source = join(root, "source", "vela.exe");
-    const cache = new ToolPackCache(join(root, "cache"));
-    const config = { workspaceRoot } as ToolPackConfig;
-    const paths = { resourceRoot } as WinPaths;
-    const originalVelaBin = process.env.OPEN_DESIGN_VELA_CLI_BIN;
-    const materializedCompanion = join(
-      resourceRoot,
-      "bin",
-      "libexec",
-      "opencode",
-      "opencode",
-    );
-
-    try {
-      await createWorkspaceFixture(workspaceRoot);
-      await mkdir(join(root, "source"), { recursive: true });
-      await writeFile(source, "fake vela exe\n", "utf8");
-      const sourceCompanion = await writeFakeOpenCodeCompanion(source, "companion one\n");
-      process.env.OPEN_DESIGN_VELA_CLI_BIN = source;
-
-      await prepareResourceTree(config, paths, cache, { materialize: true });
-      await expect(readFile(materializedCompanion, "utf8")).resolves.toBe(
-        "companion one\n",
-      );
-
-      await writeFile(sourceCompanion, "companion two\n", "utf8");
-
-      await prepareResourceTree(config, paths, cache, { materialize: true });
-
-      await expect(readFile(materializedCompanion, "utf8")).resolves.toBe(
-        "companion two\n",
-      );
-      expect(cache.report().entries.map((entry) => entry.status)).toEqual([
-        "miss",
-        "miss",
-      ]);
-    } finally {
-      if (originalVelaBin == null) delete process.env.OPEN_DESIGN_VELA_CLI_BIN;
-      else process.env.OPEN_DESIGN_VELA_CLI_BIN = originalVelaBin;
+      if (original == null) delete process.env.OPEN_DESIGN_VELA_CLI_BIN;
+      else process.env.OPEN_DESIGN_VELA_CLI_BIN = original;
       await rm(root, { force: true, recursive: true });
     }
   }, RESOURCE_TREE_CACHE_TEST_TIMEOUT_MS);

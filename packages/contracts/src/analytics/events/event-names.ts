@@ -28,8 +28,6 @@ export type AnalyticsEventName =
   | 'mcp_tool_finished'
   // Paid media provider request outcome and bounded response retry.
   | 'media_generation_result'
-  | 'media_stock_request_result'
-  | 'media_stock_slot_result'
   // Chat artifact snapshot capture outcome per finished run. Daemon-only;
   // `source_changed_count` is the correctness alarm inside it.
   | 'chat_artifact_capture_result'
@@ -55,14 +53,10 @@ export type AnalyticsEventName =
   | 'artifact_edit_result'
   | 'artifact_export_result'
   | 'artifact_deploy_result'
-  | 'artifact_publish_result'
   | 'file_version_restore_result'
   // Workspace redesign: authoritative outcome events. Clicks and impressions
   // continue to use the core ui_click/surface_view catalogue.
-  | 'workspace_switch_result'
-  | 'workspace_invite_result'
   | 'workspace_project_action_result'
-  | 'workspace_shared_project_open_result'
   | 'workspace_resource_action_result'
   | 'project_comment_create_result'
   | 'project_comment_send_result'
@@ -88,9 +82,6 @@ export type AnalyticsEventName =
   // that learns an installed CLI cannot actually be used; without this, the
   // only way we hear about it is a user filing a report with a diagnostics zip.
   | 'agent_detect_diagnostic'
-  // AMR (hosted model) account auth result.
-  | 'amr_auth_stage'
-  | 'amr_auth_result'
   // Onboarding-only result events. UI clicks + page_views inside the
   // onboarding flow reuse the generic `ui_click` / `page_view` shapes
   // with `page_name=onboarding`; the three `onboarding_*` names below

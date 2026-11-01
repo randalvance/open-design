@@ -1,10 +1,8 @@
 import { useCallback } from 'react';
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 import type { TrackingProjectCollectionPage } from '@open-design/contracts/analytics';
 
 import { useAnalytics } from '../../analytics/provider';
 import { trackWorkspaceProjectActionResult } from '../../analytics/events';
-import { workspaceAnalyticsDimensions } from '../../analytics/workspace';
 import type { Project } from '../../types';
 
 export type ProjectDuplicateHandler = (id: string) => Promise<void> | void;
@@ -23,14 +21,12 @@ export type ProjectDuplicateHandler = (id: string) => Promise<void> | void;
 export function useProjectDuplicateFlow(input: {
   onDuplicate?: ProjectDuplicateHandler;
   analyticsPage: TrackingProjectCollectionPage;
-  workspaceContext: WorkspaceCollabContext | null | undefined;
 }) {
-  const { onDuplicate, analyticsPage, workspaceContext } = input;
+  const { onDuplicate, analyticsPage } = input;
   const analytics = useAnalytics();
   const duplicate = useCallback(async (project: Project): Promise<boolean> => {
     if (!onDuplicate) return false;
     const startedAt = performance.now();
-    const workspaceDimensions = workspaceAnalyticsDimensions(workspaceContext);
     try {
       await onDuplicate(project.id);
       trackWorkspaceProjectActionResult(analytics.track, {
@@ -42,7 +38,6 @@ export function useProjectDuplicateFlow(input: {
         succeeded_count: 1,
         failed_count: 0,
         duration_ms: Math.round(performance.now() - startedAt),
-        ...workspaceDimensions,
       });
       return true;
     } catch (err) {
@@ -57,10 +52,9 @@ export function useProjectDuplicateFlow(input: {
         failed_count: 1,
         duration_ms: Math.round(performance.now() - startedAt),
         error_code: 'request_failed',
-        ...workspaceDimensions,
       });
       return false;
     }
-  }, [analytics.track, analyticsPage, onDuplicate, workspaceContext]);
+  }, [analytics.track, analyticsPage, onDuplicate]);
   return { duplicate };
 }

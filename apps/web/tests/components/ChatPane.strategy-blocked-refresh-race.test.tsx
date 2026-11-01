@@ -343,7 +343,6 @@ function renderChat(messages: ChatMessage[], globalError: string | null) {
       activeConversationId="82e93140-e700-4996-b9fa-bcadab9cad8d"
       onSelectConversation={vi.fn()}
       onDeleteConversation={vi.fn()}
-      config={CHAT_CONFIG}
     />,
   );
 }

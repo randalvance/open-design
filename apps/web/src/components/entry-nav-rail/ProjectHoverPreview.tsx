@@ -12,7 +12,7 @@
 // The cover IS the decision the projects grid renders: both surfaces resolve
 // it through `lib/project-cover-pipeline` (files read → cover pick → HEAD
 // probe, or the deck's cover-slide document) and store it in the process-wide
-// LRU in `lib/project-cover-cache`, keyed by (workspace, project, version). A
+// LRU in `lib/project-cover-cache`, keyed by (project, version). A
 // row whose project the grid already rendered paints instantly; a cache miss
 // (the user landed on a surface that never rendered the grid) resolves once
 // on hover and writes back through the same key, so the grid inherits it.
@@ -22,9 +22,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 
-import type { WorkspaceCollabContext } from '@open-design/contracts';
 
-import { workspaceIdentityCacheKey } from '../../collab/workspace-identity';
 import {
   getProjectCoverSnapshot,
   projectCoverSnapshotKey,
@@ -85,15 +83,8 @@ function entryFileCover(project: Project): ProjectCoverOverride | null {
  * state, so a row that leaves (the list re-sorts, the rail closes) mid-read is
  * simply dropped, and a late answer for an older version never paints.
  */
-export function useProjectHoverCover(
-  project: Project,
-  workspaceContext: WorkspaceCollabContext | null | undefined,
-): ProjectHoverCover {
-  const snapshotKey = projectCoverSnapshotKey(
-    workspaceIdentityCacheKey(workspaceContext),
-    project.id,
-    project.updatedAt,
-  );
+export function useProjectHoverCover(project: Project): ProjectHoverCover {
+  const snapshotKey = projectCoverSnapshotKey(project.id, project.updatedAt);
   const [cover, setCover] = useState<CoverState>(
     () => getProjectCoverSnapshot(snapshotKey)?.cover,
   );
@@ -118,11 +109,7 @@ export function useProjectHoverCover(
     let run = inflightResolves.get(snapshotKey);
     if (!run) {
       run = (async () => {
-        const next = await resolveProjectCover(
-          project,
-          new AbortController().signal,
-          workspaceContext ?? null,
-        );
+        const next = await resolveProjectCover(project, new AbortController().signal);
         // `undefined` is transient (network failure): leave it unresolved so
         // the next hover is allowed to try again. `null` is authoritative.
         if (next === undefined) return;
@@ -136,11 +123,11 @@ export function useProjectHoverCover(
     if (!activeRef.current || keyRef.current !== snapshotKey) return;
     const snapshot = getProjectCoverSnapshot(snapshotKey);
     if (snapshot !== undefined) setCover(snapshot.cover);
-  }, [project, snapshotKey, workspaceContext]);
+  }, [project, snapshotKey]);
 
   const shown = cover === null ? entryFileCover(project) : cover;
   const coverSrc = shown
-    ? projectCoverUrl(project.id, shown.name, shown.mtime, workspaceContext)
+    ? projectCoverUrl(project.id, shown.name, shown.mtime)
     : null;
   const showsImage = Boolean(coverSrc && (shown?.kind === 'image' || shown?.kind === 'logo'));
   const showsVideo = Boolean(coverSrc && shown?.kind === 'video');

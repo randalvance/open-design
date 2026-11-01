@@ -367,9 +367,6 @@
 .markdown-autosave-saving {
   color: var(--text-muted);
 }
-.markdown-autosave-idle {
-  color: var(--text-faint);
-}
 .markdown-autosave-error {
   color: var(--danger, #d04b4b);
 }

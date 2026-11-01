@@ -4,8 +4,6 @@ import { readAnalyticsContext } from '../../analytics.js';
 import { nextForkedConversationTitle } from '../../conversation-fork-title.js';
 import { backfillBrandExtractionTranscriptForProject } from '../../brands/index.js';
 import type { RouteDeps } from '../../server-context.js';
-import type { BoundWorkspaceResourceMutationGate } from '../../collab/workspace-resource-mutation.js';
-import type { AuthorizeProjectRequest } from '../../collab/project-request-authority.js';
 import { TERMINAL_RUN_STATUSES } from '../../runtimes/runs.js';
 import { strategyTaskTurnsForRunIds } from '../../strategies/task-store.js';
 
@@ -20,24 +18,6 @@ import {
 } from '../../db.js';
 
 export interface RegisterProjectConversationRoutesDeps extends RouteDeps<'db' | 'design' | 'http' | 'paths' | 'projectStore' | 'conversations' | 'ids' | 'telemetry' | 'appConfig' | 'agents'> {
-  /**
-   * Threaded straight through to `registerProjectCommentRoutes` — a comment
-   * has no workspace binding of its own, so it borrows its PARENT PROJECT's
-   * `enforceWorkspaceProjectMutation` gate (built once in
-   * `registerProjectRoutes`, complete with the last-known-membership
-   * cross-check) rather than re-deriving a weaker one here. See
-   * `RegisterProjectCommentRoutesDeps` in `./comments.js`.
-   */
-  enforceWorkspaceProjectMutation?: BoundWorkspaceResourceMutationGate;
-  authorizeProjectRequest?: AuthorizeProjectRequest;
-  /**
-   * Passed alongside `enforceWorkspaceProjectMutation` above — the gate calls
-   * this to write the 401/403 response body when it denies a mutation. Kept
-   * as its own field (rather than requiring the full `http` dep bag) so
-   * fixtures that only exercise comment CRUD semantics, not workspace
-   * isolation, are not forced to stub unrelated HTTP helpers.
-   */
-  sendApiError?: (res: any, status: number, code: string, message: string) => unknown;
 }
 
 function normalizeChatSessionMode(value: unknown): ChatSessionMode {
@@ -119,11 +99,6 @@ export function registerProjectConversationRoutes(app: Express, ctx: RegisterPro
   const { BRANDS_DIR, PROJECTS_DIR } = ctx.paths;
   const { readAppConfig } = ctx.appConfig;
   const { getAgentDef } = ctx.agents;
-  // Production registration always injects the shared project authority gate.
-  // The fallback preserves narrow unit fixtures whose in-memory projects have
-  // no Workspace binding and do not construct the full server authority graph.
-  const authorizeProjectRequest: AuthorizeProjectRequest =
-    ctx.authorizeProjectRequest ?? (async () => true);
   const getRoutableConversation = (projectId: string, conversationId: string) => {
     if (isProjectCommentAnchorConversationId(conversationId)) return null;
     const conversation = getConversation(db, conversationId);
@@ -136,7 +111,6 @@ export function registerProjectConversationRoutes(app: Express, ctx: RegisterPro
     if (!getProject(db, req.params.id)) {
       return res.status(404).json({ error: 'project not found' });
     }
-    if (!await authorizeProjectRequest(req, res, req.params.id, { mode: 'read' })) return;
     res.json({ conversations: listConversations(db, req.params.id) });
   });
 
@@ -144,12 +118,6 @@ export function registerProjectConversationRoutes(app: Express, ctx: RegisterPro
     if (!getProject(db, req.params.id)) {
       return res.status(404).json({ error: 'project not found' });
     }
-    if (!await authorizeProjectRequest(
-      req,
-      res,
-      req.params.id,
-      { mode: 'write', capability: 'writeFiles' },
-    )) return;
     const { title, seedFromConversationId, forkAfterMessageId } = req.body || {};
     const now = Date.now();
     const hasExplicitSessionMode = Boolean(
@@ -318,12 +286,6 @@ export function registerProjectConversationRoutes(app: Express, ctx: RegisterPro
   });
 
   app.patch('/api/projects/:id/conversations/:cid', async (req, res) => {
-    if (!await authorizeProjectRequest(
-      req,
-      res,
-      req.params.id,
-      { mode: 'write', capability: 'writeFiles' },
-    )) return;
     const conv = getRoutableConversation(req.params.id, req.params.cid);
     if (!conv) {
       return res.status(404).json({ error: 'not found' });
@@ -340,12 +302,6 @@ export function registerProjectConversationRoutes(app: Express, ctx: RegisterPro
   });
 
   app.delete('/api/projects/:id/conversations/:cid', async (req, res) => {
-    if (!await authorizeProjectRequest(
-      req,
-      res,
-      req.params.id,
-      { mode: 'write', capability: 'writeFiles' },
-    )) return;
     const conv = getRoutableConversation(req.params.id, req.params.cid);
     if (!conv) {
       return res.status(404).json({ error: 'not found' });
@@ -360,7 +316,6 @@ export function registerProjectConversationRoutes(app: Express, ctx: RegisterPro
   // ---- Messages -------------------------------------------------------------
 
   app.get('/api/projects/:id/conversations/:cid/messages', async (req, res) => {
-    if (!await authorizeProjectRequest(req, res, req.params.id, { mode: 'read' })) return;
     const conv = getRoutableConversation(req.params.id, req.params.cid);
     if (!conv) {
       return res.status(404).json({ error: 'conversation not found' });
@@ -678,12 +633,6 @@ export function registerProjectConversationRoutes(app: Express, ctx: RegisterPro
   };
 
   app.put('/api/projects/:id/conversations/:cid/messages/:mid', async (req, res) => {
-    if (!await authorizeProjectRequest(
-      req,
-      res,
-      req.params.id,
-      { mode: 'write', capability: 'writeFiles' },
-    )) return;
     const conv = getRoutableConversation(req.params.id, req.params.cid);
     if (!conv) {
       return res.status(404).json({ error: 'conversation not found' });
