@@ -42,6 +42,7 @@ import {
 import { ExportDiagnosticsRow } from './ExportDiagnosticsButton';
 import { Icon } from './Icon';
 import { LabsSection } from './LabsSection';
+import { LABS_EXPERIMENTS } from './labs-experiments';
 import { defaultAgentModelId, effectiveAgentModelChoice } from './agentModelSelection';
 import { CUSTOM_MODEL_SENTINEL, SearchableModelSelect } from './modelOptions';
 import {
@@ -1462,7 +1463,11 @@ export function SettingsDialog({
       ? { [initial.apiProtocol ?? 'anthropic']: byokProviderKeyForConfig(initial) }
       : {},
   );
-  const [activeSection, setActiveSection] = useState<SettingsSection>(() => normalizeSettingsSection(initialSection));
+  const labsExperiments = LABS_EXPERIMENTS;
+  const hasLabsExperiments = labsExperiments.length > 0;
+  const [requestedSection, setActiveSection] = useState<SettingsSection>(() => normalizeSettingsSection(initialSection));
+  // Resolve synchronously so headings, content and analytics never see an empty Labs page.
+  const activeSection = requestedSection === 'labs' && !hasLabsExperiments ? 'general' : requestedSection;
   const [settingsSidebarCollapsed, setSettingsSidebarCollapsed] = useState(false);
   const [settingsFullscreen, setSettingsFullscreen] = useState(true);
   // Scroll the right-hand content pane back to the top whenever the user
@@ -1694,6 +1699,12 @@ export function SettingsDialog({
   useEffect(() => {
     setActiveSection(normalizeSettingsSection(initialSection));
   }, [initialSection]);
+
+  useEffect(() => {
+    if (!hasLabsExperiments && requestedSection === 'labs') {
+      setActiveSection((current) => current === 'labs' ? 'general' : current);
+    }
+  }, [hasLabsExperiments, requestedSection]);
 
   // settings_view — fires whenever the active section changes (and once on
   // mount). Keying the fire on a section+section-string lets us dedupe
@@ -3838,17 +3849,19 @@ export function SettingsDialog({
                 <small>{t('settings.generalHint')}</small>
               </span>
             </button>
-            <button
-              type="button"
-              className={`settings-nav-item${activeSection === 'labs' ? ' active' : ''}`}
-              onClick={() => setActiveSection('labs')}
-            >
-              <Icon name="sparkles" size={18} />
-              <span>
-                <strong>{t('labs.title')}</strong>
-                <small>{t('labs.navHint')}</small>
-              </span>
-            </button>
+            {hasLabsExperiments ? (
+              <button
+                type="button"
+                className={`settings-nav-item${activeSection === 'labs' ? ' active' : ''}`}
+                onClick={() => setActiveSection('labs')}
+              >
+                <Icon name="sparkles" size={18} />
+                <span>
+                  <strong>{t('labs.title')}</strong>
+                  <small>{t('labs.navHint')}</small>
+                </span>
+              </button>
+            ) : null}
             <button
               type="button"
               className={`settings-nav-item${activeSection === 'instructions' ? ' active' : ''}`}
@@ -5116,7 +5129,7 @@ export function SettingsDialog({
           ) : null}
 
           {activeSection === 'labs' ? (
-            <LabsSection autosave={labsAutosave} />
+            <LabsSection experiments={labsExperiments} autosave={labsAutosave} />
           ) : null}
 
           {activeSection === 'designSystems' ? (
