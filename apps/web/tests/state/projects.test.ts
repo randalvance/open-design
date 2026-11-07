@@ -467,7 +467,27 @@ describe('listProjects', () => {
 
 describe('createProject', () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it('returns the new project on an immediate Home read (OPEND-4687)', async () => {
+    vi.useFakeTimers({ toFake: ['performance', 'setTimeout', 'clearTimeout'] });
+    const project = { id: 'new-project', name: 'Home task' };
+    let persisted = false;
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async (_input, init) => {
+      if (init?.method === 'POST') {
+        persisted = true;
+        return Response.json({ project, conversationId: 'conversation-1' });
+      }
+      return Response.json({ projects: persisted ? [project] : [] });
+    }));
+
+    // Home's recent list is still inside the one-second coalescing window
+    // when the project route confirms creation and the user returns Home.
+    await expect(listProjects()).resolves.toEqual([]);
+    await createProject({ name: project.name, skillId: null, designSystemId: null });
+    await expect(listProjects()).resolves.toMatchObject([project]);
   });
 
   it('preserves daemon validation messages from non-2xx create responses', async () => {

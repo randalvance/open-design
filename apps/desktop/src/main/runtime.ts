@@ -1,3 +1,4 @@
+import { attachDisplayRefresh } from "./display-refresh.js";
 import { execFile } from "node:child_process";
 import { createHmac, randomBytes } from "node:crypto";
 import { appendFile, mkdir, realpath, stat, writeFile } from "node:fs/promises";
@@ -6,7 +7,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
-import { BrowserWindow, app, dialog, ipcMain, nativeImage, nativeTheme, screen, session, shell, webFrameMain } from "electron";
+import { BrowserWindow, app, dialog, ipcMain, nativeImage, nativeTheme, powerMonitor, screen, session, shell, webFrameMain } from "electron";
 import type { WebFrameMain } from "electron";
 import {
   DESKTOP_UPDATE_CHANNELS,
@@ -2237,6 +2238,26 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
     },
     width: 1280,
   });
+  const disposeDisplayRefresh = attachDisplayRefresh({
+    platform: process.platform,
+    screen,
+    powerMonitor,
+    getWindows: () => [window],
+    notify: (_window, refresh) => {
+      if (!window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.send("od:appearance:display-refreshed", {
+          ...refresh,
+          zoomFactor: window.webContents.getZoomFactor(),
+        });
+      }
+    },
+  });
+  const stopDisplayRefresh = () => {
+    disposeDisplayRefresh();
+    app.removeListener("before-quit", stopDisplayRefresh);
+  };
+  app.once("before-quit", stopDisplayRefresh);
+  window.once("closed", stopDisplayRefresh);
   installWindowChromeCssHook(window);
   showWindowButtons(window);
   attachDownloadSaveAsDialog(window);
@@ -2988,6 +3009,7 @@ export async function createDesktopRuntime(options: DesktopRuntimeOptions): Prom
       );
     },
     async close() {
+      stopDisplayRefresh();
       stopped = true;
       if (timer != null) {
         clearTimeout(timer);
