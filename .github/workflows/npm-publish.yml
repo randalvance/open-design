@@ -2,19 +2,22 @@ name: npm-publish
 
 # Builds the single-package npm distribution of OpenDesign (`od` CLI + daemon +
 # web UI + bundled resources) with `tools-pack npm build`, installs the tarball
-# into an empty prefix and boots it (`tools-pack npm smoke`), then publishes.
-#
-# Standalone and outside the merge gate, like docker-image.yml. Dispatch only:
-# publishing is an explicit operator decision. `dry_run` defaults to true so a
-# first run validates the whole chain without touching the registry.
+# into an empty prefix and boots it (`tools-pack npm smoke`), then publishes to
+# npm when a GitHub Release is published (or via manual workflow_dispatch).
 
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       package_name:
         description: "npm package name"
         required: false
         default: "@randalvance/open-design"
+      app_version:
+        description: "Package version override (defaults to root package.json version)"
+        required: false
+        default: ""
       dist_tag:
         description: "npm dist-tag to publish under"
         required: false
@@ -59,11 +62,18 @@ jobs:
       - name: Build the npm package
         id: build
         env:
-          PACKAGE_NAME: ${{ inputs.package_name }}
+          PACKAGE_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.package_name || '@randalvance/open-design' }}
+          INPUT_APP_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.app_version || '' }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
         run: |
           set -euo pipefail
           args=(npm build --json)
           if [ -n "$PACKAGE_NAME" ]; then args+=(--package-name "$PACKAGE_NAME"); fi
+          app_version="$INPUT_APP_VERSION"
+          if [ -z "$app_version" ] && [ -n "$RELEASE_TAG" ]; then
+            app_version="${RELEASE_TAG#v}"
+          fi
+          if [ -n "$app_version" ]; then args+=(--app-version "$app_version"); fi
           pnpm tools-pack "${args[@]}" | tee npm-build.json
           tarball="$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("npm-build.json","utf8")).tarballPath)')"
           echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
@@ -81,8 +91,8 @@ jobs:
       - name: Publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          DIST_TAG: ${{ inputs.dist_tag }}
-          DRY_RUN: ${{ inputs.dry_run }}
+          DIST_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.dist_tag || (github.event.release.prerelease && 'next' || 'latest') }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
           TARBALL: ${{ steps.build.outputs.tarball }}
         run: |
           set -euo pipefail

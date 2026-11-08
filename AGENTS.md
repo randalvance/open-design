@@ -137,14 +137,12 @@ obvious, block the PR and request core-maintainer guidance.
 
 ## GitHub automation boundary
 
-Read `.github/AGENTS.md` before editing `.github/workflows/`, `.github/scripts/`, `.github/actions/`, PR follow-on automation, `workflow_run` trusted writes, CI handoff artifacts, or the workflow topology checks that guard those surfaces.
+Read `.github/AGENTS.md` before editing `.github/workflows/`, `.github/scripts/`, `.github/actions/`, or the workflow topology checks that guard those surfaces.
 
-CI-related GitHub automation uses a two-layer architecture:
+GitHub Actions is scoped to two workflows:
 
-- Business layer workflows own product or validation decisions. `ci.yml` is the main low-privilege PR, merge-queue, and manual validation workflow. It detects scope, runs checks, and produces typed handoff artifacts.
-- Atomic capability workflows own reusable trusted operations. `comment.atom.yml` publishes pure text PR comments, `autofix.atom.yml` applies same-repository patches, and `report.atom.yml` materializes advanced comments that need trusted dependencies, secrets, or report generation before upsert.
-
-Do not add a new business-named follow-on workflow such as `foo.comment.atom.yml` or `bar.autofix.atom.yml` without first trying to express the flow as a `ci.yml` producer plus the existing `comment`, `autofix`, or `report` capability. Keep artifact naming, storage layout, and parser behavior centralized in `.github/scripts/handoff.py`; do not let individual workflows invent parallel handoff conventions.
+- `ci.yml` runs on pull requests (`pull_request`), merges (`push` to `main` and `merge_group`), and manual dispatch (`workflow_dispatch`). It detects scope and runs workspace validation.
+- `npm-publish.yml` runs when a new GitHub Release is published (`release: types: [published]`) or via manual dispatch (`workflow_dispatch`). It builds, smoke-tests, and publishes the npm package.
 
 ## CI test-set orchestration guidance
 
@@ -367,7 +365,6 @@ Nothing sends analytics, traces, or crash reports off the machine, and there is 
   validation.
 - After package, workspace, or command-entry changes, run `pnpm install` so workspace links and generated dist entries stay fresh.
 - For agent-stream / parser changes (`apps/daemon/src/runtimes/claude-stream.ts`, `json-event-stream.ts`, `qoder-stream.ts`, etc.), replay a recorded session through the mock CLIs in `mocks/` to verify event shapes round-trip without burning provider budget. PATH-overlay activation: `export PATH="$PWD/mocks/bin:$PATH" OD_MOCKS_TRACE=<8-char-id> OD_MOCKS_NO_DELAY=1`. See `mocks/README.md` for the trace catalog and selection knobs.
-- Docker image smoke/publish lives only in `.github/workflows/docker-image.yml` and is outside the core `ci.yml` / `Validate workspace` / merge queue gate.
 - Before marking regular work ready, run at least `pnpm guard` and `pnpm typecheck`, plus the package-scoped tests/builds that match the files changed. Do not use or add root `pnpm test`/`pnpm build` aliases.
 - For local web runtime loops, prefer `pnpm tools-dev run web --daemon-port <port> --web-port <port>`.
 - For e2e tests that need a tools-dev daemon/web runtime, use the shared tools-dev harness under `e2e/lib/tools-dev/` and the framework suite adapters (`e2e/lib/playwright/suite.ts`, `e2e/lib/vitest/suite.ts`). Do not hand-spawn `tools-dev` from test cases or duplicate lifecycle helpers under framework-specific folders.

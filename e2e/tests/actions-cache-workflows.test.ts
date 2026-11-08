@@ -8,7 +8,7 @@ import { parse } from "yaml";
 
 const setupWorkspaceAction = new URL("../../.github/actions/setup-workspace/action.yml", import.meta.url);
 const setupPlaywrightAction = new URL("../../.github/actions/setup-playwright/action.yml", import.meta.url);
-const visualBaselineWorkflow = new URL("../../.github/workflows/visual-baseline.yml", import.meta.url);
+const ciWorkflow = new URL("../../.github/workflows/ci.yml", import.meta.url);
 
 function sectionBetween(content: string, start: string, end: string): string {
   const startIndex = content.indexOf(start);
@@ -43,8 +43,8 @@ describe("GitHub Actions cache workflows", () => {
     expect(action).toContain("/etc/apt/blacksmith-ubuntu-mirrors.txt");
     expect(action).toContain("https://archive.ubuntu.com/ubuntu");
 
-    const baseline = await readFile(visualBaselineWorkflow, "utf8");
-    const setupPlaywrightStep = sectionBetween(baseline, "- name: Setup Playwright", "- name: Prebuild");
+    const ci = await readFile(ciWorkflow, "utf8");
+    const setupPlaywrightStep = sectionBetween(ci, "- name: Setup Playwright", "- name: Prebuild");
     expect(setupPlaywrightStep).toContain("runner-labels:");
   });
 
@@ -162,9 +162,9 @@ describe("GitHub Actions cache workflows", () => {
     expect(saveStep).toContain("github.event_name == 'schedule'");
   });
 
-  it("[P1] keeps visual-baseline as a secondary Linux pnpm seed on main", async () => {
-    const workflow = await readFile(visualBaselineWorkflow, "utf8");
-    const setupStep = sectionBetween(workflow, "      - name: Setup workspace", "      - name: Setup Playwright");
+  it("[P1] keeps ci preflight as a Linux pnpm seed on main", async () => {
+    const workflow = await readFile(ciWorkflow, "utf8");
+    const setupStep = sectionBetween(workflow, "      - name: Setup workspace", "      - name: Typecheck workspaces");
 
     expect(workflow).toContain("push:");
     expect(workflow).toContain("- main");

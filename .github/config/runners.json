@@ -1,6 +1,6 @@
 {
   "schema": { "version": 1 },
-  "defaultMode": "default",
+  "defaultMode": "economic",
   "aliases": { "performance": "default" },
   "profiles": {
     "github.ubuntu": ["ubuntu-24.04"],
