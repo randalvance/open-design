@@ -3,7 +3,7 @@
 This repository keeps GitHub Actions focused on two workflows:
 
 - `.github/workflows/ci.yml`: PR check (`pull_request`), merge check (`push` to `main` and `merge_group`), and manual validation (`workflow_dispatch`).
-- `.github/workflows/npm-publish.yml`: npm release pipeline, triggered when a GitHub Release is published (`release: types: [published]`) or via manual `workflow_dispatch`.
+- `.github/workflows/npm-publish.yml`: npm release pipeline, triggered when a GitHub Release is published (`release: types: [published]`) or via manual `workflow_dispatch`. See `docs/releases.md` for release steps and npm Trusted Publisher setup.
 
 ## Required reading
 
