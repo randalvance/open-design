@@ -21,10 +21,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const WORKSPACE_ROOT = path.resolve(__dirname, "../../..");
 
-export const ALL_APPS = [APP_KEYS.DAEMON, APP_KEYS.WEB, APP_KEYS.DESKTOP] as const;
-export const DEFAULT_START_APPS = [APP_KEYS.DAEMON, APP_KEYS.WEB, APP_KEYS.DESKTOP] as const;
+export const ALL_APPS = [APP_KEYS.DAEMON, APP_KEYS.WEB] as const;
+export const DEFAULT_START_APPS = [APP_KEYS.DAEMON, APP_KEYS.WEB] as const;
 export const DEFAULT_RUN_APPS = [APP_KEYS.DAEMON, APP_KEYS.WEB] as const;
-export const DEFAULT_STOP_APPS = [APP_KEYS.DESKTOP, APP_KEYS.WEB, APP_KEYS.DAEMON] as const;
+export const DEFAULT_STOP_APPS = [APP_KEYS.WEB, APP_KEYS.DAEMON] as const;
 
 export type ToolDevAppName = (typeof ALL_APPS)[number];
 
@@ -48,11 +48,6 @@ export type ToolDevConfig = {
     daemon: ToolDevAppConfig & {
       sidecarEntryPath: string;
     };
-    desktop: ToolDevAppConfig & {
-      electronBinaryPath: string;
-      mainEntryPath: string;
-      packageJsonPath: string;
-    };
     web: ToolDevAppConfig & {
       nextDistDir: string;
       nextTsconfigPath: string;
@@ -69,14 +64,6 @@ export type ToolDevConfig = {
 function resolveTsxCliPath(): string {
   const require = createRequire(import.meta.url);
   return require.resolve("tsx/cli");
-}
-
-function resolveElectronBinaryPath(workspaceRoot: string): string {
-  const packageJsonPath = path.join(workspaceRoot, "apps/desktop/package.json");
-  const require = createRequire(packageJsonPath);
-  const electron = require("electron") as unknown;
-  if (typeof electron === "string" && electron.length > 0) return electron;
-  return require.resolve("electron/cli.js");
 }
 
 function resolveAppConfig(options: {
@@ -110,7 +97,6 @@ export function resolveStartApps(appName: string | undefined): ToolDevAppName[] 
   if (appName == null) return [...DEFAULT_START_APPS];
   if (!isToolDevAppName(appName)) throw unsupportedAppError(appName);
   if (appName === APP_KEYS.WEB) return [APP_KEYS.DAEMON, APP_KEYS.WEB];
-  if (appName === APP_KEYS.DESKTOP) return [APP_KEYS.DAEMON, APP_KEYS.WEB, APP_KEYS.DESKTOP];
   return [APP_KEYS.DAEMON];
 }
 
@@ -123,7 +109,6 @@ export function resolveStopApps(appName: string | undefined): ToolDevAppName[] {
   if (appName == null) return [...DEFAULT_STOP_APPS];
   if (!isToolDevAppName(appName)) throw unsupportedAppError(appName);
   if (appName === APP_KEYS.WEB) return [APP_KEYS.WEB, APP_KEYS.DAEMON];
-  if (appName === APP_KEYS.DESKTOP) return [APP_KEYS.DESKTOP];
   return [APP_KEYS.DAEMON];
 }
 
@@ -160,25 +145,13 @@ export function resolveToolDevConfig(options: ToolDevOptions = {}): ToolDevConfi
   });
   const namespaceRoot = resolveNamespaceRoot({ base: toolsDevRoot, namespace, contract: OPEN_DESIGN_SIDECAR_CONTRACT });
   const daemon = resolveAppConfig({ app: APP_KEYS.DAEMON, namespace, namespaceRoot, toolsDevRoot });
-  const desktop = resolveAppConfig({ app: APP_KEYS.DESKTOP, namespace, namespaceRoot, toolsDevRoot });
   const web = resolveAppConfig({ app: APP_KEYS.WEB, namespace, namespaceRoot, toolsDevRoot });
-  const desktopPackageJsonPath = path.join(WORKSPACE_ROOT, "apps/desktop/package.json");
-  let cachedElectronBinaryPath: string | undefined;
 
   return {
     apps: {
       daemon: {
         ...daemon,
         sidecarEntryPath: path.join(WORKSPACE_ROOT, "apps/daemon/src/sidecar/index.ts"),
-      },
-      desktop: {
-        ...desktop,
-        get electronBinaryPath() {
-          if (cachedElectronBinaryPath == null) cachedElectronBinaryPath = resolveElectronBinaryPath(WORKSPACE_ROOT);
-          return cachedElectronBinaryPath;
-        },
-        mainEntryPath: path.join(WORKSPACE_ROOT, "apps/desktop/dist/main/index.js"),
-        packageJsonPath: desktopPackageJsonPath,
       },
       web: {
         ...web,

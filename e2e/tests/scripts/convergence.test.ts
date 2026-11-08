@@ -254,7 +254,7 @@ describe("workload convergence", () => {
     });
     expect(config.workflows.ci.matrices.daemon).toHaveLength(4);
     expect(config.workflows.ci.matrices.web).toHaveLength(2);
-    expect(config.workflows.ci.matrices.ui_p0).toHaveLength(6);
+    expect(config.workflows.ci.matrices.ui_p0).toHaveLength(5);
   });
 
   test("authorizes isolated CI publication only on the repository default branch", () => {

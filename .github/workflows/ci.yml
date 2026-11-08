@@ -294,20 +294,11 @@ jobs:
           runner-labels: ${{ toJSON(fromJSON(needs.runners.outputs.runs_on).general_medium) }}
 
       # The workspace postinstall plan builds the daemon and its package
-      # dependency closure. Desktop and Web sidecar declarations remain explicit
+      # dependency closure. Web sidecar declarations remain explicit
       # because those app outputs are outside the postinstall target catalog.
-      #
-      # Fresh CI typecheck/test still need these specific generated declarations:
-      #   - `apps/desktop/dist/main/index.d.ts` for `apps/packaged` imports of
-      #     `@open-design/desktop/main`
-      #   - `apps/web/dist/sidecar/index.d.ts` for `apps/packaged` imports of
-      #     `@open-design/web/sidecar`
-      # If postinstall grows a targeted app type-generation phase covering these
-      # three exports without broad app builds, this CI prebuild can be removed.
       - name: Prebuild workspace type declarations
         if: ${{ fromJSON(needs.plan.outputs.scopes).run_preflight_typecheck }}
         run: |
-          pnpm --filter @open-design/desktop build
           pnpm --filter @open-design/web build:sidecar
 
       - name: Typecheck workspaces
@@ -346,21 +337,13 @@ jobs:
         run: |
           pnpm --filter @open-design/contracts test
           pnpm --filter @open-design/host test
-          pnpm --filter @open-design/launcher-proto test
-          pnpm --filter @open-design/launcher test
           pnpm --filter @open-design/sidecar test
           pnpm --filter @open-design/sidecar-proto test
           if [ "${{ fromJSON(needs.plan.outputs.scopes).tools_dev_tests_required }}" = "true" ]; then
             pnpm --filter @open-design/tools-dev test
           fi
           if [ "${{ fromJSON(needs.plan.outputs.scopes).tools_pack_tests_required }}" = "true" ]; then
-            pnpm --filter @open-design/desktop build
-            pnpm --filter @open-design/desktop test
-            pnpm --filter @open-design/packaged test
             pnpm --filter @open-design/tools-pack test
-            if [ "${{ fromJSON(needs.plan.outputs.run).e2e_vitest }}" != "true" ]; then
-              pnpm --filter @open-design/e2e test tests/packaged-launcher-update-loop.test.ts
-            fi
           fi
 
 
@@ -391,26 +374,6 @@ jobs:
         env:
           OD_WATCHER_TEST_DEBUG: "1"
         run: pnpm --filter @open-design/daemon test --shard=${{ matrix.shard }}/4
-
-  windows_tools_pack_payload_tests:
-    name: Windows tools-pack payload tests
-    needs: [plan, runners]
-    if: ${{ fromJSON(needs.plan.outputs.run).windows_tools_pack_payload_tests }}
-    runs-on: ${{ fromJSON(needs.runners.outputs.runs_on).windows_tools }}
-    timeout-minutes: 20
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6.0.2
-
-      - name: Setup workspace
-        uses: ./.github/actions/setup-workspace
-        with:
-          postinstall-intent: ci-windows-tools-pack
-          runner-labels: ${{ toJSON(fromJSON(needs.runners.outputs.runs_on).windows_tools) }}
-
-      - name: Windows launcher payload archive tests
-        run: pnpm --filter @open-design/tools-pack exec vitest run tests/launcher/windows/payload.test.ts
 
   web_workspace_tests:
     name: Web workspace tests (${{ matrix.shard }}/2)
@@ -470,7 +433,6 @@ jobs:
 
       - name: Prebuild workspace type declarations
         run: |
-          pnpm --filter @open-design/desktop build
           pnpm --filter @open-design/web build:sidecar
 
       - name: E2E Vitest
@@ -513,7 +475,6 @@ jobs:
 
       - name: Prebuild workspace type declarations
         run: |
-          pnpm --filter @open-design/desktop build
           pnpm --filter @open-design/web build:sidecar
 
       - name: Clean Playwright state
@@ -556,7 +517,6 @@ jobs:
 
       - name: Prebuild workspace type declarations
         run: |
-          pnpm --filter @open-design/desktop build
           pnpm --filter @open-design/web build:sidecar
 
       - name: Clean Playwright state
@@ -628,7 +588,6 @@ jobs:
 
       - name: Prebuild workspace type declarations
         run: |
-          pnpm --filter @open-design/desktop build
           pnpm --filter @open-design/web build:sidecar
 
       - name: Run strict visual Playwright suite
@@ -941,7 +900,6 @@ jobs:
       - preflight
       - workspace_unit_tests
       - daemon_unit_tests
-      - windows_tools_pack_payload_tests
       - web_workspace_tests
       - e2e_vitest
       - playwright_critical

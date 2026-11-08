@@ -14,8 +14,6 @@
     "bootstrap": "node ./scripts/postinstall.mjs",
     "tools-dev": "pnpm exec tools-dev",
     "tools-pack": "pnpm exec tools-pack",
-    "tools-release": "pnpm exec tools-release",
-    "tools-serve": "pnpm exec tools-serve",
     "guard": "tsx ./scripts/guard.ts",
     "lint:craft": "tsx ./scripts/lint-craft-references.ts",
     "i18n:check": "tsx ./scripts/i18n-check.ts",
@@ -33,8 +31,6 @@
     "@open-design/daemon": "workspace:*",
     "@open-design/tools-dev": "workspace:*",
     "@open-design/tools-pack": "workspace:*",
-    "@open-design/tools-release": "workspace:*",
-    "@open-design/tools-serve": "workspace:*",
     "@types/node": "20.19.39",
     "tsx": "4.22.3",
     "yaml": "2.9.0"
@@ -62,8 +58,6 @@
     "onlyBuiltDependencies": [
       "better-sqlite3",
       "core-js",
-      "electron",
-      "electron-winstaller",
       "esbuild",
       "onnxruntime-node",
       "protobufjs",

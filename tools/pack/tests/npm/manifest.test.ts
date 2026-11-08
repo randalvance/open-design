@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { MAC_PREBUNDLE_POLICIES } from "@/mac/prebundle.js";
+import { PREBUNDLE_POLICIES } from "@/prebundle.js";
 import {
   NPM_BUNDLED_INTERNAL_PACKAGES,
   NPM_DAEMON_BUNDLE_RELATIVE_PATH,
@@ -33,13 +33,13 @@ describe("npm runtime dependencies", () => {
     const names = npmRuntimeDependencyNames();
     expect(names).not.toContain("fsevents");
     expect(names.some((name) => name.startsWith("@open-design/"))).toBe(false);
-    for (const name of names) expect(MAC_PREBUNDLE_POLICIES.daemonCli.externals).toContain(name);
+    for (const name of names) expect(PREBUNDLE_POLICIES.daemonCli.externals).toContain(name);
     expect(names).toContain("better-sqlite3");
     expect(names).toContain("node-pty");
   });
 
   it("every internal external of the daemon bundle ships as a bundled dependency", () => {
-    const internalExternals = MAC_PREBUNDLE_POLICIES.daemonCli.externals.filter((name) => name.startsWith("@open-design/"));
+    const internalExternals = PREBUNDLE_POLICIES.daemonCli.externals.filter((name) => name.startsWith("@open-design/"));
     const bundled = NPM_BUNDLED_INTERNAL_PACKAGES.map((entry) => entry.name);
     for (const name of internalExternals) expect(bundled).toContain(name);
     // ...together with their own workspace dependencies.

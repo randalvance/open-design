@@ -16,7 +16,6 @@ Before changing GitHub automation, read the current versions of:
 - `.github/workflows/convergence.atom.yml` and `.github/scripts/lib/r2.py` when changing reusable workload results
 - `docs/ci/workload-products.md` when changing reusable workload product publication or restoration
 - `specs/current/ci.md` when changing scope rules, confidence tiers, or planner invariants
-- `e2e/tests/packaged-smoke-workflow.test.ts`
 - `scripts/approve-fork-pr-workflows.ts` and `e2e/tests/scripts/approve-fork-pr-workflows.test.ts` when touching fork PR approval behavior
 
 If the change affects cross-workflow behavior, update the topology tests instead of relying only on workflow YAML review.
@@ -179,11 +178,11 @@ Keep `.github/workflows/ci.yml` as the only approved workflow path unless a main
    - New naming, paths, or metadata: update `.github/scripts/handoff.py`.
 2. Update scope routing in `.github/config/scopes.json`, then run `python3 .github/scripts/scopes.py validate`.
 3. Declare workload input closure, execution class, product contract, and explicit reuse opt-in in `.github/config/convergence.json`; use `"*"` until a narrower set has high-confidence evidence.
-4. Update topology coverage in `e2e/tests/packaged-smoke-workflow.test.ts` or the relevant script test.
+4. Update topology coverage in the relevant script test under `e2e/tests/scripts/`.
 5. Run the focused checks:
    - `python3 .github/scripts/handoff.py self-check`
    - `actionlint -color`
-   - `pnpm --filter @open-design/e2e test tests/packaged-smoke-workflow.test.ts`
+   - `pnpm --filter @open-design/e2e test tests/scripts`
 6. Run repo-level checks before handing off:
    - `pnpm guard`
    - `pnpm typecheck`

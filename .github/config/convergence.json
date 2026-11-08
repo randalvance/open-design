@@ -60,7 +60,6 @@
       "packages/agui-adapter/",
       "packages/contracts/",
       "packages/diagnostics/",
-      "packages/launcher-proto/",
       "packages/platform/",
       "packages/plugin-runtime/",
       "packages/registry-protocol/",
@@ -79,32 +78,9 @@
       "packages/sidecar/",
       "packages/sidecar-proto/"
     ],
-    "windows-launcher-payload": [
-      "suite://workspace-install",
-      "tools/pack/package.json",
-      "tools/pack/tsconfig.json",
-      "tools/pack/tsconfig.tests.json",
-      "tools/pack/vitest.config.ts",
-      "tools/pack/src/cache/",
-      "tools/pack/src/config/",
-      "tools/pack/src/launcher/",
-      "tools/pack/src/resources/",
-      "tools/pack/src/updates/",
-      "tools/pack/src/versioning/",
-      "tools/pack/src/win/",
-      "tools/pack/tests/launcher/windows/",
-      "tools/pack/resources/win/",
-      "packages/launcher-proto/",
-      "packages/platform/",
-      "packages/release/",
-      "packages/sidecar/",
-      "packages/sidecar-proto/"
-    ],
     "e2e-runtime": [
       "suite://workspace-install",
       "apps/daemon/",
-      "apps/desktop/",
-      "apps/packaged/",
       "apps/web/",
       "packages/",
       "tools/dev/",
@@ -239,20 +215,6 @@
           "products": "none",
           "reusable": true,
           "postinstallIntent": "ci-daemon"
-        },
-        "windows_tools_pack_payload_tests": {
-          "success": {
-            "Windows tools-pack payload tests": [
-              "Windows launcher payload archive tests"
-            ]
-          },
-          "inputs": [
-            "suite://windows-launcher-payload"
-          ],
-          "runnerClass": "windows_tools",
-          "products": "none",
-          "reusable": true,
-          "postinstallIntent": "ci-windows-tools-pack"
         },
         "web_workspace_1": {
           "success": {

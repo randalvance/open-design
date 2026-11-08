@@ -1,4 +1,4 @@
-import { MAC_PREBUNDLE_COPIED_RUNTIME_DEPENDENCIES, MAC_PREBUNDLE_POLICIES } from "../mac/prebundle.js";
+import { PREBUNDLE_COPIED_RUNTIME_DEPENDENCIES, PREBUNDLE_POLICIES } from "../prebundle.js";
 
 /** Bundled daemon CLI inside the package. `lib/daemon` is two levels below the package root, so the daemon's `resolveProjectRoot` lands on the package root. */
 export const NPM_DAEMON_BUNDLE_RELATIVE_PATH = "lib/daemon/daemon-cli.mjs";
@@ -7,7 +7,7 @@ export const NPM_BIN_RELATIVE_PATH = "bin/od.mjs";
 export const NPM_WEB_RELATIVE_PATH = "web";
 
 /**
- * Internal packages the daemon bundle keeps external (`MAC_PREBUNDLE_POLICIES.daemonCli.externals`).
+ * Internal packages the daemon bundle keeps external (`PREBUNDLE_POLICIES.daemonCli.externals`).
  * `@open-design/sidecar` spawns its `supervisor.mjs` sibling by file path, so it must stay a real
  * package on disk; it ships inside the tarball as a bundled dependency together with its own
  * dependency `@open-design/platform`.
@@ -54,8 +54,8 @@ export function assertNpmPackageName(name: string): string {
 
 /** Third-party packages the bundled daemon loads from `node_modules` at boot. */
 export function npmRuntimeDependencyNames(): string[] {
-  return MAC_PREBUNDLE_POLICIES.daemonCli.externals.filter(
-    (name) => !name.startsWith("@open-design/") && !(name in MAC_PREBUNDLE_COPIED_RUNTIME_DEPENDENCIES),
+  return PREBUNDLE_POLICIES.daemonCli.externals.filter(
+    (name) => !name.startsWith("@open-design/") && !(name in PREBUNDLE_COPIED_RUNTIME_DEPENDENCIES),
   );
 }
 
@@ -72,8 +72,7 @@ export type CreateNpmPackageManifestOptions = {
 /**
  * The published manifest. Every runtime dependency is pinned to the exact
  * version `apps/daemon/package.json` declares, so the package can never
- * install a native module the bundle was not built against (the same lockstep
- * rule the mac prebundle enforces, see MAC_PREBUNDLE_RUNTIME_DEPENDENCIES).
+ * install a native module the bundle was not built against (see PREBUNDLE_POLICIES).
  */
 export function createNpmPackageManifest(options: CreateNpmPackageManifestOptions): PackageManifest {
   const name = assertNpmPackageName(options.packageName);
@@ -110,7 +109,7 @@ export function createNpmPackageManifest(options: CreateNpmPackageManifestOption
     bin: { od: `./${NPM_BIN_RELATIVE_PATH}` },
     engines: { node: "~24" },
     dependencies,
-    optionalDependencies: { fsevents: MAC_PREBUNDLE_COPIED_RUNTIME_DEPENDENCIES.fsevents },
+    optionalDependencies: { fsevents: PREBUNDLE_COPIED_RUNTIME_DEPENDENCIES.fsevents },
     bundleDependencies: NPM_BUNDLED_INTERNAL_PACKAGES.map((entry) => entry.name),
     publishConfig: { access: "public" },
     keywords: ["design", "ai", "agent", "prototype", "design-system", "cli", "local-first"],

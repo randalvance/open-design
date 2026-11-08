@@ -23,7 +23,6 @@ import {
 } from "./check-tokens-fixture-sync.ts";
 import { checkCraftReferences } from "./lint-craft-references.ts";
 import { checkWhatsNewDocument } from "./check-whats-new-document.ts";
-import { checkWhatsNewPublishWorkflow } from "./check-whats-new-publish-workflow.ts";
 import { collectCssHardcodedColorMatches, cssWideAndSpecialColorKeywords, realNamedColors } from "./style-policy.ts";
 import { checkScriptsLibraryArchitecture } from "./lib/guard/architecture.ts";
 import { runGuardChecks, type GuardCheck, type GuardContext } from "./lib/guard/core.ts";
@@ -32,7 +31,6 @@ const repoRoot = path.resolve(import.meta.dirname, "..");
 const allowedE2eScripts = new Set([
   "e2e/scripts/artifact-render-parity.ts",
   "e2e/scripts/playwright.ts",
-  "e2e/scripts/release-smoke.ts",
   // Explicit opt-in local daemon acceptance; not part of hermetic CI test discovery.
   "e2e/scripts/syntax-acceptance.ts",
   "e2e/scripts/visual-report.ts",
@@ -71,9 +69,7 @@ const residualAllowedExactPaths = new Set([
   "packages/agui-adapter/esbuild.config.mjs",
   "packages/contracts/esbuild.config.mjs",
   "packages/diagnostics/esbuild.config.mjs",
-  "packages/download/esbuild.config.mjs",
   "packages/host/esbuild.config.mjs",
-  "packages/launcher-proto/esbuild.config.mjs",
   "packages/metatool/esbuild.config.mjs",
   "packages/platform/esbuild.config.mjs",
   "packages/plugin-runtime/esbuild.config.mjs",
@@ -86,13 +82,8 @@ const residualAllowedExactPaths = new Set([
   "scripts/postinstall.mjs",
   // Checked-in bin shim so pnpm can link `od` before daemon dist output exists.
   "apps/daemon/bin/od.mjs",
-  "apps/packaged/esbuild.config.mjs",
   // Browser service workers must be served as JavaScript files.
   "apps/web/public/od-notifications-sw.js",
-  // Vendored dom-to-pptx browser bundle used by the packaged desktop renderer
-  // for editable PPTX export. It is loaded into the off-screen Chromium page as
-  // an upstream browser asset, not compiled as project-owned TypeScript.
-  "apps/desktop/vendor/dom-to-pptx/dom-to-pptx.bundle.js",
   // PostCSS loads Tailwind through a web-local .mjs compatibility config entry.
   "apps/web/postcss.config.mjs",
   "scripts/bake-html-ppt-examples.mjs",
@@ -125,21 +116,6 @@ const residualAllowedExactPaths = new Set([
   "tools/dev/esbuild.config.mjs",
   "tools/pack/bin/tools-pack.mjs",
   "tools/pack/esbuild.config.mjs",
-  // Checked-in bin shim so pnpm can link `tools-release` before dist output exists.
-  "tools/release/bin/tools-release.mjs",
-  "tools/release/esbuild.config.mjs",
-  "tools/serve/bin/tools-serve.mjs",
-  "tools/serve/esbuild.config.mjs",
-  // Terminal distributions execute these native runtime entrypoints with the
-  // verified embedded Node after leaving the pnpm/TypeScript workspace.
-  "shells/terminal/runtime/fixture-lifecycle.mjs",
-  "shells/terminal/runtime/fixture-shell-updater.mjs",
-  "shells/terminal/runtime/fossil.mjs",
-  "shells/terminal/runtime/sidecar-bootstrap.mjs",
-  "shells/terminal/runtime/sidecar-host.mjs",
-  "tools/pack/resources/mac/notarize.cjs",
-  // electron-builder hook path; CJS compatibility entry used by tools-pack desktop builds.
-  "tools/pack/resources/web-standalone-after-pack.cjs",
 ]);
 
 const residualAllowedPathPrefixes = [
@@ -1045,8 +1021,6 @@ const toolsRootAllowlist = new Map<string, "directory" | "file">([
   ["AGENTS.md", "file"],
   ["dev", "directory"],
   ["pack", "directory"],
-  ["release", "directory"],
-  ["serve", "directory"],
 ]);
 
 async function checkToolsLayout(): Promise<boolean> {
@@ -1060,7 +1034,7 @@ async function checkToolsLayout(): Promise<boolean> {
     const repositoryPath = `tools/${entry.name}${entry.isDirectory() ? "/" : ""}`;
 
     if (expected == null) {
-      violations.push(`${repositoryPath} -> tools/ top-level entries are allowlisted; expected only AGENTS.md, dev/, pack/, release/, and serve/`);
+      violations.push(`${repositoryPath} -> tools/ top-level entries are allowlisted; expected only AGENTS.md, dev/, and pack/`);
       continue;
     }
 
@@ -1374,8 +1348,6 @@ const htmlBoundaryOwnerPath = "packages/contracts/src/runtime/html-injection-poi
 const htmlBoundarySkippedDirectories = new Set([".git", ".od", ".tmp", "dist", "node_modules", "out", "test-results"]);
 const htmlBoundaryCheckedPathPrefixes = [
   "apps/daemon/src/",
-  "apps/desktop/src/",
-  "apps/packaged/src/",
   "apps/web/src/",
   "packages/",
   "tools/",
@@ -1522,7 +1494,6 @@ const checks: GuardCheck[] = [
   { name: "style policy", run: checkStylePolicy },
   { name: "craft references", run: checkCraftReferences },
   { name: "what's new document", run: ({ repoRoot: root }) => checkWhatsNewDocument(root) },
-  { name: "what's new publish workflow", run: ({ repoRoot: root }) => checkWhatsNewPublishWorkflow(root) },
   { name: "HTML plugin preview contracts", run: ({ repoRoot: root }) => checkHtmlPluginPreviewContracts(root) },
   { name: "plugin preview manifest", run: checkPluginPreviewManifest },
   { name: "design system manifests", run: checkDesignSystemManifests },

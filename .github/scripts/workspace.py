@@ -35,7 +35,7 @@ def describe(root: Path) -> dict:
                  ".github/actions/setup-workspace/action.yml"]
     manifests += sorted(path.relative_to(root).as_posix() for pattern in (
         "apps/*/package.json", "packages/*/package.json", "tools/*/package.json",
-        "shells/*/package.json", "e2e/package.json",
+        "e2e/package.json",
     ) for path in root.glob(pattern))
     dependencies = hashlib.sha256()
     # pnpm command shims and native installers may capture absolute paths.

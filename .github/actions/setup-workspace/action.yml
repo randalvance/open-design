@@ -166,7 +166,6 @@ runs:
           apps/*/node_modules
           packages/*/node_modules
           tools/*/node_modules
-          shells/*/node_modules
           e2e/node_modules
         key: workspace-dependencies-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.node.outputs.node-version }}-${{ inputs.pnpm-version }}-${{ steps.tools.outputs.dependencies-key }}
 
@@ -196,51 +195,7 @@ runs:
       run: >-
         pnpm install --frozen-lockfile --ignore-scripts
         --filter @open-design/tools-pack...
-        --filter @open-design/tools-release...
         --filter @open-design/web...
-
-    - name: '[prepare] Release executor dependencies'
-      if: ${{ (steps.postinstall-plan.outputs.install-profile || inputs.install-profile) == 'release-executor' }}
-      shell: bash
-      run: >-
-        pnpm install --frozen-lockfile --ignore-scripts
-        --filter @open-design/tools-pack...
-        --filter @open-design/tools-release...
-
-    - name: '[prepare] Release tool dependencies'
-      if: ${{ (steps.postinstall-plan.outputs.install-profile || inputs.install-profile) == 'release-tools' }}
-      shell: bash
-      run: >-
-        pnpm install --frozen-lockfile --ignore-scripts
-        --filter @open-design/tools-release...
-
-    - name: '[prepare] Release validation dependencies'
-      if: ${{ (steps.postinstall-plan.outputs.install-profile || inputs.install-profile) == 'release-validation' }}
-      shell: bash
-      run: >-
-        pnpm install --frozen-lockfile --ignore-scripts
-        --filter @open-design/e2e...
-        --filter @open-design/tools-dev...
-        --filter @open-design/tools-pack...
-        --filter @open-design/tools-release...
-        --filter @open-design/tools-serve...
-
-    - name: '[prepare] macOS runtime product dependencies'
-      if: ${{ (steps.postinstall-plan.outputs.install-profile || inputs.install-profile) == 'mac-runtime' }}
-      shell: bash
-      run: >-
-        pnpm install --frozen-lockfile --ignore-scripts
-        --filter @open-design/tools-pack...
-        --filter @open-design/tools-release...
-        --filter @open-design/web...
-        --filter @open-design/daemon...
-
-    - name: '[prepare] Workspace restore support'
-      if: ${{ inputs.postinstall-intent == '' && inputs.install-profile != 'workspace' }}
-      shell: bash
-      run: >-
-        pnpm --filter '@open-design/download...'
-        --workspace-concurrency=1 --if-present run build
 
     - name: '[prepare] Planned workspace restore support'
       if: ${{ inputs.postinstall-intent != '' && steps.postinstall-plan.outputs.install-profile != 'workspace' }}
@@ -282,7 +237,6 @@ runs:
           apps/*/node_modules
           packages/*/node_modules
           tools/*/node_modules
-          shells/*/node_modules
           e2e/node_modules
         key: ${{ steps.dependencies-cache.outputs.cache-primary-key }}
 

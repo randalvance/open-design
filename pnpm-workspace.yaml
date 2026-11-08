@@ -2,7 +2,6 @@ packages:
   - packages/*
   - apps/*
   - tools/*
-  - shells/*
   - e2e
 
 overrides:
@@ -20,8 +19,6 @@ overrides:
 onlyBuiltDependencies:
   - better-sqlite3
   - core-js
-  - electron
-  - electron-winstaller
   - esbuild
   - onnxruntime-node
   - protobufjs
