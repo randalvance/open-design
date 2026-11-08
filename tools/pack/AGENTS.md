@@ -19,7 +19,7 @@ Follow the root `AGENTS.md` and `tools/AGENTS.md` first. This tool owns the npm 
 
 ## npm package lane
 
-`pnpm tools-pack npm build` stages and packs the npm distribution under `.tmp/tools-pack/out/npm/` (`package/` is the staged tree, the `.tgz` beside it is what `npm publish` takes). `pnpm tools-pack npm smoke` installs the newest tarball into an empty prefix with `npm install`, boots the installed `od` headless on a free port, and checks `/api/health`, the web UI at `/`, and that daemon data lands in `OD_DATA_DIR` rather than inside the package. `.github/workflows/npm-publish.yml` runs both and then `npm publish`; it is dispatch-only and dry-runs by default.
+`pnpm tools-pack npm build` stages and packs the npm distribution under `.tmp/tools-pack/out/npm/` (`package/` is the staged tree, the `.tgz` beside it is what `npm publish` takes). `pnpm tools-pack npm smoke` installs the newest tarball into an empty prefix with `npm install`, boots the installed `od` headless on a free port, and checks `/api/health`, the web UI at `/`, and that daemon data lands in `OD_DATA_DIR` rather than inside the package. `.github/workflows/npm-publish.yml` runs both and then `npm publish` when a GitHub Release is published (or via `workflow_dispatch`, which dry-runs by default). See `docs/releases.md` for the step-by-step release runbook.
 
 Layout and the invariants it rests on (`src/npm/`):
 
