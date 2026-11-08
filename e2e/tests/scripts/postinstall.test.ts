@@ -276,7 +276,7 @@ describe("postinstall script contract", () => {
       expect(plan.intent).toBe("shared-javascript");
       expect(plan.installProfile).toBe("workspace");
       expect(plan.requestedTargets).toEqual(["tools/pack"]);
-      expect(plan.resolvedTargets).toEqual(expect.arrayContaining(["packages/release", "tools/pack"]));
+      expect(plan.resolvedTargets).toEqual(expect.arrayContaining(["packages/platform", "tools/pack"]));
       expect(typeof plan.digest).toBe("string");
 
       const semanticDigest = plan.digest;
@@ -300,9 +300,8 @@ describe("postinstall script contract", () => {
       expect((alternatePlan.entries as JsonObject).all).toEqual(expect.objectContaining({ concurrency: 7 }));
 
       const exactInstallProfiles: Record<string, string> = {
-        "release-control": "release-tools",
-        "release-publish": "release-tools",
-        "release-validation": "release-validation",
+        "source-web": "source-web",
+        "workspace": "workspace",
       };
       for (const [intent, installProfile] of Object.entries(exactInstallProfiles)) {
         const result = spawnSync("python3", [
@@ -316,9 +315,8 @@ describe("postinstall script contract", () => {
       }
 
       const exactWorkflowTargets: Record<string, string[] | "all"> = {
-        "release-smoke": ["tools/pack", "tools/serve"],
+        "platform-build": ["tools/dev", "tools/pack"],
         "ci-workspace-unit": "all",
-        "ci-windows-tools-pack": "all",
         "ci-daemon": "all",
         "ci-e2e": "all",
         "ci-ui": "all",
@@ -617,7 +615,7 @@ describe("postinstall script contract", () => {
         dependencies: { "@open-design/contracts": "workspace:*" },
         name: "@open-design/components",
       });
-      writeTarget(sandbox, "packages/download", { name: "@open-design/download" });
+      writeTarget(sandbox, "packages/platform", { name: "@open-design/platform" });
       const invocationLog = writePnpmStub(sandbox);
 
       const result = runFixturePostinstall(sandbox, { OPEN_DESIGN_POSTINSTALL_CONCURRENCY: "2" });
@@ -627,7 +625,7 @@ describe("postinstall script contract", () => {
       const events = readStubEvents(invocationLog);
       expect(eventIndex(events, "done", "packages/release")).toBeLessThan(eventIndex(events, "start", "packages/contracts"));
       expect(eventIndex(events, "done", "packages/contracts")).toBeLessThan(eventIndex(events, "start", "packages/components"));
-      expect(events.filter((event) => event.event === "start").map((event) => event.target)).toContain("packages/download");
+      expect(events.filter((event) => event.event === "start").map((event) => event.target)).toContain("packages/platform");
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }

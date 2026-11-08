@@ -184,9 +184,7 @@ within the file as well as across files.
 Run commands from this directory:
 
 ```bash
-pnpm test specs/mac.spec.ts
 pnpm test tests/tools-dev/inspect.test.ts
-pnpm test specs
 pnpm test tests
 pnpm test:p0
 pnpm test:p0p1

@@ -10,32 +10,23 @@ This file is the single source of truth for agents entering this repository. Rea
 - Historical product baseline: `docs/spec.md`, `docs/roadmap.md` (both explicitly archived; do not treat their dated decisions as current behavior).
 - References and current plans: `docs/references.md`, `docs/code-review-guidelines.md`, `specs/current/maintainability-roadmap.md`, `specs/current/ci.md` (CI scope confidence methodology — required before changing planner confidence, routing, or omission policy in `.github/config/scopes.json` and `.github/scripts/scopes.py`), `specs/current/chat-panel-next.md` (ChatPanel 重构:基线、任务进度规格、决策记录、踩过的坑 — 改 chat 渲染管线/工具调用展示/执行记录前必读), `specs/current/chat-panel-next-plan.md` (交付计划与纠偏节点).
 - Directory-level agent guidance: `.github/AGENTS.md`, `apps/AGENTS.md`, `packages/AGENTS.md`, `tools/AGENTS.md`, `e2e/AGENTS.md`, `apps/web/src/components/chat/AGENTS.md` (chat 组件分层、`--chat-*` 样式接缝、降级形态与测试规约).
-- Packaged auto-update architecture and high-confidence local harness: read `tools/pack/AGENTS.md` section "Packaged auto-update architecture and harness" before touching packaged updater code, release-channel identity, installer behavior, or updater UI.
-- Packaged build cache contract: `tools/pack/CACHE.md` (determinant rules, materialization-time parameters, confidence grading — required before changing any build-cache node key).
 - Prompt composition has two independent implementations behind a rollout switch: `docs/prompt-composition.md` (fork point, variant axes, host runtime contract table, worked examples — required before changing any prompt text, in `apps/daemon/src/prompts/`, `packages/contracts/src/prompts/`, or under `plugins/_official/scenarios/od-next-strategy/`). See "Prompt variants" below.
 
 ## Workspace directories
 
-- Workspace packages come from `pnpm-workspace.yaml`: `apps/*`, `packages/*`, `shells/*`, `tools/*`, and `e2e`.
+- Workspace packages come from `pnpm-workspace.yaml`: `apps/*`, `packages/*`, `tools/*`, and `e2e`.
 - Top-level content directories: `skills/` (functional skills the agent invokes mid-task — utilities, briefs, packagers; see `skills/AGENTS.md`), `design-templates/` (rendering catalogue: decks, prototypes, image/video/audio templates; see `design-templates/AGENTS.md` and `specs/current/skills-and-design-templates.md`), `design-systems/` (brand `DESIGN.md` files), `craft/` (universal brand-agnostic craft rules a skill can opt into via `od.craft.requires`), `mocks/` (replay-based mock CLIs for `opencode`/`claude`/`codex`/`gemini`/`cursor-agent`/`deepseek`/`qwen`/`grok`, and the ACP family `devin`/`hermes`/`kilo`/`kimi`/`kiro`/`vibe`, built from anonymized Langfuse traces — PATH-overlay drop-in for tests and self-validation; see `mocks/README.md`).
 - `apps/web` is the Next.js 16 App Router + React 18 web runtime; do not restore `apps/nextjs`.
 - `apps/daemon` is the local privileged daemon and `od` bin. It owns `/api/*`, agent spawning, skills, design systems, artifacts, and static serving.
-- `apps/desktop` is the Electron shell; it consumes web/daemon status through the sidecar client boundary.
-- `apps/packaged` is the thin packaged Electron runtime entry; it starts packaged sidecars and owns the `od://` entry glue only.
-- `apps/closure` owns the independently distributable OpenDesign Closure content. It does not own acquisition, generation state, or shell policy.
 - `packages/contracts` is the pure TypeScript web/daemon app contract layer.
 - `packages/sidecar-proto` owns business DTOs and action names; `packages/sidecar` owns the complete business-agnostic sidecar client boundary and protocol implementation; `packages/platform` owns generic OS process primitives.
-- `packages/standalone` owns the shell-neutral exact metadata, verification, materialization, generation, and launcher contract.
-- `shells/terminal` owns the official Node carrier and terminal-facing lifecycle commands. Shells consume standalone contracts and must not import Closure app source.
 - `tools/dev` is the local development lifecycle control plane.
-- `tools/pack` is the local packaged build/start/stop/logs control plane, packaged updater harness, installer identity/registry validation surface, mac beta release artifact preparation surface, and the npm package lane (`pnpm tools-pack npm build|smoke`, published by `.github/workflows/npm-publish.yml`; read `tools/pack/AGENTS.md` section "npm package lane" before changing what the package ships).
-- `tools/serve` is the local fixture-service control plane; first service is `tools-serve start updater` for deterministic updater metadata and artifacts.
-- `tools/release` owns release metadata, storage publishing, release reports, and notification-facing data contracts; packaged artifact construction and smoke testing remain in `tools/pack`.
+- `tools/pack` owns the npm package lane (`pnpm tools-pack npm build|smoke`, published by `.github/workflows/npm-publish.yml`; read `tools/pack/AGENTS.md` section "npm package lane" before changing what the package ships).
 - `e2e` owns user-level end-to-end smoke tests and Playwright UI automation; read `e2e/AGENTS.md` before editing its tests or commands.
 
 ## Inactive or placeholder directories
 
-- `apps/nextjs`, `packages/shared`, and `apps/landing-page` have been removed; do not recreate or reference them.
+- `apps/nextjs`, `apps/desktop`, `apps/packaged`, `apps/closure`, `packages/shared`, and `apps/landing-page` have been removed; do not recreate or reference them.
 - Local runtime data, `.tmp/`, Playwright reports, and agent scratch directories must stay out of git. For daemon-managed data paths, read and follow **Daemon data directory contract** below; do not restate or improvise path conventions elsewhere.
 
 # Development workflow
@@ -108,14 +99,9 @@ Development propagation:
   `OD_DATA_DIR` into the daemon process environment. After that, the daemon
   resolves it once and all daemon data paths flow from `RUNTIME_DATA_DIR`.
 
-Packaged propagation:
+npm package propagation:
 
-- `tools-pack` / `apps/packaged` own packaged channel and namespace layout.
-- Packaged code resolves the final namespace-scoped daemon data root before
-  spawning the daemon.
-- The packaged daemon receives that final data root as `OD_DATA_DIR`; daemon
-  code must not infer packaged data paths from app names, Electron `userData`,
-  ports, channel names, or namespace names.
+- The npm CLI shim sets `OD_DATA_DIR` to a per-user directory unless the environment already sets it, and passes that resolved root to the daemon.
 
 Sanctioned exceptions:
 
@@ -145,7 +131,7 @@ obvious, block the PR and request core-maintainer guidance.
 
 ## Root command boundary
 
-- Keep root scripts reserved for true repo-level checks and tools control-plane entrypoints: `pnpm guard`, `pnpm typecheck`, `pnpm tools-dev`, `pnpm tools-pack`, and `pnpm tools-serve`.
+- Keep root scripts reserved for true repo-level checks and tools control-plane entrypoints: `pnpm guard`, `pnpm typecheck`, `pnpm tools-dev`, and `pnpm tools-pack`.
 - Do not add root aggregate `pnpm build` or `pnpm test` aliases. Build/test commands must stay package-scoped (`pnpm --filter <package> ...`) or tool-scoped (`pnpm tools-pack ...`).
 - Do not add root e2e aliases; e2e package commands and ownership rules live in `e2e/AGENTS.md`.
 
@@ -222,29 +208,6 @@ chain from changed path to match, effect, workload, job command, and concrete
 test cases. Prefer naming or removing implicit joins before making them finer.
 Changes under `.github/` must also follow `.github/AGENTS.md` and the current
 confidence methodology in `specs/current/ci.md`.
-
-## Release channel model
-
-- `beta` is the daily R&D/development validation channel. It is optimized for fast development feedback and is not part of the stable promotion gate.
-- `prerelease` is the internal validation channel for stable delivery. Stable releases remain gated by validated prerelease artifacts.
-- Prerelease builds macOS x64 (Intel) on every run. `release-prerelease.yml` takes an `enable_mac_x64` input that defaults to `true`, and `notify-release-feishu.yml` (the push-to-`release/**` entry point) forwards `true` on push. The switch stays because Intel is the pipeline's critical path — it runs on the slower `macos-15-intel` fleet, ~33 min against ~21 min for every other platform — so a run that is explicitly not about Intel can buy that time back. Turning it off costs that build its promotion eligibility, so it is not a routine choice.
-- **A prerelease built without `enable_mac_x64` cannot be promoted to stable.** Stable ships Intel and stable's gate is validated prerelease artifacts, so an Intel-less prerelease has not validated the Intel artifact stable will ship. This is enforced, not merely documented: `validateStablePrereleaseMetadata` in `tools/release/src/metadata/prepare-stable.ts` requires `platforms.macIntel` (with `enabled: true`, `arch: "x64"`, `signed: true`, and versioned dmg/zip URLs) in the promoted prerelease's metadata, so promoting an Intel-less prerelease fails the stable `metadata` job instead of silently shipping an unvalidated Intel build. `platforms.linux` is deliberately not required there.
-- The `notify-release-feishu.yml` forwarding for a default-on boolean must be `${{ github.event_name != 'workflow_dispatch' || inputs.<flag> }}`, never `${{ inputs.<flag> || true }}`. `inputs` is unset on push, so the second form reads correctly there — but on a dispatch where the operator UNCHECKED the box, `false || true` is also true and the switch becomes unturnoffable. (A default-*off* boolean uses `${{ inputs.<flag> || false }}` for the mirror-image reason: a bare `${{ inputs.<flag> }}` forwards `''` to a `type: boolean` callee input.)
-- `enable_smoke` and `enable_tests` also default to `true`, because neither costs the build anything any more — see "Prerelease validation runs outside the pipeline" below. `mac_sign_mode` (default `sign-only`) codesigns without the Apple notary round-trip; `notarize` is the pre-stable setting, since stable ships notarized. `win_x64_smoke_mode` still chooses how deep the Windows smoke goes, and applies only when `enable_smoke` is on.
-- **Signing is not optional for a prerelease that will be promoted.** `validateStablePrereleaseMetadata` requires `platforms.mac.signed == true` and `platforms.macIntel.signed == true`, so `mac_sign_mode: no` produces a prerelease that cannot become a stable release. Notarization has no metadata field and is therefore not checked — which is exactly why it, and not signing, is what the fast default drops.
-- **Automated tests do not gate prerelease delivery.** A prerelease exists so a person can install it and test it by hand; machine CI is a parallel opinion about the same commit rather than a valve on delivery, and a flaky suite must never cost the team a day's package. Do not reintroduce a test job into `build_*` or `publish`'s `needs`/`if`; if a check must genuinely block delivery, that is a channel-policy decision, not a workflow edit.
-- **Prerelease validation runs outside the pipeline.** `release-prerelease.yml` holds one repository-wide concurrency group (`open-design-release-prerelease`, `cancel-in-progress: false`), so any job that outlives `publish` keeps that group held and stops the NEXT prerelease from *starting*. Making the test jobs advisory was therefore not enough — they still blocked the next build. The workflow now contains only `metadata → build_* → publish` plus two fire-and-forget dispatcher jobs, and the validation lives in three dispatched workflows with concurrency groups scoped to the origin run:
-  - `release-prerelease-tests.yml` — `functional_e2e`, `e2e_vitest`, `daemon_unit_tests`, `verify`, dispatched as soon as the build commit resolves.
-  - `release-prerelease-smoke.yml` — the packaged mac/Windows smoke, dispatched after `publish`. It does **not** test a local build directory: `.github/scripts/release/smoke-artifacts.ts` reads the published version metadata, downloads the DMG / setup.exe a user would get, verifies its sha256 sidecar, and writes it to the one path `tools-pack <platform> install` reads. Linux keeps its in-job smoke, because the whole Linux lane is opt-in behind `vars.ENABLE_STABLE_LINUX` and is on nobody's critical path.
-  - `release-prerelease-card.yml` — the progressive Feishu card.
-  All three are dispatched through `.github/scripts/release/dispatch-validation.sh`, which aims `gh workflow run` at the built branch first and the default branch second, so a release branch cut before these lanes existed still gets validated. A dispatch failure is loud and non-blocking: nothing depends on the dispatcher jobs.
-- **One writer owns the release card.** A Feishu `PATCH` replaces the entire card, so build jobs updating "their own" row would each erase the other two's. `release-prerelease-card.yml` therefore owns the message alone and learns everything by polling the jobs API of the three runs; `tools/release/src/notifications/prerelease-card.ts` renders the card as a total function of that state (unit-tested in `tools/release/tests/prerelease-card.test.ts`) and `feishu-app.ts` is the application-bot transport. The card is posted on the watcher's first poll, before any package exists, and every later state edits that same message: the channel learns a release is under way rather than waiting out the build window in silence. The rule that used to withhold it (a "构建中…" card left standing forever when a build dies) is now carried by rendering instead — a dead lane renders its own terminal state, `allPlatformsFailed` turns the card red once every expected platform has reported without shipping, and the watcher's timeout stamps the card rather than abandoning it. Per-platform durations and the whole-round clock come from the `started_at` / `completed_at` the watcher already polls; live numbers are quantized to the minute so the card does not PATCH itself on every poll.
-- **`version_metadata_url` is the authoritative "did a package ship?" signal, not the workflow conclusion.** The conclusion goes red for anything anywhere in the release run, including work that happens after publication, so keying a notification off it paints the card red while its own download buttons work. The progressive card takes that answer from the published metadata it verifies rather than from a job conclusion, and `tools/release/src/notifications/feishu.ts` keeps the same rule (`VERSION_METADATA_URL` outranks `BUILD_STATE`, falling back to it only for callers that do not pass a URL) for the daily beta stream.
-- **The prerelease Feishu notification has exactly one source: `release-prerelease-card.yml`.** The transitional one-shot webhook card that lived in `notify-release-feishu.yml`'s `notify` job was retired once the progressive card had carried four real releases; that workflow now only builds. Do not add a second prerelease notifier — the card is a PATCH-in-place message with a single writer, and a second poster produces the duplicate the transition existed to end. `tools/release/src/notifications/feishu.ts` and the `FEISHU_RELEASE_WEBHOOK` / `FEISHU_RELEASE_SIGN_SECRET` secrets stay: `notify-daily-feishu.yml` still renders the beta download card through them, and `cut-release`, `cut-patch-release`, `backport-automerge`, `bake-plugin-previews-automerge`, `main-prerelease-win-smoke`, and `dsh-upstream-drift` all post through the same webhook.
-- `preview` is an independent early-access channel with stable-like release rigor. It should use preview versions such as `X.Y.Z-preview.N`, publish to the `preview` R2 channel, publish updater feeds under `preview/latest`, and follow stable's platform policy including the existing optional Linux enablement.
-- `stable` is the formal delivery channel. Do not make stable promotion depend on preview; stable continues to depend on prerelease only.
-- Public packaged app identity must stay channel-distinct: stable uses `Open Design`, beta uses `Open Design Beta`, prerelease uses `Open Design Prerelease`, and preview uses `Open Design Preview`. Do not ship beta, prerelease, or preview mac DMGs whose drag-install app bundle is `Open Design.app`.
-- Windows beta updater validation must use the real beta namespace `release-beta-win`; otherwise a local beta-like namespace can create a separate uninstall registry key while looking like the same `Open Design Beta` app. See `tools/pack/AGENTS.md` for the architecture map and high-confidence acceptance harness.
 
 ## Boundary constraints
 
@@ -410,8 +373,6 @@ Nothing sends analytics, traces, or crash reports off the machine, and there is 
 - For e2e tests that need a tools-dev daemon/web runtime, use the shared tools-dev harness under `e2e/lib/tools-dev/` and the framework suite adapters (`e2e/lib/playwright/suite.ts`, `e2e/lib/vitest/suite.ts`). Do not hand-spawn `tools-dev` from test cases or duplicate lifecycle helpers under framework-specific folders.
 - Playwright UI tests must import `test`/`expect` from `@/playwright/suite`, not directly from `@playwright/test`; type-only imports from `@playwright/test` remain fine. The suite owns one isolated tools-dev daemon/web/data root per Playwright worker. Do not add a shared-runtime fallback; set Playwright workers to `1` when constrained.
 - Playwright suite code must not own workspace prebuild policy. CI and callers keep the existing prebuild steps; `tools-dev` daemon freshness checks are only a fallback guard.
-- On a GUI-capable machine, validate desktop by running `pnpm tools-dev`, then `pnpm tools-dev inspect desktop status`.
-- Stamp/namespace changes must validate two concurrent namespaces and run desktop `inspect eval` plus `inspect screenshot` for each namespace.
 - Path/log changes must run `pnpm tools-dev logs --namespace <name> --json` and confirm log paths are under `.tmp/tools-dev/<namespace>/...`.
 
 ## Bug follow-up workflow
@@ -433,13 +394,10 @@ For a worked example of one full loop (red e2e spec → fix → green), see `e2e
 ```bash
 pnpm install
 pnpm tools-dev
-pnpm tools-serve start updater
 pnpm tools-dev start web
 pnpm tools-dev run web --daemon-port 17456 --web-port 17573
 pnpm tools-dev status --json
 pnpm tools-dev logs --json
-pnpm tools-dev inspect desktop status --json
-pnpm tools-dev inspect desktop screenshot --path /tmp/open-design.png
 pnpm tools-dev stop
 pnpm tools-dev check
 ```
@@ -455,22 +413,11 @@ pnpm --filter @open-design/web test
 pnpm --filter @open-design/web build
 pnpm --filter @open-design/daemon test
 pnpm --filter @open-design/daemon build
-pnpm --filter @open-design/desktop build
 pnpm --filter @open-design/tools-dev build
 pnpm --filter @open-design/tools-pack build
-pnpm --filter @open-design/tools-serve build
 ```
 
 ```bash
-pnpm tools-pack mac build --to all
-pnpm tools-pack mac install
-pnpm tools-pack mac cleanup
-pnpm tools-pack win build --to nsis
-pnpm tools-pack win install
-pnpm tools-pack win cleanup
-pnpm tools-pack linux build --to appimage
-pnpm tools-pack linux install
-pnpm tools-pack linux build --containerized
 pnpm tools-pack npm build
 pnpm tools-pack npm smoke
 ```
@@ -479,15 +426,11 @@ pnpm tools-pack npm smoke
 
 ## Why is there no root `pnpm dev` / `pnpm start`?
 
-To avoid starting daemon, web, and desktop through inconsistent env, port, namespace, or log paths. All local lifecycle flows must go through `pnpm tools-dev`.
+To avoid starting daemon and web through inconsistent env, port, namespace, or log paths. All local lifecycle flows must go through `pnpm tools-dev`.
 
 ## Why should `apps/nextjs` not be restored?
 
 The current web runtime is `apps/web`. The historical `apps/nextjs` layout has been removed from the active repo shape; restoring it would reintroduce duplicate app boundaries and stale scripts.
-
-## How does desktop discover the web URL?
-
-Desktop queries runtime status through its sidecar client. The web URL comes from client status, not from desktop guessing ports, IPC paths, or reading web internals.
 
 ## How are sidecar-proto, sidecar, and platform split?
 

@@ -8,11 +8,11 @@ import { createCommandInvocation, createPackageManagerInvocation } from "@open-d
 
 import { WORKSPACE_ROOT } from "../config/index.js";
 import {
-  MAC_DAEMON_PREBUNDLE_ESM_REQUIRE_BANNER,
-  MAC_PREBUNDLE_ESBUILD_TARGET,
-  MAC_PREBUNDLE_POLICIES,
-  assertMacPrebundleMetafile,
-} from "../mac/prebundle.js";
+  DAEMON_PREBUNDLE_ESM_REQUIRE_BANNER,
+  PREBUNDLE_ESBUILD_TARGET,
+  PREBUNDLE_POLICIES,
+  assertPrebundleMetafile,
+} from "../prebundle.js";
 import { copyBundledResourceTrees, packBundledDshRuntime } from "../resources/index.js";
 import {
   NPM_BIN_RELATIVE_PATH,
@@ -165,15 +165,15 @@ async function bundleDaemon(paths: NpmPaths): Promise<void> {
     "--bundle",
     "--platform=node",
     "--format=esm",
-    `--target=${MAC_PREBUNDLE_ESBUILD_TARGET}`,
-    `--banner:js=${MAC_DAEMON_PREBUNDLE_ESM_REQUIRE_BANNER}`,
-    ...MAC_PREBUNDLE_POLICIES.daemonCli.externals.map((dependency) => `--external:${dependency}`),
+    `--target=${PREBUNDLE_ESBUILD_TARGET}`,
+    `--banner:js=${DAEMON_PREBUNDLE_ESM_REQUIRE_BANNER}`,
+    ...PREBUNDLE_POLICIES.daemonCli.externals.map((dependency) => `--external:${dependency}`),
     `--outdir=${outDir}`,
     "--entry-names=[name]",
     "--out-extension:.js=.mjs",
     `--metafile=${metafilePath}`,
   ]);
-  await assertMacPrebundleMetafile({ metafilePath, policyName: "daemonCli" });
+  await assertPrebundleMetafile({ metafilePath, policyName: "daemonCli" });
   if (!(await pathExists(join(paths.stageRoot, NPM_DAEMON_BUNDLE_RELATIVE_PATH)))) {
     throw new Error(`esbuild did not produce ${NPM_DAEMON_BUNDLE_RELATIVE_PATH}`);
   }

@@ -2,33 +2,8 @@ import { describe, expect, it } from "vitest";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import process from "node:process";
 
-import { domToPptxBundleResource } from "@/dom-to-pptx-resource.js";
 import { copyBundledResourceTrees } from "@/resources/index.js";
-
-describe("domToPptxBundleResource", () => {
-  it("derives the vendored bundle path from the workspace root, not the caller cwd", async () => {
-    const root = await mkdtemp(join(tmpdir(), "open-design-tools-pack-resource-"));
-    const workspaceRoot = join(root, "workspace");
-    const callerCwd = join(root, "caller");
-    const previousCwd = process.cwd();
-
-    try {
-      await mkdir(workspaceRoot, { recursive: true });
-      await mkdir(callerCwd, { recursive: true });
-      process.chdir(callerCwd);
-
-      expect(domToPptxBundleResource({ workspaceRoot })).toEqual({
-        from: join(workspaceRoot, "apps", "desktop", "vendor", "dom-to-pptx", "dom-to-pptx.bundle.js.gz"),
-        to: "dom-to-pptx.bundle.js.gz",
-      });
-    } finally {
-      process.chdir(previousCwd);
-      await rm(root, { force: true, recursive: true });
-    }
-  });
-});
 
 describe("copyBundledResourceTrees", () => {
   it("includes daemon resources and the packaged Website Clone main path", async () => {

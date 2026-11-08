@@ -1,15 +1,3 @@
-// The version our one-line DeepSeek Harness installer hands the user and the
-// versions the daemon stands behind live in two places that cannot import each
-// other: `tools/release/resources/dsh-bootstrap/install-dsh.*` (canonical
-// product source) and the agent def in `apps/daemon`. They drifted once already
-// — the installers were moved to `0.1.0-rc.8` while the def still named
-// `0.1.0-rc.6` as the only supported version, so following our own instructions
-// produced an "untested version" warning in Settings on a clean install.
-//
-// This guard pins the two together across the app boundary: bumping an
-// installer without teaching the daemon to accept what it installs fails here.
-// Canonical installer bytes live in tools/release.
-
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -17,8 +5,6 @@ import { describe, expect, it } from 'vitest';
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 
-const INSTALL_SH = `${repoRoot}tools/release/resources/dsh-bootstrap/install-dsh.sh`;
-const INSTALL_PS1 = `${repoRoot}tools/release/resources/dsh-bootstrap/install-dsh.ps1`;
 const AGENT_DEF = `${repoRoot}apps/daemon/src/runtimes/defs/deepseek-harness.ts`;
 const PEER_MANIFEST = `${repoRoot}packages/dsh-runtime/package.json`;
 
@@ -59,24 +45,8 @@ function accepts(source: string, version: string): boolean {
   return readSupportedVersionPattern(source)?.test(version) ?? false;
 }
 
-describe('DeepSeek Harness installer and daemon version policy agree', () => {
-  it('accepts the version both installers pin', async () => {
-    const [sh, ps1, def] = await Promise.all([
-      readFile(INSTALL_SH, 'utf8'),
-      readFile(INSTALL_PS1, 'utf8'),
-      readFile(AGENT_DEF, 'utf8'),
-    ]);
-
-    const shVersion = requireMatch(sh, /DSH_VERSION='([^']+)'/u, 'DSH_VERSION');
-    const ps1Version = requireMatch(ps1, /\$DshVersion\s*=\s*'([^']+)'/u, '$DshVersion');
-
-    expect(ps1Version).toBe(shVersion);
-    expect(accepts(def, shVersion)).toBe(true);
-  });
-
-  // The point is to stop pinning one release candidate, not to stop checking.
-  // A version off the line the def declares must still be reported as untested.
-  it('still rejects a version off the declared release line', async () => {
+describe('DeepSeek Harness daemon version policy', () => {
+  it('rejects a version off the declared release line', async () => {
     const def = await readFile(AGENT_DEF, 'utf8');
 
     expect(accepts(def, '0.0.9')).toBe(false);
