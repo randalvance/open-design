@@ -73,12 +73,12 @@ jobs:
             app_version="${RELEASE_TAG#v}"
           fi
           if [ -n "$app_version" ]; then args+=(--app-version "$app_version"); fi
-          pnpm tools-pack "${args[@]}" | tee npm-build.json
+          pnpm --silent tools-pack "${args[@]}" | tee npm-build.json
           tarball="$(node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync("npm-build.json","utf8")).tarballPath)')"
           echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
 
       - name: Smoke the installed package
-        run: pnpm tools-pack npm smoke --tarball "${{ steps.build.outputs.tarball }}" --json
+        run: pnpm --silent tools-pack npm smoke --tarball "${{ steps.build.outputs.tarball }}" --json
 
       - name: Upload tarball
         uses: actions/upload-artifact@v7
