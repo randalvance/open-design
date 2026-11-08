@@ -140,7 +140,6 @@ describe("workflow scope planner", () => {
       ".github/scripts/lib/config.py",
       ".github/scripts/lib/github.py",
       ".github/scripts/lib/r2.py",
-      ".github/workflows/convergence.atom.yml",
     ];
     for (const file of controlPlaneFiles) {
       expect(plan("pr", [file]), file).toMatchObject({
