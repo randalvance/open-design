@@ -318,6 +318,9 @@ export async function createProject(
           conversationId: string;
           appliedPluginSnapshotId?: string;
         };
+        // Returning Home immediately must not replay the pre-create list from
+        // the GET coalescer's one-second window (including in-flight reads).
+        evictCoalescedGet('local-projects');
         return created;
       }
       if (await isDaemonProxyConnectionFailure(resp)) {

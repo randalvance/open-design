@@ -1,3 +1,6 @@
+import { buildLauncherHostEnvironment } from "../launcher/artifacts.js";
+import { MAC_THIN_LAUNCHER_FILE } from "./thin-launcher.js";
+
 import { finalizeRuntimeManifest } from "../resources/runtime-manifest.js";
 import { cp, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -161,6 +164,7 @@ export function renderMacPackagedConfig(options: {
   return `${JSON.stringify(
     {
       appVersion: options.appVersion,
+      launcherHost: buildLauncherHostEnvironment({ platform: "darwin", arch: process.arch, electronVersion: options.config.electronVersion }),
       ...(options.usePrebundledStandaloneWeb ? { daemonCliEntryRelative: MAC_PREBUNDLED_DAEMON_CLI_RELATIVE_PATH } : {}),
       ...(options.usePrebundledStandaloneWeb
         ? { daemonSidecarEntryRelative: MAC_PREBUNDLED_DAEMON_SIDECAR_RELATIVE_PATH }
@@ -361,6 +365,11 @@ export async function writeAssembledApp(
     renderMacPackagedMainEntry(usePrebundledStandaloneWeb),
     "utf8",
   );
+  await runEsbuild(config, [
+    join(config.workspaceRoot, "packages", "launcher", "src", "index.ts"),
+    "--bundle", "--platform=node", "--format=cjs", "--target=node24",
+    `--outfile=${join(dirname(paths.assembledMainEntryPath), MAC_THIN_LAUNCHER_FILE)}`,
+  ]);
   await writeFile(
     paths.packagedConfigPath,
     renderMacPackagedConfig({
