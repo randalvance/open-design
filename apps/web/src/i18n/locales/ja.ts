@@ -4136,9 +4136,9 @@ export const ja: Dict = {
   'brandDetail.deleteConfirm': 'Delete "{name}"? This removes the brand and its design system.',
   'brandDetail.viewMore': 'Show all {count}',
   'brandDetail.viewLess': 'Show less',
-  'settings.resetOnboarding': 'Reset onboarding',
-  'settings.resetOnboardingDesc': 'Replay the first-run setup, including brand extraction.',
-  'settings.resetOnboardingButton': 'Reset',
+  'settings.resetOnboarding': '初期設定をリセット',
+  'settings.resetOnboardingDesc': 'ブランド情報の抽出を含む初期設定をやり直します。',
+  'settings.resetOnboardingButton': 'リセット',
   'settings.clearUpdaterCacheTitle': 'アップデートキャッシュをクリア',
   'settings.clearUpdaterCacheHint': 'ダウンロード済みのアップデートと古いアップデートキャッシュを削除し、更新状態をリセットします。アップデートが止まっているように見えるときに使用してください。',
   'settings.clearUpdaterCacheButton': 'キャッシュをクリア',
@@ -4393,7 +4393,7 @@ export const ja: Dict = {
   // Settings > Workspace region (E-frontend, D4.3): role-gated shell for
   // other-lane workspace destinations (members / billing / team space).
   // Full-page Settings (`/settings`): sidebar nav head above the section list.
-  'settings.pageBackToHome': 'Back to home',
+  'settings.pageBackToHome': 'ホームに戻る',
   'settings.pageNavGroupPersonal': 'Personal',
   'newproj.startFromLabel': '開始方法',
   'newproj.startBlank': '白紙',

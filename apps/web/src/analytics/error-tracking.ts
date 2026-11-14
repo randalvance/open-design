@@ -13,3 +13,12 @@ export function reportSafetyEvent(
   _properties: Record<string, unknown> = {},
   _options: { currentUrlOverride?: string } = {},
 ): void {}
+
+/** Input-responsiveness aggregation is not collected, so no checkpoint is ever held. */
+export function checkpointInputResponsiveness(_properties: Record<string, unknown>, _final: boolean): boolean {
+  return false;
+}
+
+export function registerInputCollectorFlush(_flush: () => void): () => void {
+  return () => {};
+}
