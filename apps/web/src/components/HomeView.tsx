@@ -134,6 +134,7 @@ import { localizePluginDescription } from './plugins-home/localization';
 import type { Recommendation } from '../onboarding/recommendation';
 import type { OnboardingEntry } from '../onboarding/onboarding-entry';
 import { AnimatePresence } from 'motion/react';
+import { hostFolderPickerErrorMessage } from './host-folder-picker-error';
 
 export interface ActivePlugin {
   record: InstalledPluginRecord;
@@ -1979,7 +1980,7 @@ export function HomeView({
       // auth gate and surface as a confusing late create-time failure.
       // Surface the host error instead and keep the existing working dir.
       setError(
-        `Couldn't open the folder picker (${'reason' in result ? result.reason : 'host unavailable'}). Please update OpenDesign and try again.`,
+        hostFolderPickerErrorMessage(result),
       );
       return null;
     }
@@ -2004,7 +2005,7 @@ export function HomeView({
       }
       if ('canceled' in result && result.canceled) return null;
       setError(
-        `Couldn't open the folder picker (${'reason' in result ? result.reason : 'host unavailable'}). Please update OpenDesign and try again.`,
+        hostFolderPickerErrorMessage(result),
       );
       return null;
     }
