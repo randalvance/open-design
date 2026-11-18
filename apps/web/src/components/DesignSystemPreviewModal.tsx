@@ -136,7 +136,8 @@ export function DesignSystemPreviewModal({
               system={system}
               variant="panel"
               showCover={false}
-              className="ds-modal-kit-preview"
+              // .ds-modal-rich-kit is the scroll container for the tall kit stack.
+              className="ds-modal-rich-kit"
               dataTestId="design-system-modal-kit"
             />
           ),
