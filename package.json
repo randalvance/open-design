@@ -63,9 +63,11 @@
       "better-sqlite3",
       "core-js",
       "esbuild",
-      "onnxruntime-node",
       "protobufjs",
       "sharp"
+    ],
+    "ignoredBuiltDependencies": [
+      "onnxruntime-node"
     ]
   }
 }
